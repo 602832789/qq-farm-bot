@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package gamepb.acepb;
+
+// ============ 反作弊服务 ============
+
+message AntiDataRequest {
+    string data = 1;           // 反作弊数据 (JSON字符串)
+    int64 timestamp = 2;       // 时间戳
+    string device_id = 3;      // 设备ID
+    int32 platform = 4;        // 平台
+}
+
+message AntiDataReply {
+    int32 result = 1;          // 结果码
+}

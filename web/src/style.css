@@ -1,0 +1,269 @@
+/* Global Scrollbar Customization — 农场木纹风格 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f5e6c8;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #c9a96e 0%, #a16207 50%, #8b6914 100%);
+  border-radius: 10px;
+  border: 2px solid #f5e6c8;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #deb887 0%, #8b6914 50%, #6b4f0e 100%);
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: #2a3a2a;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #6b8f60 0%, #4a6b3f 100%);
+  border-color: #2a3a2a;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #8bb67e 0%, #5a8b4f 100%);
+}
+
+/* Base styles to reset some defaults if needed, though UnoCSS reset handles most */
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden; /* App handles scrolling */
+}
+
+/* NProgress Customization — 农场绿 */
+#nprogress .bar {
+  background: linear-gradient(90deg, #4a8c3f, #6dbf5b) !important;
+  height: 4px !important;
+  border-radius: 4px;
+}
+
+#nprogress .peg {
+  box-shadow:
+    0 0 10px #4a8c3f,
+    0 0 5px #6dbf5b !important;
+}
+
+/* QQ Farm Cartoon Style Foundation */
+
+/* Google Fonts for cartoon style */
+@import url('https://fonts.googleapis.com/css2?family=ZCOOL+KuaiLe&family=Nunito:wght@400;600;700;800&display=swap');
+
+/* Cartoon card component — 3D浮雕卡片 */
+.cartoon-card {
+  border-radius: var(--theme-radius-lg, 18px);
+  box-shadow: var(--theme-shadow-md, 0 4px 0 rgba(0,0,0,0.18), 0 4px 16px rgba(0,0,0,0.12));
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease;
+  border: 3px solid rgba(0,0,0,0.08);
+}
+
+.cartoon-card:hover {
+  transform: translateY(-3px) scale(1.01);
+  box-shadow: var(--theme-shadow-lg, 0 6px 0 rgba(0,0,0,0.2), 0 8px 32px rgba(0,0,0,0.16));
+}
+
+.cartoon-card:active {
+  transform: translateY(0) scale(0.99);
+  box-shadow: 0 2px 0 rgba(0,0,0,0.15), 0 2px 8px rgba(0,0,0,0.1);
+}
+
+/* Farm background gradient — 天空+草地渐变 */
+.farm-bg {
+  background: linear-gradient(180deg,
+    var(--theme-sky-light, #b8e4f7) 0%,
+    var(--theme-sky, #87ceeb) 35%,
+    var(--theme-grass-light, #6dbf5b) 35%,
+    var(--theme-grass, #4a8c3f) 60%,
+    var(--theme-soil-dark, #6b4f0e) 100%
+  );
+}
+
+/* Soil texture background — 泥土纹理 */
+.soil-bg {
+  background:
+    radial-gradient(circle at 15% 85%, rgba(240,192,64,0.15) 0%, transparent 40%),
+    radial-gradient(circle at 85% 15%, rgba(139,105,20,0.2) 0%, transparent 40%),
+    radial-gradient(circle at 50% 50%, rgba(107,79,14,0.1) 0%, transparent 60%),
+    linear-gradient(180deg, var(--theme-soil, #8b6914) 0%, #6b4f0e 100%);
+}
+
+/* Grass background — 草地纹理 */
+.grass-bg {
+  background:
+    radial-gradient(circle at 25% 75%, rgba(109,191,91,0.3) 0%, transparent 45%),
+    radial-gradient(circle at 75% 25%, rgba(74,140,63,0.2) 0%, transparent 45%),
+    linear-gradient(180deg, var(--theme-grass-light, #6dbf5b) 0%, var(--theme-grass, #4a8c3f) 100%);
+}
+
+/* Cartoon animations — QQ农场风格弹性动画 */
+@keyframes cartoon-bounce {
+  0%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-12px); }
+  50% { transform: translateY(-6px); }
+  70% { transform: translateY(-9px); }
+}
+
+@keyframes bounce-in {
+  0% { transform: scale(0.3); opacity: 0; }
+  50% { transform: scale(1.08); }
+  70% { transform: scale(0.95); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes bounce-hover {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+@keyframes plant-grow {
+  0% { transform: scale(0.3) translateY(20px); opacity: 0; }
+  60% { transform: scale(1.15) translateY(-6px); opacity: 1; }
+  80% { transform: scale(0.95) translateY(2px); }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+@keyframes cartoon-wiggle {
+  0%, 100% { transform: rotate(0deg); }
+  15% { transform: rotate(-6deg); }
+  30% { transform: rotate(5deg); }
+  45% { transform: rotate(-4deg); }
+  60% { transform: rotate(3deg); }
+  75% { transform: rotate(-2deg); }
+}
+
+@keyframes sparkle {
+  0%, 100% { opacity: 0; transform: scale(0) rotate(0deg); }
+  50% { opacity: 1; transform: scale(1) rotate(180deg); }
+}
+
+@keyframes water-drop {
+  0% { transform: translateY(-12px); opacity: 0; }
+  40% { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(14px); opacity: 0; }
+}
+
+@keyframes float-up {
+  0% { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(-30px); opacity: 0; }
+}
+
+@keyframes sway {
+  0%, 100% { transform: rotate(-3deg); }
+  50% { transform: rotate(3deg); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(74, 140, 63, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(74, 140, 63, 0); }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-3px); }
+  20%, 40%, 60%, 80% { transform: translateX(3px); }
+}
+
+/* Cartoon font classes */
+.font-display {
+  font-family: 'ZCOOL KuaiLe', cursive;
+  letter-spacing: 0.02em;
+}
+
+.font-body {
+  font-family: 'Nunito', sans-serif;
+  letter-spacing: 0.01em;
+}
+
+/* Cartoon button — 3D按压效果 */
+.cartoon-btn {
+  border-radius: var(--theme-radius-lg, 18px);
+  font-weight: 700;
+  padding: 10px 24px;
+  border: 3px solid rgba(0,0,0,0.1);
+  border-bottom: 4px solid rgba(0,0,0,0.2);
+  box-shadow: 0 4px 0 rgba(0,0,0,0.18), 0 4px 12px rgba(0,0,0,0.1);
+  transition: all 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  text-shadow: 0 1px 1px rgba(255,255,255,0.2);
+}
+
+.cartoon-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 0 rgba(0,0,0,0.18), 0 6px 16px rgba(0,0,0,0.12);
+}
+
+.cartoon-btn:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 rgba(0,0,0,0.18), 0 1px 4px rgba(0,0,0,0.1);
+  border-bottom-width: 3px;
+}
+
+.cartoon-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: 0 2px 0 rgba(0,0,0,0.1), 0 2px 6px rgba(0,0,0,0.06);
+}
+
+/* Farm progress bar — 卡通进度条 */
+.farm-progress {
+  border-radius: 9999px;
+  overflow: hidden;
+  height: 14px;
+  background: rgba(0,0,0,0.12);
+  border: 2px solid rgba(0,0,0,0.1);
+  position: relative;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.farm-progress::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 4px,
+    rgba(255,255,255,0.2) 4px,
+    rgba(255,255,255,0.2) 8px
+  );
+  animation: barberpole 1s linear infinite;
+}
+
+@keyframes barberpole {
+  0% { background-position: 0 0; }
+  100% { background-position: 11.31px 0; }
+}
+
+/* Utility animation classes */
+.animate-bounce-in {
+  animation: bounce-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.animate-sway {
+  animation: sway 2s ease-in-out infinite;
+}
+
+.animate-float-up {
+  animation: float-up 1s ease-out forwards;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+.animate-shake {
+  animation: shake 0.5s ease-in-out;
+}

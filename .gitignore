@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+
+# Build output
+core/dist/
+web/dist/
+core/client.js
+
+# Runtime data (contains user credentials and logs)
+core/data/
+
+# Debug/test scripts
+core/scripts/
+
+# Build analysis
+web/stats.html
+
+# Logs
+*.log
+
+# Misc
+core/share.txt
+Update.log
+*.tgz
+*.tsbuildinfo
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test/coverage
+coverage/
+.nyc_output/
+
+# Cleanup script (self-deleting)
+cleanup.bat

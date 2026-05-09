@@ -1,0 +1,621 @@
+/**
+ * 好友巡查调度 - 循环管理、每日重置、经验限制、自动接受好友、启动捣乱
+ */
+
+const { CONFIG } = require('../../config/config');
+const { getUserState, networkEvents } = require('../../utils/network');
+const { toNum, getServerTimeSec, log, logWarn, randomDelay } = require('../../utils/utils');
+const { createScheduler } = require('../scheduler');
+const { setOperationLimitsCallback } = require('../farm');
+const {
+    isAutomationOn,
+    getFriendBlacklist,
+} = require('../../models/store');
+const { sellAllFruits } = require('../warehouse');
+const {
+    getAllFriends,
+    acceptFriends,
+    getApplications,
+} = require('./api');
+const {
+    extractReplyFriends,
+    clearAllInvalidKnownFriendGidCooldowns,
+} = require('./gid-manager');
+const {
+    visitFriend,
+    visitFriendForSteal,
+    visitFriendForHelp,
+    inFriendQuietHours,
+} = require('./visit-strategy');
+
+// ============ 内部状态 ============
+let isCheckingFriends: boolean = false;
+let friendLoopRunning: boolean = false;
+let externalSchedulerMode: boolean = false;
+let lastResetDate: string = '';  // 上次重置日期 (YYYY-MM-DD)
+const friendScheduler: any = createScheduler('friend');
+
+const operationLimits: Map<number, any> = new Map();
+
+let canGetHelpExp: boolean = true;
+let helpAutoDisabledByLimit: boolean = false;
+let badExecutedOnStartup: boolean = false;
+
+const OP_NAMES: Record<number, string> = {
+    10001: '浇水',
+    10002: '除虫',
+    10003: '除草',
+    10004: '偷菜',
+    10005: '放虫',
+    10006: '放草',
+    10007: '收获',
+    10008: '铲除',
+};
+
+// ============ 操作限制相关 ============
+
+/**
+ * 检查是否需要重置每日限制 (0点刷新)
+ */
+export function checkDailyReset(): void {
+    // 使用服务器时间（北京时间 UTC+8）计算当前日期，避免时区偏差
+    const nowSec: number = getServerTimeSec();
+    const nowMs: number = nowSec > 0 ? nowSec * 1000 : Date.now();
+    const bjOffset: number = 8 * 3600 * 1000;
+    const bjDate: Date = new Date(nowMs + bjOffset);
+    const y: number = bjDate.getUTCFullYear();
+    const m: string = String(bjDate.getUTCMonth() + 1).padStart(2, '0');
+    const d: string = String(bjDate.getUTCDate()).padStart(2, '0');
+    const today: string = `${y}-${m}-${d}`;  // 北京时间日期 YYYY-MM-DD
+    if (lastResetDate !== today) {
+        if (lastResetDate !== '') {
+            log('系统', '跨日重置，清空操作限制缓存');
+        }
+        operationLimits.clear();
+        canGetHelpExp = true;
+        if (helpAutoDisabledByLimit) {
+            helpAutoDisabledByLimit = false;
+            log('好友', '新的一天已开始，自动恢复帮忙操作功能', {
+                module: 'friend',
+                event: '好友巡查循环',
+                result: 'ok',
+            });
+        }
+        lastResetDate = today;
+    }
+}
+
+export function autoDisableHelpByExpLimit(): void {
+    if (!canGetHelpExp) return;
+    canGetHelpExp = false;
+    helpAutoDisabledByLimit = true;
+    log('好友', '今日帮助经验已达上限，自动停止帮忙', {
+        module: 'friend',
+        event: '好友巡查循环',
+        result: 'ok',
+    });
+}
+
+/**
+ * 更新操作限制状态
+ */
+export function updateOperationLimits(limits: any[]): void {
+    if (!limits || limits.length === 0) return;
+    checkDailyReset();
+    for (const limit of limits) {
+        const id: number = toNum(limit.id);
+        if (id > 0) {
+            const data: any = {
+                dayTimes: toNum(limit.day_times),
+                dayTimesLimit: toNum(limit.day_times_lt),
+                dayExpTimes: toNum(limit.day_exp_times),
+                dayExpTimesLimit: toNum(limit.day_ex_times_lt), // 协议字段名为 day_ex_times_lt
+            };
+            operationLimits.set(id, data);
+        }
+    }
+}
+
+export function canGetExpByCandidates(opIds: number[] = []): boolean {
+    const ids: number[] = Array.isArray(opIds) ? opIds : [opIds];
+    for (const id of ids) {
+        if (canGetExp(toNum(id))) return true;
+    }
+    return false;
+}
+
+/**
+ * 检查某操作是否还能获得经验
+ */
+export function canGetExp(opId: number): boolean {
+    const limit: any = operationLimits.get(opId);
+    if (!limit) return false;  // 没有限制信息，保守起见不帮助（等待限制数据）
+    if (limit.dayExpTimesLimit <= 0) return true;  // 没有经验上限
+    return limit.dayExpTimes < limit.dayExpTimesLimit;
+}
+
+/**
+ * 检查某操作是否还有次数
+ */
+export function canOperate(opId: number): boolean {
+    const limit: any = operationLimits.get(opId);
+    if (!limit) return true;
+    if (limit.dayTimesLimit <= 0) return true;
+    return limit.dayTimes < limit.dayTimesLimit;
+}
+
+/**
+ * 获取某操作剩余次数
+ */
+export function getRemainingTimes(opId: number): number {
+    const limit: any = operationLimits.get(opId);
+    if (!limit || limit.dayTimesLimit <= 0) return 999;
+    return Math.max(0, limit.dayTimesLimit - limit.dayTimes);
+}
+
+/**
+ * 获取操作限制详情 (供管理面板使用)
+ */
+export function getOperationLimits(): Record<string, any> {
+    const result: Record<string, any> = {};
+    for (const id of [10001, 10002, 10003, 10004, 10005, 10006, 10007, 10008]) {
+        const limit: any = operationLimits.get(id);
+        if (limit) {
+            result[id] = {
+                name: OP_NAMES[id] || `#${id}`,
+                ...limit,
+                remaining: getRemainingTimes(id),
+            };
+        }
+    }
+    return result;
+}
+
+// ============ 帮助经验状态访问器 ============
+
+export function getCanGetHelpExp(): boolean {
+    return canGetHelpExp;
+}
+
+export function setCanGetHelpExp(val: boolean): void {
+    canGetHelpExp = val;
+}
+
+// ============ 好友巡查主循环 ============
+
+interface CheckFriendsOptions {
+    onlyHelp?: boolean;
+    onlySteal?: boolean;
+    onlyBad?: boolean;
+    ignoreExpLimit?: boolean;
+}
+
+export async function checkFriends(options: CheckFriendsOptions = {}): Promise<boolean> {
+    const state: any = getUserState();
+    if (!isAutomationOn('friend')) return false;
+
+    const accountId: string = process.env.FARM_ACCOUNT_ID || '';
+
+    const helpEnabled: boolean = !!isAutomationOn('friend_help');
+    const stealEnabled: boolean = !!isAutomationOn('friend_steal');
+    const badEnabled: boolean = !!isAutomationOn('friend_bad');
+
+    const onlyHelp: boolean = options.onlyHelp || false;
+    const onlySteal: boolean = options.onlySteal || false;
+    const onlyBad: boolean = options.onlyBad || false;
+    const ignoreExpLimit: boolean = options.ignoreExpLimit || false;
+
+    const effectiveHelpEnabled: boolean = onlyHelp ? true : (onlySteal || onlyBad ? false : helpEnabled);
+    const effectiveStealEnabled: boolean = onlySteal ? true : (onlyHelp || onlyBad ? false : stealEnabled);
+    const effectiveBadEnabled: boolean = onlyBad ? true : (onlyHelp || onlySteal ? false : badEnabled);
+
+    const hasAnyFriendOp: boolean = effectiveHelpEnabled || effectiveStealEnabled || effectiveBadEnabled;
+    if (isCheckingFriends || !state.gid || !hasAnyFriendOp) return false;
+    if (inFriendQuietHours()) return false;
+
+    isCheckingFriends = true;
+    checkDailyReset();
+
+    try {
+        const friendsReply: any = await getAllFriends();
+        const friends: any[] = extractReplyFriends(friendsReply);
+        if (friends.length === 0) {
+            log('好友', '没有好友', { module: 'friend', event: '好友扫描', result: 'empty' });
+            return false;
+        }
+
+        const blacklist: Set<number> = new Set(getFriendBlacklist(accountId));
+
+        const stealFriends: any[] = [];
+        const helpFriends: any[] = [];
+        const visitedGids: Set<number> = new Set();
+
+        for (const f of friends) {
+            const gid: number = toNum(f.gid);
+            if (gid === state.gid) continue;
+            if (visitedGids.has(gid)) continue;
+            if (blacklist.has(gid)) continue;
+
+            const name: string = f.remark || f.name || `GID:${gid}`;
+            const p: any = f.plant;
+            const stealNum: number = p ? toNum(p.steal_plant_num) : 0;
+            const dryNum: number = p ? toNum(p.dry_num) : 0;
+            const weedNum: number = p ? toNum(p.weed_num) : 0;
+            const insectNum: number = p ? toNum(p.insect_num) : 0;
+
+            if (stealNum > 0 && effectiveStealEnabled) {
+                stealFriends.push({ gid, name, stealNum });
+            }
+
+            if ((dryNum > 0 || weedNum > 0 || insectNum > 0) && effectiveHelpEnabled) {
+                helpFriends.push({ gid, name, dryNum, weedNum, insectNum });
+            }
+
+            visitedGids.add(gid);
+        }
+
+        // 排序：偷菜多的优先
+        stealFriends.sort((a: any, b: any) => b.stealNum - a.stealNum);
+        // 排序：帮助需求多的优先
+        helpFriends.sort((a: any, b: any) => {
+            const helpA: number = a.dryNum + a.weedNum + a.insectNum;
+            const helpB: number = b.dryNum + b.weedNum + b.insectNum;
+            return helpB - helpA;
+        });
+
+        const totalActions: any = { steal: 0, water: 0, weed: 0, bug: 0, putBug: 0, putWeed: 0 };
+
+        // 第二阶段：批量偷菜
+        if (stealFriends.length > 0 && effectiveStealEnabled) {
+            // log('好友', `开始批量偷菜，共 ${stealFriends.length} 个好友有可偷`, {
+            //     module: 'friend', event: '开始批量偷菜', count: stealFriends.length
+            // });
+
+            for (const friend of stealFriends) {
+                if (!canOperate(10004)) break; // 偷菜次数用完
+
+                try {
+                    await visitFriendForSteal(friend, totalActions, state.gid, state.accountId);
+                } catch {
+                    // 单个好友失败不影响整体
+                }
+                await randomDelay(500, 800);
+            }
+        }
+
+        // 偷菜后自动出售
+        if (totalActions.steal > 0) {
+            try {
+                await sellAllFruits();
+            } catch {
+                // ignore
+            }
+        }
+
+        // 第三阶段：批量帮助
+        if (helpFriends.length > 0 && effectiveHelpEnabled) {
+            log('好友', `开始批量帮助，共 ${helpFriends.length} 个好友需要帮助`, {
+                module: 'friend', event: '开始批量帮助', count: helpFriends.length
+            });
+
+            for (let i: number = 0; i < helpFriends.length; i++) {
+                const friend: any = helpFriends[i];
+                log('好友', `批量帮助第 ${i + 1}/${helpFriends.length} 个好友: ${friend.name}`, { module: 'friend', event: '批量帮助开始', index: i + 1, total: helpFriends.length, friendName: friend.name });
+
+                // 检查是否还能获得帮助经验
+                // const stopWhenExpLimit = !!isAutomationOn('friend_help_exp_limit');
+                const stopWhenExpLimit: boolean = !!isAutomationOn('friend_help_exp_limit') && !ignoreExpLimit;
+                if (stopWhenExpLimit && !canGetHelpExp) {
+                    log('好友', `批量帮助中断：经验已达上限`, { module: 'friend', event: '批量帮助中断', reason: 'exp_limit' });
+                    break;
+                }
+
+                try {
+                    // await visitFriendForHelp(friend, totalActions, state.gid, state.accountId);
+                    await visitFriendForHelp(friend, totalActions, state.gid, state.accountId, ignoreExpLimit);
+                    log('好友', `批量帮助第 ${i + 1} 个好友完成: ${friend.name}`, { module: 'friend', event: '批量帮助完成', index: i + 1, friendName: friend.name });
+                } catch (e: any) {
+                    log('好友', `批量帮助第 ${i + 1} 个好友失败: ${friend.name}, 错误: ${e.message}`, { module: 'friend', event: '批量帮助失败', index: i + 1, friendName: friend.name, error: e.message });
+                }
+                await randomDelay(500, 800);
+            }
+            log('好友', '批量帮助循环结束', { module: 'friend', event: '批量帮助结束' });
+        }
+
+        // 第四阶段：批量捣乱（放虫放草）
+        if (effectiveBadEnabled) {
+            log('好友', '开始自动放虫放草', { module: 'friend', event: '开始自动放虫放草' });
+
+            const badFriends: any[] = [];
+            const badVisitedGids: Set<number> = new Set();
+
+            for (const f of friends) {
+                const gid: number = toNum(f.gid);
+                if (gid === state.gid) continue;
+                if (badVisitedGids.has(gid)) continue;
+                if (blacklist.has(gid)) continue;
+
+                const name: string = f.remark || f.name || `GID:${gid}`;
+                const p: any = f.plant;
+                const stealNum: number = p ? toNum(p.steal_plant_num) : 0;
+                const dryNum: number = p ? toNum(p.dry_num) : 0;
+                const weedNum: number = p ? toNum(p.weed_num) : 0;
+                const insectNum: number = p ? toNum(p.insect_num) : 0;
+
+                // 只没有可偷、可帮助的好友才考虑捣乱
+                if (stealNum === 0 && dryNum === 0 && weedNum === 0 && insectNum === 0) {
+                    const level: number = toNum(f.level);
+                    badFriends.push({ gid, name, level });
+                }
+
+                badVisitedGids.add(gid);
+            }
+
+            // 按等级降序排序，优先处理等级高的好友
+            badFriends.sort((a: any, b: any) => b.level - a.level);
+
+            // 只取等级最高的前20个
+            const topBadFriends: any[] = badFriends.slice(0, 20);
+
+            if (topBadFriends.length > 0) {
+                log('好友', `找到 ${badFriends.length} 个可捣乱的好友，处理等级最高的前${topBadFriends.length}个`, { module: 'friend', event: '放虫放草好友列表', totalCount: badFriends.length, topCount: topBadFriends.length });
+
+                for (let i: number = 0; i < topBadFriends.length; i++) {
+                    const friend: any = topBadFriends[i];
+
+                    // 检查是否还有捣乱次数
+                    const canPutBug: boolean = canOperate(10005);
+                    const canPutWeed: boolean = canOperate(10006);
+                    if (!canPutBug && !canPutWeed) {
+                        log('好友', `放虫放草次数已用完，停止执行`, { module: 'friend', event: '放虫放草次数用完' });
+                        break;
+                    }
+
+                    try {
+                        await visitFriend(friend, totalActions, state.gid, state.accountId);
+                    } catch (e: any) {
+                        // 单个好友失败不影响整体
+                    }
+                    await randomDelay(2000, 3500);
+                }
+            }
+        }
+
+        // 生成总结日志
+        const summary: string[] = [];
+        if (totalActions.steal > 0) summary.push(`偷${totalActions.steal}`);
+        if (totalActions.weed > 0) summary.push(`除草${totalActions.weed}`);
+        if (totalActions.bug > 0) summary.push(`除虫${totalActions.bug}`);
+        if (totalActions.water > 0) summary.push(`浇水${totalActions.water}`);
+        if (totalActions.putBug > 0) summary.push(`放虫${totalActions.putBug}`);
+        if (totalActions.putWeed > 0) summary.push(`放草${totalActions.putWeed}`);
+
+        const totalVisited: number = stealFriends.length + helpFriends.length;
+        if (summary.length > 0) {
+            log('好友', `巡查完成 → ${summary.join('/')}`, {
+                module: 'friend', event: '好友巡查循环', result: 'ok', visited: totalVisited, summary
+            });
+        }
+        return summary.length > 0;
+
+    } catch (err: any) {
+        logWarn('好友', `巡查异常: ${err.message}`);
+        return false;
+    } finally {
+        isCheckingFriends = false;
+    }
+}
+
+// ============ 循环控制 ============
+
+/**
+ * 好友巡查循环 - 本次完成后等待指定秒数再开始下次
+ */
+async function friendCheckLoop(): Promise<void> {
+    if (externalSchedulerMode) return;
+    if (!friendLoopRunning) return;
+    await checkFriends();
+    if (!friendLoopRunning) return;
+    friendScheduler.setTimeoutTask('friend_check_loop', Math.max(0, CONFIG.friendCheckInterval), () => friendCheckLoop());
+}
+
+interface StartOptions {
+    externalScheduler?: boolean;
+}
+
+export function startFriendCheckLoop(options: StartOptions = {}): void {
+    if (friendLoopRunning) return;
+    externalSchedulerMode = !!options.externalScheduler;
+    friendLoopRunning = true;
+
+    // 注册操作限制更新回调，从农场检查中获取限制信息
+    setOperationLimitsCallback(updateOperationLimits);
+
+    // 监听好友申请推送 (微信同玩)
+    networkEvents.on('friendApplicationReceived', onFriendApplicationReceived);
+
+    if (!externalSchedulerMode) {
+        // 延迟 5 秒后启动循环，等待登录和首次农场检查完成
+        friendScheduler.setTimeoutTask('friend_check_loop', 5000, () => friendCheckLoop());
+    }
+
+    // 启动时检查一次待处理的好友申请
+    friendScheduler.setTimeoutTask('friend_check_bootstrap_applications', 3000, () => checkAndAcceptApplications());
+}
+
+export function stopFriendCheckLoop(): void {
+    friendLoopRunning = false;
+    externalSchedulerMode = false;
+    clearAllInvalidKnownFriendGidCooldowns();
+    networkEvents.off('friendApplicationReceived', onFriendApplicationReceived);
+    friendScheduler.clearAll();
+}
+
+export function refreshFriendCheckLoop(delayMs: number = 200): void {
+    if (!friendLoopRunning || externalSchedulerMode) return;
+    friendScheduler.setTimeoutTask('friend_check_loop', Math.max(0, delayMs), () => friendCheckLoop());
+}
+
+// ============ 自动同意好友申请 (微信同玩) ============
+
+/**
+ * 处理服务器推送的好友申请
+ */
+export function onFriendApplicationReceived(applications: any[]): void {
+    const names: string = applications.map((a: any) => a.name || `GID:${toNum(a.gid)}`).join(', ');
+    log('申请', `收到 ${applications.length} 个好友申请: ${names}`);
+
+    // 自动同意
+    const gids: number[] = applications.map((a: any) => toNum(a.gid));
+    acceptFriendsWithRetry(gids);
+}
+
+/**
+ * 检查并同意所有待处理的好友申请
+ */
+async function checkAndAcceptApplications(): Promise<void> {
+    try {
+        const reply: any = await getApplications();
+        const applications: any[] = reply.applications || [];
+        if (applications.length === 0) return;
+
+        const names: string = applications.map((a: any) => a.name || `GID:${toNum(a.gid)}`).join(', ');
+        log('申请', `发现 ${applications.length} 个待处理申请: ${names}`);
+
+        const gids: number[] = applications.map((a: any) => toNum(a.gid));
+        await acceptFriendsWithRetry(gids);
+    } catch {
+        // 静默失败，可能是 QQ 平台不支持
+    }
+}
+
+/**
+ * 同意好友申请 (带重试)
+ */
+async function acceptFriendsWithRetry(gids: number[]): Promise<void> {
+    if (gids.length === 0) return;
+    try {
+        const reply: any = await acceptFriends(gids);
+        const friends: any[] = reply.friends || [];
+        if (friends.length > 0) {
+            const names: string = friends.map((f: any) => f.name || f.remark || `GID:${toNum(f.gid)}`).join(', ');
+            log('申请', `已同意 ${friends.length} 人: ${names}`);
+        }
+    } catch (e: any) {
+        logWarn('申请', `同意失败: ${e.message}`);
+    }
+}
+
+// ============ 启动时执行一次放虫放草 ============
+
+export async function runBadOnceOnStartup(): Promise<void> {
+    if (badExecutedOnStartup) {
+       // log('好友', '启动时放虫放草已执行过，跳过', { module: 'friend', event: '启动放虫放草跳过' });
+        return;
+    }
+
+    const autoBadEnabled: boolean = isAutomationOn('friend_bad');
+    if (!autoBadEnabled) {
+      //  log('好友', '放虫放草功能未开启，跳过', { module: 'friend', event: '放虫放草未开启' });
+        return;
+    }
+
+    const state: any = getUserState();
+    if (!state.gid) {
+        log('好友', '用户未登录，无法执行放虫放草', { module: 'friend', event: '放虫放草未登录' });
+        return;
+    }
+
+    const accountId: string = process.env.FARM_ACCOUNT_ID || '';
+
+    log('好友', '========== 启动时放虫放草开始 ==========', { module: 'friend', event: '启动放虫放草开始' });
+
+    try {
+        const friendsReply: any = await getAllFriends();
+        const friends: any[] = extractReplyFriends(friendsReply);
+        if (friends.length === 0) {
+            log('好友', '没有好友，放虫放草结束', { module: 'friend', event: '没有游戏好友' });
+            return;
+        }
+
+        const blacklist: Set<number> = new Set(getFriendBlacklist(accountId));
+        const badFriends: any[] = [];
+        const visitedGids: Set<number> = new Set();
+
+        // 筛选可捣乱的好友（排除成熟植物的好友）
+        for (const f of friends) {
+            const gid: number = toNum(f.gid);
+            if (gid === state.gid) continue;
+            if (visitedGids.has(gid)) continue;
+            if (blacklist.has(gid)) continue;
+
+            const name: string = f.remark || f.name || `GID:${gid}`;
+            const p: any = f.plant;
+            const stealNum: number = p ? toNum(p.steal_plant_num) : 0;
+            const dryNum: number = p ? toNum(p.dry_num) : 0;
+            const weedNum: number = p ? toNum(p.weed_num) : 0;
+            const insectNum: number = p ? toNum(p.insect_num) : 0;
+
+            // 只没有可偷、可帮助的好友才考虑捣乱
+            if (stealNum === 0 && dryNum === 0 && weedNum === 0 && insectNum === 0) {
+                const level: number = toNum(f.level);
+                badFriends.push({ gid, name, level });
+            }
+
+            visitedGids.add(gid);
+        }
+
+        // 按等级降序排序，优先处理等级高的好友
+        badFriends.sort((a: any, b: any) => b.level - a.level);
+
+        // 只取等级最高的前20个
+        const topBadFriends: any[] = badFriends.slice(0, 20);
+        log('好友', `找到 ${badFriends.length} 个可捣乱的好友，处理等级最高的前${topBadFriends.length}个`, { module: 'friend', event: '放虫放草好友列表', totalCount: badFriends.length, topCount: topBadFriends.length });
+
+        const totalActions: any = { steal: 0, water: 0, weed: 0, bug: 0, putBug: 0, putWeed: 0 };
+        let processedCount: number = 0;
+
+        for (let i: number = 0; i < topBadFriends.length; i++) {
+            const friend: any = topBadFriends[i];
+
+            // 检查是否还有捣乱次数
+            const canPutBug: boolean = canOperate(10005);
+            const canPutWeed: boolean = canOperate(10006);
+            if (!canPutBug && !canPutWeed) {
+                log('好友', `放虫放草次数已用完，停止执行。已处理 ${processedCount} 个好友`, { module: 'friend', event: '放虫放草次数用完', processedCount });
+                break;
+            }
+
+            log('好友', `启动时放虫放草 ${i + 1}/${topBadFriends.length}: ${friend.name} (等级${friend.level})`, { module: 'friend', event: '放虫放草处理好友', index: i + 1, total: topBadFriends.length, friendName: friend.name, level: friend.level });
+
+            try {
+                // 使用 visitFriend 函数，类似 V1 版本逻辑
+                await visitFriend(friend, totalActions, state.gid);
+                processedCount++;
+            } catch (e: any) {
+                log('好友', `放虫放草失败: ${friend.name}, 错误: ${e.message}`, { module: 'friend', event: '放虫放草失败', friendName: friend.name, error: e.message });
+            }
+
+            await randomDelay(2000, 3500);
+        }
+
+        badExecutedOnStartup = true;
+
+        const summary: string[] = [];
+        if (totalActions.putBug > 0) summary.push(`放虫${totalActions.putBug}`);
+        if (totalActions.putWeed > 0) summary.push(`放草${totalActions.putWeed}`);
+
+        log('好友', `========== 启动时放虫放草结束 ========== 处理${processedCount}人${summary.length > 0 ? ` → ${  summary.join('/')}` : ''}`, { module: 'friend', event: '启动放虫放草结束', processedCount, summary });
+
+    } catch (err: any) {
+        logWarn('好友', `启动时放虫放草异常: ${err.message}`);
+    }
+}
+
+// ============ 公开状态查询 ============
+
+// 检查帮助经验是否已达上限（用于外部判断是否需要执行帮助巡查）
+export function isHelpExpLimitReached(): boolean {
+    return helpAutoDisabledByLimit;
+}
+
