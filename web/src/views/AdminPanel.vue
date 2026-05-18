@@ -671,13 +671,13 @@ const systemConfigSaving = ref(false)
 const systemConfigLoading = ref(false)
 
 const localSystemConfig = ref({
-  serverUrl: 'wss://gate-obt.nqf.qq.com/prod/ws',
-  clientVersion: '1.11.1.7_20260425',
+  serverUrl: '',
+  clientVersion: '',
   platform: 'qq',
   os: 'Windows',
   deviceInfo: {
     os: 'Windows',
-    clientVersion: '1.11.1.7_20260425',
+    clientVersion: '',
     sysSoftware: 'Windows 10',
     network: 'wifi',
     memory: '16384',
@@ -687,13 +687,13 @@ const localSystemConfig = ref({
 })
 
 const defaultSystemConfig = ref({
-  serverUrl: 'wss://gate-obt.nqf.qq.com/prod/ws',
-  clientVersion: '1.11.1.7_20260425',
+  serverUrl: '',
+  clientVersion: '',
   platform: 'qq',
   os: 'Windows',
   deviceInfo: {
     os: 'Windows',
-    clientVersion: '1.11.1.7_20260425',
+    clientVersion: '',
     sysSoftware: 'Windows 10',
     network: 'wifi',
     memory: '16384',
@@ -705,18 +705,6 @@ const defaultSystemConfig = ref({
 const devicePresets = ref<any[]>([])
 const selectedPresetId = ref('')
 
-const wxConfigSaving = ref(false)
-
-const localWxConfig = ref({
-  enabled: true,
-  apiBase: 'http://127.0.0.1:8059/api',
-  apiKey: '',
-  proxyApiUrl: 'http://127.0.0.1:8059/api',
-  appId: 'wx5306c5978fdb76e4',
-  autoAddAccount: true,
-  userIsolation: true,
-})
-
 const platformOptions = [
   { label: 'QQ', value: 'qq' },
   { label: '微信', value: 'wx' },
@@ -727,18 +715,6 @@ const osOptions = [
   { label: 'iOS', value: 'iOS' },
   { label: 'Android', value: 'Android' },
 ]
-
-async function loadWxConfig() {
-  try {
-    const { data } = await api.get('/api/admin/wx-config')
-    if (data?.ok && data.data) {
-      localWxConfig.value = { ...data.data }
-    }
-  }
-  catch (e: any) {
-    console.error('加载微信配置失败:', e)
-  }
-}
 
 async function loadDevicePresets() {
   try {
@@ -768,38 +744,6 @@ function applyDevicePreset(presetId: string) {
     userAgent: di.userAgent || '',
   }
   selectedPresetId.value = presetId
-}
-
-async function handleSaveWxConfig() {
-  wxConfigSaving.value = true
-  try {
-    const { data } = await api.post('/api/admin/wx-config', localWxConfig.value)
-    if (data?.ok) {
-      showAlert('微信配置已保存，全局应用生效', 'primary')
-    }
-    else {
-      showAlert(data?.error || '保存失败', 'danger')
-    }
-  }
-  catch (e: any) {
-    showAlert(`保存失败: ${e.message || '未知错误'}`, 'danger')
-  }
-  finally {
-    wxConfigSaving.value = false
-  }
-}
-
-async function handleResetWxConfig() {
-  localWxConfig.value = {
-    enabled: true,
-    apiBase: 'http://127.0.0.1:8059/api',
-    apiKey: '',
-    proxyApiUrl: 'http://127.0.0.1:8059/api',
-    appId: 'wx5306c5978fdb76e4',
-    autoAddAccount: true,
-    userIsolation: true,
-  }
-  showAlert('微信配置已重置为默认值', 'primary')
 }
 
 async function loadSystemConfig() {
@@ -892,7 +836,6 @@ onMounted(() => {
   fetchUsers()
   fetchLoginLogs()
   loadSystemConfig()
-  loadWxConfig()
   loadDevicePresets()
   fetchCardClaimStatus()
 })
@@ -1655,7 +1598,7 @@ onMounted(() => {
                   v-model="localSystemConfig.deviceInfo.clientVersion"
                   label="客户端版本"
                   type="text"
-                  placeholder="1.11.1.7_20260425"
+                  :placeholder="defaultSystemConfig.deviceInfo.clientVersion || '从服务器加载中...'"
                   class="col-span-2"
                   @change="localSystemConfig.clientVersion = localSystemConfig.deviceInfo.clientVersion"
                 />
@@ -1706,76 +1649,6 @@ onMounted(() => {
                   size="sm"
                   :loading="systemConfigSaving"
                   @click="handleSaveSystemConfig"
-                >
-                  保存
-                </BaseButton>
-              </div>
-            </div>
-
-            <div class="farm-card border border-gray-200 rounded-2xl bg-white p-4 shadow-md dark:border-gray-700 dark:bg-gray-800">
-              <h4 class="mb-3 flex items-center gap-2 text-base text-gray-900 font-bold dark:text-gray-100">
-                <div class="i-carbon-logo-wechat" />
-                微信配置
-              </h4>
-
-              <div class="mb-3 rounded p-2 text-xs" style="background-color: rgba(var(--theme-primary-rgb, 59, 130, 246), 0.1); color: var(--theme-primary);">
-                <div>• 启用微信登录：关闭后普通用户无法使用微信扫码登录</div>
-                <div>• 自动添加账号：扫码成功后自动添加账号，关闭则只返回Code</div>
-                <div>• 用户隔离：开启后普通用户只能看到自己的账号</div>
-              </div>
-
-              <div class="grid grid-cols-2 gap-3 text-sm">
-                <div class="col-span-2">
-                  <BaseSwitch
-                    v-model="localWxConfig.enabled"
-                    label="启用微信登录"
-                  />
-                </div>
-                <BaseInput
-                  v-model="localWxConfig.apiBase"
-                  label="API地址"
-                  type="text"
-                  placeholder="http://127.0.0.1:8059/api"
-                  class="col-span-2"
-                />
-                <BaseInput
-                  v-model="localWxConfig.apiKey"
-                  label="API密钥"
-                  type="text"
-                  placeholder="可选，用于代理模式"
-                  class="col-span-2"
-                />
-                <BaseInput
-                  v-model="localWxConfig.proxyApiUrl"
-                  label="代理API地址"
-                  type="text"
-                  placeholder="http://127.0.0.1:8059/api"
-                  class="col-span-2"
-                />
-                <BaseSwitch
-                  v-model="localWxConfig.autoAddAccount"
-                  label="自动添加账号"
-                />
-                <BaseSwitch
-                  v-model="localWxConfig.userIsolation"
-                  label="用户隔离"
-                />
-              </div>
-
-              <div class="mt-3 flex justify-end gap-2">
-                <BaseButton
-                  variant="secondary"
-                  size="sm"
-                  :loading="wxConfigSaving"
-                  @click="handleResetWxConfig"
-                >
-                  重置
-                </BaseButton>
-                <BaseButton
-                  variant="primary"
-                  size="sm"
-                  :loading="wxConfigSaving"
-                  @click="handleSaveWxConfig"
                 >
                   保存
                 </BaseButton>

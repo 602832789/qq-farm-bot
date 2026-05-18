@@ -141,15 +141,10 @@ function createCleanupExpiredUsers(ctx: AdminContext): () => void {
 
 function getAccountList(ctx: AdminContext, username: string | null = null): any[] {
     try {
-        // 检查是否启用用户隔离
-        const wxConfig = store.getGlobalWxConfig();
-        const userIsolation = wxConfig.userIsolation !== false;
-
         if (ctx.provider && typeof ctx.provider.getAccounts === 'function') {
             const data = ctx.provider.getAccounts();
             if (data && Array.isArray(data.accounts)) {
-                // 如果指定了用户名且启用了用户隔离，只返回该用户的账号
-                if (username && userIsolation) {
+                if (username) {
                     return data.accounts.filter((a: any) => a.username === username);
                 }
                 return data.accounts;
@@ -160,11 +155,7 @@ function getAccountList(ctx: AdminContext, username: string | null = null): any[
     }
     const data = store.getAccounts ? store.getAccounts() : { accounts: [] };
     let accounts: any[] = Array.isArray(data.accounts) ? data.accounts : [];
-    // 检查是否启用用户隔离
-    const wxConfig = store.getGlobalWxConfig();
-    const userIsolation = wxConfig.userIsolation !== false;
-    // 如果指定了用户名且启用了用户隔离，只返回该用户的账号
-    if (username && userIsolation) {
+    if (username) {
         accounts = accounts.filter((a: any) => a.username === username);
     }
     return accounts;

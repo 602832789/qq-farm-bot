@@ -38,6 +38,14 @@ async function loadProto(): Promise<void> {
         getResourcePath('proto', 'guidepb.proto'),
         getResourcePath('proto', 'acepb.proto'),
         getResourcePath('proto', 'careerpb.proto'),
+        getResourcePath('proto', 'dogpb.proto'),
+        getResourcePath('proto', 'skinpb.proto'),
+        getResourcePath('proto', 'avatarframepb.proto'),
+        getResourcePath('proto', 'bulletinboardpb.proto'),
+        getResourcePath('proto', 'marqueepb.proto'),
+        getResourcePath('proto', 'paypb.proto'),
+        getResourcePath('proto', 'rechargebonuspb.proto'),
+        getResourcePath('proto', 'uicproxypb.proto'),
     ], { keepCase: true });
 
     // 网关
@@ -144,6 +152,7 @@ async function loadProto(): Promise<void> {
     types.SyncAllFriendsRequest = root.lookupType('gamepb.friendpb.SyncAllRequest');
     types.SyncAllFriendsReply = root.lookupType('gamepb.friendpb.SyncAllReply');
     types.GetGameFriendsRequest = root.lookupType('gamepb.friendpb.GetGameFriendsRequest');
+    types.GetGameFriendsReply = root.lookupType('gamepb.friendpb.GetGameFriendsReply');
     types.GetShareKeyRequest = root.lookupType('gamepb.friendpb.GetShareKeyRequest');
     types.GetShareKeyReply = root.lookupType('gamepb.friendpb.GetShareKeyReply');
 
@@ -215,6 +224,40 @@ async function loadProto(): Promise<void> {
     // 职业
     types.CareerInfoGetRequest = root.lookupType('gamepb.careerpb.CareerInfoGetRequest');
     types.CareerInfoGetReply = root.lookupType('gamepb.careerpb.CareerInfoGetReply');
+
+    // 狗狗
+    types.GetDogInfoRequest = root.lookupType('gamepb.dogpb.GetDogInfoRequest');
+    types.GetDogInfoReply = root.lookupType('gamepb.dogpb.GetDogInfoReply');
+
+    // 皮肤
+    types.SkinsOwnedRequest = root.lookupType('gamepb.skinpb.SkinsOwnedRequest');
+    types.SkinsOwnedReply = root.lookupType('gamepb.skinpb.SkinsOwnedReply');
+    types.SkinsEquippedRequest = root.lookupType('gamepb.skinpb.SkinsEquippedRequest');
+    types.SkinsEquippedReply = root.lookupType('gamepb.skinpb.SkinsEquippedReply');
+
+    // 头像框
+    types.AvatarFramesOwnedRequest = root.lookupType('gamepb.avatarframepb.AvatarFramesOwnedRequest');
+    types.AvatarFramesOwnedReply = root.lookupType('gamepb.avatarframepb.AvatarFramesOwnedReply');
+
+    // 公告板
+    types.GetBulletinListRequest = root.lookupType('gamepb.bulletinboardpb.GetBulletinListRequest');
+    types.GetBulletinListReply = root.lookupType('gamepb.bulletinboardpb.GetBulletinListReply');
+
+    // 跑马灯
+    types.GetMarqueeRequest = root.lookupType('gamepb.marqueepb.GetMarqueeRequest');
+    types.GetMarqueeReply = root.lookupType('gamepb.marqueepb.GetMarqueeReply');
+
+    // 充值
+    types.GetRechargeInfoRequest = root.lookupType('gamepb.paypb.GetRechargeInfoRequest');
+    types.GetRechargeInfoReply = root.lookupType('gamepb.paypb.GetRechargeInfoReply');
+
+    // 充值奖励
+    types.GetRechargeBonusConfigRequest = root.lookupType('gamepb.rechargebonuspb.GetConfigRequest');
+    types.GetRechargeBonusConfigReply = root.lookupType('gamepb.rechargebonuspb.GetConfigReply');
+
+    // 文本审核
+    types.BatchModerateTextRequest = root.lookupType('gamepb.uicproxypb.BatchModerateTextRequest');
+    types.BatchModerateTextReply = root.lookupType('gamepb.uicproxypb.BatchModerateTextReply');
 
     // 取消"新"标记
     types.CannelNewRequest = root.lookupType('gamepb.itempb.CannelNewRequest');

@@ -4,7 +4,7 @@ import type { AdminContext } from './context';
 
 /**
  * Auth-related routes: login, register, login-logs, card info, user renew,
- * change-password, auth gate, utility routes, user/me, wxlogin-config, QR/proxy.
+ * change-password, auth gate, utility routes, user/me, QR.
  */
 
 const fetch = require('node-fetch');
@@ -248,7 +248,7 @@ function mountAuthRoutes(app: Application, ctx: AdminContext): void {
     });
 
     app.use('/api', (req: Request, res: Response, next: any) => {
-        if (req.path === '/login' || req.path === '/qr/create' || req.path === '/qr/check' || req.path === '/proxy' || req.path === '/card-claim/status' || req.path === '/card-claim/claim' || req.path === '/game-version') return next();
+        if (req.path === '/login' || req.path === '/qr/create' || req.path === '/qr/check' || req.path === '/card-claim/status' || req.path === '/card-claim/claim' || req.path === '/game-version') return next();
         return authRequired(req, res, next);
     });
 
@@ -324,38 +324,6 @@ function mountAuthRoutes(app: Application, ctx: AdminContext): void {
         }
     });
 
-    // 保存用户微信登录配置（仅管理员可以保存全局配置）
-    app.post('/api/user/wxlogin-config', authRequired, adminRequired, (req: Request, res: Response) => {
-        try {
-            const user = (req as any).currentUser;
-            if (!user) {
-                return res.status(401).json({ ok: false, error: '未登录' });
-            }
-
-            const config = req.body || {};
-            const saved = store.setGlobalWxConfig(config);
-            res.json({ ok: true, config: saved });
-        } catch (e: any) {
-            res.status(500).json({ ok: false, error: e.message });
-        }
-    });
-
-    // 获取用户微信登录配置（普通用户获取全局配置）
-    app.get('/api/user/wxlogin-config', authRequired, (req: Request, res: Response) => {
-        try {
-            const user = (req as any).currentUser;
-            if (!user) {
-                return res.status(401).json({ ok: false, error: '未登录' });
-            }
-
-            // 普通用户获取全局配置，管理员可以获取并修改全局配置
-            const globalConfig = store.getGlobalWxConfig();
-            res.json({ ok: true, config: globalConfig });
-        } catch (e: any) {
-            res.status(500).json({ ok: false, error: e.message });
-        }
-    });
-
     // ============ QR Code Login APIs (无需账号选择) ============
     // 这些接口不需要 authRequired 也能调用（用于登录流程）
     app.post('/api/qr/create', async (_req: Request, res: Response) => {
@@ -402,50 +370,6 @@ function mountAuthRoutes(app: Application, ctx: AdminContext): void {
         }
     });
 
-    // ============ 微信登录代理 API ============
-    // 用于转发请求到第三方微信登录 API（如 api.aineishe.com）
-    app.post('/api/proxy', async (req: Request, res: Response) => {
-        const { action, ...params } = req.body || {};
-
-        if (!action) {
-            return res.status(400).json({ code: -1, msg: '缺少 action 参数' });
-        }
-
-        // 从请求头或配置中获取 API 配置
-        // 优先使用请求头中的配置（前端传入）
-        const apiUrl = req.headers['x-proxy-api-url'] || process.env.WX_PROXY_API_URL || 'http://127.0.0.1:8059/api';
-        const apiKey = req.headers['x-proxy-api-key'] || process.env.WX_PROXY_API_KEY || '';
-        const appId = req.headers['x-proxy-app-id'] || process.env.WX_PROXY_APP_ID || 'wx5306c5978fdb76e4';
-
-        if (!apiKey) {
-            return res.status(400).json({ code: -1, msg: '缺少 API Key' });
-        }
-
-        // 如果是 jslogin 动作，自动添加 appid
-        if (action === 'jslogin') {
-            params.appid = appId;
-        }
-
-        try {
-            const url = `${apiUrl}?api_key=${encodeURIComponent(String(apiKey))}&action=${action}`;
-            adminLogger.info('proxy request', { action, apiUrl });
-
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(params)
-            });
-
-            const data = await response.json();
-            res.json(data);
-        } catch (error: any) {
-            adminLogger.error('proxy error', { error: error.message, action });
-            res.status(500).json({
-                code: -1,
-                msg: `代理请求失败: ${error.message}`,
-            });
-        }
-    });
 }
 
 module.exports = { mountAuthRoutes };

@@ -1,8 +1,9 @@
 export {};
-import type { AccountConfig, OfflineReminder, UIConfig, SystemConfig, WxConfig, Announcement, GlobalConfig } from '../../types/config';
+import type { AccountConfig, OfflineReminder, UIConfig, SystemConfig, Announcement, GlobalConfig } from '../../types/config';
 
 const fs = require('node:fs');
 const { readTextFile, writeJsonFileAtomic } = require('../../services/json-db');
+const { DEFAULT_CLIENT_VERSION } = require('../../config/config');
 
 const sharedState = require('./shared-state');
 
@@ -214,7 +215,7 @@ function setSystemConfig(config: Partial<SystemConfig> | undefined): SystemConfi
     if (!config || typeof config !== 'object') return null;
     const DEFAULT_DEVICE_INFO = {
         os: 'Windows',
-        clientVersion: '1.11.1.7_20260425',
+        clientVersion: DEFAULT_CLIENT_VERSION,
         sysSoftware: 'Windows 10',
         network: 'wifi',
         memory: '16384',
@@ -242,35 +243,6 @@ function setSystemConfig(config: Partial<SystemConfig> | undefined): SystemConfi
     return { ...globalConfig.systemConfig };
 }
 
-const DEFAULT_WX_CONFIG: WxConfig = {
-    enabled: true,
-    apiBase: 'http://127.0.0.1:8059/api',
-    apiKey: '',
-    proxyApiUrl: 'http://127.0.0.1:8059/api',
-    appId: 'wx5306c5978fdb76e4',
-    autoAddAccount: true,
-    userIsolation: true,
-};
-
-function getGlobalWxConfig(): WxConfig {
-    return globalConfig.globalWxConfig ? { ...globalConfig.globalWxConfig } : { ...DEFAULT_WX_CONFIG };
-}
-
-function setGlobalWxConfig(config: Partial<WxConfig> | undefined): WxConfig | null {
-    if (!config || typeof config !== 'object') return null;
-    globalConfig.globalWxConfig = {
-        enabled: config.enabled !== false,
-        apiBase: String(config.apiBase || DEFAULT_WX_CONFIG.apiBase).trim(),
-        apiKey: String(config.apiKey || '').trim(),
-        proxyApiUrl: String(config.proxyApiUrl || DEFAULT_WX_CONFIG.proxyApiUrl).trim(),
-        appId: String(config.appId || DEFAULT_WX_CONFIG.appId).trim(),
-        autoAddAccount: config.autoAddAccount !== false,
-        userIsolation: config.userIsolation !== false,
-    };
-    saveGlobalConfig();
-    return { ...globalConfig.globalWxConfig };
-}
-
 // Initialize on load
 const { loadGlobalConfig } = sharedState;
 loadGlobalConfig();
@@ -296,7 +268,4 @@ module.exports = {
     shouldShowAnnouncement,
     getSystemConfig,
     setSystemConfig,
-    getGlobalWxConfig,
-    setGlobalWxConfig,
-    DEFAULT_WX_CONFIG,
 };

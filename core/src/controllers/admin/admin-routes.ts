@@ -3,7 +3,7 @@ import type { Application, Request, Response } from 'express';
 import type { AdminContext } from './context';
 
 /**
- * Admin-only routes: announcement, system-config, wx-config, cards,
+ * Admin-only routes: announcement, system-config, cards,
  * card-claim, user management.
  */
 
@@ -117,29 +117,6 @@ function mountAdminRoutes(app: Application, ctx: AdminContext): void {
             updateRuntimeConfig(defaultConfig);
             const current = getRuntimeConfig();
             res.json({ ok: true, data: { saved: defaultConfig, current } });
-        } catch (e: any) {
-            res.status(500).json({ ok: false, error: e.message });
-        }
-    });
-
-    // ============ 全局微信配置 API（仅管理员） ============
-
-    // 获取全局微信配置
-    app.get('/api/admin/wx-config', authRequired, adminRequired, (_req: Request, res: Response) => {
-        try {
-            const config = store.getGlobalWxConfig();
-            res.json({ ok: true, data: config });
-        } catch (e: any) {
-            res.status(500).json({ ok: false, error: e.message });
-        }
-    });
-
-    // 保存全局微信配置
-    app.post('/api/admin/wx-config', authRequired, adminRequired, (req: Request, res: Response) => {
-        try {
-            const config = req.body || {};
-            const saved = store.setGlobalWxConfig(config);
-            res.json({ ok: true, data: saved });
         } catch (e: any) {
             res.status(500).json({ ok: false, error: e.message });
         }

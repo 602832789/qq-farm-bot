@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package gamepb.paypb;
+
+// ============ 充值信息 ============
+message GetRechargeInfoRequest {
+    int64 platform = 1;     // 平台
+    int64 version = 2;      // 版本
+}
+
+message GetRechargeInfoReply {
+    // 服务器返回的充值信息 (可能为空)
+}
+
+// ============ 通知 ============
+message RechargeInfoNotify {
+    int64 status = 1;       // 充值状态
+}

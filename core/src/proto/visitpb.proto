@@ -6,10 +6,10 @@ import "plantpb.proto";
 import "userpb.proto";
 
 // ============ 访问好友农场服务 ============
-// service VisitService {
-//     rpc Enter(EnterRequest) returns (EnterReply);
-//     rpc Leave(LeaveRequest) returns (LeaveReply);
-// }
+service VisitService {
+    rpc Enter(EnterRequest) returns (EnterReply);
+    rpc Leave(LeaveRequest) returns (LeaveReply);
+}
 
 // ============ 进入原因枚举 ============
 enum EnterReason {

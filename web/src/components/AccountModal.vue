@@ -1,11 +1,9 @@
 <script setup lang="ts">
-import { useIntervalFn } from '@vueuse/core'
-import { computed, reactive, ref, watch } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import api from '@/api'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
-import { useWxLoginStore } from '@/stores/wx-login'
 
 const props = defineProps<{
   show: boolean
@@ -14,15 +12,8 @@ const props = defineProps<{
 
 const emit = defineEmits(['close', 'saved'])
 
-const wxLoginStore = useWxLoginStore()
-
-// 标签页：wx-微信扫码, manual-手动填码
-const activeTab = ref<'wx' | 'manual'>('manual')
 const loading = ref(false)
 const errorMessage = ref('')
-
-// 微信扫码相关
-const wxAccountName = ref('')
 
 // 表单数据
 const form = reactive({
@@ -30,50 +21,6 @@ const form = reactive({
   code: '',
   platform: 'qq' as 'qq' | 'wx',
 })
-
-// 微信扫码轮询
-const { pause: stopWxCheck, resume: startWxCheck } = useIntervalFn(async () => {
-  if (wxLoginStore.status !== 'qr_ready' && wxLoginStore.status !== 'confirming') {
-    return
-  }
-  const result = await wxLoginStore.checkLogin()
-  if (result.success && result.wxid) {
-    stopWxCheck()
-    // 获取Code并添加账号
-    const codeResult = await wxLoginStore.getFarmCode()
-    if (codeResult.success && codeResult.code) {
-      const name = wxAccountName.value.trim() || result.nickname || `微信账号${Date.now()}`
-      // 检查是否启用自动添加账号
-      if (wxLoginStore.config.autoAddAccount) {
-        await addAccount({
-          id: props.editData?.id,
-          name: props.editData ? (props.editData.name || name) : name,
-          code: codeResult.code,
-          platform: 'wx',
-          loginType: 'wx_qr',
-          wxid: result.wxid,
-        })
-      }
-      else {
-        // 不自动添加，只显示 code 让用户手动复制
-        form.code = codeResult.code
-        form.platform = 'wx'
-        activeTab.value = 'manual'
-      }
-    }
-  }
-}, 2000, { immediate: false })
-
-// 获取微信二维码
-async function loadWxQRCode() {
-  if (activeTab.value !== 'wx')
-    return
-  wxLoginStore.resetState()
-  const success = await wxLoginStore.getQRCode()
-  if (success) {
-    startWxCheck()
-  }
-}
 
 // 添加账号
 async function addAccount(data: any) {
@@ -143,20 +90,7 @@ async function submitManual() {
   await addAccount(payload)
 }
 
-// 微信二维码图片
-const wxQrImageSrc = computed(() => {
-  if (!wxLoginStore.qrCode)
-    return ''
-  if (wxLoginStore.qrCode.startsWith('data:'))
-    return wxLoginStore.qrCode
-  if (wxLoginStore.qrCode.startsWith('http'))
-    return wxLoginStore.qrCode
-  return `data:image/png;base64,${wxLoginStore.qrCode}`
-})
-
 function close() {
-  stopWxCheck()
-  wxLoginStore.resetState()
   emit('close')
 }
 
@@ -164,29 +98,15 @@ watch(() => props.show, (newVal) => {
   if (newVal) {
     errorMessage.value = ''
     if (props.editData) {
-      activeTab.value = 'manual'
       form.name = props.editData.name || ''
       form.code = props.editData.code || ''
       form.platform = props.editData.platform || 'qq'
-      wxAccountName.value = props.editData.name || ''
     }
     else {
-      activeTab.value = 'manual'
       form.name = ''
       form.code = ''
       form.platform = 'qq'
-      wxAccountName.value = ''
     }
-  }
-  else {
-    stopWxCheck()
-    wxLoginStore.resetState()
-  }
-})
-
-watch(activeTab, (tab) => {
-  if (tab === 'wx') {
-    loadWxQRCode()
   }
 })
 </script>
@@ -210,79 +130,7 @@ watch(activeTab, (tab) => {
           {{ errorMessage }}
         </div>
 
-        <!-- Tabs -->
-        <div class="mb-4 flex" style="border-bottom: 1px solid color-mix(in srgb, var(--theme-text) 10%, transparent)">
-          <button
-            class="flex-1 py-2 text-center text-sm font-medium transition-colors"
-            :class="activeTab === 'manual' ? 'border-b-2' : 'opacity-60'"
-            :style="{
-              color: activeTab === 'manual' ? 'var(--theme-primary)' : 'var(--theme-text)',
-              borderColor: 'var(--theme-primary)',
-            }"
-            @click="activeTab = 'manual'"
-          >
-            手动填码
-          </button>
-          <button
-            v-if="wxLoginStore.config.enabled"
-            class="flex-1 py-2 text-center text-sm font-medium transition-colors"
-            :class="activeTab === 'wx' ? 'border-b-2' : 'opacity-60'"
-            :style="{
-              color: activeTab === 'wx' ? 'var(--theme-primary)' : 'var(--theme-text)',
-              borderColor: 'var(--theme-primary)',
-            }"
-            @click="activeTab = 'wx'"
-          >
-            微信扫码
-          </button>
-        </div>
-
-        <!-- 微信扫码 Tab -->
-        <div v-if="activeTab === 'wx'" class="space-y-4">
-          <BaseInput
-            v-model="wxAccountName"
-            label="账号备注（可选）"
-            placeholder="留空使用微信昵称"
-            class="farm-input"
-          />
-
-          <div class="flex flex-col items-center justify-center py-4 space-y-4">
-            <div
-              v-if="wxQrImageSrc"
-              class="rounded-xl p-2"
-              style="border: 2px solid color-mix(in srgb, var(--theme-text) 15%, transparent); background: #fff"
-            >
-              <img :src="wxQrImageSrc" class="h-48 w-48">
-            </div>
-            <div
-              v-else
-              class="h-48 w-48 flex items-center justify-center rounded-xl"
-              :style="{ background: 'color-mix(in srgb, var(--theme-bg) 90%, var(--theme-text))' }"
-            >
-              <div v-if="wxLoginStore.isLoading" i-svg-spinners-90-ring-with-bg class="text-3xl" :style="{ color: 'var(--theme-primary)' }" />
-              <span v-else class="text-sm" :style="{ color: 'var(--theme-text)' }">点击获取二维码</span>
-            </div>
-
-            <p class="text-center text-sm" :style="{ color: 'var(--theme-text)' }">
-              {{ wxLoginStore.statusMessage }}
-            </p>
-
-            <p v-if="wxLoginStore.errorMessage" class="text-center text-sm text-red-600">
-              {{ wxLoginStore.errorMessage }}
-            </p>
-
-            <BaseButton variant="secondary" class="cartoon-btn" size="sm" :loading="wxLoginStore.isLoading" @click="loadWxQRCode">
-              刷新二维码
-            </BaseButton>
-          </div>
-
-          <div class="text-center text-xs opacity-60" :style="{ color: 'var(--theme-text)' }">
-            使用微信扫描二维码登录，登录成功后将自动添加账号
-          </div>
-        </div>
-
-        <!-- 手动填码 Tab -->
-        <div v-if="activeTab === 'manual'" class="space-y-4">
+        <div class="space-y-4">
           <BaseInput
             v-model="form.name"
             label="账号备注（可选）"

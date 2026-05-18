@@ -107,16 +107,6 @@ export interface SystemConfig {
   deviceInfo: DeviceInfo;
 }
 
-export interface WxConfig {
-  enabled: boolean;
-  apiBase: string;
-  apiKey: string;
-  proxyApiUrl: string;
-  appId: string;
-  autoAddAccount: boolean;
-  userIsolation: boolean;
-}
-
 export interface Announcement {
   content: string;
   showOnce: boolean;
@@ -133,5 +123,4 @@ export interface GlobalConfig {
   announcement: Announcement;
   announcementReadRecords: Record<string, number>;
   systemConfig: SystemConfig | null;
-  globalWxConfig: WxConfig | null;
 }

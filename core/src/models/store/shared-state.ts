@@ -3,6 +3,7 @@ import type { AccountConfig, PlantingStrategy, BagSeedFallbackStrategy, Fertiliz
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { DEFAULT_CLIENT_VERSION } = require('../../config/config');
 const { getDataFile, ensureDataDir } = require('../../config/runtime-paths');
 const { readTextFile, readJsonFile, writeJsonFileAtomic } = require('../../services/json-db');
 
@@ -386,7 +387,6 @@ const globalConfig: GlobalConfig = {
     },
     announcementReadRecords: {},
     systemConfig: null,
-    globalWxConfig: null,
 };
 
 function resolveAccountId(accountId: unknown): string {
@@ -453,7 +453,7 @@ function loadGlobalConfig(): void {
                 const srcDevice = (data.systemConfig.deviceInfo && typeof data.systemConfig.deviceInfo === 'object')
                     ? data.systemConfig.deviceInfo : {};
                 const deviceOs = String(srcDevice.os || data.systemConfig.os || 'Windows').trim();
-                const deviceClientVersion = String(srcDevice.clientVersion || data.systemConfig.clientVersion || '1.11.1.7_20260425').trim();
+                const deviceClientVersion = String(srcDevice.clientVersion || data.systemConfig.clientVersion || DEFAULT_CLIENT_VERSION).trim();
                 globalConfig.systemConfig = {
                     serverUrl: String(data.systemConfig.serverUrl || '').trim(),
                     clientVersion: deviceClientVersion,
@@ -468,18 +468,6 @@ function loadGlobalConfig(): void {
                         deviceId: String(srcDevice.deviceId || 'DESKTOP-PC<WPC>').trim(),
                         userAgent: String(srcDevice.userAgent || '').trim(),
                     },
-                };
-            }
-
-            if (data.globalWxConfig && typeof data.globalWxConfig === 'object') {
-                globalConfig.globalWxConfig = {
-                    enabled: data.globalWxConfig.enabled !== false,
-                    apiBase: String(data.globalWxConfig.apiBase || 'http://127.0.0.1:8059/api').trim(),
-                    apiKey: String(data.globalWxConfig.apiKey || '').trim(),
-                    proxyApiUrl: String(data.globalWxConfig.proxyApiUrl || 'http://127.0.0.1:8059/api').trim(),
-                    appId: String(data.globalWxConfig.appId || 'wx5306c5978fdb76e4').trim(),
-                    autoAddAccount: data.globalWxConfig.autoAddAccount !== false,
-                    userIsolation: data.globalWxConfig.userIsolation !== false,
                 };
             }
         }

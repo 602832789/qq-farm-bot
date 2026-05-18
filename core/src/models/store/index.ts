@@ -65,9 +65,4 @@ module.exports = {
     // System config
     getSystemConfig: globalConfig.getSystemConfig,
     setSystemConfig: globalConfig.setSystemConfig,
-
-    // WeChat config
-    getGlobalWxConfig: globalConfig.getGlobalWxConfig,
-    setGlobalWxConfig: globalConfig.setGlobalWxConfig,
-    DEFAULT_WX_CONFIG: globalConfig.DEFAULT_WX_CONFIG,
 };

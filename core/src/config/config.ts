@@ -38,6 +38,9 @@ interface RuntimeConfig extends SystemConfig {
 
 // ============ 设备预设 ============
 
+// clientVersion 从 CONFIG.clientVersion 动态获取，不写死在预设中
+const DEFAULT_CLIENT_VERSION = '1.11.3.11_20260508';
+
 const DEVICE_PRESETS: DevicePreset[] = [
     {
         id: 'windows_pc',
@@ -45,7 +48,7 @@ const DEVICE_PRESETS: DevicePreset[] = [
         description: 'Windows 微信PC客户端',
         deviceInfo: {
             os: 'Windows',
-            clientVersion: '1.11.1.7_20260425',
+            clientVersion: '',
             sysSoftware: 'Windows 10',
             network: 'wifi',
             memory: '16384',
@@ -59,7 +62,7 @@ const DEVICE_PRESETS: DevicePreset[] = [
         description: 'iPhone 15 Pro (iOS 17)',
         deviceInfo: {
             os: 'iOS',
-            clientVersion: '1.11.1.7_20260425',
+            clientVersion: '',
             sysSoftware: 'iOS 17.4.1',
             network: 'wifi',
             memory: '7672',
@@ -73,7 +76,7 @@ const DEVICE_PRESETS: DevicePreset[] = [
         description: 'iPhone 16 Pro (iOS 18)',
         deviceInfo: {
             os: 'iOS',
-            clientVersion: '1.11.1.7_20260425',
+            clientVersion: '',
             sysSoftware: 'iOS 18.2.1',
             network: 'wifi',
             memory: '8192',
@@ -87,7 +90,7 @@ const DEVICE_PRESETS: DevicePreset[] = [
         description: '小米/Redmi (Android 14)',
         deviceInfo: {
             os: 'Android',
-            clientVersion: '1.11.1.7_20260425',
+            clientVersion: '',
             sysSoftware: 'Android 14',
             network: 'wifi',
             memory: '8192',
@@ -101,7 +104,7 @@ const DEVICE_PRESETS: DevicePreset[] = [
         description: '华为 (Android 14)',
         deviceInfo: {
             os: 'Android',
-            clientVersion: '1.11.1.7_20260425',
+            clientVersion: '',
             sysSoftware: 'Android 14',
             network: 'wifi',
             memory: '12288',
@@ -115,7 +118,7 @@ const DEVICE_PRESETS: DevicePreset[] = [
         description: 'iPad Pro 12.9 (iPadOS 17)',
         deviceInfo: {
             os: 'iOS',
-            clientVersion: '1.11.1.7_20260425',
+            clientVersion: '',
             sysSoftware: 'iPadOS 17.4',
             network: 'wifi',
             memory: '16384',
@@ -125,11 +128,11 @@ const DEVICE_PRESETS: DevicePreset[] = [
     },
 ];
 
-const DEFAULT_DEVICE_INFO: DeviceInfo = DEVICE_PRESETS[0].deviceInfo; // windows_pc
+const DEFAULT_DEVICE_INFO: DeviceInfo = { ...DEVICE_PRESETS[0].deviceInfo, clientVersion: DEFAULT_CLIENT_VERSION };
 
 const DEFAULT_SYSTEM_CONFIG: SystemConfig = {
     serverUrl: 'wss://gate-obt.nqf.qq.com/prod/ws',
-    clientVersion: DEFAULT_DEVICE_INFO.clientVersion,
+    clientVersion: DEFAULT_CLIENT_VERSION,
     platform: 'qq',
     os: DEFAULT_DEVICE_INFO.os,
     deviceInfo: { ...DEFAULT_DEVICE_INFO },
@@ -137,7 +140,7 @@ const DEFAULT_SYSTEM_CONFIG: SystemConfig = {
 
 const CONFIG: RuntimeConfig = {
     serverUrl: DEFAULT_SYSTEM_CONFIG.serverUrl,
-    clientVersion: DEFAULT_SYSTEM_CONFIG.clientVersion,
+    clientVersion: DEFAULT_CLIENT_VERSION,
     platform: DEFAULT_SYSTEM_CONFIG.platform,
     os: DEFAULT_SYSTEM_CONFIG.os,
     deviceInfo: { ...DEFAULT_DEVICE_INFO },
@@ -156,7 +159,7 @@ function normalizeDeviceInfo(input: any): DeviceInfo {
     const src = (input && typeof input === 'object') ? input : {};
     return {
         os: String(src.os || DEFAULT_DEVICE_INFO.os).trim(),
-        clientVersion: String(src.clientVersion || DEFAULT_DEVICE_INFO.clientVersion).trim(),
+        clientVersion: String(src.clientVersion || CONFIG.clientVersion || DEFAULT_CLIENT_VERSION).trim(),
         sysSoftware: String(src.sysSoftware || DEFAULT_DEVICE_INFO.sysSoftware).trim(),
         network: String(src.network || DEFAULT_DEVICE_INFO.network).trim(),
         memory: String(src.memory || DEFAULT_DEVICE_INFO.memory).trim(),
@@ -203,7 +206,7 @@ function getDefaultSystemConfig(): SystemConfig {
 function getDevicePresets(): DevicePreset[] {
     return DEVICE_PRESETS.map(p => ({
         ...p,
-        deviceInfo: { ...p.deviceInfo },
+        deviceInfo: { ...p.deviceInfo, clientVersion: CONFIG.clientVersion },
     }));
 }
 
@@ -223,6 +226,7 @@ const PHASE_NAMES: string[] = ['未知', '种子', '发芽', '小叶', '大叶',
 
 module.exports = {
     CONFIG,
+    DEFAULT_CLIENT_VERSION,
     PlantPhase,
     PHASE_NAMES,
     updateRuntimeConfig,

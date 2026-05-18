@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package gamepb.bulletinboardpb;
+
+// ============ 公告信息 ============
+message BulletinItem {
+    int64 id = 1;
+    string title = 2;
+    int64 status = 3;       // 1=已读
+    // field 4 reserved
+    int64 type = 5;         // 类型
+}
+
+// ============ 请求/回复 ============
+message GetBulletinListRequest {
+    int64 count = 1;        // 获取数量
+}
+
+message GetBulletinListReply {
+    repeated BulletinItem bulletins = 1;
+}
+
+// ============ 通知 ============
+message BulletinListChangedNTF {
+    repeated BulletinItem bulletins = 1;
+}
