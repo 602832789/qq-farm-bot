@@ -9,7 +9,7 @@ const { getUserState, networkEvents } = require('../../utils/network');
 const { toNum, log, logWarn, randomDelay } = require('../../utils/utils');
 const { createScheduler } = require('../scheduler');
 const { recordOperation } = require('../stats');
-const { getAllLands, harvest, waterLand, weedOut, insecticide, unlockLand, upgradeLand } = require('./api');
+const { getAllLands, harvest, farming, unlockLand, upgradeLand } = require('./api');
 const { analyzeLands, resolveRemovableHarvestedLands } = require('./land-analysis');
 const { autoPlantEmptyLands, runFertilizerByConfig } = require('./planting');
 const { checkAndBuyFertilizerBoth } = require('../mall');
@@ -64,8 +64,8 @@ async function runFarmOperation(opType: string): Promise<{ hadWork: boolean; act
     // 摘要
     const statusParts: string[] = [];
     if (status.harvestable.length) statusParts.push(`收:${status.harvestable.length}`);
-    if (status.needWeed.length) statusParts.push(`草:${status.needWeed.length}`);
-    if (status.needBug.length) statusParts.push(`虫:${status.needBug.length}`);
+    const farmingCount = new Set([...status.needWeed, ...status.needBug]).size;
+    if (farmingCount > 0) statusParts.push(`农:${farmingCount}`);
     if (status.needWater.length) statusParts.push(`水:${status.needWater.length}`);
     if (status.dead.length) statusParts.push(`枯:${status.dead.length}`);
     if (status.empty.length) statusParts.push(`空:${status.empty.length}`);
@@ -75,35 +75,22 @@ async function runFarmOperation(opType: string): Promise<{ hadWork: boolean; act
 
     const actions: string[] = [];
 
-    // 执行除草/虫/水 - 串行执行以降低并发压力
+    // 执行一键务农 (除草+除虫+浇水) - 串行执行以降低并发压力
     if (opType === 'all' || opType === 'clear') {
         // 检查是否跳过自己农场的草虫（仅自动模式生效，手动clear不受影响）
         const skipOwnWeedBug = opType === 'all' && isAutomationOn('skip_own_weed_bug');
-        if (status.needWeed.length > 0 && !skipOwnWeedBug) {
+        const farmingLandIds = [...new Set([...status.needWeed, ...status.needBug, ...status.needWater])];
+        if (farmingLandIds.length > 0) {
             try {
-                await weedOut(status.needWeed);
-                actions.push(`除草${status.needWeed.length}`);
-                recordOperation('weed', status.needWeed.length);
+                await farming(farmingLandIds);
+                const parts: string[] = [];
+                if (status.needWeed.length) parts.push(`草${status.needWeed.length}`);
+                if (status.needBug.length) parts.push(`虫${status.needBug.length}`);
+                if (status.needWater.length) parts.push(`水${status.needWater.length}`);
+                actions.push(`一键务农${parts.join('/')}`);
+                recordOperation('farming', farmingLandIds.length);
             } catch (e: any) {
-                logWarn('除草', e.message);
-            }
-        }
-        if (status.needBug.length > 0 && !skipOwnWeedBug) {
-            try {
-                await insecticide(status.needBug);
-                actions.push(`除虫${status.needBug.length}`);
-                recordOperation('bug', status.needBug.length);
-            } catch (e: any) {
-                logWarn('除虫', e.message);
-            }
-        }
-        if (status.needWater.length > 0) {
-            try {
-                await waterLand(status.needWater);
-                actions.push(`浇水${status.needWater.length}`);
-                recordOperation('water', status.needWater.length);
-            } catch (e: any) {
-                logWarn('浇水', e.message);
+                logWarn('一键务农', e.message);
             }
         }
     }

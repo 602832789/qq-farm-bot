@@ -286,15 +286,11 @@ function formatLogTime(timeStr: string) {
 
 const OP_META: Record<string, { label: string, icon: string, color: string }> = {
   harvest: { label: '收获', icon: '🌾', color: 'text-green-500' },
-  water: { label: '浇水', icon: '💧', color: 'text-blue-400' },
-  weed: { label: '除草', icon: '🌿', color: 'text-yellow-500' },
-  bug: { label: '除虫', icon: '🐛', color: 'text-red-400' },
+  farming: { label: '一键务农', icon: '🧑‍🌾', color: 'text-yellow-500' },
   fertilize: { label: '施肥', icon: '🧪', color: 'text-emerald-500' },
   plant: { label: '种植', icon: '🌱', color: 'text-lime-500' },
   steal: { label: '偷菜', icon: '🏃', color: 'text-orange-500' },
-  helpWater: { label: '帮浇水', icon: '💧', color: 'text-blue-300' },
-  helpWeed: { label: '帮除草', icon: '🌿', color: 'text-yellow-400' },
-  helpBug: { label: '帮除虫', icon: '🐛', color: 'text-red-300' },
+  helpFarming: { label: '帮务农', icon: '🧑‍🌾', color: 'text-yellow-400' },
   taskClaim: { label: '任务', icon: '✅', color: 'text-indigo-500' },
   sell: { label: '出售', icon: '💰', color: 'text-pink-500' },
 }

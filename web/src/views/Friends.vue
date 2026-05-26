@@ -273,9 +273,7 @@ async function handleOp(friendId: string, type: string, e: Event) {
 
   const opNames: Record<string, string> = {
     steal: '偷取',
-    water: '浇水',
-    weed: '除草',
-    bug: '除虫',
+    farming: '一键务农',
     bad: '捣乱',
   }
 
@@ -771,22 +769,10 @@ async function handleBatchAddKnownFriendGids() {
                   偷取
                 </button>
                 <button
-                  class="cartoon-btn rounded-xl bg-cyan-100 px-3 py-2 text-sm text-cyan-700 transition hover:bg-cyan-200"
-                  @click="handleOp(friend.gid, 'water', $event)"
-                >
-                  浇水
-                </button>
-                <button
                   class="cartoon-btn rounded-xl bg-green-100 px-3 py-2 text-sm text-green-700 transition hover:bg-green-200"
-                  @click="handleOp(friend.gid, 'weed', $event)"
+                  @click="handleOp(friend.gid, 'farming', $event)"
                 >
-                  除草
-                </button>
-                <button
-                  class="cartoon-btn rounded-xl bg-orange-100 px-3 py-2 text-sm text-orange-700 transition hover:bg-orange-200"
-                  @click="handleOp(friend.gid, 'bug', $event)"
-                >
-                  除虫
+                  一键务农
                 </button>
                 <button
                   class="cartoon-btn rounded-xl bg-red-100 px-3 py-2 text-sm text-red-700 transition hover:bg-red-200"

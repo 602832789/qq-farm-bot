@@ -108,25 +108,22 @@ export async function helpWater(friendGid: number, landIds: number[], stopWhenEx
     return reply;
 }
 
-export async function helpWeed(friendGid: number, landIds: number[], stopWhenExpLimit: boolean = false): Promise<any> {
+export async function helpFarming(friendGid: number, landIds: number[], stopWhenExpLimit: boolean = false): Promise<any> {
     const beforeExp: number = toNum((getUserState() || {}).exp);
-    const body: Uint8Array = types.WeedOutRequest.encode(types.WeedOutRequest.create({
+    const body: Uint8Array = types.FarmingRequest.encode(types.FarmingRequest.create({
         land_ids: landIds,
         host_gid: toLong(friendGid),
     })).finish();
 
     let reply: any;
     try {
-        const { body: replyBody } = await sendMsgAsync('gamepb.plantpb.PlantService', 'WeedOut', body);
-        reply = types.WeedOutReply.decode(replyBody);
+        const { body: replyBody } = await sendMsgAsync('gamepb.plantpb.PlantService', 'Farming', body);
+        reply = types.FarmingReply.decode(replyBody);
     } catch (e: any) {
-        // 服务端Bug: WeedOut请求被处理(发放经验)但不返回WeedOutReply,只发送ItemNotify
-        // 通过检查经验是否增加来判断操作是否成功
         if (e.message && e.message.includes('请求超时')) {
             await sleep(300);
             const afterExp: number = toNum((getUserState() || {}).exp);
             if (afterExp > beforeExp) {
-                // 经验增加了,说明操作成功,返回空reply
                 reply = { operation_limits: [] };
             } else {
                 throw e;
@@ -136,23 +133,6 @@ export async function helpWeed(friendGid: number, landIds: number[], stopWhenExp
         }
     }
 
-    schedulerRef().updateOperationLimits(reply.operation_limits);
-    if (stopWhenExpLimit) {
-        await sleep(200);
-        const afterExp: number = toNum((getUserState() || {}).exp);
-        if (afterExp <= beforeExp) schedulerRef().autoDisableHelpByExpLimit();
-    }
-    return reply;
-}
-
-export async function helpInsecticide(friendGid: number, landIds: number[], stopWhenExpLimit: boolean = false): Promise<any> {
-    const beforeExp: number = toNum((getUserState() || {}).exp);
-    const body: Uint8Array = types.InsecticideRequest.encode(types.InsecticideRequest.create({
-        land_ids: landIds,
-        host_gid: toLong(friendGid),
-    })).finish();
-    const { body: replyBody } = await sendMsgAsync('gamepb.plantpb.PlantService', 'Insecticide', body);
-    const reply: any = types.InsecticideReply.decode(replyBody);
     schedulerRef().updateOperationLimits(reply.operation_limits);
     if (stopWhenExpLimit) {
         await sleep(200);
@@ -175,57 +155,42 @@ export async function stealHarvest(friendGid: number, landIds: number[]): Promis
 }
 
 export async function putPlantItems(friendGid: number, landIds: number[], RequestType: any, ReplyType: any, method: string): Promise<number> {
-    let ok: number = 0;
     const ids: number[] = Array.isArray(landIds) ? landIds : [];
-    for (const landId of ids) {
-        try {
-            const body: Uint8Array = RequestType.encode(RequestType.create({
-                land_ids: [toLong(landId)],
-                host_gid: toLong(friendGid),
-            })).finish();
-            const { body: replyBody } = await sendMsgAsync('gamepb.plantpb.PlantService', method, body);
-            const reply: any = ReplyType.decode(replyBody);
-            schedulerRef().updateOperationLimits(reply.operation_limits);
-            ok++;
-        } catch (e: any) {
-            // 检查是否是次数已达上限的错误
-            if (e.message && e.message.includes('1001046')) {
-                log('好友', `放虫/放草次数已达上限，停止执行`, { module: 'friend', event: '放虫放草次数上限' });
-                break; // 次数用完，立即停止
-            }
-            // 记录其他错误
-            log('好友', `放虫/放草失败: landId=${landId}, 错误: ${e.message}`, { module: 'friend', event: '放虫放草失败', landId, error: e.message });
-            await randomDelay(2000, 3500);
+    if (ids.length === 0) return 0;
+    try {
+        const body: Uint8Array = RequestType.encode(RequestType.create({
+            land_ids: ids.map((id: number) => toLong(id)),
+            host_gid: toLong(friendGid),
+        })).finish();
+        const { body: replyBody } = await sendMsgAsync('gamepb.plantpb.PlantService', method, body);
+        const reply: any = ReplyType.decode(replyBody);
+        schedulerRef().updateOperationLimits(reply.operation_limits);
+        return ids.length;
+    } catch (e: any) {
+        if (e.message && e.message.includes('1001046')) {
+            log('好友', `放虫/放草次数已达上限`, { module: 'friend', event: '放虫放草次数上限' });
+        } else {
+            log('好友', `放虫/放草失败: ${e.message}`, { module: 'friend', event: '放虫放草失败', error: e.message });
         }
-        if (ok > 0) {
-            await randomDelay(2000, 3500);
-        }
+        return 0;
     }
-    return ok;
 }
 
 export async function putPlantItemsDetailed(friendGid: number, landIds: number[], RequestType: any, ReplyType: any, method: string): Promise<{ ok: number; failed: any[] }> {
-    let ok: number = 0;
-    const failed: any[] = [];
     const ids: number[] = Array.isArray(landIds) ? landIds : [];
-    for (const landId of ids) {
-        try {
-            const body: Uint8Array = RequestType.encode(RequestType.create({
-                land_ids: [toLong(landId)],
-                host_gid: toLong(friendGid),
-            })).finish();
-            const { body: replyBody } = await sendMsgAsync('gamepb.plantpb.PlantService', method, body);
-            const reply: any = ReplyType.decode(replyBody);
-            schedulerRef().updateOperationLimits(reply.operation_limits);
-            ok++;
-        } catch (e: any) {
-            failed.push({ landId, reason: e && e.message ? e.message : '未知错误' });
-        }
-        if (ok > 0) {
-            await randomDelay(2000, 3500);
-        }
+    if (ids.length === 0) return { ok: 0, failed: [] };
+    try {
+        const body: Uint8Array = RequestType.encode(RequestType.create({
+            land_ids: ids.map((id: number) => toLong(id)),
+            host_gid: toLong(friendGid),
+        })).finish();
+        const { body: replyBody } = await sendMsgAsync('gamepb.plantpb.PlantService', method, body);
+        const reply: any = ReplyType.decode(replyBody);
+        schedulerRef().updateOperationLimits(reply.operation_limits);
+        return { ok: ids.length, failed: [] };
+    } catch (e: any) {
+        return { ok: 0, failed: ids.map((id: number) => ({ landId: id, reason: e && e.message ? e.message : '未知错误' })) };
     }
-    return { ok, failed };
 }
 
 export async function putInsects(friendGid: number, landIds: number[]): Promise<number> {

@@ -20,9 +20,7 @@ const {
     getAllFriends,
     enterFriendFarm,
     leaveFriendFarm,
-    helpWater,
-    helpWeed,
-    helpInsecticide,
+    helpFarming,
     stealHarvest,
     putInsects,
     putWeeds,
@@ -532,31 +530,18 @@ export async function doFriendOperation(friendGid: any, opType: string): Promise
             return { ok: true, opType, count, message: `偷取完成 ${count} 块` };
         }
 
-        if (opType === 'water') {
-            if (!status.needWater.length) return { ok: true, opType, count: 0, message: '没有可浇水土地' };
+        if (opType === 'farming' || opType === 'water' || opType === 'weed' || opType === 'bug') {
+            const landIds: number[] = opType === 'farming'
+                ? [...new Set([...status.needWeed, ...status.needBug, ...status.needWater])]
+                : opType === 'water' ? status.needWater
+                : opType === 'weed' ? status.needWeed
+                : status.needBug;
+            if (!landIds.length) return { ok: true, opType, count: 0, message: '没有需要照顾的土地' };
             const precheck: { canOperate: boolean; canStealNum: number } = await checkCanOperateRemote(gid, 10001);
-            if (!precheck.canOperate) return { ok: true, opType, count: 0, message: '浇水失败，来晚一步，可惜' };
-            count = await runBatchWithFallback(status.needWater, (ids: number[]) => helpWater(gid, ids), (ids: number[]) => helpWater(gid, ids));
-            if (count > 0) recordOperation('helpWater', count);
-            return { ok: true, opType, count, message: `浇水完成 ${count} 块` };
-        }
-
-        if (opType === 'weed') {
-            if (!status.needWeed.length) return { ok: true, opType, count: 0, message: '没有可除草土地' };
-            const precheck: { canOperate: boolean; canStealNum: number } = await checkCanOperateRemote(gid, 10003);
-            if (!precheck.canOperate) return { ok: true, opType, count: 0, message: '除草失败，来晚一步，可惜' };
-            count = await runBatchWithFallback(status.needWeed, (ids: number[]) => helpWeed(gid, ids), (ids: number[]) => helpWeed(gid, ids));
-            if (count > 0) recordOperation('helpWeed', count);
-            return { ok: true, opType, count, message: `除草完成 ${count} 块` };
-        }
-
-        if (opType === 'bug') {
-            if (!status.needBug.length) return { ok: true, opType, count: 0, message: '没有可除虫土地' };
-            const precheck: { canOperate: boolean; canStealNum: number } = await checkCanOperateRemote(gid, 10002);
-            if (!precheck.canOperate) return { ok: true, opType, count: 0, message: '除虫失败，来晚一步，可惜' };
-            count = await runBatchWithFallback(status.needBug, (ids: number[]) => helpInsecticide(gid, ids), (ids: number[]) => helpInsecticide(gid, ids));
-            if (count > 0) recordOperation('helpBug', count);
-            return { ok: true, opType, count, message: `除虫完成 ${count} 块` };
+            if (!precheck.canOperate) return { ok: true, opType, count: 0, message: '一键务农失败，来晚一步，可惜' };
+            count = await runBatchWithFallback(landIds, (ids: number[]) => helpFarming(gid, ids), (ids: number[]) => helpFarming(gid, ids));
+            if (count > 0) recordOperation('helpFarming', count);
+            return { ok: true, opType, count, message: `一键务农完成 ${count} 块` };
         }
 
         if (opType === 'bad') {
@@ -651,28 +636,25 @@ export async function visitFriend(friend: any, totalActions: any, myGid: number,
     } else if (stopWhenExpLimit && !schedulerRef().getCanGetHelpExp()) {
         // 今日已达到经验上限后停止帮忙
     } else {
-        const helpOps: any[] = [
-            { id: 10003, expIds: [10003, 10006], list: status.needWeed, fn: helpWeed, key: 'weed', name: '草', record: 'helpWeed' },
-            { id: 10002, expIds: [10002, 10005], list: status.needBug, fn: helpInsecticide, key: 'bug', name: '虫', record: 'helpBug' },
-            { id: 10001, expIds: [10001, 10004], list: status.needWater, fn: helpWater, key: 'water', name: '水', record: 'helpWater' }
-        ];
-
-        for (const op of helpOps) {
-            const allowByExp: boolean = (!stopWhenExpLimit) || (schedulerRef().canGetExpByCandidates(op.expIds) && schedulerRef().getCanGetHelpExp());
-            if (op.list.length > 0 && allowByExp) {
-                const precheck: { canOperate: boolean; canStealNum: number } = await checkCanOperateRemote(gid, op.id);
-                if (precheck.canOperate) {
-                    const count: number = await runBatchWithFallback(
-                        op.list,
-                        (ids: number[]) => op.fn(gid, ids, stopWhenExpLimit),
-                        (ids: number[]) => op.fn(gid, ids, stopWhenExpLimit)
-                    );
-                    if (count > 0) {
-                        actions.push(`${op.name}${count}`);
-                        totalActions[op.key] += count;
-                        recordOperation(op.record, count);
-                        await randomDelay(500, 800);
-                    }
+        const allHelpLandIds: number[] = [...new Set([...status.needWeed, ...status.needBug, ...status.needWater])];
+        const allExpIds: number[] = [10001, 10002, 10003, 10004, 10005, 10006];
+        const allowByExp: boolean = (!stopWhenExpLimit) || (schedulerRef().canGetExpByCandidates(allExpIds) && schedulerRef().getCanGetHelpExp());
+        if (allHelpLandIds.length > 0 && allowByExp) {
+            const precheck: { canOperate: boolean; canStealNum: number } = await checkCanOperateRemote(gid, 10001);
+            if (precheck.canOperate) {
+                const count: number = await runBatchWithFallback(
+                    allHelpLandIds,
+                    (ids: number[]) => helpFarming(gid, ids, stopWhenExpLimit),
+                    (ids: number[]) => helpFarming(gid, ids, stopWhenExpLimit)
+                );
+                if (count > 0) {
+                    const parts: string[] = [];
+                    if (status.needWeed.length) parts.push(`草${status.needWeed.length}`);
+                    if (status.needBug.length) parts.push(`虫${status.needBug.length}`);
+                    if (status.needWater.length) parts.push(`水${status.needWater.length}`);
+                    actions.push(`一键务农${count}(${parts.join('/')})`);
+                    totalActions.farming += count;
+                    recordOperation('helpFarming', count);
                 }
             }
         }
@@ -731,7 +713,7 @@ export async function visitFriend(friend: any, totalActions: any, myGid: number,
             const toProcess: number[] = status.canPutBug.slice(0, remaining);
             const ok: number = await putInsects(gid, toProcess);
             if (ok > 0) { actions.push(`放虫${ok}`); totalActions.putBug += ok; }
-            await randomDelay(2000, 3500);
+            await randomDelay(500, 800);
         }
 
         if (status.canPutWeed.length > 0 && weedCheck.canOperate) {
@@ -739,7 +721,7 @@ export async function visitFriend(friend: any, totalActions: any, myGid: number,
             const toProcess: number[] = status.canPutWeed.slice(0, remaining);
             const ok: number = await putWeeds(gid, toProcess);
             if (ok > 0) { actions.push(`放草${ok}`); totalActions.putWeed += ok; }
-            await randomDelay(2000, 3500);
+            await randomDelay(500, 800);
         }
     }
 
@@ -892,28 +874,25 @@ export async function visitFriendForHelp(friend: any, totalActions: any, myGid: 
 
     const actions: string[] = [];
 
-    const helpOps: any[] = [
-        { id: 10003, expIds: [10003, 10006], list: status.needWeed, fn: helpWeed, key: 'weed', name: '草', record: 'helpWeed' },
-        { id: 10002, expIds: [10002, 10005], list: status.needBug, fn: helpInsecticide, key: 'bug', name: '虫', record: 'helpBug' },
-        { id: 10001, expIds: [10001, 10004], list: status.needWater, fn: helpWater, key: 'water', name: '水', record: 'helpWater' }
-    ];
-
-    for (const op of helpOps) {
-        const allowByExp: boolean = (!stopWhenExpLimit) || (schedulerRef().canGetExpByCandidates(op.expIds) && schedulerRef().getCanGetHelpExp());
-        if (op.list.length > 0 && allowByExp) {
-            const precheck: { canOperate: boolean; canStealNum: number } = await checkCanOperateRemote(gid, op.id);
-            if (precheck.canOperate) {
-                const count: number = await runBatchWithFallback(
-                    op.list,
-                    (ids: number[]) => op.fn(gid, ids, stopWhenExpLimit),
-                    (ids: number[]) => op.fn(gid, ids, stopWhenExpLimit)
-                );
-                if (count > 0) {
-                    actions.push(`${op.name}${count}`);
-                    totalActions[op.key] += count;
-                    recordOperation(op.record, count);
-                    await randomDelay(500, 800);
-                }
+    const allHelpLandIds: number[] = [...new Set([...status.needWeed, ...status.needBug, ...status.needWater])];
+    const allExpIds: number[] = [10001, 10002, 10003, 10004, 10005, 10006];
+    const allowByExp: boolean = (!stopWhenExpLimit) || (schedulerRef().canGetExpByCandidates(allExpIds) && schedulerRef().getCanGetHelpExp());
+    if (allHelpLandIds.length > 0 && allowByExp) {
+        const precheck: { canOperate: boolean; canStealNum: number } = await checkCanOperateRemote(gid, 10001);
+        if (precheck.canOperate) {
+            const count: number = await runBatchWithFallback(
+                allHelpLandIds,
+                (ids: number[]) => helpFarming(gid, ids, stopWhenExpLimit),
+                (ids: number[]) => helpFarming(gid, ids, stopWhenExpLimit)
+            );
+            if (count > 0) {
+                const parts: string[] = [];
+                if (status.needWeed.length) parts.push(`草${status.needWeed.length}`);
+                if (status.needBug.length) parts.push(`虫${status.needBug.length}`);
+                if (status.needWater.length) parts.push(`水${status.needWater.length}`);
+                actions.push(`一键务农${count}(${parts.join('/')})`);
+                totalActions.farming += count;
+                recordOperation('helpFarming', count);
             }
         }
     }

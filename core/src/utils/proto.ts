@@ -80,6 +80,8 @@ async function loadProto(): Promise<void> {
     types.WeedOutReply = root.lookupType('gamepb.plantpb.WeedOutReply');
     types.InsecticideRequest = root.lookupType('gamepb.plantpb.InsecticideRequest');
     types.InsecticideReply = root.lookupType('gamepb.plantpb.InsecticideReply');
+    types.FarmingRequest = root.lookupType('gamepb.plantpb.FarmingRequest');
+    types.FarmingReply = root.lookupType('gamepb.plantpb.FarmingReply');
     types.RemovePlantRequest = root.lookupType('gamepb.plantpb.RemovePlantRequest');
     types.RemovePlantReply = root.lookupType('gamepb.plantpb.RemovePlantReply');
     types.PutInsectsRequest = root.lookupType('gamepb.plantpb.PutInsectsRequest');

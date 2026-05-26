@@ -44,15 +44,11 @@ function savePersistedStats(accountId: string, data: any): void {
 interface OperationsMap {
     [key: string]: number;
     harvest: number;
-    water: number;
-    weed: number;
-    bug: number;
+    farming: number;
     fertilize: number;
     plant: number;
     steal: number;
-    helpWater: number;
-    helpWeed: number;
-    helpBug: number;
+    helpFarming: number;
     taskClaim: number;
     sell: number;
     upgrade: number;
@@ -61,15 +57,11 @@ interface OperationsMap {
 
 const operations: OperationsMap = {
     harvest: 0,
-    water: 0,
-    weed: 0,
-    bug: 0,
+    farming: 0,
     fertilize: 0,
     plant: 0,
     steal: 0,
-    helpWater: 0,
-    helpWeed: 0,
-    helpBug: 0,
+    helpFarming: 0,
     taskClaim: 0,
     sell: 0,
     upgrade: 0,

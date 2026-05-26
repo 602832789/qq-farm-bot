@@ -1308,7 +1308,7 @@ async function handleTestOffline() {
               <BaseSwitch v-model="localAutomationSettings.automation.fertilizer_gift" label="自动填充化肥" />
             <BaseSwitch v-model="localAutomationSettings.automation.fertilizer_buy_organic" label="自动购买有机化肥" />
             <BaseSwitch v-model="localAutomationSettings.automation.fertilizer_buy_normal" label="自动购买无机化肥" />
-            <BaseSwitch v-model="localAutomationSettings.automation.skip_own_weed_bug" label="不除自己草虫" />
+            <BaseSwitch v-model="localAutomationSettings.automation.skip_own_weed_bug" label="巡田时跳过一键务农" />
           </div>
 
           <div v-if="localAutomationSettings.automation.fertilizer_buy_organic || localAutomationSettings.automation.fertilizer_buy_normal" class="space-y-3 rounded bg-green-50 p-3 text-sm dark:bg-green-900/20">

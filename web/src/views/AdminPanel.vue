@@ -751,6 +751,16 @@ async function loadSystemConfig() {
   try {
     const { data } = await api.get('/api/admin/system-config')
     if (data?.ok) {
+      if (data.data.default) {
+        const def = data.data.default
+        defaultSystemConfig.value = {
+          serverUrl: def.serverUrl || '',
+          clientVersion: def.clientVersion || '',
+          platform: def.platform || 'qq',
+          os: def.os || 'Windows',
+          deviceInfo: def.deviceInfo ? { ...def.deviceInfo } : { ...defaultSystemConfig.value.deviceInfo },
+        }
+      }
       if (data.data.saved) {
         const saved = data.data.saved
         localSystemConfig.value = {
@@ -760,15 +770,15 @@ async function loadSystemConfig() {
           os: saved.os || 'Windows',
           deviceInfo: saved.deviceInfo ? { ...saved.deviceInfo } : { ...localSystemConfig.value.deviceInfo },
         }
-      }
-      if (data.data.default) {
-        const def = data.data.default
-        defaultSystemConfig.value = {
+      } else {
+        // 没有已保存的配置时，用默认值填充输入框
+        const def = defaultSystemConfig.value
+        localSystemConfig.value = {
           serverUrl: def.serverUrl || '',
           clientVersion: def.clientVersion || '',
           platform: def.platform || 'qq',
           os: def.os || 'Windows',
-          deviceInfo: def.deviceInfo ? { ...def.deviceInfo } : { ...defaultSystemConfig.value.deviceInfo },
+          deviceInfo: { ...def.deviceInfo },
         }
       }
     }

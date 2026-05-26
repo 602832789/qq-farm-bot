@@ -155,7 +155,18 @@ message WaterLandReply {
     repeated OperationLimit operation_limits = 2;
 }
 
-// --- 除草 ---
+// --- 务农 (除草+除虫合并) ---
+message FarmingRequest {
+    repeated int64 land_ids = 1;
+    int64 host_gid = 2;
+}
+
+message FarmingReply {
+    repeated LandInfo land = 1;
+    repeated OperationLimit operation_limits = 2;
+}
+
+// --- 除草 (旧版兼容) ---
 message WeedOutRequest {
     repeated int64 land_ids = 1;
     int64 host_gid = 2;
@@ -166,7 +177,7 @@ message WeedOutReply {
     repeated OperationLimit operation_limits = 2;
 }
 
-// --- 除虫 ---
+// --- 除虫 (旧版兼容) ---
 message InsecticideRequest {
     repeated int64 land_ids = 1;
     int64 host_gid = 2;

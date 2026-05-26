@@ -59,14 +59,9 @@ async function waterLand(landIds: number[]): Promise<any> {
     return sendPlantRequest(types.WaterLandRequest, types.WaterLandReply, 'WaterLand', landIds, state.gid);
 }
 
-async function weedOut(landIds: number[]): Promise<any> {
+async function farming(landIds: number[]): Promise<any> {
     const state = getUserState();
-    return sendPlantRequest(types.WeedOutRequest, types.WeedOutReply, 'WeedOut', landIds, state.gid);
-}
-
-async function insecticide(landIds: number[]): Promise<any> {
-    const state = getUserState();
-    return sendPlantRequest(types.InsecticideRequest, types.InsecticideReply, 'Insecticide', landIds, state.gid);
+    return sendPlantRequest(types.FarmingRequest, types.FarmingReply, 'Farming', landIds, state.gid);
 }
 
 // 普通肥料 ID
@@ -195,8 +190,7 @@ module.exports = {
     getAllLands,
     harvest,
     waterLand,
-    weedOut,
-    insecticide,
+    farming,
     fertilize,
     fertilizeOrganicLoop,
     removePlant,

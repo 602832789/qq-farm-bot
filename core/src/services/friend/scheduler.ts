@@ -263,7 +263,7 @@ export async function checkFriends(options: CheckFriendsOptions = {}): Promise<b
             return helpB - helpA;
         });
 
-        const totalActions: any = { steal: 0, water: 0, weed: 0, bug: 0, putBug: 0, putWeed: 0 };
+        const totalActions: any = { steal: 0, farming: 0, putBug: 0, putWeed: 0 };
 
         // 第二阶段：批量偷菜
         if (stealFriends.length > 0 && effectiveStealEnabled) {
@@ -384,9 +384,7 @@ export async function checkFriends(options: CheckFriendsOptions = {}): Promise<b
         // 生成总结日志
         const summary: string[] = [];
         if (totalActions.steal > 0) summary.push(`偷${totalActions.steal}`);
-        if (totalActions.weed > 0) summary.push(`除草${totalActions.weed}`);
-        if (totalActions.bug > 0) summary.push(`除虫${totalActions.bug}`);
-        if (totalActions.water > 0) summary.push(`浇水${totalActions.water}`);
+        if (totalActions.farming > 0) summary.push(`一键务农${totalActions.farming}`);
         if (totalActions.putBug > 0) summary.push(`放虫${totalActions.putBug}`);
         if (totalActions.putWeed > 0) summary.push(`放草${totalActions.putWeed}`);
 
@@ -572,7 +570,7 @@ export async function runBadOnceOnStartup(): Promise<void> {
         const topBadFriends: any[] = badFriends.slice(0, 20);
         log('好友', `找到 ${badFriends.length} 个可捣乱的好友，处理等级最高的前${topBadFriends.length}个`, { module: 'friend', event: '放虫放草好友列表', totalCount: badFriends.length, topCount: topBadFriends.length });
 
-        const totalActions: any = { steal: 0, water: 0, weed: 0, bug: 0, putBug: 0, putWeed: 0 };
+        const totalActions: any = { steal: 0, farming: 0, putBug: 0, putWeed: 0 };
         let processedCount: number = 0;
 
         for (let i: number = 0; i < topBadFriends.length; i++) {
