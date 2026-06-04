@@ -13,7 +13,10 @@ const { getAllLands, harvest, farming, unlockLand, upgradeLand } = require('./ap
 const { analyzeLands, resolveRemovableHarvestedLands } = require('./land-analysis');
 const { autoPlantEmptyLands, runFertilizerByConfig } = require('./planting');
 const { checkAndBuyFertilizerBoth } = require('../mall');
-const { inFriendQuietHours } = require('../friend/visit-strategy');
+// 延迟加载以打破循环依赖: visit-strategy → farm/index → scheduler → visit-strategy
+function inFriendQuietHours() {
+    return require('../friend/visit-strategy').inFriendQuietHours();
+}
 
 // ============ 内部状态 ============
 let isCheckingFarm: boolean = false;
