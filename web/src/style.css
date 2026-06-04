@@ -52,6 +52,12 @@ textarea * {
   background: linear-gradient(180deg, #8bb67e 0%, #5a8b4f 100%);
 }
 
+/* 暗色模式下 select option 文字可见（仅 farm-input 下拉框） */
+.dark .farm-input option {
+  background-color: #374151 !important;
+  color: #f9fafb !important;
+}
+
 /* Base styles to reset some defaults if needed, though UnoCSS reset handles most */
 html,
 body {

@@ -353,7 +353,7 @@ function normalizeAccountConfig(input: unknown, fallback: AccountConfig = accoun
     }
 
     if (src.bagSeedFallbackStrategy !== undefined && src.bagSeedFallbackStrategy !== null) {
-        cfg.bagSeedFallbackStrategy = normalizeBagSeedFallbackStrategy(cfg.bagSeedFallbackStrategy);
+        cfg.bagSeedFallbackStrategy = normalizeBagSeedFallbackStrategy(src.bagSeedFallbackStrategy, cfg.bagSeedFallbackStrategy);
     }
 
     return cfg;

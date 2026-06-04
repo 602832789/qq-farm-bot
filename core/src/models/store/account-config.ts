@@ -211,7 +211,7 @@ function applyConfigSnapshot(snapshot: Record<string, any> | undefined, options:
     }
 
     if (cfg.bagSeedFallbackStrategy !== undefined && cfg.bagSeedFallbackStrategy !== null) {
-        next.bagSeedFallbackStrategy = normalizeBagSeedFallbackStrategy(cfg.bagSeedFallbackStrategy);
+        next.bagSeedFallbackStrategy = normalizeBagSeedFallbackStrategy(cfg.bagSeedFallbackStrategy, next.bagSeedFallbackStrategy);
     }
 
     if (cfg.ui && typeof cfg.ui === 'object') {

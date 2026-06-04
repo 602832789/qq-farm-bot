@@ -13,6 +13,7 @@ const { getAllLands, harvest, farming, unlockLand, upgradeLand } = require('./ap
 const { analyzeLands, resolveRemovableHarvestedLands } = require('./land-analysis');
 const { autoPlantEmptyLands, runFertilizerByConfig } = require('./planting');
 const { checkAndBuyFertilizerBoth } = require('../mall');
+const { inFriendQuietHours } = require('../friend/visit-strategy');
 
 // ============ 内部状态 ============
 let isCheckingFarm: boolean = false;
@@ -29,6 +30,7 @@ let lastPushTime: number = 0;
 async function checkFarm(): Promise<boolean> {
     const state = getUserState();
     if (isCheckingFarm || !state.gid || !isAutomationOn('farm')) return false;
+    if (inFriendQuietHours()) return false;
     isCheckingFarm = true;
 
     try {
@@ -77,10 +79,10 @@ async function runFarmOperation(opType: string): Promise<{ hadWork: boolean; act
 
     // 执行一键务农 (除草+除虫+浇水) - 串行执行以降低并发压力
     if (opType === 'all' || opType === 'clear') {
-        // 检查是否跳过自己农场的草虫（仅自动模式生效，手动clear不受影响）
+        // 检查是否跳过一键务农（仅自动模式生效，手动clear不受影响）
         const skipOwnWeedBug = opType === 'all' && isAutomationOn('skip_own_weed_bug');
         const farmingLandIds = [...new Set([...status.needWeed, ...status.needBug, ...status.needWater])];
-        if (farmingLandIds.length > 0) {
+        if (!skipOwnWeedBug && farmingLandIds.length > 0) {
             try {
                 await farming(farmingLandIds);
                 const parts: string[] = [];

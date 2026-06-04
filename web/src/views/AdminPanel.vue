@@ -959,7 +959,7 @@ onMounted(() => {
             >
             <select
               v-model="filterStatus"
-              class="farm-input h-8 border border-gray-300 rounded-xl bg-white px-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+              class="farm-input border border-gray-300 rounded-xl bg-white px-3 py-1.5 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
             >
               <option value="all">
                 全部状态
