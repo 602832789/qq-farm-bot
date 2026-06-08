@@ -263,7 +263,7 @@ function formatFertilizerLandTypes(types: any[] | undefined | null): string[] {
     return normalizeFertilizerLandTypes(types).map(type => FERTILIZER_LAND_TYPE_LABELS[type] || type);
 }
 
-function analyzeLands(lands: any[], debug?: boolean): {
+function analyzeLands(lands: any[], debug?: boolean, ownGid?: number): {
     harvestable: number[];
     needWater: number[];
     needWeed: number[];
@@ -349,13 +349,31 @@ function analyzeLands(lands: any[], debug?: boolean): {
         }
 
         const weedsTime = toTimeSec(currentPhase.weeds_time);
-        const hasWeeds = (plant.weed_owners && plant.weed_owners.length > 0) || (weedsTime > 0 && weedsTime <= nowSec);
+        let hasWeeds = weedsTime > 0 && weedsTime <= nowSec;
+        if (!hasWeeds && plant.weed_owners && plant.weed_owners.length > 0) {
+            // 如果指定了 ownGid，检查是否只有自己放的草
+            if (ownGid) {
+                const isOwnWeeds = plant.weed_owners.every((id: any) => toNum(id) === ownGid);
+                hasWeeds = !isOwnWeeds; // 只有自己放的草 → 不需要除
+            } else {
+                hasWeeds = true;
+            }
+        }
         if (hasWeeds) {
             result.needWeed.push(id);
         }
 
         const insectTime = toTimeSec(currentPhase.insect_time);
-        const hasBugs = (plant.insect_owners && plant.insect_owners.length > 0) || (insectTime > 0 && insectTime <= nowSec);
+        let hasBugs = insectTime > 0 && insectTime <= nowSec;
+        if (!hasBugs && plant.insect_owners && plant.insect_owners.length > 0) {
+            // 如果指定了 ownGid，检查是否只有自己放的虫
+            if (ownGid) {
+                const isOwnBugs = plant.insect_owners.every((id: any) => toNum(id) === ownGid);
+                hasBugs = !isOwnBugs; // 只有自己放的虫 → 不需要除
+            } else {
+                hasBugs = true;
+            }
+        }
         if (hasBugs) {
             result.needBug.push(id);
         }

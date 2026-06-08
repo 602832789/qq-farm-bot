@@ -64,7 +64,8 @@ async function runFarmOperation(opType: string): Promise<{ hadWork: boolean; act
 
     const lands = landsReply.lands;
 
-    const status = analyzeLands(lands, isFirstFarmCheck);
+    const state = getUserState();
+    const status = analyzeLands(lands, isFirstFarmCheck, state.gid);
 
     // 摘要
     const statusParts: string[] = [];
