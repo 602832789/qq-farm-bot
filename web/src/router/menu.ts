@@ -37,6 +37,13 @@ export const menuRoutes: MenuItem[] = [
     component: () => import('@/views/Analytics.vue'),
   },
   {
+    path: 'config',
+    name: 'config',
+    label: '游戏配置',
+    icon: '📦',
+    component: () => import('@/views/ConfigManage.vue'),
+  },
+  {
     path: 'settings',
     name: 'Settings',
     label: '设置',

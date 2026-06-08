@@ -255,6 +255,7 @@ async function loadProto(): Promise<void> {
     // 公告板
     types.GetBulletinListRequest = root.lookupType('gamepb.bulletinboardpb.GetBulletinListRequest');
     types.GetBulletinListReply = root.lookupType('gamepb.bulletinboardpb.GetBulletinListReply');
+    types.BulletinListChangedNTF = root.lookupType('gamepb.bulletinboardpb.BulletinListChangedNTF');
 
     // 跑马灯
     types.GetMarqueeRequest = root.lookupType('gamepb.marqueepb.GetMarqueeRequest');

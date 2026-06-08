@@ -15,6 +15,7 @@ interface RoleLevelItem {
 
 interface PlantFruit {
     id: number;
+    count?: number;
 }
 
 interface PlantItem {
@@ -25,6 +26,8 @@ interface PlantItem {
     land_level_need?: number;
     grow_phases?: string;
     exp?: number;
+    seasons?: number;
+    size?: number;
 }
 
 interface ItemInfo {
@@ -41,6 +44,12 @@ interface SeedInfo {
     requiredLevel: number;
     price: number;
     image: string;
+    seasons: number;
+    exp: number;
+    growPhases: string;
+    growTime: number;
+    size: number;
+    harvestCount: number;
 }
 
 // ============ 等级经验表 ============
@@ -55,8 +64,6 @@ const fruitToPlant = new Map<number, PlantItem>();
 let itemInfoConfig: ItemInfo[] | null = null;
 const itemInfoMap = new Map<number, ItemInfo>();
 const seedItemMap = new Map<number, ItemInfo>();
-const seedImageMap = new Map<number, string>();
-const seedAssetImageMap = new Map<string, string>();
 
 /**
  * 加载配置文件
@@ -123,38 +130,6 @@ function loadConfigs(): void {
         console.warn('[配置] 加载 ItemInfo.json 失败:', e.message);
     }
 
-    // 加载种子图片映射（seed_images_named）
-    try {
-        const seedImageDir = path.join(configDir, 'seed_images_named');
-        seedImageMap.clear();
-        seedAssetImageMap.clear();
-        if (fs.existsSync(seedImageDir)) {
-            const files = fs.readdirSync(seedImageDir);
-            for (const file of files) {
-                const filename = String(file || '');
-                const fileUrl = `/game-config/seed_images_named/${encodeURIComponent(file)}`;
-
-                const byId = filename.match(/^(\d+)_.*\.(?:png|jpg|jpeg|webp|gif)$/i);
-                if (byId) {
-                    const seedId = Number(byId[1]) || 0;
-                    if (seedId > 0 && !seedImageMap.has(seedId)) {
-                        seedImageMap.set(seedId, fileUrl);
-                    }
-                }
-
-                const byAsset = filename.match(/(Crop_\d+)_Seed\.(?:png|jpg|jpeg|webp|gif)$/i);
-                if (byAsset) {
-                    const assetName = byAsset[1];
-                    if (assetName && !seedAssetImageMap.has(assetName)) {
-                        seedAssetImageMap.set(assetName, fileUrl);
-                    }
-                }
-            }
-            console.warn(`[配置] 已加载种子图片映射 (${seedImageMap.size} 项)`);
-        }
-    } catch (e: any) {
-        console.warn('[配置] 加载 seed_images_named 失败:', e.message);
-    }
 }
 
 // ============ 等级经验相关 ============
@@ -239,21 +214,19 @@ function getAllSeeds(): SeedInfo[] {
         requiredLevel: Number(p.land_level_need) || 0,
         price: getSeedPrice(p.seed_id),
         image: getSeedImageBySeedId(p.seed_id),
+        seasons: Number(p.seasons) || 1,
+        exp: Number(p.exp) || 0,
+        growPhases: p.grow_phases || '',
+        growTime: getPlantGrowTime(p.id),
+        size: Number(p.size) || 0,
+        harvestCount: Number(p.fruit?.count) || 0,
     }));
 }
 
 function getMappedSeedImage(targetId: number): string {
     const id = Number(targetId) || 0;
     if (id <= 0) return '';
-
-    const direct = seedImageMap.get(id);
-    if (direct) return direct;
-
-    const item = itemInfoMap.get(id);
-    const assetName = item && item.asset_name ? String(item.asset_name).trim() : '';
-    if (!assetName) return '';
-
-    return seedAssetImageMap.get(assetName) || '';
+    return `/game-config/seed_images_named/${id}.png`;
 }
 
 function getSeedImageBySeedId(seedId: number): string {
@@ -264,29 +237,8 @@ function getItemImageById(itemId: number): string {
     const id = Number(itemId) || 0;
     if (id <= 0) return '';
 
-    const getImg = (targetId: number): string => {
-        const direct = seedImageMap.get(targetId);
-        if (direct) return direct;
-
-        const item = itemInfoMap.get(targetId);
-        const assetName = item && item.asset_name ? String(item.asset_name) : '';
-        if (assetName) {
-            const byAsset = seedAssetImageMap.get(assetName);
-            if (byAsset) return byAsset;
-        }
-        return '';
-    };
-
-    let img = getImg(id);
-    if (img) return img;
-
-    const plant = getPlantByFruitId(id);
-    if (plant && plant.seed_id) {
-        img = getImg(plant.seed_id);
-        if (img) return img;
-    }
-
-    return '';
+    // 直接按ID返回
+    return `/game-config/seed_images_named/${id}.png`;
 }
 
 function getItemById(itemId: number): ItemInfo | undefined {
@@ -305,6 +257,32 @@ function getFruitPrice(fruitId: number): number {
 
 function getAllPlants(): PlantItem[] {
     return Array.from(plantMap.values());
+}
+
+// ============ 配置管理查询 ============
+
+function getAllFruits(): ItemInfo[] {
+    return Array.from(itemInfoMap.values()).filter(item => Number(item.type) === 6);
+}
+
+function getAllItems(): ItemInfo[] {
+    // 返回所有非种子(type=5)、非果实(type=6)的道具
+    return Array.from(itemInfoMap.values()).filter(item => {
+        const t = Number(item.type);
+        return t !== 5 && t !== 6;
+    });
+}
+
+function getItemsByType(type: number): ItemInfo[] {
+    return Array.from(itemInfoMap.values()).filter(item => Number(item.type) === type);
+}
+
+function getItemInfoMap(): Map<number, ItemInfo> {
+    return itemInfoMap;
+}
+
+function getPlantMap(): Map<number, PlantItem> {
+    return plantMap;
 }
 
 // 启动时加载配置
@@ -333,4 +311,10 @@ module.exports = {
     getSeedPrice,
     getFruitPrice,
     getSeedImageBySeedId,
+    // 配置管理查询
+    getAllFruits,
+    getAllItems,
+    getItemsByType,
+    getItemInfoMap,
+    getPlantMap,
 };

@@ -8,6 +8,7 @@ import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 
 const props = defineProps<{
   show: boolean
+  editData?: any
 }>()
 
 const emit = defineEmits(['close', 'saved'])
@@ -51,6 +52,7 @@ const seasonOptions = [
 const sizeOptions = [
   { value: '0', label: '1×1（普通作物）' },
   { value: '2', label: '2×2（占地4格）' },
+  { value: '3', label: '3×3（占地9格）' },
 ]
 
 function handleTemplateChange() {
@@ -116,9 +118,10 @@ function formatTime(seconds: number): string {
 
 async function submit() {
   errorMessage.value = ''
+  const isEdit = !!props.editData
 
   // 验证必填字段
-  if (!form.seed_id || Number(form.seed_id) <= 0) {
+  if (!isEdit && (!form.seed_id || Number(form.seed_id) <= 0)) {
     errorMessage.value = '请输入有效的种子ID'
     return
   }
@@ -126,23 +129,23 @@ async function submit() {
     errorMessage.value = '请输入作物名称'
     return
   }
-  if (!form.grow_phases.trim()) {
+  if (!isEdit && !form.grow_phases.trim()) {
     errorMessage.value = '请填写生长阶段'
     return
   }
-  if (!form.land_level_need || Number(form.land_level_need) <= 0) {
+  if (!isEdit && (!form.land_level_need || Number(form.land_level_need) <= 0)) {
     errorMessage.value = '请输入有效的等级要求'
     return
   }
-  if (!form.fruit_count || Number(form.fruit_count) <= 0) {
+  if (!isEdit && (!form.fruit_count || Number(form.fruit_count) <= 0)) {
     errorMessage.value = '请输入有效的收获数量'
     return
   }
-  if (form.price === '' || form.price === undefined || form.price === null) {
+  if (!isEdit && (form.price === '' || form.price === undefined || form.price === null)) {
     errorMessage.value = '请输入种子价格'
     return
   }
-  if (!imageFile.value) {
+  if (!isEdit && !imageFile.value) {
     errorMessage.value = '请上传种子图片'
     return
   }
@@ -161,10 +164,43 @@ async function submit() {
     if (form.size) formData.append('size', form.size)
     if (imageFile.value) formData.append('image', imageFile.value)
 
-    const res = await api.post('/api/seed', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-      skipErrorToast: true,
-    } as any)
+    let res
+    if (isEdit) {
+      if (imageFile.value) {
+        const editFormData = new FormData()
+        editFormData.append('name', form.name.trim())
+        editFormData.append('grow_phases', form.grow_phases.trim())
+        editFormData.append('land_level_need', form.land_level_need)
+        editFormData.append('seasons', form.seasons)
+        editFormData.append('fruit_count', form.fruit_count)
+        editFormData.append('price', form.price)
+        if (form.exp) editFormData.append('exp', form.exp)
+        if (form.size) editFormData.append('size', form.size)
+        editFormData.append('image', imageFile.value)
+        res = await api.put(`/api/config/seed/${form.seed_id}`, editFormData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          skipErrorToast: true,
+        } as any)
+      }
+      else {
+        res = await api.put(`/api/config/seed/${form.seed_id}`, {
+          name: form.name.trim(),
+          grow_phases: form.grow_phases.trim(),
+          land_level_need: Number(form.land_level_need),
+          seasons: Number(form.seasons),
+          fruit_count: Number(form.fruit_count),
+          price: Number(form.price),
+          exp: Number(form.exp) || 0,
+          size: Number(form.size) || 0,
+        }, { skipErrorToast: true } as any)
+      }
+    }
+    else {
+      res = await api.post('/api/seed', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        skipErrorToast: true,
+      } as any)
+    }
 
     if (res.data.ok) {
       emit('saved')
@@ -189,15 +225,38 @@ watch(() => props.show, (newVal) => {
     imagePreview.value = ''
     imageFile.value = null
     selectedTemplate.value = ''
-    form.seed_id = ''
-    form.name = ''
-    form.grow_phases = ''
-    form.land_level_need = ''
-    form.seasons = '1'
-    form.fruit_count = '200'
-    form.price = ''
-    form.exp = ''
-    form.size = '0'
+    if (props.editData) {
+      const d = props.editData
+      form.seed_id = String(d.seedId || '')
+      form.name = d.name || ''
+      form.grow_phases = d.growPhases || ''
+      form.land_level_need = String(d.requiredLevel || '')
+      form.seasons = String(d.seasons || '1')
+      form.fruit_count = String(d.harvestCount || '200')
+      form.price = String(d.price || '')
+      form.exp = d.exp != null && d.exp !== 0 ? String(d.exp) : ''
+      form.size = String(d.size || '0')
+
+      // 自动匹配快速模板
+      const matched = phaseTemplates.find(t => t.value !== 'custom' && t.value === form.grow_phases)
+      selectedTemplate.value = matched ? matched.value : 'custom'
+
+      // 填充已有图片预览
+      if (d.image) {
+        imagePreview.value = d.image
+      }
+    }
+    else {
+      form.seed_id = ''
+      form.name = ''
+      form.grow_phases = ''
+      form.land_level_need = ''
+      form.seasons = '1'
+      form.fruit_count = '200'
+      form.price = ''
+      form.exp = ''
+      form.size = '0'
+    }
   }
 })
 </script>
@@ -208,7 +267,7 @@ watch(() => props.show, (newVal) => {
       <!-- Header -->
       <div class="flex items-center justify-between p-4" style="border-bottom: 1px solid color-mix(in srgb, var(--theme-text) 10%, transparent)">
         <h3 class="text-lg font-semibold" style="color: var(--theme-primary, var(--theme-text))">
-          🌱 种子录入
+          🌱 {{ editData ? '编辑种子' : '种子录入' }}
         </h3>
         <BaseButton variant="ghost" class="!p-1" @click="close">
           <div class="i-carbon-close text-xl" :style="{ color: 'var(--theme-text)' }" />
@@ -234,6 +293,7 @@ watch(() => props.show, (newVal) => {
                 placeholder="如: 20069"
                 type="number"
                 class="farm-input"
+                :disabled="!!editData"
               />
               <BaseInput
                 v-model="form.name"
@@ -374,7 +434,7 @@ watch(() => props.show, (newVal) => {
               取消
             </BaseButton>
             <BaseButton variant="primary" class="cartoon-btn" :loading="loading" @click="submit">
-              🌱 录入种子
+              🌱 {{ editData ? '保存修改' : '录入种子' }}
             </BaseButton>
           </div>
         </div>

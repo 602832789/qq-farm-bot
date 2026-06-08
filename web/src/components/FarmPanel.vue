@@ -42,7 +42,7 @@ function handleOperate(opType: string) {
 
   const confirmMap: Record<string, string> = {
     harvest: '确定要收获所有成熟作物吗？',
-    clear: '确定要一键除草/除虫吗？',
+    clear: '确定要一键务农吗？(除草+除虫+浇水)',
     plant: '确定要一键种植吗？(根据策略配置)',
     upgrade: '确定要升级所有可升级的土地吗？(消耗金币)',
     all: '确定要一键全收吗？(包含收获、除草、种植等)',
@@ -58,7 +58,7 @@ function handleOperate(opType: string) {
 
 const operations = [
   { type: 'harvest', label: '收获', icon: '🌾', color: 'bg-[#5bb8f5] hover:bg-[#4aa8e5]' },
-  { type: 'clear', label: '除草/虫', icon: '🌿', color: 'bg-[#4a8c3f] hover:bg-[#3a7c2f]' },
+  { type: 'clear', label: '一键务农', icon: '🌿', color: 'bg-[#4a8c3f] hover:bg-[#3a7c2f]' },
   { type: 'plant', label: '种植', icon: '🌱', color: 'bg-[#6dbf5b] hover:bg-[#5daf4b]' },
   { type: 'upgrade', label: '升级土地', icon: '⬆️', color: 'bg-[#a855f7] hover:bg-[#9333ea]' },
   { type: 'all', label: '一键全收', icon: '⚡', color: 'bg-[#f0c040] hover:bg-[#e0b030] text-[#3d2b1f]' },

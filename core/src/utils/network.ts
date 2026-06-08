@@ -443,6 +443,15 @@ function handleNotify(msg: any): void {
             } catch {}
             return;
         }
+
+        // 公告板变更通知
+        if (type.includes('BulletinListChangedNTF')) {
+            try {
+                const notify = types.BulletinListChangedNTF.decode(eventBody);
+                networkEvents.emit('bulletinListChanged', notify);
+            } catch {}
+            return;
+        }
     } catch (e: any) {
         logWarn('推送', `解码失败: ${e.message}`);
     }
