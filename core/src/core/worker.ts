@@ -16,6 +16,7 @@ const { processInviteCodes } = require('../services/invite');
 const { autoBuyOrganicFertilizer, autoBuyFertilizer, checkAndBuyFertilizerBoth, buyFreeGifts, getFreeGiftDailyState } = require('../services/mall');
 const { performDailyMonthCardGift, getMonthCardDailyState } = require('../services/monthcard');
 const { performDailyVipGift, getVipDailyState } = require('../services/qqvip');
+const { autoClaimActivityRewards } = require('../services/activity');
 const { createScheduler, getSchedulerRegistrySnapshot } = require('../services/scheduler');
 const { performDailyShare, getShareDailyState } = require('../services/share');
 const { setInitialValues, resetSessionGains, recordOperation, initStatsWithPersistence, saveStats } = require('../services/stats');
@@ -148,6 +149,7 @@ async function runDailyRoutines(force: boolean = false): Promise<void> {
         await performDailyMonthCardGift(force);
         await buyFreeGifts(force);
         await performDailyVipGift(force);
+        await autoClaimActivityRewards();
     } catch (e: any) {
         log('系统', `每日任务调度失败: ${e.message}`, { module: 'system', event: '每日任务', result: 'error' });
     }
@@ -688,6 +690,37 @@ async function handleApiCall(msg: any): Promise<void> {
             case 'getSchedulers':
                 result = getSchedulerRegistrySnapshot();
                 break;
+            case 'getActivityGroup': {
+                const { getActivitiesInGroup } = require('../services/activity');
+                result = await getActivitiesInGroup(args[0]);
+                break;
+            }
+            case 'getActivityList': {
+                const { getActivityList: _getList } = require('../services/activity');
+                result = await _getList();
+                break;
+            }
+            case 'operateActivity': {
+                const { operateActivity: _op } = require('../services/activity');
+                result = await _op(args[0], args[1], args[2]);
+                break;
+            }
+            case 'getSolarTerms': {
+                const { sendMsgAsync } = require('../utils/network');
+                const { types } = require('../utils/proto');
+                const body = types.GetSolarTermsRequest.encode(types.GetSolarTermsRequest.create({})).finish();
+                const { body: replyBody } = await sendMsgAsync('gamepb.solartermspb.SolarTermsService', 'GetSolarTerms', body);
+                result = types.GetSolarTermsReply.decode(replyBody);
+                break;
+            }
+            case 'getSeasonInfo': {
+                const { sendMsgAsync } = require('../utils/network');
+                const { types } = require('../utils/proto');
+                const body = types.GetSeasonInfoRequest.encode(types.GetSeasonInfoRequest.create({})).finish();
+                const { body: replyBody } = await sendMsgAsync('gamepb.seasonpb.SeasonService', 'GetSeasonInfo', body);
+                result = types.GetSeasonInfoReply.decode(replyBody);
+                break;
+            }
             default:
                 error = 'Unknown method';
         }

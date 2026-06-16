@@ -23,3 +23,27 @@ message SkinsEquippedRequest {}
 message SkinsEquippedReply {
     repeated SkinItem skins = 1;
 }
+
+// --- 装备皮肤 ---
+message EquipRequest {
+    int64 skin_id = 1;
+    int64 slot_type = 2;
+}
+
+message EquipReply {
+    repeated SkinItem skins = 1;
+}
+
+// --- 标记皮肤已查看 ---
+message MarkAsViewedRequest {
+    repeated int64 skin_ids = 1;
+}
+
+message MarkAsViewedReply {}
+
+// ============ 服务器推送 ============
+
+// 皮肤变更通知
+message SkinChangeNotify {
+    repeated SkinItem skins = 1;
+}

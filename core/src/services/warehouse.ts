@@ -6,7 +6,7 @@ export {};
 import type protobuf from 'protobufjs';
 
 const protobufModule = require('protobufjs');
-const { getFruitName, getPlantByFruitId, getPlantBySeedId, getItemById, getItemImageById, getSeedImageBySeedId } = require('../config/gameConfig');
+const { getFruitName, getPlantByFruitId, getPlantBySeedId, getItemById, getItemImageById, getSeedImageBySeedId, parseSells } = require('../config/gameConfig');
 const { isAutomationOn } = require('../models/store');
 const { sendMsgAsync, networkEvents, getUserState } = require('../utils/network');
 const { types } = require('../utils/proto');
@@ -349,7 +349,8 @@ async function getBagDetail(): Promise<any> {
         }
         if (!name) name = `物品${id}`;
         const interactionType: string = info && info.interaction_type ? String(info.interaction_type) : '';
-        const priceId: number = info ? (Number(info.price_id) || 0) : 0;
+        const sellsList = parseSells(info && info.sells);
+        const priceId: number = sellsList.length > 0 ? sellsList[0].currencyId : 0;
         const priceUnit: string = priceId === 1005 ? '金豆豆' : priceId === 1002 ? '点券' : '金';
 
         if (!merged.has(id)) {
@@ -361,7 +362,7 @@ async function getBagDetail(): Promise<any> {
                 category,
                 itemType: info ? (Number(info.type) || 0) : 0,
                 priceId,
-                price: info ? (Number(info.price) || 0) : 0,
+                price: sellsList.length > 0 ? sellsList[0].price : 0,
                 priceUnit,
                 level: info ? (Number(info.level) || 0) : 0,
                 interactionType,

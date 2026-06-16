@@ -452,6 +452,33 @@ function handleNotify(msg: any): void {
             } catch {}
             return;
         }
+
+        // 赛季变更通知
+        if (type.includes('SeasonChangeNotify')) {
+            try {
+                const notify = types.SeasonChangeNotify.decode(eventBody);
+                networkEvents.emit('seasonChanged', notify);
+            } catch {}
+            return;
+        }
+
+        // 战令变更通知
+        if (type.includes('BattlePassChangeNotify')) {
+            try {
+                const notify = types.BattlePassChangeNotify.decode(eventBody);
+                networkEvents.emit('battlePassChanged', notify);
+            } catch {}
+            return;
+        }
+
+        // 皮肤变更通知
+        if (type.includes('SkinChangeNotify')) {
+            try {
+                const notify = types.SkinChangeNotify.decode(eventBody);
+                networkEvents.emit('skinChanged', notify);
+            } catch {}
+            return;
+        }
     } catch (e: any) {
         logWarn('推送', `解码失败: ${e.message}`);
     }

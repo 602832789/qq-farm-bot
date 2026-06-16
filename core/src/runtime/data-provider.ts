@@ -135,6 +135,13 @@ function createDataProvider(options: DataProviderOptions) {
         },
 
         doFarmOp: (accountRef: string, opType: string) => callWorkerApi(resolveAccountRefId(accountRef), 'doFarmOp', opType),
+
+        // 活动
+        getActivityGroup: (accountRef: string, groupId: number) => callWorkerApi(resolveAccountRefId(accountRef), 'getActivityGroup', groupId),
+        getActivityList: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getActivityList'),
+        operateActivity: (accountRef: string, activityId: number, operateType: number, param: number) => callWorkerApi(resolveAccountRefId(accountRef), 'operateActivity', activityId, operateType, param),
+        getSolarTerms: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getSolarTerms'),
+        getSeasonInfo: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getSeasonInfo'),
         doAnalytics: (accountRef: string, sortBy: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getAnalytics', sortBy),
         buyFertilizer: (accountRef: string, type: string, count: number) => callWorkerApi(resolveAccountRefId(accountRef), 'buyFertilizer', type, count),
         checkAndBuyFertilizer: (accountRef: string, options: any) => callWorkerApi(resolveAccountRefId(accountRef), 'checkAndBuyFertilizer', options),

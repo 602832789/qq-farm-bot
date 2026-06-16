@@ -22,6 +22,14 @@ export const menuRoutes: MenuItem[] = [
     icon: '🌾',
     component: () => import('@/views/Personal.vue'),
   },
+  // 暂时隐藏活动菜单，抽奖功能还有 bug 待修复
+  // {
+  //   path: 'activity',
+  //   name: 'activity',
+  //   label: '活动',
+  //   icon: '🎉',
+  //   component: () => import('@/views/Activity.vue'),
+  // },
   {
     path: 'friends',
     name: 'friends',
@@ -37,18 +45,18 @@ export const menuRoutes: MenuItem[] = [
     component: () => import('@/views/Analytics.vue'),
   },
   {
-    path: 'config',
-    name: 'config',
-    label: '游戏配置',
-    icon: '📦',
-    component: () => import('@/views/ConfigManage.vue'),
-  },
-  {
     path: 'settings',
     name: 'Settings',
     label: '设置',
     icon: '⚙️',
     component: () => import('@/views/Settings.vue'),
+  },
+  {
+    path: 'config',
+    name: 'config',
+    label: '游戏配置',
+    icon: '📦',
+    component: () => import('@/views/ConfigManage.vue'),
   },
   {
     path: 'admin',

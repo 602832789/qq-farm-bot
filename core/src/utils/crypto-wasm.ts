@@ -19,6 +19,7 @@ function initWasm(): Promise<void> {
                 wasmDir = path.join(wasmDir, '..', '..', 'src', 'utils');
             }
             const wasmPath = path.join(wasmDir, 'tsdk.wasm');
+            console.warn('WASM PATH:', wasmPath);
             const wasmBuffer = fs.readFileSync(wasmPath);
             const importObject = {
                 a: {

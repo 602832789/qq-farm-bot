@@ -6,33 +6,51 @@ import "corepb.proto";
 
 // ============ 活动服务 ============
 
-// --- 获取活动列表 ---
-message ActivityItem {
-    int64 activity_id = 1;
-    // field 2 可能已废弃
-    int32 status = 3;
-    string name = 4;           // 从 field 2 移到 field 4
-    bytes extra = 5;           // 新增字段 (未知结构)
-    int64 begin_time = 6;      // 从 field 4 移到 field 6
-    int64 end_time = 7;        // 从 field 5 移到 field 7
-    int32 type = 8;            // 从 field 6 移到 field 8
-    int32 group_id = 9;        // 保持不变
-    int32 sort_order = 10;     // 从 field 8 移到 field 10
+// --- 活动组信息 (GroupInfo, 嵌套在 ActivityGroup.field 1) ---
+message GroupInfo {
+    int64 group_id = 1;
+    int64 status = 3;
+    string name = 4;
+    int64 begin_time = 6;
+    int64 end_time = 7;
+    int64 sort_order = 8;
+    int64 field_20 = 20;
 }
 
+// --- 活动内容 (嵌套在 ActivityItem.field 1) ---
+message ActivityContent {
+    int64 activity_id = 1;
+    int64 group_id = 2;
+    int64 type = 3;
+    string name = 4;
+    bytes extra = 5;
+    int64 begin_time = 6;
+    int64 end_time = 7;
+    int64 sort_order = 8;
+    int64 field_20 = 20;
+    int64 field_23 = 23;
+}
+
+// --- 活动项 (ActivityItem, 嵌套在 ActivityGroup.field 2) ---
+message ActivityItem {
+    ActivityContent content = 1;
+    bytes field_105 = 105;
+}
+
+// --- 活动组 (ActivityGroup, 嵌套在 GetGroupReply.field 1) ---
+message ActivityGroup {
+    GroupInfo info = 1;
+    repeated ActivityItem activities = 2;
+}
+
+// --- 获取活动列表 ---
 message ListRequest {}
 
 message ListReply {
-    repeated ActivityItem activities = 1;
+    repeated ActivityContent activities = 1;
 }
 
 // --- 获取活动组 ---
-message ActivityGroup {
-    int64 group_id = 1;
-    string name = 2;
-    repeated ActivityItem activities = 3;
-}
-
 message GetGroupRequest {
     int64 group_id = 1;
 }
@@ -49,11 +67,13 @@ message OperateRequest {
 }
 
 message OperateReply {
-    repeated corepb.Item items = 1;  // 奖励物品
-    int32 result = 2;
+    int64 activity_id = 1;
+    int64 result = 2;
+    bytes data = 3;
+    bytes rewards = 108;
 }
 
 // --- 活动变更通知 ---
 message ActiviesChangeNotify {
-    repeated ActivityItem activities = 1;
+    repeated ActivityContent activities = 1;
 }

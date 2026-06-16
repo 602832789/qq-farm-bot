@@ -47,6 +47,8 @@ async function loadProto(): Promise<void> {
         getResourcePath('proto', 'rechargebonuspb.proto'),
         getResourcePath('proto', 'uicproxypb.proto'),
         getResourcePath('proto', 'mutantpb.proto'),
+        getResourcePath('proto', 'seasonpb.proto'),
+        getResourcePath('proto', 'solartermspb.proto'),
     ], { keepCase: true });
 
     // 网关
@@ -97,6 +99,7 @@ async function loadProto(): Promise<void> {
     types.UnlockLandReply = root.lookupType('gamepb.plantpb.UnlockLandReply');
     types.CheckCanOperateRequest = root.lookupType('gamepb.plantpb.CheckCanOperateRequest');
     types.CheckCanOperateReply = root.lookupType('gamepb.plantpb.CheckCanOperateReply');
+    types.StealPlayer = root.lookupType('gamepb.plantpb.StealPlayer');
     types.FertilizeRequest = root.lookupType('gamepb.plantpb.FertilizeRequest');
     types.FertilizeReply = root.lookupType('gamepb.plantpb.FertilizeReply');
     types.PutSocialItemRequest = root.lookupType('gamepb.plantpb.PutSocialItemRequest');
@@ -278,6 +281,38 @@ async function loadProto(): Promise<void> {
     types.CannelNewRequest = root.lookupType('gamepb.itempb.CannelNewRequest');
     types.CannelNewReply = root.lookupType('gamepb.itempb.CannelNewReply');
 
+    // 赛季
+    types.GetSeasonInfoRequest = root.lookupType('gamepb.seasonpb.GetSeasonInfoRequest');
+    types.GetSeasonInfoReply = root.lookupType('gamepb.seasonpb.GetSeasonInfoReply');
+    types.ClaimBattlePassRewardsRequest = root.lookupType('gamepb.seasonpb.ClaimBattlePassRewardsRequest');
+    types.ClaimBattlePassRewardsReply = root.lookupType('gamepb.seasonpb.ClaimBattlePassRewardsReply');
+    types.MarkSeasonOpeningShownRequest = root.lookupType('gamepb.seasonpb.MarkSeasonOpeningShownRequest');
+    types.MarkSeasonOpeningShownReply = root.lookupType('gamepb.seasonpb.MarkSeasonOpeningShownReply');
+
+    // 节气
+    types.GetSolarTermsRequest = root.lookupType('gamepb.solartermspb.GetSolarTermsRequest');
+    types.GetSolarTermsReply = root.lookupType('gamepb.solartermspb.GetSolarTermsReply');
+    types.GetSolarTermsRedDotRequest = root.lookupType('gamepb.solartermspb.GetSolarTermsRedDotRequest');
+    types.GetSolarTermsRedDotReply = root.lookupType('gamepb.solartermspb.GetSolarTermsRedDotReply');
+
+    // 皮肤（补充）
+    types.EquipSkinRequest = root.lookupType('gamepb.skinpb.EquipRequest');
+    types.EquipSkinReply = root.lookupType('gamepb.skinpb.EquipReply');
+    types.MarkSkinAsViewedRequest = root.lookupType('gamepb.skinpb.MarkAsViewedRequest');
+    types.MarkSkinAsViewedReply = root.lookupType('gamepb.skinpb.MarkAsViewedReply');
+
+    // 互动（补充）
+    types.DismissInteractPopupRequest = root.lookupType('gamepb.interactpb.DismissInteractPopupRequest');
+    types.DismissInteractPopupReply = root.lookupType('gamepb.interactpb.DismissInteractPopupReply');
+
+    // 公告板（补充）
+    types.GetBulletinDetailRequest = root.lookupType('gamepb.bulletinboardpb.GetBulletinDetailRequest');
+    types.GetBulletinDetailReply = root.lookupType('gamepb.bulletinboardpb.GetBulletinDetailReply');
+
+    // 分享（补充）
+    types.GetInviteAwardRequest = root.lookupType('gamepb.sharepb.GetInviteAwardRequest');
+    types.GetInviteAwardReply = root.lookupType('gamepb.sharepb.GetInviteAwardReply');
+
     // 通知
     types.ItemNotify = root.lookupType('gamepb.itempb.ItemNotify');
     types.GoodsUnlockNotify = root.lookupType('gamepb.shoppb.GoodsUnlockNotify');
@@ -286,6 +321,9 @@ async function loadProto(): Promise<void> {
     types.VipInfoUpdatedNTF = root.lookupType('gamepb.qqvippb.VipInfoUpdatedNTF');
     types.ProductsHasChangedNotify = root.lookupType('gamepb.mallpb.ProductsHasChangedNotify');
     types.ActiviesChangeNotify = root.lookupType('gamepb.activitypb.ActiviesChangeNotify');
+    types.SeasonChangeNotify = root.lookupType('gamepb.seasonpb.SeasonChangeNotify');
+    types.BattlePassChangeNotify = root.lookupType('gamepb.seasonpb.BattlePassChangeNotify');
+    types.SkinChangeNotify = root.lookupType('gamepb.skinpb.SkinChangeNotify');
 
     // Proto 加载完成
     log('系统', 'Protobuf 定义加载完成');

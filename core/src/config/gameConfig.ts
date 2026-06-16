@@ -15,26 +15,62 @@ interface RoleLevelItem {
 
 interface PlantFruit {
     id: number;
-    count?: number;
+    count: number;
 }
 
 interface PlantItem {
     id: number;
     name: string;
-    seed_id: number;
-    fruit?: PlantFruit;
-    land_level_need?: number;
-    grow_phases?: string;
-    exp?: number;
-    seasons?: number;
-    size?: number;
+    mutant_effect_plant: string | null;
+    fruit: PlantFruit;
+    seed_id: number | null;
+    land_level_need: number;
+    seasons: number;
+    grow_phases: string;
+    exp: number;
+    special_fruit: string | null;
+    size: number | null;
+    offsetPosition: { x: number; y: number };
+    mutantEffectScale: { x: number; y: number };
+    harvestOffsetPosition: { x: number; y: number };
+    harvestRandom: boolean | null;
+    harvestAllSpineRes: string | null;
+    harvestAllOffsetPosition: string | null;
+    harvestAniName: string;
+    all_state_spine: string | null;
+    mature_effect: string;
+    mature_effect_offset: { x: number; y: number };
+    rare_plant_light_pos: string | null;
+    exp_root: number;
+    exp_alter: number;
+    fruit_root: number;
+    fruit_alter: number;
 }
 
 interface ItemInfo {
     id: number;
-    type?: number;
-    price?: number;
-    asset_name?: string;
+    type: number;
+    name: string;
+    interaction_type: string;
+    sells: string | null;
+    sell_cond: string | null;
+    cond_sells: string | null;
+    level: number | null;
+    target_id: number;
+    asset_name: string;
+    icon_res: string;
+    max_count: number;
+    max_own: number;
+    duration: any;
+    can_use: number;
+    desc: string;
+    effectDesc: string;
+    trait_id: number;
+    layer: number;
+    rarity: number;
+    rarity_color: string | null;
+    jumps: string;
+    ware_scale: any;
     [key: string]: any;
 }
 
@@ -117,6 +153,12 @@ function loadConfigs(): void {
             itemInfoMap.clear();
             seedItemMap.clear();
             for (const item of itemInfoConfig!) {
+                // 兼容处理：ItemInfo.json 中 trait_id 字段名带尾部空格
+                const raw: any = item as any;
+                if ('trait_id ' in raw && !('trait_id' in raw)) {
+                    raw.trait_id = raw['trait_id '];
+                    delete raw['trait_id '];
+                }
                 const id = Number(item && item.id) || 0;
                 if (id <= 0) continue;
                 itemInfoMap.set(id, item);
@@ -209,17 +251,17 @@ function getPlantByFruitId(fruitId: number): PlantItem | undefined {
 
 function getAllSeeds(): SeedInfo[] {
     return Array.from(seedToPlant.values()).map(p => ({
-        seedId: p.seed_id,
+        seedId: p.seed_id!,
         name: p.name,
-        requiredLevel: (() => { const si = seedItemMap.get(p.seed_id); return si ? (Number(si.level) || 0) : (Number(p.land_level_need) || 0); })(),
-        price: getSeedPrice(p.seed_id),
-        image: getSeedImageBySeedId(p.seed_id),
+        requiredLevel: (() => { const si = seedItemMap.get(p.seed_id!); return si ? (Number(si.level) || 0) : (Number(p.land_level_need) || 0); })(),
+        price: getSeedPrice(p.seed_id!),
+        image: getSeedImageBySeedId(p.seed_id!),
         seasons: Number(p.seasons) || 1,
         exp: Number(p.exp) || 0,
         growPhases: p.grow_phases || '',
         growTime: getPlantGrowTime(p.id),
         size: Number(p.size) || 0,
-        harvestCount: Number(p.fruit?.count) || 0,
+        harvestCount: Number(p.fruit.count) || 0,
     }));
 }
 
@@ -245,14 +287,36 @@ function getItemById(itemId: number): ItemInfo | undefined {
     return itemInfoMap.get(Number(itemId) || 0);
 }
 
+/**
+ * 解析 sells 字段，格式为 "货币ID:价格" 或 "货币ID1:价格1;货币ID2:价格2"
+ * 返回 [{ currencyId, price }, ...]
+ */
+function parseSells(sells: string | null | undefined): { currencyId: number; price: number }[] {
+    if (!sells) return [];
+    return sells.split(';').map(part => {
+        const [cid, price] = part.split(':');
+        return { currencyId: Number(cid) || 0, price: Number(price) || 0 };
+    });
+}
+
 function getSeedPrice(seedId: number): number {
     const item = seedItemMap.get(Number(seedId) || 0);
-    return item ? (Number(item.price) || 0) : 0;
+    if (!item) return 0;
+    const sellsList = parseSells(item.sells);
+    if (sellsList.length > 0) return sellsList[0].price;
+    // 回退到 cond_sells（活动道具可能 sells 为 null）
+    const condList = parseSells((item as any).cond_sells);
+    return condList.length > 0 ? condList[0].price : 0;
 }
 
 function getFruitPrice(fruitId: number): number {
     const item = itemInfoMap.get(Number(fruitId) || 0);
-    return item ? (Number(item.price) || 0) : 0;
+    if (!item) return 0;
+    const sellsList = parseSells(item.sells);
+    if (sellsList.length > 0) return sellsList[0].price;
+    // 回退到 cond_sells（活动道具可能 sells 为 null）
+    const condList = parseSells((item as any).cond_sells);
+    return condList.length > 0 ? condList[0].price : 0;
 }
 
 function getAllPlants(): PlantItem[] {
@@ -310,6 +374,7 @@ module.exports = {
     getItemImageById,
     getSeedPrice,
     getFruitPrice,
+    parseSells,
     getSeedImageBySeedId,
     // 配置管理查询
     getAllFruits,

@@ -13,6 +13,7 @@ const {
 } = require('../../models/store');
 const { getUserState } = require('../../utils/network');
 const { toNum, toLong, toTimeSec, getServerTimeSec, log, logWarn, sleep, randomDelay } = require('../../utils/utils');
+const { types } = require('../../utils/proto');
 const { getCurrentPhase, buildLandMap, getDisplayLandContext, isOccupiedSlaveLand } = require('../farm');
 const { recordOperation } = require('../stats');
 const { sellAllFruits } = require('../warehouse');
@@ -772,11 +773,28 @@ export async function visitFriendForSteal(friend: any, totalActions: any, myGid:
         const currentPhase: any = getCurrentPhase(land.plant.phases, false);
         if (!currentPhase || currentPhase.phase !== PlantPhase.MATURE) return false;
         if (!plant.stealable) return false;
-        const stealInfo: any[] = plant.steal_player;
-        if (!stealInfo || stealInfo.length === 0) return true; // 无人偷过，可偷
+        // stealers 字段为 bytes 类型，需手动解析为 StealPlayer 数组
+        let stealInfo: any[] = [];
+        if (plant.stealers && plant.stealers.length > 0 && plant.stealers[0] === 0x08) {
+            try {
+                const decoded = types.StealPlayer.decode(plant.stealers);
+                stealInfo = [decoded];
+            } catch {}
+        }
+        if (stealInfo.length === 0) return true; // 无人偷过，可偷
         const mySteal: any = stealInfo.find((s: any) => toNum(s.gid) === myGid);
         const stealCount: number = mySteal ? toNum(mySteal.num) : 0;
-        const maxSteal: number = toNum(plant.steal_num, 2);
+        // steal_num 为 bytes 类型，手动解析 varint
+        let maxSteal = 2;
+        if (plant.steal_num && plant.steal_num.length > 0) {
+            let v = 0, s = 0;
+            for (let i = 0; i < plant.steal_num.length && i < 10; i++) {
+                v |= (plant.steal_num[i] & 0x7f) << s;
+                if ((plant.steal_num[i] & 0x80) === 0) break;
+                s += 7;
+            }
+            if (v > 0) maxSteal = v;
+        }
         return stealCount < maxSteal;
     });
 

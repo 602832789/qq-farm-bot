@@ -639,7 +639,8 @@ async function plantFromShop(landsToPlant: number[], state: any, overrideStrateg
     if (!bestSeed) return { plantedLands: [] };
 
     const seedName = getPlantNameBySeedId(bestSeed.seedId);
-    const growTime = getPlantGrowTime(1020000 + (bestSeed.seedId - 20000));  // 转换为植物ID
+    const plantCfg = getPlantBySeedId(bestSeed.seedId);
+    const growTime = plantCfg ? getPlantGrowTime(plantCfg.id) : 0;
     const growTimeStr = growTime > 0 ? ` 生长${formatGrowTime(growTime)}` : '';
     const plantSize = getPlantSizeBySeedId(bestSeed.seedId);
     const landFootprint = plantSize * plantSize;

@@ -32,6 +32,7 @@ message LandInfo {
     repeated int64 slave_land_ids = 14;
     int64 land_size = 15;
     int64 lands_level = 16;
+    int64 field_17 = 17;                       // unknown new field
 
     // 土地buff
     message Buff {
@@ -55,6 +56,12 @@ message LandUpgradeCondition {
     // ... 其他条件字段
 }
 
+// ============ 偷菜玩家信息 ============
+message StealPlayer {
+    int64 gid = 1;                  // 偷菜者GID
+    int64 num = 2;                  // 已偷次数
+}
+
 // ============ 植物信息 ============
 message PlantInfo {
     int64 id = 1;                              // 植物/种子ID
@@ -69,7 +76,7 @@ message PlantInfo {
     int64 fruit_num = 11;                      // 果实数量
     repeated int64 weed_owners = 12;           // 放草的人 (非空=有草)
     repeated int64 insect_owners = 13;         // 放虫的人 (非空=有虫)
-    repeated int64 stealers = 14;              // 偷菜的人
+    bytes stealers = 14;                       // 偷菜的人 (服务端格式不一致，需手动解析)
     int64 grow_sec = 15;                       // 生长秒数
     bool stealable = 16;                       // 是否可偷
     int64 left_inorc_fert_times = 17;          // 剩余施肥次数
@@ -77,6 +84,32 @@ message PlantInfo {
     int64 steal_intimacy_level = 19;           // 偷菜亲密度等级
     repeated int64 mutant_config_ids = 20;     // 变异配置ID
     bool is_nudged = 21;                       // 是否被催熟
+    // repeated StealPlayer steal_player = 22;    // 旧版: 偷菜玩家详情 (GID+已偷次数)
+    int64 steal_player = 22;                   // 偷菜玩家相关数值 (服务端已改为varint)
+    bytes steal_num = 23;                      // 每人最大可偷次数 (服务端为bytes)
+    int64 field_24 = 24;                       // unknown new field
+    int64 field_25 = 25;                       // unknown new field
+    int64 field_26 = 26;                       // unknown new field
+    int64 field_27 = 27;                       // unknown new field
+    bytes field_32 = 32;                       // unknown (3-byte varint, 推测为某种ID)
+    PlantLimitInfo field_34 = 34;              // 植物限制信息
+    PlantActivityInfo field_36 = 36;           // 植物活动信息
+    int64 field_37 = 37;                       // unknown new field
+}
+
+// 植物限制信息 (field 34)
+message PlantLimitInfo {
+    int64 config_id = 1;                       // 配置ID (如1001)
+    int64 limit = 2;                           // 限制值 (如300)
+    int64 value = 3;                           // 当前值 (如1020184)
+}
+
+// 植物活动信息 (field 36)
+message PlantActivityInfo {
+    int64 activity_id = 1;                     // 活动ID (如1019)
+    int64 param1 = 2;                          // 参数1 (如240)
+    int64 param2 = 3;                          // 参数2 (如191)
+    int64 date = 4;                            // 日期 (如2026060100)
 }
 
 // ============ 生长阶段详情 ============

@@ -12,5 +12,5 @@ message AntiDataRequest {
 }
 
 message AntiDataReply {
-    int32 result = 1;          // 结果码
+    bytes result = 1;          // 结果数据 (服务端为bytes)
 }

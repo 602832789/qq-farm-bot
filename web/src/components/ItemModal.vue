@@ -52,6 +52,8 @@ const typeOptions = [
   { value: '15', label: '15 - 高级货币' },
   { value: '16', label: '16 - 自选礼包' },
   { value: '17', label: '17 - 变异果实' },
+  { value: '18', label: '18 - 皮肤/装饰' },
+  { value: '23', label: '23 - 虫虫道具' },
 ]
 
 // 货币类型选项

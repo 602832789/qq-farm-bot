@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package gamepb.seasonpb;
+
+import "corepb.proto";
+
+// ============ 赛季信息 ============
+message SeasonInfo {
+    int64 season_id = 1;            // 赛季ID
+    string name = 2;                // 赛季名称
+    int64 status = 3;               // 赛季状态
+    int64 is_opening_shown = 4;     // 是否已展示赛季开场 (服务端为int64)
+    int64 start_time = 5;           // 赛季开始时间
+    int64 end_time = 6;             // 赛季结束时间
+    int64 field_7 = 7;              // unknown
+    bytes battle_pass = 10;         // 战令数据 (嵌套结构)
+}
+
+// ============ 请求/回复 ============
+
+// --- 获取赛季信息 ---
+message GetSeasonInfoRequest {}
+
+message GetSeasonInfoReply {
+    SeasonInfo season_info = 1;
+}
+
+// --- 领取战令奖励 ---
+message ClaimBattlePassRewardsRequest {
+    repeated int64 level_ids = 1;   // 要领取的等级ID列表
+}
+
+message ClaimBattlePassRewardsReply {
+    bytes item = 1;                // 奖励物品 (服务端格式不一致)
+    bytes season_info = 2;         // 赛季信息 (服务端格式不一致)
+    bytes battle_pass = 3;         // 战令数据
+}
+
+// --- 标记赛季开场已展示 ---
+message MarkSeasonOpeningShownRequest {}
+
+message MarkSeasonOpeningShownReply {}
+
+// ============ 服务器推送 ============
+
+// 赛季变更通知
+message SeasonChangeNotify {
+    SeasonInfo season_info = 1;
+}
+
+// 战令变更通知
+message BattlePassChangeNotify {
+    SeasonInfo season_info = 1;
+}

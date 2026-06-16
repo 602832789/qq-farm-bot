@@ -62,3 +62,8 @@ message GetInteractSummaryRequest {}
 message GetInteractSummaryReply {
     InteractSummary summary = 1;
 }
+
+// --- 关闭互动弹窗 ---
+message DismissInteractPopupRequest {}
+
+message DismissInteractPopupReply {}

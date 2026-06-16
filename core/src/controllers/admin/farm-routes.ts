@@ -494,6 +494,7 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
             const seasons = Number(body.seasons) || 1;
             const fruitCount = Number(body.fruit_count) || 0;
             const price = Number(body.price) || 0;
+            const priceId = Number(body.priceId) || 1001;
 
             if (!seedId || seedId <= 0) {
                 return res.status(400).json({ ok: false, error: '种子ID必须为正整数' });
@@ -548,7 +549,8 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
             const plantEntry = {
                 id: newPlantId,
                 name,
-                mutant: '',
+                mutant_effect_plant: null,
+                special_fruit: null,
                 fruit: {
                     id: newFruitId,
                     count: fruitCount,
@@ -558,17 +560,18 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
                 seasons,
                 grow_phases: growPhases,
                 exp,
-                size,
+                size: size > 0 ? size : null,
                 offsetPosition: { x: 0, y: 0 },
                 mutantEffectScale: { x: 1, y: 1 },
                 harvestOffsetPosition: { x: -35, y: 40 },
-                harvestRandom: false,
-                harvestAllSpineRes: '',
-                harvestAllOffsetPosition: '',
-                all_state_spine: '',
+                harvestRandom: null,
+                harvestAllSpineRes: null,
+                harvestAllOffsetPosition: null,
+                harvestAniName: 'anim_harvest_putong',
+                all_state_spine: null,
                 mature_effect: 'effect/prefab/effect_plant_maturation',
                 mature_effect_offset: { x: 0, y: 0 },
-                rare_plant_light_pos: '',
+                rare_plant_light_pos: null,
                 exp_root: 0,
                 exp_alter: 0,
                 fruit_root: 0,
@@ -581,18 +584,20 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
                 type: 5,
                 name: `${name}种子`,
                 interaction_type: 'plant',
-                price_id: 0,
-                price,
+                sells: price > 0 ? `${priceId}:${price}` : null,
+                sell_cond: null,
+                cond_sells: null,
                 level: landLevelNeed,
                 target_id: 0,
                 asset_name: assetName || `Crop_${seedId}`,
                 icon_res: '',
                 max_count: 9999,
                 max_own: 9999,
+                duration: null,
                 can_use: 0,
                 desc: `种植后，可以收获一定数量的${name}。`,
                 effectDesc: name,
-                trait_id: 0,
+                'trait_id ': 0,
                 layer: 13,
                 rarity: 1,
                 rarity_color: 'D2C5AC',
@@ -606,18 +611,20 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
                 type: 6,
                 name,
                 interaction_type: '',
-                price_id: 0,
-                price: Math.round(price * 0.25),
+                sells: price > 0 ? `${priceId}:${Math.round(price * 0.25)}` : null,
+                sell_cond: null,
+                cond_sells: null,
                 level: landLevelNeed,
                 target_id: 0,
                 asset_name: assetName || `Crop_${seedId}`,
                 icon_res: '',
                 max_count: 999,
                 max_own: 999,
+                duration: null,
                 can_use: 0,
                 desc: `${name}的果实，可以出售换取金币。`,
                 effectDesc: name,
-                trait_id: 0,
+                'trait_id ': 0,
                 layer: 0,
                 rarity: 1,
                 rarity_color: 'D2C5AC',
@@ -689,12 +696,14 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
      */
     app.get('/api/config/seeds', async (req: Request, res: Response) => {
         try {
-            const { getAllSeeds, getItemById } = require('../../config/gameConfig');
+            const { getAllSeeds, getItemById, parseSells } = require('../../config/gameConfig');
             const seeds = getAllSeeds();
             // 补充 priceId 字段供前端统一价格显示
             const data = seeds.map((s: any) => {
                 const item = getItemById(s.seedId);
-                return { ...s, priceId: item ? Number(item.price_id) || 0 : 0 };
+                const sellsList = item ? parseSells(item.sells) : [];
+                const priceId = sellsList.length > 0 ? sellsList[0].currencyId : 0;
+                return { ...s, priceId };
             });
             res.json({ ok: true, data });
         } catch (e: any) {
@@ -707,16 +716,21 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
      */
     app.get('/api/config/fruits', async (req: Request, res: Response) => {
         try {
-            const { getAllFruits, getPlantByFruitId, getItemImageById } = require('../../config/gameConfig');
+            const { getAllFruits, getPlantByFruitId, getItemImageById, parseSells } = require('../../config/gameConfig');
             const fruits = getAllFruits();
             const data = fruits.map((fruit: any) => {
                 const plant = getPlantByFruitId(fruit.id);
+                const sellsList = parseSells(fruit.sells);
+                // 当 sells 为空时回退到 cond_sells
+                const effectiveList = sellsList.length > 0 ? sellsList : parseSells(fruit.cond_sells);
                 return {
                     id: fruit.id,
                     name: fruit.name,
                     type: fruit.type,
-                    price: Number(fruit.price) || 0,
-                    priceId: Number(fruit.price_id) || 0,
+                    price: effectiveList.length > 0 ? effectiveList[0].price : 0,
+                    priceId: effectiveList.length > 0 ? effectiveList[0].currencyId : 0,
+                    sellCond: fruit.sell_cond || null,
+                    condSells: fruit.cond_sells || null,
                     level: Number(fruit.level) || 0,
                     assetName: fruit.asset_name || '',
                     desc: fruit.desc || '',
@@ -741,16 +755,20 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
      */
     app.get('/api/config/items', async (req: Request, res: Response) => {
         try {
-            const { getAllItems, getItemsByType, getItemImageById } = require('../../config/gameConfig');
+            const { getAllItems, getItemsByType, getItemImageById, parseSells } = require('../../config/gameConfig');
             const typeFilter = req.query.type ? Number(req.query.type) : null;
             const items = typeFilter ? getItemsByType(typeFilter) : getAllItems();
-            const data = items.map((item: any) => ({
+            const data = items.map((item: any) => {
+                const sellsList = parseSells(item.sells);
+                return {
                 id: item.id,
                 type: item.type,
                 name: item.name,
                 interactionType: item.interaction_type || '',
-                priceId: Number(item.price_id) || 0,
-                price: Number(item.price) || 0,
+                priceId: sellsList.length > 0 ? sellsList[0].currencyId : 0,
+                price: sellsList.length > 0 ? sellsList[0].price : 0,
+                sellCond: item.sell_cond || null,
+                condSells: item.cond_sells || null,
                 level: Number(item.level) || 0,
                 assetName: item.asset_name || '',
                 iconRes: item.icon_res || '',
@@ -765,7 +783,8 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
                 rarityColor: item.rarity_color || '',
                 jumps: item.jumps || '',
                 image: getItemImageById(item.id) || '',
-            }));
+                };
+            });
             res.json({ ok: true, data });
         } catch (e: any) {
             handleApiError(res, e);
@@ -793,6 +812,8 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
                 { value: 15, label: '高级货币' },
                 { value: 16, label: '自选礼包' },
                 { value: 17, label: '变异果实' },
+                { value: 18, label: '皮肤/装饰' },
+                { value: 23, label: '虫虫道具' },
             ];
             res.json({ ok: true, data: itemTypes });
         } catch (e: any) {
@@ -813,12 +834,12 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
                 seedId: p.seed_id,
                 fruitId: p.fruit ? p.fruit.id : null,
                 fruitCount: p.fruit ? p.fruit.count : 0,
-                landLevelNeed: (() => { const si = getItemById(p.seed_id); return si ? Number(si.level || 0) : Number(p.land_level_need || 0); })(),
+                landLevelNeed: (() => { const si = p.seed_id ? getItemById(p.seed_id) : null; return si ? Number(si.level || 0) : Number(p.land_level_need || 0); })(),
                 seasons: Number(p.seasons) || 1,
                 growPhases: p.grow_phases || '',
                 exp: Number(p.exp) || 0,
-                price: getSeedPrice(p.seed_id),
-                image: getSeedImageBySeedId(p.seed_id) || '',
+                price: p.seed_id ? getSeedPrice(p.seed_id) : 0,
+                image: p.seed_id ? getSeedImageBySeedId(p.seed_id) : '',
             }));
             res.json({ ok: true, data });
         } catch (e: any) {
@@ -835,7 +856,7 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
             const plantId = Number(body.plantId);
             const name = String(body.name || '').trim();
             const price = Number(body.price) || 0;
-            const priceId = Number(body.priceId) || 0;
+            const priceId = Number(body.priceId) || 1001;
             const desc = String(body.desc || '').trim();
             const effectDesc = String(body.effectDesc || '').trim();
             const rarity = Number(body.rarity) || 0;
@@ -866,8 +887,8 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
             }
 
             // 生成果实 ID
-            const fruitId = existingFruitId || (40000 + (plant.seed_id || 0));
-            const assetName = String(body.assetName || '').trim() || `Crop_${plant.seed_id || plantId}`;
+            const fruitId = existingFruitId || (40000 + (plant.seed_id || plant.id));
+            const assetName = String(body.assetName || '').trim() || `Crop_${plant.seed_id || plant.id}`;
 
             // 构建果实条目
             const fruitEntry = {
@@ -875,18 +896,20 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
                 type: 6,
                 name,
                 interaction_type: '',
-                price_id: priceId,
-                price,
+                sells: price > 0 ? `${priceId}:${price}` : null,
+                sell_cond: null,
+                cond_sells: null,
                 level: level || Number(plant.land_level_need) || 0,
                 target_id: 0,
                 asset_name: assetName,
                 icon_res: '',
                 max_count: maxCount,
                 max_own: maxCount,
+                duration: null,
                 can_use: 0,
                 desc: desc || `${name}的果实，可以出售换取金币。`,
                 effectDesc: effectDesc || name,
-                trait_id: 0,
+                'trait_id ': 0,
                 layer: 0,
                 rarity,
                 rarity_color: rarity > 0 ? 'D2C5AC' : '',
@@ -960,7 +983,7 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
             }
 
             const price = Number(body.price) || 0;
-            const priceId = Number(body.priceId) || 0;
+            const priceId = Number(body.priceId) || 1001;
             const interactionType = String(body.interactionType || '').trim();
             const canUse = Number(body.canUse) || 0;
             const desc = String(body.desc || '').trim();
@@ -975,18 +998,20 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
                 type,
                 name,
                 interaction_type: interactionType,
-                price_id: priceId,
-                price,
+                sells: price > 0 ? `${priceId}:${price}` : null,
+                sell_cond: null,
+                cond_sells: null,
                 level,
                 target_id: 0,
                 asset_name: assetName,
                 icon_res: '',
                 max_count: maxCount,
                 max_own: maxCount,
+                duration: null,
                 can_use: canUse,
                 desc,
                 effectDesc: effectDesc || name,
-                trait_id: 0,
+                'trait_id ': 0,
                 layer: 0,
                 rarity,
                 rarity_color: rarity > 0 ? 'D2C5AC' : '',
@@ -1118,7 +1143,11 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
                     seedItem.effectDesc = name;
                     seedItem.desc = `种植后，可以收获一定数量的${name}。`;
                 }
-                if (body.price !== undefined) seedItem.price = Number(body.price);
+                if (body.price !== undefined) {
+                    const newPrice = Number(body.price) || 0;
+                    const priceId = Number(body.priceId) || 1001;
+                    seedItem.sells = newPrice > 0 ? `${priceId}:${newPrice}` : null;
+                }
                 if (body.land_level_need !== undefined) seedItem.level = Number(body.land_level_need);
             }
 
@@ -1223,8 +1252,11 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
                 fruitItem.effectDesc = name;
                 fruitItem.desc = `${name}的果实，可以出售换取金币。`;
             }
-            if (body.price !== undefined) fruitItem.price = Number(body.price);
-            if (body.priceId !== undefined) fruitItem.price_id = Number(body.priceId);
+            if (body.price !== undefined) {
+                const newPrice = Number(body.price) || 0;
+                const priceId = Number(body.priceId) || 1001;
+                fruitItem.sells = newPrice > 0 ? `${priceId}:${newPrice}` : null;
+            }
             if (body.rarity !== undefined) fruitItem.rarity = Number(body.rarity);
             if (body.desc !== undefined) fruitItem.desc = String(body.desc);
             if (body.level !== undefined) fruitItem.level = Number(body.level);
@@ -1309,8 +1341,11 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
             }
 
             if (body.name !== undefined) item.name = String(body.name).trim();
-            if (body.price !== undefined) item.price = Number(body.price);
-            if (body.priceId !== undefined) item.price_id = Number(body.priceId);
+            if (body.price !== undefined) {
+                const newPrice = Number(body.price) || 0;
+                const priceId = Number(body.priceId) || 1001;
+                item.sells = newPrice > 0 ? `${priceId}:${newPrice}` : null;
+            }
             if (body.interactionType !== undefined) item.interaction_type = String(body.interactionType);
             if (body.canUse !== undefined) item.can_use = Number(body.canUse);
             if (body.desc !== undefined) item.desc = String(body.desc);
