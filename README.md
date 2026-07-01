@@ -1,18 +1,39 @@
-# QQ 农场多账号挂机 + Web 面板
-## 作者QQ：1503938233--付费版请咨询
-- 基于 Node.js 的 QQ 农场自动化工具，支持多账号管理、Web 控制面板、实时日志与数据分析。
-- 更新优化日志详见update.log 感谢支持，喜欢的点一个star⭐吧！
-- 默认账号密码都是admin，端口3007，请部署登录后尽快修改密码！
-- 重构版V2.4.5完整更新日志详见：[更新日志](https://gitee.com/xlzcandy/qq-classic-farm-update-log/blob/master/README.md)
-## 开源版停止维护，但是请不要贩卖开源版本，免费项目，禁止倒卖！所有功能都是正常使用的，只需要更新一下core/src/config/config.js里面的版本号然后重启后端即可，一定要重启后端，docker部署的需要删除容器重新构建才生效，开源版本请自行解决各种部署问题、使用问题等，感谢各位支持！
----
+# QQ Farm Bot Private
+
+> 私有维护仓库。此仓库用于 QQ 农场多账号挂机工具的重构版源码维护，不包含运行时账号数据、用户数据和日志。
+
+## 简介
+
+这是一个基于 Node.js 的 QQ 农场自动化工具，提供多账号管理、Web 控制面板、实时日志、数据统计、好友管理、活动、商城、图鉴和后台管理等功能。
+
+当前仓库定位为 `2.3.x` 重构维护版，重点是整理前后端结构、降低维护成本，并保留已有核心功能。
+
+维护信息：
+
+- 仓库：`cwser/qq-farm-bot-private`
+- 维护分支：`main`
+- 作者 QQ：`1503938233`
+- 完整更新日志参考：[QQ 农场更新日志](https://gitee.com/xlzcandy/qq-classic-farm-update-log/blob/master/README.md)
+
+## 当前状态
+
+- 后端：Node.js / CommonJS / Express / Socket.IO
+- 前端：Vue 3 / Vite / TypeScript / Pinia / UnoCSS
+- 包管理：pnpm workspace
+- 部署：源码运行、Docker、二进制打包
+- 默认面板端口：`3007`
+- 默认管理员账号：`admin`
+- 默认管理员密码：`admin`
+
+部署后请立即修改默认密码。
+
 ## 技术栈
 
 **后端**
 
 [<img src="https://skillicons.dev/icons?i=nodejs" height="48" title="Node.js 20+" />](https://nodejs.org/)
 [<img src="https://skillicons.dev/icons?i=express" height="48" title="Express 4" />](https://expressjs.com/)
-[<img src="https://skillicons.dev/icons?i=socketio" height="48" title="Socket.io 4" />](https://socket.io/)
+[<img src="https://skillicons.dev/icons?i=socketio" height="48" title="Socket.IO 4" />](https://socket.io/)
 
 **前端**
 
@@ -25,113 +46,119 @@
 **部署**
 
 [<img src="https://skillicons.dev/icons?i=pnpm" height="48" title="pnpm 10" />](https://pnpm.io/)
-[<img src="https://skillicons.dev/icons?i=githubactions" height="48" title="GitHub Actions" />](https://github.com/features/actions)
+[<img src="https://skillicons.dev/icons?i=docker" height="48" title="Docker" />](https://www.docker.com/)
 
----
 ## 环境要求
 
-- 源码运行：Node.js 20+，pnpm（推荐通过 `corepack enable` 启用）
-- 二进制发布版：无需安装 Node.js
+- Node.js 20+
+- pnpm，推荐通过 `corepack enable` 启用
+- Docker，可选，仅 Docker 部署时需要
 
-## 安装与启动（源码方式）
-
-### Windows
+## 快速启动
 
 ```powershell
-# 1. 安装 Node.js 20+（https://nodejs.org/）并启用 pnpm
-node -v
-corepack enable
-pnpm -v
+git clone https://github.com/cwser/qq-farm-bot-private.git
+cd qq-farm-bot-private
 
-# 2. 安装依赖并构建前端
-cd D:\Projects\qq-farm-bot-ui
+corepack enable
 pnpm install
 pnpm build:web
-
-# 3. 启动
 pnpm dev:core
+```
 
-# （可选）设置其他端口后启动
+启动后访问：
+
+- 本机：`http://localhost:3007`
+- 局域网：`http://<你的IP>:3007`
+
+如需修改端口：
+
+```powershell
 $env:ADMIN_PORT="你的新端口"
 pnpm dev:core
 ```
 
-### Linux（Ubuntu/Debian）
-建议使用宝塔最为便捷，在网站其他项目选项中按照如图所示去部署即可
+## Docker 部署
 
-<img src="https://free.picui.cn/free/2026/03/27/69c6398dd326c.png"  alt="图片失效"/>
+```bash
+git clone https://github.com/cwser/qq-farm-bot-private.git
+cd qq-farm-bot-private
 
-启动后访问面板：
-- 本机：`http://localhost:3007`
-- 局域网：`http://<你的IP>:3007`
-
----
-
-## Docker 部署（拉取不了镜像直接下载压缩包解压即可）
-```
-# 拉取仓库
-git clone https://github.com/XyhTender/qq-farm-automation-bot.git
-
-# 进入目录
-cd /qq-farm-automation-bot-main
-
-# 构建并后台启动
-docker compose -f docker-compose.yml up -d --build
-
-# 查看日志
+docker compose up -d --build
 docker compose logs -f
-
-# 停止并移除容器
-docker compose down
-
-# 浏览器访问http://你的IP:3007
 ```
 
-## 二进制发布版（无需 Node.js）
+停止并移除容器：
 
-### 构建
+```bash
+docker compose down
+```
+
+Docker 部署修改版本号或配置后，建议重新构建容器：
+
+```bash
+docker compose down
+docker compose up -d --build
+```
+
+## 二进制发布版
+
+构建：
 
 ```bash
 pnpm install
 pnpm package:release
 ```
 
-产物输出在 `dist/` 目录：
-- `产物在Releases中也可以下载，无需自己构建`
+产物输出在 `dist/` 目录。
 
 | 平台 | 文件名 |
-|------|--------|
+| --- | --- |
 | Windows x64 | `qq-farm-bot.exe` |
 | Linux x64 | `qq-farm-bot` |
 | macOS Intel | `qq-farm-bot-x64` |
 | macOS Apple Silicon | `qq-farm-bot-arm64` |
 
-### 运行
+运行：
 
 ```bash
 # Windows：双击 exe 或在终端执行
 .\qq-farm-bot-win-x64.exe
 
 # Linux / macOS
-chmod +x ./qq-farm-bot && ./qq-farm-bot
+chmod +x ./qq-farm-bot
+./qq-farm-bot
 ```
 
-程序会在可执行文件同级目录自动创建 `data/` 并写入 `store.json`、`accounts.json`。
-
----
+程序会在可执行文件同级目录自动创建 `data/`，用于保存账号、用户、日志和缓存等运行时数据。
 
 ## 登录与安全
 
 - 面板首次访问需要登录
-- 默认管理账号：`admin/admin`
-- **建议部署后立即修改为强密码**
+- 默认管理员账号：`admin`
+- 默认管理员密码：`admin`
+- 部署后请立即修改默认密码
+- 不要把运行时数据、账号文件、日志或 `.env` 文件提交到仓库
 
----
+## 数据与隐私
+
+以下内容已通过 `.gitignore` 排除，不应提交到仓库：
+
+- `core/data/`
+- `node_modules/`
+- `web/dist/`
+- `.env`
+- `.env.*`
+- `*.log`
+- `logs/`
+- `tmp/`
+
+`core/data/` 会在运行时自动生成，可能包含账号、用户、登录日志、好友缓存、统计数据和其他敏感信息。备份或迁移服务器时可以单独处理该目录，但不要提交到 GitHub。
 
 ## 项目结构
 
-```
-qq-farm-bot-ui/
+```text
+qq-farm-bot-private/
 ├── core/                  # 后端（Node.js 机器人引擎）
 │   ├── src/
 │   │   ├── config/        # 配置管理
@@ -141,23 +168,49 @@ qq-farm-bot-ui/
 │   │   ├── proto/         # Protobuf 协议定义
 │   │   ├── runtime/       # 运行时引擎与 Worker 管理
 │   │   └── services/      # 业务逻辑（农场、好友、任务等）
-│   ├── data/              # 运行时数据（accounts.json、store.json）
-│   └── client.js          # 主进程入口
+│   └── client.js          # 后端入口
 ├── web/                   # 前端（Vue 3 + Vite）
 │   ├── src/
 │   │   ├── api/           # API 客户端
 │   │   ├── components/    # Vue 组件
 │   │   ├── stores/        # Pinia 状态管理
 │   │   └── views/         # 页面视图
-│   └── dist/              # 构建产物
+├── docker-compose.yml
 ├── pnpm-workspace.yaml
 └── package.json
 ```
 
----
+## 常用命令
+
+```bash
+# 安装依赖
+pnpm install
+
+# 构建前端
+pnpm build:web
+
+# 启动后端和面板
+pnpm dev:core
+
+# 前后端检查
+pnpm lint
+
+# 打包发布版
+pnpm package:release
+```
+
+## 维护说明
+
+- 只提交源码、配置、锁文件、静态资源和文档。
+- 不提交 `core/data/`、依赖目录、构建产物或本地日志。
+- 更新功能前优先确认是可见功能、隐藏功能、内部能力还是休眠能力。
+- 前端大页面逐步拆分到 `components/`、`composables/` 和 `stores/`。
+- 后端入口只保留 wiring，具体接口逻辑优先下沉到领域路由、helper 或 service。
+- 中文显示异常时先确认文件真实 UTF-8 内容，不要只按终端乱码判断。
 
 ## 特别感谢
-- 基于[Penty-d/qq-farm-bot-ui](https://github.com/Penty-d/qq-farm-bot-ui)二改
+
+- 基于 [Penty-d/qq-farm-bot-ui](https://github.com/Penty-d/qq-farm-bot-ui) 二改
 - 核心功能：[linguo2625469/qq-farm-bot](https://github.com/linguo2625469/qq-farm-bot)
 - 部分功能：[QianChenJun/qq-farm-bot](https://github.com/QianChenJun/qq-farm-bot)
 - 扫码登录：[lkeme/QRLib](https://github.com/lkeme/QRLib)
