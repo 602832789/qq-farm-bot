@@ -12,8 +12,8 @@
 
 - 仓库：`cwser/qq-farm-bot-private`
 - 维护分支：`main`
-- 作者 QQ：`1503938233`
-- 完整更新日志参考：[QQ 农场更新日志](https://gitee.com/xlzcandy/qq-classic-farm-update-log/blob/master/README.md)
+- 作者 QQ：`1352674939`
+- 完整更新日志参考：[QQ 农场更新日志](https://github.com/cwser/qq-farm-bot-private/blob/main/UPDATE_README.md)
 
 ## 当前状态
 
