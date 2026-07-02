@@ -65,6 +65,8 @@ const userState = {
     exp: 0,
     coupon: 0, // 点券(ID:1002)
     goldBean: 0, // 金豆豆(ID:1005)
+    openId: '',
+    avatar: '',
 };
 
 function getUserState() { return userState; }
@@ -476,13 +478,18 @@ async function sendLogin(onLoginSuccess) {
                 userState.level = toNum(reply.basic.level);
                 userState.gold = toNum(reply.basic.gold);
                 userState.exp = toNum(reply.basic.exp);
+                userState.openId = String(reply.basic.open_id || '').trim();
+                userState.avatar = String(reply.basic.avatar_url || '').trim();
 
                 // 更新状态栏
                 updateStatusFromLogin({
+                    gid: userState.gid,
                     name: userState.name,
                     level: userState.level,
                     gold: userState.gold,
                     exp: userState.exp,
+                    openId: userState.openId,
+                    avatar: userState.avatar,
                 });
 
                 log('系统', `登录成功: ${userState.name} (Lv${userState.level})`);

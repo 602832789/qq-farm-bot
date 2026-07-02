@@ -1241,6 +1241,8 @@ function normalizeAccountsData(data) {
 function addOrUpdateAccount(account) {
     const data = normalizeAccountsData(loadAccounts());
     let accountId = '';
+    const nextAvatar = account.avatar || account.avatarUrl || account.avatar_url;
+    const nextOpenId = account.openId || account.open_id;
 
     if (account.id) {
         // 更新已有账号
@@ -1250,6 +1252,8 @@ function addOrUpdateAccount(account) {
                 ...data.accounts[idx],
                 ...account,
                 name: account.name !== undefined ? account.name : data.accounts[idx].name,
+                ...(nextAvatar !== undefined ? { avatar: nextAvatar } : {}),
+                ...(nextOpenId !== undefined ? { openId: nextOpenId } : {}),
                 updatedAt: Date.now()
             };
             accountId = String(data.accounts[idx].id || '');
@@ -1267,7 +1271,9 @@ function addOrUpdateAccount(account) {
             wxid: account.wxid ? String(account.wxid) : '',
             uin: account.uin ? String(account.uin) : '',
             qq: account.qq ? String(account.qq) : (account.uin ? String(account.uin) : ''),
-            avatar: account.avatar || account.avatarUrl || '',
+            gid: account.gid ? String(account.gid) : '',
+            openId: nextOpenId ? String(nextOpenId) : '',
+            avatar: nextAvatar || '',
             username: account.username || '',
             createdAt: Date.now(),
             updatedAt: Date.now()

@@ -200,7 +200,7 @@ function isSmartFertilizerMode(mode: string) {
         <BaseSwitch v-model="settings.automation.friend_steal" label="自动偷菜" />
         <BaseSwitch v-model="settings.automation.friend_help" label="自动帮忙" />
         <BaseSwitch v-model="settings.automation.friend_bad" label="自动捣乱" />
-        <BaseSwitch v-model="settings.automation.friend_help_exp_limit" label="经验满不帮忙" />
+        <BaseSwitch v-model="settings.automation.friend_help_exp_limit" label="经验满只帮护主犬" />
       </div>
 
       <div v-if="settings.automation.friend" class="rounded bg-sky-50 p-3 text-sm dark:bg-sky-900/20">

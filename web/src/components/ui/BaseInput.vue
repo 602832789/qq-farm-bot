@@ -32,7 +32,7 @@ const inputType = computed(() => {
         :type="inputType"
         :placeholder="placeholder"
         :disabled="disabled"
-        class="base-input w-full border border-gray-200 rounded-lg bg-white px-3 py-2 outline-none transition-all duration-200 dark:border-gray-700 focus:border-green-500 dark:bg-gray-800 disabled:bg-gray-50 dark:text-white disabled:text-gray-400 focus:ring-2 focus:ring-green-500/20 dark:focus:border-green-500 dark:disabled:bg-gray-800/50"
+        class="base-input w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none transition-all duration-200 dark:border-gray-700 disabled:bg-gray-50 dark:text-white disabled:text-gray-400 focus:ring-2 dark:disabled:bg-gray-800/50"
         :class="{ 'pr-10': type === 'password' || (clearable && model) }"
       >
       <button
@@ -61,5 +61,17 @@ const inputType = computed(() => {
 .base-input::-ms-reveal,
 .base-input::-ms-clear {
   display: none;
+}
+
+.base-input {
+  background: var(--input-bg);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+.base-input:focus {
+  border-color: var(--theme-primary);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--theme-primary) 18%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.32);
 }
 </style>

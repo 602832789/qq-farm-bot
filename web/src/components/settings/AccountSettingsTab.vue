@@ -39,6 +39,16 @@ const emit = defineEmits<{
   closeClearStoppedConfirm: []
   confirmClearStopped: []
 }>()
+
+function accountAvatar(acc: any) {
+  const direct = String(acc?.avatar || acc?.avatarUrl || acc?.avatar_url || '').trim()
+  if (direct)
+    return direct
+  const qq = String(acc?.uin || acc?.qq || '').trim()
+  if (/^\d+$/.test(qq))
+    return `https://q1.qlogo.cn/g?b=qq&nk=${qq}&s=100`
+  return ''
+}
 </script>
 
 <template>
@@ -121,7 +131,7 @@ const emit = defineEmits<{
         <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
           <div class="min-w-0 flex flex-1 items-center gap-3">
             <div class="h-10 w-10 flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-100 sm:h-12 sm:w-12 dark:bg-gray-700">
-              <img v-if="acc.uin" :src="`https://q1.qlogo.cn/g?b=qq&nk=${acc.uin}&s=100`" class="h-full w-full object-cover">
+              <img v-if="accountAvatar(acc)" :src="accountAvatar(acc)" class="h-full w-full object-cover">
               <div v-else class="i-carbon-user text-xl text-gray-400 sm:text-2xl" />
             </div>
             <div class="min-w-0 flex-1">

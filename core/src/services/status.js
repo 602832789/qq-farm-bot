@@ -17,7 +17,10 @@ const statusData = {
   name: '',
   level: 0,
   gold: 0,
-  exp: 0
+  exp: 0,
+  gid: 0,
+  openId: '',
+  avatar: ''
 };
 
 // ─── ANSI 转义序列 ───
@@ -145,7 +148,10 @@ function updateStatusFromLogin(loginData) {
     name: loginData.name || statusData.name,
     level: loginData.level ?? statusData.level,
     gold: loginData.gold ?? statusData.gold,
-    exp: loginData.exp ?? statusData.exp
+    exp: loginData.exp ?? statusData.exp,
+    gid: loginData.gid ?? statusData.gid,
+    openId: loginData.openId || statusData.openId,
+    avatar: loginData.avatar || statusData.avatar
   });
 }
 

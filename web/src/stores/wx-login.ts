@@ -190,7 +190,7 @@ export const useWxLoginStore = defineStore('wx-login', () => {
   }
 
   // 检查登录状态
-  async function checkLogin(): Promise<{ success: boolean, wxid?: string, nickname?: string }> {
+  async function checkLogin(): Promise<{ success: boolean, wxid?: string, nickname?: string, avatar?: string }> {
     if (!uuid.value) {
       return { success: false }
     }
@@ -210,6 +210,7 @@ export const useWxLoginStore = defineStore('wx-login', () => {
         const resultData = result.data || result.Data || {}
         const wxid = resultData.wxid || resultData.Wxid || resultData.userName || resultData.UserName || ''
         const nickname = resultData.nickname || resultData.Nickname || resultData.nickName || resultData.NickName || '微信用户'
+        const avatar = resultData.avatar || resultData.Avatar || resultData.avatarUrl || resultData.AvatarUrl || resultData.headImgUrl || resultData.HeadImgUrl || ''
 
         if (result.code === 0 && wxid) {
           // 真正登录成功（有wxid）
@@ -219,6 +220,7 @@ export const useWxLoginStore = defineStore('wx-login', () => {
               acctSectResp: {
                 userName: wxid,
                 nickName: nickname,
+                avatar,
               },
             },
           }
@@ -249,13 +251,14 @@ export const useWxLoginStore = defineStore('wx-login', () => {
       const acctResp = data?.Data?.acctSectResp || data?.Data?.AcctSectResp
       const userName = acctResp?.userName || acctResp?.UserName
       const nickName = acctResp?.nickName || acctResp?.NickName || '微信用户'
+      const avatar = acctResp?.avatar || acctResp?.Avatar || acctResp?.avatarUrl || acctResp?.AvatarUrl || acctResp?.headImgUrl || acctResp?.HeadImgUrl || ''
       const qrStatus = data?.Data?.status
 
       if (data.Success && userName) {
         wxid.value = userName
         status.value = 'success'
         statusMessage.value = `登录成功！欢迎 ${nickName}`
-        return { success: true, wxid: userName, nickname: nickName }
+        return { success: true, wxid: userName, nickname: nickName, avatar }
       }
       else if (data.Success && (qrStatus === 1 || qrStatus === 0)) {
         status.value = qrStatus === 1 ? 'confirming' : 'qr_ready'

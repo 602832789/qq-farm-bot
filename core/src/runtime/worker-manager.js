@@ -31,6 +31,65 @@ function createWorkerManager(deps) {
     /** 是否支持 Thread 模式（非 pkg 打包 + Worker 可用） */
     const threadMode = runtimeMode === 'thread' && !processRef.pkg && typeof WorkerThread === 'function';
 
+    function cleanText(value) {
+        return String(value || '').trim();
+    }
+
+    function buildQqAvatarUrl(qq) {
+        const value = cleanText(qq);
+        if (!/^\d+$/.test(value)) return '';
+        return `https://q1.qlogo.cn/g?b=qq&nk=${  value  }&s=100`;
+    }
+
+    function resolveLoginProfile(status, worker) {
+        const data = status && typeof status === 'object' ? status : {};
+        const info = data.status && typeof data.status === 'object' ? data.status : {};
+        const platform = cleanText(info.platform || data.platform || worker.platform || 'qq').toLowerCase();
+        const gid = cleanText(info.gid || data.gid);
+        const openId = cleanText(info.openId || info.open_id || data.openId || data.open_id);
+        const avatar = cleanText(info.avatar || info.avatarUrl || info.avatar_url || data.avatar || data.avatarUrl || data.avatar_url);
+        const qq = cleanText(info.qq || info.uin || data.qq || data.uin || worker.qq || worker.uin);
+        const fallbackAvatar = platform === 'qq' ? buildQqAvatarUrl(qq) : '';
+
+        return {
+            platform,
+            gid,
+            openId,
+            qq,
+            avatar: avatar || fallbackAvatar
+        };
+    }
+
+    function syncAccountProfile(accountId, msgData, worker) {
+        const profile = resolveLoginProfile(msgData, worker);
+        const update = { id: accountId };
+
+        if (profile.openId && worker.openId !== profile.openId) {
+            update.openId = profile.openId;
+        }
+        if (profile.gid && worker.gid !== profile.gid) {
+            update.gid = profile.gid;
+        }
+        if (profile.qq && worker.qq !== profile.qq) {
+            update.qq = profile.qq;
+            update.uin = profile.qq;
+        }
+        if (profile.avatar && worker.avatar !== profile.avatar) {
+            update.avatar = profile.avatar;
+        }
+
+        if (Object.keys(update).length <= 1) return;
+
+        addOrUpdateAccount(update);
+        if (update.openId) worker.openId = update.openId;
+        if (update.gid) worker.gid = update.gid;
+        if (update.qq) {
+            worker.qq = update.qq;
+            worker.uin = update.uin;
+        }
+        if (update.avatar) worker.avatar = update.avatar;
+    }
+
     /**
      * 创建 Thread Worker
      */
@@ -115,6 +174,12 @@ function createWorkerManager(deps) {
             reqId: 1,
             name: account.name,
             username: account.username || '',
+            platform: account.platform || 'qq',
+            gid: account.gid || '',
+            openId: account.openId || account.open_id || '',
+            qq: account.qq || account.uin || '',
+            uin: account.uin || account.qq || '',
+            avatar: account.avatar || account.avatarUrl || '',
             stopping: false,
             disconnectedSince: 0,
             offlineReminderTriggered: false,
@@ -268,6 +333,8 @@ function createWorkerManager(deps) {
             if (typeof onStatusSync === 'function') {
                 onStatusSync(accountId, wrk.status, wrk.name);
             }
+
+            syncAccountProfile(accountId, msg.data, wrk);
 
             // 同步昵称
             if (msg.data && msg.data.status && msg.data.status.name) {

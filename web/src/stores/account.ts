@@ -10,7 +10,10 @@ export interface Account {
   uin?: number
   qq?: string | number
   wxid?: string
+  gid?: string | number
+  openId?: string
   avatar?: string
+  avatarUrl?: string
   username?: string
   platform?: string
   running?: boolean

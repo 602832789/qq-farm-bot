@@ -25,22 +25,22 @@ const componentTag = computed(() => {
   return 'button'
 })
 
-const baseClasses = 'inline-flex items-center justify-center rounded-lg font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60'
+const baseClasses = 'inline-flex items-center justify-center rounded-lg font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 active:scale-[0.98]'
 
 const variantClasses = computed(() => {
   switch (props.variant) {
     case 'primary':
-      return 'text-white shadow-sm hover:brightness-95 focus:ring-green-500'
+      return 'text-white shadow-sm hover:-translate-y-0.5 hover:brightness-105 focus:ring-[var(--theme-primary)]'
     case 'secondary':
-      return 'bg-gray-100 text-gray-700 hover:bg-gray-200 focus:ring-gray-500 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600'
+      return 'border border-gray-200 bg-white/70 text-gray-700 shadow-sm hover:-translate-y-0.5 hover:bg-gray-50 focus:ring-gray-400 dark:border-gray-700 dark:bg-gray-800/70 dark:text-gray-200 dark:hover:bg-gray-700'
     case 'success':
       return 'bg-green-600 text-white hover:bg-green-700 focus:ring-green-500 shadow-sm dark:bg-green-600 dark:hover:bg-green-500'
     case 'danger':
       return 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500 shadow-sm dark:bg-red-600 dark:hover:bg-red-500'
     case 'ghost':
-      return 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'
+      return 'text-gray-600 hover:bg-gray-100/80 dark:text-gray-400 dark:hover:bg-gray-800/80'
     case 'outline':
-      return 'border border-gray-300 bg-transparent text-gray-700 hover:bg-gray-50 focus:ring-gray-500 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800'
+      return 'border border-gray-200 bg-transparent text-gray-700 hover:-translate-y-0.5 hover:bg-gray-50 focus:ring-gray-400 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800'
     case 'text':
       return 'hover:underline p-0 bg-transparent shadow-none hover:bg-transparent'
     default:
@@ -66,7 +66,7 @@ const widthClasses = computed(() => props.block ? 'w-full' : '')
 
 const buttonStyle = computed(() => {
   if (props.variant === 'primary' || (!props.variant && props.variant !== 'secondary' && props.variant !== 'danger' && props.variant !== 'success' && props.variant !== 'ghost' && props.variant !== 'outline' && props.variant !== 'text')) {
-    return { backgroundColor: 'var(--theme-primary)' }
+    return { background: 'var(--theme-gradient)', boxShadow: '0 10px 24px color-mix(in srgb, var(--theme-primary) 22%, transparent)' }
   }
   if (props.variant === 'text') {
     return { color: 'var(--theme-primary)' }

@@ -362,21 +362,23 @@ async function copyToken() {
 
 <template>
   <aside
-    class="fixed inset-y-0 left-0 z-50 h-full w-64 flex flex-col border-r border-gray-200/50 transition-transform duration-300 lg:static lg:translate-x-0 dark:border-gray-700/50"
+    class="fixed inset-y-0 left-0 z-50 h-full w-72 flex flex-col border-r border-gray-200/50 p-3 transition-transform duration-300 lg:static lg:translate-x-0 dark:border-gray-700/50"
     :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full'"
-    :style="{ background: 'var(--theme-bg)', color: 'var(--theme-text)' }"
+    :style="{ background: 'color-mix(in srgb, var(--surface-1) 88%, transparent)', color: 'var(--theme-text)' }"
   >
     <!-- Brand -->
-    <div class="h-16 flex items-center justify-between border-b border-gray-200/50 px-6 dark:border-gray-700/50">
+    <div class="glass-panel h-16 flex items-center justify-between rounded-lg px-4">
       <div class="flex items-center gap-3">
-        <div class="i-carbon-sprout text-2xl" :style="{ color: 'var(--theme-primary)' }" />
-        <span class="bg-clip-text text-lg text-transparent font-bold" :style="{ backgroundImage: 'var(--theme-gradient)' }">
+        <div class="h-10 w-10 flex items-center justify-center rounded-lg shadow-sm" :style="{ background: 'var(--theme-gradient)' }">
+          <div class="i-carbon-sprout text-xl text-white" />
+        </div>
+        <span class="bg-clip-text text-base text-transparent font-bold" :style="{ backgroundImage: 'var(--theme-gradient)' }">
           QQ农场智能助手
         </span>
       </div>
       <!-- Mobile Close Button -->
       <button
-        class="rounded-lg p-1 text-gray-500 lg:hidden hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+        class="h-8 w-8 flex items-center justify-center rounded-lg text-gray-500 transition lg:hidden hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
         @click="appStore.closeSidebar"
       >
         <div class="i-carbon-close text-xl" />
@@ -384,15 +386,15 @@ async function copyToken() {
     </div>
 
     <!-- User Info -->
-    <div class="border-b border-gray-200/50 p-4 dark:border-gray-700/50">
+    <div class="px-1 py-4">
       <div class="group relative">
         <button
-          class="w-full flex items-center justify-between border border-transparent rounded-xl bg-gray-100/50 px-4 py-2.5 outline-none transition-all duration-200 hover:border-gray-300 dark:bg-gray-700/30 hover:bg-gray-200/50 dark:hover:border-gray-600 dark:hover:bg-gray-700/50"
+          class="ui-card w-full flex items-center justify-between rounded-lg px-3.5 py-3 outline-none transition-all duration-200 hover:-translate-y-0.5 hover:border-gray-300 dark:hover:border-gray-600"
           style="--focus-ring: var(--theme-primary)"
           @click="showUserDropdown = !showUserDropdown"
         >
           <div class="flex items-center gap-3 overflow-hidden">
-            <div class="h-8 w-8 flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-200 ring-2 ring-white dark:bg-gray-600 dark:ring-gray-700">
+            <div class="h-9 w-9 flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-200 ring-2 ring-white dark:bg-gray-600 dark:ring-gray-700">
               <img
                 :src="userStore.avatar || 'https://free.picui.cn/free/2026/03/10/69affe5755149.jpg'"
                 class="h-full w-full object-cover"
@@ -425,7 +427,7 @@ async function copyToken() {
         <!-- User Dropdown Menu -->
         <div
           v-if="showUserDropdown"
-          class="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden border border-gray-200/50 rounded-xl bg-white/95 py-1 shadow-xl backdrop-blur-sm dark:border-gray-700/50 dark:bg-gray-900/95"
+          class="glass-panel absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-lg py-1"
         >
           <div class="border-b border-gray-100 px-4 py-2 dark:border-gray-700">
             <div class="text-sm text-gray-900 font-medium dark:text-white">
@@ -479,12 +481,12 @@ async function copyToken() {
     </div>
 
     <!-- Navigation -->
-    <nav class="flex-1 overflow-y-auto px-3 py-4 space-y-1">
+    <nav class="flex-1 overflow-y-auto px-1 py-2 space-y-1.5">
       <router-link
         v-for="item in navItems"
         :key="item.path"
         :to="item.path"
-        class="group flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all duration-200 hover:bg-gray-100/50 dark:hover:bg-gray-700/50"
+        class="group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-200 hover:translate-x-0.5 hover:bg-gray-100/70 dark:hover:bg-gray-700/50"
         :active-class="item.path === '/' ? '' : 'font-medium shadow-sm'"
         :style="{
           '--active-color': 'var(--theme-primary)',
@@ -494,13 +496,13 @@ async function copyToken() {
           'opacity': '0.8',
         }"
       >
-        <div class="text-xl transition-transform duration-200 group-hover:scale-110" :class="[item.icon]" />
+        <div class="text-lg transition-transform duration-200 group-hover:scale-110" :class="[item.icon]" />
         <span>{{ item.label }}</span>
       </router-link>
     </nav>
 
     <!-- Token Display (All Users) -->
-    <div v-if="userStore.token" class="border-t border-gray-200/50 px-3 py-2 dark:border-gray-700/50">
+    <div v-if="userStore.token" class="ui-subtle-panel mb-3 rounded-lg px-2 py-2">
       <button
         class="w-full flex items-center justify-between rounded-lg px-3 py-2 transition-colors hover:bg-gray-100/50 dark:hover:bg-gray-700/50"
         @click="showTokenDropdown = !showTokenDropdown"
@@ -544,7 +546,7 @@ async function copyToken() {
     </div>
 
     <!-- Footer Status -->
-    <div class="relative mt-auto border-t border-gray-200/50 bg-gray-100/30 p-4 dark:border-gray-700/50 dark:bg-gray-800/30">
+    <div class="ui-subtle-panel relative mt-auto rounded-lg p-4">
       <div class="mb-2 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
         <div class="flex items-center gap-1.5">
           <div
@@ -560,7 +562,7 @@ async function copyToken() {
           <span>{{ formattedTime }}</span>
           <!-- 主题调色盘按钮 -->
           <button
-            class="flex items-center gap-1 rounded px-2 py-1 text-gray-400 transition-colors hover:bg-gray-200/50 hover:text-gray-600 dark:hover:bg-gray-700/50 dark:hover:text-gray-300"
+            class="h-8 w-8 flex items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-gray-200/50 hover:text-gray-600 dark:hover:bg-gray-700/50 dark:hover:text-gray-300"
             title="主题设置"
             @click="showThemeDropdown = !showThemeDropdown"
           >
@@ -587,7 +589,7 @@ async function copyToken() {
       <!-- 主题选择弹出面板 -->
       <div
         v-show="showThemeDropdown"
-        class="absolute bottom-full left-0 right-0 z-50 grid grid-cols-4 mb-14 gap-1.5 rounded-lg bg-white p-2 shadow-lg dark:bg-gray-800"
+        class="glass-panel absolute bottom-full left-0 right-0 z-50 grid grid-cols-4 mb-14 gap-1.5 rounded-lg p-2"
       >
         <button
           v-for="(t, theme) in appStore.themes"
@@ -882,18 +884,20 @@ async function copyToken() {
 /* Active router link styling */
 .router-link-active {
   background-color: var(--active-bg) !important;
-  background-color: color-mix(in srgb, var(--theme-primary) 10%, transparent) !important;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--theme-primary) 15%, transparent), color-mix(in srgb, var(--theme-primary) 6%, transparent)) !important;
   color: var(--theme-primary) !important;
   box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.05),
+    inset 3px 0 0 var(--theme-primary),
+    0 8px 18px color-mix(in srgb, var(--theme-primary) 12%, transparent),
     0 0 0 1px color-mix(in srgb, var(--theme-primary) 15%, transparent) !important;
 }
 
 .router-link-exact-active {
-  background-color: color-mix(in srgb, var(--theme-primary) 10%, transparent) !important;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--theme-primary) 15%, transparent), color-mix(in srgb, var(--theme-primary) 6%, transparent)) !important;
   color: var(--theme-primary) !important;
   box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.05),
+    inset 3px 0 0 var(--theme-primary),
+    0 8px 18px color-mix(in srgb, var(--theme-primary) 12%, transparent),
     0 0 0 1px color-mix(in srgb, var(--theme-primary) 15%, transparent) !important;
 }
 

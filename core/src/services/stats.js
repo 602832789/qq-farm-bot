@@ -318,7 +318,10 @@ function getStats(farmUser, userState, connected, limits) {
       coupon: Number.isFinite(Number(us.coupon)) ? Number(us.coupon) : 0,
       goldBean: gb,
       exp: e,
-      platform: fu.platform || us.platform || 'qq'
+      platform: fu.platform || us.platform || 'qq',
+      gid: us.gid || fu.gid || 0,
+      openId: us.openId || fu.openId || fu.open_id || '',
+      avatar: us.avatar || fu.avatar || fu.avatarUrl || fu.avatar_url || ''
     },
     uptime: process.uptime(),
     operations: ops,

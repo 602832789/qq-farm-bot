@@ -463,15 +463,15 @@ useIntervalFn(updateCountdowns, 1000)
 </script>
 
 <template>
-  <div class="flex flex-col gap-6 pt-6">
+  <div class="flex flex-col gap-5 pt-1 md:pt-2">
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-3 sm:grid-cols-2">
-      <div class="flex flex-col rounded-lg bg-white p-4 shadow dark:bg-gray-800">
+      <div class="ui-card metric-card flex min-h-[168px] flex-col rounded-lg p-5">
         <div class="mb-2 flex items-start justify-between">
           <div class="flex items-center gap-1.5 text-sm text-gray-500">
             <div class="i-fas-user-circle" />
             账号
           </div>
-          <div class="rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+          <div class="rounded-lg bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
             Lv.{{ status?.status?.level || 0 }}
           </div>
         </div>
@@ -486,7 +486,7 @@ useIntervalFn(updateCountdowns, 1000)
             </div>
             <span>{{ status?.levelProgress?.current || 0 }} / {{ status?.levelProgress?.needed || '?' }}</span>
           </div>
-          <div class="h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
+          <div class="h-2 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
             <div
               class="h-full rounded-full bg-blue-500 transition-all duration-500"
               :style="{ width: `${getExpPercent(status?.levelProgress)}%` }"
@@ -499,7 +499,7 @@ useIntervalFn(updateCountdowns, 1000)
         </div>
       </div>
 
-      <div class="flex flex-col justify-between rounded-lg bg-white p-4 shadow dark:bg-gray-800">
+      <div class="ui-card metric-card flex min-h-[168px] flex-col justify-between rounded-lg p-5">
         <div class="flex justify-between">
           <div>
             <div class="flex items-center gap-1.5 text-xs text-gray-500">
@@ -543,7 +543,7 @@ useIntervalFn(updateCountdowns, 1000)
             </div>
           </div>
         </div>
-        <div class="mt-4 border-t border-gray-100 pt-3 dark:border-gray-700">
+        <div class="mt-4 border-t border-gray-100/80 pt-3 dark:border-gray-700/80">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-2">
               <div class="h-2.5 w-2.5 rounded-full" :class="status?.connection?.connected ? 'bg-green-500' : currentStatusReady ? 'bg-red-500' : 'bg-gray-300'" />
@@ -557,7 +557,7 @@ useIntervalFn(updateCountdowns, 1000)
         </div>
       </div>
 
-      <div class="flex flex-col justify-between rounded-lg bg-white p-4 shadow dark:bg-gray-800">
+      <div class="ui-card metric-card flex min-h-[168px] flex-col justify-between rounded-lg p-5">
         <div class="mb-2 flex items-center gap-1.5 text-sm text-gray-500">
           <div class="i-fas-flask text-emerald-400" />
           化肥容器
@@ -582,7 +582,7 @@ useIntervalFn(updateCountdowns, 1000)
             </div>
           </div>
         </div>
-        <div class="my-2 border-t border-gray-100 dark:border-gray-700" />
+        <div class="my-3 border-t border-gray-100/80 dark:border-gray-700/80" />
         <div class="mb-1 flex items-center gap-1.5 text-sm text-gray-500">
           <div class="i-fas-star text-emerald-400" />
           收藏点
@@ -610,9 +610,9 @@ useIntervalFn(updateCountdowns, 1000)
       </div>
     </div>
 
-    <div class="flex flex-1 flex-col items-stretch gap-6 md:flex-row">
-      <div class="flex flex-1 flex-col gap-6 md:w-3/4">
-        <div class="flex flex-1 flex-col rounded-lg bg-white p-6 shadow md:overflow-hidden dark:bg-gray-800">
+    <div class="flex flex-1 flex-col items-stretch gap-5 md:flex-row">
+      <div class="flex flex-1 flex-col gap-5 md:w-3/4">
+        <div class="ui-card-elevated flex flex-1 flex-col rounded-lg p-5 md:overflow-hidden">
           <div class="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <h3 class="flex items-center gap-2 text-lg font-medium">
               <div class="i-carbon-document" />
@@ -670,7 +670,7 @@ useIntervalFn(updateCountdowns, 1000)
             </div>
           </div>
 
-          <div ref="logContainer" class="max-h-[50vh] min-h-0 flex-1 overflow-y-auto rounded bg-gray-50 p-4 text-sm leading-relaxed font-mono dark:bg-gray-900" @scroll="onLogScroll">
+          <div ref="logContainer" class="ui-subtle-panel max-h-[50vh] min-h-0 flex-1 overflow-y-auto rounded-lg p-4 text-sm leading-relaxed font-mono" @scroll="onLogScroll">
             <div v-if="!allLogs.length" class="py-8 text-center text-gray-400">
               <div class="i-carbon-document-blank mx-auto mb-3 text-3xl text-gray-300" />
               <div class="text-sm text-gray-500 dark:text-gray-400">
@@ -690,8 +690,8 @@ useIntervalFn(updateCountdowns, 1000)
         </div>
       </div>
 
-      <div class="flex flex-col gap-6 md:w-1/4">
-        <div class="flex flex-col rounded-lg bg-white p-6 shadow dark:bg-gray-800">
+      <div class="flex flex-col gap-5 md:w-1/4">
+        <div class="ui-card flex flex-col rounded-lg p-5">
           <h3 class="mb-4 flex items-center gap-2 text-lg font-medium">
             <div class="i-carbon-hourglass" />
             <span>下次检查倒计时</span>
@@ -727,12 +727,12 @@ useIntervalFn(updateCountdowns, 1000)
           </div>
         </div>
 
-        <div class="flex-1 rounded-lg bg-white p-4 shadow dark:bg-gray-800">
+        <div class="ui-card flex-1 rounded-lg p-5">
           <h3 class="mb-3 flex items-center gap-2 text-lg font-medium">
             <div class="i-carbon-chart-column" />
             <span>今日统计</span>
           </h3>
-          <div v-if="currentAccountDisconnected" class="flex flex-col items-center justify-center gap-4 rounded-lg bg-white p-12 text-center text-gray-500 shadow dark:bg-gray-800">
+          <div v-if="currentAccountDisconnected" class="ui-subtle-panel flex flex-col items-center justify-center gap-4 rounded-lg p-10 text-center text-gray-500">
             <div class="i-carbon-connection-signal-off text-4xl text-gray-400" />
             <div class="flex flex-col">
               <div class="text-lg text-gray-700 font-medium dark:text-gray-300">
@@ -743,7 +743,7 @@ useIntervalFn(updateCountdowns, 1000)
               </div>
             </div>
           </div>
-          <div v-else-if="!Object.keys(filteredOperations).length" class="flex flex-col items-center justify-center gap-3 rounded-lg bg-gray-50 p-8 text-center dark:bg-gray-900/40">
+          <div v-else-if="!Object.keys(filteredOperations).length" class="ui-subtle-panel flex flex-col items-center justify-center gap-3 rounded-lg p-8 text-center">
             <div class="i-carbon-chart-column text-3xl text-gray-300" />
             <div class="text-sm text-gray-600 font-medium dark:text-gray-300">
               暂无主动作统计
@@ -756,7 +756,7 @@ useIntervalFn(updateCountdowns, 1000)
             <div
               v-for="(val, key) in filteredOperations"
               :key="key"
-              class="flex items-center justify-between rounded bg-gray-50 px-3 py-2 dark:bg-gray-700/30"
+              class="ui-subtle-panel flex items-center justify-between rounded-lg px-3 py-2"
             >
               <div class="flex items-center gap-2">
                 <div class="text-base 2xl:text-lg" :class="[getOpIcon(key), getOpColor(key)]" />

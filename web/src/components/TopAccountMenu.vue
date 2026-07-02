@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
 import AccountModal from '@/components/AccountModal.vue'
 import RemarkModal from '@/components/RemarkModal.vue'
 import type { Account } from '@/stores/account'
@@ -17,6 +17,31 @@ const showAccountModal = ref(false)
 const showRemarkModal = ref(false)
 const accountToEdit = ref<any>(null)
 const failedAvatars = ref(new Set<string>())
+
+const triggerRef = useTemplateRef<HTMLElement>('trigger')
+const dropdownPos = ref({ top: 0, left: 0, width: 320 })
+
+function onScroll() {
+  if (showAccountDropdown.value) {
+    updateDropdownPos()
+  }
+}
+
+function onResize() {
+  if (showAccountDropdown.value) {
+    updateDropdownPos()
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('scroll', onScroll, true)
+  window.addEventListener('resize', onResize)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('scroll', onScroll, true)
+  window.removeEventListener('resize', onResize)
+})
 
 const platform = computed(() => getPlatformLabel(currentAccount.value?.platform))
 
@@ -103,21 +128,60 @@ const displayName = computed(() => accountDisplayName(currentAccount.value))
 const currentAvatarSrc = computed(() => avatarSource(currentAccount.value))
 const currentSubtitle = computed(() => accountSubtitle(currentAccount.value))
 
+async function openDropdown() {
+  updateDropdownPos()
+  showAccountDropdown.value = true
+  await nextTick()
+  updateDropdownPos()
+}
+
+function closeDropdown() {
+  showAccountDropdown.value = false
+}
+
+function toggleDropdown() {
+  if (showAccountDropdown.value) {
+    closeDropdown()
+    return
+  }
+  openDropdown()
+}
+
+function updateDropdownPos() {
+  const el = triggerRef.value
+  if (!el)
+    return
+
+  const rect = el.getBoundingClientRect()
+  const viewportGap = 8
+  const width = Math.min(320, window.innerWidth - viewportGap * 2)
+  const left = Math.min(
+    Math.max(viewportGap, rect.right - width),
+    window.innerWidth - width - viewportGap,
+  )
+
+  dropdownPos.value = {
+    top: rect.bottom + viewportGap,
+    left,
+    width,
+  }
+}
+
 function selectAccount(acc: any) {
   accountStore.setCurrentAccount(acc)
-  showAccountDropdown.value = false
+  closeDropdown()
 }
 
 function openAddAccount() {
   accountToEdit.value = null
   showAccountModal.value = true
-  showAccountDropdown.value = false
+  closeDropdown()
 }
 
 function openRemarkModal(acc: any) {
   accountToEdit.value = acc
   showRemarkModal.value = true
-  showAccountDropdown.value = false
+  closeDropdown()
 }
 
 async function handleAccountSaved() {
@@ -131,8 +195,9 @@ async function handleAccountSaved() {
 <template>
   <div class="relative">
     <button
+      ref="trigger"
       class="max-w-[min(76vw,280px)] flex items-center gap-3 rounded-xl px-3 py-2 text-left transition hover:bg-gray-100/70 dark:hover:bg-gray-700/50"
-      @click="showAccountDropdown = !showAccountDropdown"
+      @click="toggleDropdown"
     >
       <div class="h-9 w-9 flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-100 ring-1 ring-gray-200 dark:bg-gray-700 dark:ring-gray-600">
         <img
@@ -167,100 +232,105 @@ async function handleAccountSaved() {
       />
     </button>
 
-    <div
-      v-if="showAccountDropdown"
-      class="absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden border border-gray-200/70 rounded-xl bg-white/95 py-1 shadow-xl backdrop-blur-sm dark:border-gray-700/70 dark:bg-gray-900/95"
-    >
-      <div class="custom-scrollbar max-h-72 overflow-y-auto">
-        <template v-if="accounts.length > 0">
-          <button
-            v-for="acc in accounts"
-            :key="acc.id || acc.uin"
-            class="w-full flex items-center gap-3 px-4 py-2 transition-colors hover:bg-gray-100/60 dark:hover:bg-gray-700/50"
-            :style="{ backgroundColor: currentAccount?.id === acc.id ? 'color-mix(in srgb, var(--theme-primary) 10%, transparent)' : undefined }"
-            @click="selectAccount(acc)"
-          >
-            <div class="h-7 w-7 flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-200 dark:bg-gray-600">
-              <img
-                v-if="shouldShowAvatar(acc)"
-                :src="avatarSource(acc)"
-                :alt="accountDisplayName(acc)"
-                class="h-full w-full object-cover"
-                @error="markAvatarFailed(acc)"
-              >
-              <span v-else class="text-xs text-gray-500 font-semibold dark:text-gray-300">
-                {{ avatarInitial(acc) }}
-              </span>
-            </div>
-            <div class="min-w-0 flex flex-1 flex-col items-start">
-              <span class="w-full truncate text-left text-sm font-medium">
-                {{ accountDisplayName(acc) }}
-              </span>
-              <div class="flex items-center gap-1.5">
-                <span
-                  v-if="getPlatformLabel(acc.platform)"
-                  class="rounded px-1 py-0.2 text-[10px] font-medium leading-tight"
-                  :class="getPlatformClass(acc.platform)"
-                >
-                  {{ getPlatformLabel(acc.platform) }}
-                </span>
-                <span v-if="accountSubtitle(acc)" class="text-xs text-gray-400">{{ accountSubtitle(acc) }}</span>
-              </div>
-            </div>
+    <Teleport to="body">
+      <div
+        v-if="showAccountDropdown"
+        class="fixed inset-0 z-[9998] bg-transparent"
+        @click="closeDropdown"
+      />
+
+      <div
+        v-if="showAccountDropdown"
+        class="fixed z-[9999] overflow-hidden border border-gray-200/70 rounded-xl bg-white/95 py-1 shadow-xl backdrop-blur-sm dark:border-gray-700/70 dark:bg-gray-900/95"
+        :style="{ top: dropdownPos.top + 'px', left: dropdownPos.left + 'px', width: dropdownPos.width + 'px' }"
+      >
+        <div class="custom-scrollbar max-h-72 overflow-y-auto">
+          <template v-if="accounts.length > 0">
             <button
-              class="rounded-full p-1 text-gray-400 transition-colors hover:bg-blue-50/50 hover:text-blue-500 dark:hover:bg-blue-900/20"
-              title="修改备注"
-              @click.stop="openRemarkModal(acc)"
+              v-for="acc in accounts"
+              :key="acc.id || acc.uin"
+              class="w-full flex items-center gap-3 px-4 py-2 transition-colors hover:bg-gray-100/60 dark:hover:bg-gray-700/50"
+              :style="{ backgroundColor: currentAccount?.id === acc.id ? 'color-mix(in srgb, var(--theme-primary) 10%, transparent)' : undefined }"
+              @click="selectAccount(acc)"
             >
-              <div class="i-carbon-edit" />
+              <div class="h-7 w-7 flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-200 dark:bg-gray-600">
+                <img
+                  v-if="shouldShowAvatar(acc)"
+                  :src="avatarSource(acc)"
+                  :alt="accountDisplayName(acc)"
+                  class="h-full w-full object-cover"
+                  @error="markAvatarFailed(acc)"
+                >
+                <span v-else class="text-xs text-gray-500 font-semibold dark:text-gray-300">
+                  {{ avatarInitial(acc) }}
+                </span>
+              </div>
+              <div class="min-w-0 flex flex-1 flex-col items-start">
+                <span class="w-full truncate text-left text-sm font-medium">
+                  {{ accountDisplayName(acc) }}
+                </span>
+                <div class="flex items-center gap-1.5">
+                  <span
+                    v-if="getPlatformLabel(acc.platform)"
+                    class="rounded px-1 py-0.2 text-[10px] font-medium leading-tight"
+                    :class="getPlatformClass(acc.platform)"
+                  >
+                    {{ getPlatformLabel(acc.platform) }}
+                  </span>
+                  <span v-if="accountSubtitle(acc)" class="text-xs text-gray-400">{{ accountSubtitle(acc) }}</span>
+                </div>
+              </div>
+              <button
+                class="rounded-full p-1 text-gray-400 transition-colors hover:bg-blue-50/50 hover:text-blue-500 dark:hover:bg-blue-900/20"
+                title="修改备注"
+                @click.stop="openRemarkModal(acc)"
+              >
+                <div class="i-carbon-edit" />
+              </button>
+              <div v-if="currentAccount?.id === acc.id" class="i-carbon-checkmark shrink-0" :style="{ color: 'var(--theme-primary)' }" />
             </button>
-            <div v-if="currentAccount?.id === acc.id" class="i-carbon-checkmark shrink-0" :style="{ color: 'var(--theme-primary)' }" />
+          </template>
+          <div v-else class="px-4 py-3 text-center text-sm text-gray-400">
+            暂无账号
+          </div>
+        </div>
+        <div class="mt-1 border-t border-gray-100 pt-1 dark:border-gray-700">
+          <button
+            class="w-full flex items-center gap-2 px-4 py-2 text-sm transition-colors hover:bg-gray-100/50 dark:hover:bg-gray-700/50"
+            :style="{ color: 'var(--theme-primary)' }"
+            @click="openAddAccount"
+          >
+            <div class="i-carbon-add" />
+            <span>添加账号</span>
           </button>
-        </template>
-        <div v-else class="px-4 py-3 text-center text-sm text-gray-400">
-          暂无账号
+          <router-link
+            to="/settings"
+            class="w-full flex items-center gap-2 px-4 py-2 text-sm transition-colors hover:bg-gray-100/50 dark:hover:bg-gray-700/50"
+            :style="{ color: 'var(--theme-primary)' }"
+            @click="closeDropdown"
+          >
+            <div class="i-carbon-add-alt" />
+            <span>管理账号</span>
+          </router-link>
         </div>
       </div>
-      <div class="mt-1 border-t border-gray-100 pt-1 dark:border-gray-700">
-        <button
-          class="w-full flex items-center gap-2 px-4 py-2 text-sm transition-colors hover:bg-gray-100/50 dark:hover:bg-gray-700/50"
-          :style="{ color: 'var(--theme-primary)' }"
-          @click="openAddAccount"
-        >
-          <div class="i-carbon-add" />
-          <span>添加账号</span>
-        </button>
-        <router-link
-          to="/settings"
-          class="w-full flex items-center gap-2 px-4 py-2 text-sm transition-colors hover:bg-gray-100/50 dark:hover:bg-gray-700/50"
-          :style="{ color: 'var(--theme-primary)' }"
-          @click="showAccountDropdown = false"
-        >
-          <div class="i-carbon-add-alt" />
-          <span>管理账号</span>
-        </router-link>
-      </div>
-    </div>
+    </Teleport>
 
-    <div
-      v-if="showAccountDropdown"
-      class="fixed inset-0 z-40 bg-transparent"
-      @click="showAccountDropdown = false"
-    />
+    <Teleport to="body">
+      <AccountModal
+        :show="showAccountModal"
+        :edit-data="accountToEdit"
+        @close="showAccountModal = false; accountToEdit = null"
+        @saved="handleAccountSaved"
+      />
 
-    <AccountModal
-      :show="showAccountModal"
-      :edit-data="accountToEdit"
-      @close="showAccountModal = false; accountToEdit = null"
-      @saved="handleAccountSaved"
-    />
-
-    <RemarkModal
-      :show="showRemarkModal"
-      :account="accountToEdit"
-      @close="showRemarkModal = false"
-      @saved="handleAccountSaved"
-    />
+      <RemarkModal
+        :show="showRemarkModal"
+        :account="accountToEdit"
+        @close="showRemarkModal = false"
+        @saved="handleAccountSaved"
+      />
+    </Teleport>
   </div>
 </template>
 

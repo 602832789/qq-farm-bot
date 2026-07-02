@@ -22,22 +22,22 @@ onUnmounted(() => {
     <!-- Mobile Sidebar Overlay -->
     <div
       v-if="sidebarOpen"
-      class="fixed inset-0 z-40 bg-gray-900/50 backdrop-blur-sm transition-opacity lg:hidden"
+      class="fixed inset-0 z-40 bg-gray-950/55 backdrop-blur-md transition-opacity lg:hidden"
       @click="appStore.closeSidebar"
     />
 
     <Sidebar />
 
     <main class="relative h-full min-w-0 flex flex-1 flex-col overflow-hidden">
-      <header class="h-16 flex shrink-0 items-center justify-between border-b border-gray-100 bg-white px-4 dark:border-gray-700/50 dark:bg-gray-800 md:px-6">
+      <header class="glass-panel relative z-60 mx-2 mt-2 h-16 flex shrink-0 items-center justify-between rounded-lg px-4 md:mx-4 md:mt-4 md:px-5">
         <div class="min-w-0 flex items-center gap-3">
           <button
-            class="flex items-center justify-center rounded-lg p-2 text-gray-500 lg:hidden hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+            class="h-9 w-9 flex items-center justify-center rounded-lg text-gray-500 transition lg:hidden hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
             @click="appStore.toggleSidebar"
           >
             <div class="i-carbon-menu text-xl" />
           </button>
-          <div class="truncate text-lg font-bold">
+          <div class="truncate text-base text-gray-900 font-semibold dark:text-gray-100 md:text-lg">
             QQ农场智能助手
           </div>
         </div>
@@ -47,7 +47,7 @@ onUnmounted(() => {
 
       <!-- Main Content Area -->
       <div class="flex flex-1 flex-col overflow-hidden">
-        <div class="custom-scrollbar flex flex-1 flex-col overflow-y-auto p-2 md:p-6 sm:p-4">
+        <div class="custom-scrollbar flex flex-1 flex-col overflow-y-auto p-3 md:p-6 sm:p-4">
           <RouterView v-slot="{ Component, route }">
             <Transition name="slide-fade" mode="out-in">
               <component :is="Component" :key="route.path" />

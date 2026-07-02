@@ -57,6 +57,7 @@ const { pause: stopWxCheck, resume: startWxCheck } = useIntervalFn(async () => {
             platform: 'wx',
             loginType: 'wx_qr',
             wxid: result.wxid,
+            avatar: result.avatar,
           })
         }
         else {
@@ -201,7 +202,7 @@ watch(activeTab, (tab) => {
 </script>
 
 <template>
-  <div v-if="show" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+  <div v-if="show" class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50">
     <div class="max-h-[90vh] max-w-md w-full overflow-hidden rounded-lg shadow-xl" :style="{ background: 'var(--theme-bg)' }">
       <div class="flex items-center justify-between border-b p-4" :style="{ borderColor: 'color-mix(in srgb, var(--theme-text) 10%, transparent)' }">
         <h3 class="text-lg font-semibold" :style="{ color: 'var(--theme-text)' }">

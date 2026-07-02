@@ -8,7 +8,7 @@ export type Theme = 'light-blue' | 'light-green' | 'light-pink' | 'dark-blue' | 
 
 export const useAppStore = defineStore('app', () => {
   const sidebarOpen = ref(false)
-  const currentTheme = ref<Theme>((localStorage.getItem(THEME_KEY) as Theme) || 'light-pink')
+  const currentTheme = ref<Theme>((localStorage.getItem(THEME_KEY) as Theme) || 'light-blue')
   const showThemePanel = ref(false)
 
   const themes: Record<Theme, {
@@ -24,21 +24,21 @@ export const useAppStore = defineStore('app', () => {
     'light-blue': {
       name: '晴空蓝',
       isDark: false,
-      bg: '#f9fafb',
-      text: '#1f2937',
-      primary: '#3b82f6',
-      secondary: '#2563eb',
-      gradient: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+      bg: '#f6f8fb',
+      text: '#172033',
+      primary: '#2563eb',
+      secondary: '#0f766e',
+      gradient: 'linear-gradient(135deg, #2563eb 0%, #0f766e 100%)',
       icon: 'i-carbon-sun',
     },
     'dark-blue': {
       name: '深海蓝',
       isDark: true,
-      bg: '#111827',
-      text: '#f3f4f6',
-      primary: '#3b82f6',
-      secondary: '#2563eb',
-      gradient: 'linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%)',
+      bg: '#0b1020',
+      text: '#e5e7eb',
+      primary: '#60a5fa',
+      secondary: '#2dd4bf',
+      gradient: 'linear-gradient(135deg, #60a5fa 0%, #2dd4bf 100%)',
       icon: 'i-carbon-moon',
     },
     'light-pink': {
