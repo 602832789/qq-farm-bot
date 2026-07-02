@@ -353,10 +353,10 @@ const cardTypeFilter = defineModel<CardTypeFilter>('cardTypeFilter', { required:
 
     <div
       v-if="showCreateModal"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50"
+      class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black bg-opacity-50 p-3 sm:items-center sm:p-4"
       @click.self="showCreateModal = false"
     >
-      <div class="max-w-lg w-full rounded-2xl bg-white p-5 dark:bg-gray-800" @click.stop>
+      <div class="my-auto max-h-[calc(100dvh-1.5rem)] max-w-lg w-full overflow-y-auto rounded-2xl bg-white p-4 shadow-xl dark:bg-gray-800 sm:max-h-[calc(100dvh-2rem)] sm:p-5" @click.stop>
         <h2 class="mb-4 text-lg text-gray-900 font-bold dark:text-white">
           创建卡密
         </h2>

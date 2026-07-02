@@ -28,8 +28,8 @@ onUnmounted(() => {
 
     <Sidebar />
 
-    <main class="relative h-full min-w-0 flex flex-1 flex-col overflow-hidden">
-      <header class="glass-panel relative z-60 mx-2 mt-2 h-16 flex shrink-0 items-center justify-between rounded-lg px-4 md:mx-4 md:mt-4 md:px-5">
+    <main class="relative h-full min-h-0 min-w-0 flex flex-1 flex-col overflow-hidden">
+      <header class="glass-panel relative z-30 mx-2 mt-2 h-16 flex shrink-0 items-center justify-between rounded-lg px-4 md:mx-4 md:mt-4 md:px-5">
         <div class="min-w-0 flex items-center gap-3">
           <button
             class="h-9 w-9 flex items-center justify-center rounded-lg text-gray-500 transition lg:hidden hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
@@ -46,8 +46,8 @@ onUnmounted(() => {
       </header>
 
       <!-- Main Content Area -->
-      <div class="flex flex-1 flex-col overflow-hidden">
-        <div class="custom-scrollbar flex flex-1 flex-col overflow-y-auto p-3 md:p-6 sm:p-4">
+      <div class="min-h-0 flex flex-1 flex-col overflow-hidden">
+        <div class="custom-scrollbar min-h-0 flex flex-1 flex-col overflow-y-auto p-3 pb-[calc(1rem+env(safe-area-inset-bottom))] md:p-6 md:pb-6 sm:p-4 sm:pb-[calc(1rem+env(safe-area-inset-bottom))]">
           <RouterView v-slot="{ Component, route }">
             <Transition name="slide-fade" mode="out-in">
               <component :is="Component" :key="route.path" />
@@ -175,5 +175,10 @@ onUnmounted(() => {
 }
 .custom-scrollbar:hover::-webkit-scrollbar-thumb {
   background-color: rgba(156, 163, 175, 0.5);
+}
+
+.custom-scrollbar {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 </style>

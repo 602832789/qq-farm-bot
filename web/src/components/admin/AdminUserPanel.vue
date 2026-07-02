@@ -259,10 +259,10 @@ function formatUserCardDate(timestamp: number | null) {
 
     <div
       v-if="showRenewUserModal"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50"
+      class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black bg-opacity-50 p-3 sm:items-center sm:p-4"
       @click.self="!renewUserLoading && closeRenewUserModal()"
     >
-      <div class="max-w-md w-full rounded-2xl bg-white p-5 dark:bg-gray-800" @click.stop>
+      <div class="my-auto max-h-[calc(100dvh-1.5rem)] max-w-md w-full overflow-y-auto rounded-2xl bg-white p-4 shadow-xl dark:bg-gray-800 sm:max-h-[calc(100dvh-2rem)] sm:p-5" @click.stop>
         <h2 class="mb-4 text-lg text-gray-900 font-bold dark:text-white">
           用户续费：{{ pendingRenewUser?.username }}
         </h2>
@@ -303,10 +303,10 @@ function formatUserCardDate(timestamp: number | null) {
 
     <div
       v-if="showEditModal"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50"
+      class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black bg-opacity-50 p-3 sm:items-center sm:p-4"
       @click.self="showEditModal = false"
     >
-      <div class="max-w-lg w-full rounded-2xl bg-white p-5 dark:bg-gray-800" @click.stop>
+      <div class="my-auto max-h-[calc(100dvh-1.5rem)] max-w-lg w-full overflow-y-auto rounded-2xl bg-white p-4 shadow-xl dark:bg-gray-800 sm:max-h-[calc(100dvh-2rem)] sm:p-5" @click.stop>
         <h2 class="mb-4 text-lg text-gray-900 font-bold dark:text-white">
           编辑用户
         </h2>
