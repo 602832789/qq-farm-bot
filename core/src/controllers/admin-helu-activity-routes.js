@@ -3,6 +3,22 @@ const {
   requireConnectedAccount,
 } = require("./admin-activity-route-helpers");
 
+function isQingmeiClaimAlreadyHandledError(err) {
+  const message = String(err?.message || err || "");
+  return message.includes("已领取")
+    || message.includes("已经领取")
+    || message.includes("重复领取")
+    || message.includes("already");
+}
+
+function isQingmeiWineBusinessError(err) {
+  const message = String(err?.message || err || "");
+  return !!err?.qingmeiWine
+    || message.includes("青梅酿")
+    || message.includes("ActivityService.Operate")
+    || message.includes("ShareService");
+}
+
 function registerAdminHeluActivityRoutes({
   app,
   provider,
@@ -120,13 +136,74 @@ function registerAdminHeluActivityRoutes({
         return;
 
       const result = await provider.claimQingmeiSeeds(accountId);
-      const activity = await provider.getHeluActivity(accountId);
+      let activity = result.activity || null;
+      if (!activity) {
+        try {
+          activity = await provider.getHeluActivity(accountId);
+        } catch (_) {
+          activity = null;
+        }
+      }
       res.json({
         ok: true,
         ...result,
         activity,
+        qingmei: result.qingmei || activity?.qingmei || null,
       });
     } catch (err) {
+      if (isQingmeiClaimAlreadyHandledError(err)) {
+        let activity = null;
+        try {
+          activity = await provider.getHeluActivity(accountId);
+        } catch (_) {
+          activity = null;
+        }
+        res.json({
+          ok: true,
+          alreadyClaimed: true,
+          claimedCount: 0,
+          activity,
+          qingmei: activity?.qingmei || {
+            claimed: true,
+            claimable: false,
+          },
+        });
+        return;
+      }
+      sendProviderError(res, err);
+    }
+  });
+
+  app.post("/api/activity/qingmei/wine/sell", async (req, res) => {
+    const accountId = getAuthorizedAccountId(req, res, routeContext);
+    if (!accountId) return;
+
+    try {
+      if (!requireConnectedAccount(res, provider, accountId, "青梅酿售卖失败: 账号未运行"))
+        return;
+
+      const result = await provider.brewAndSellQingmeiWine(accountId, req.body || {});
+      res.json({
+        ok: true,
+        ...result,
+      });
+    } catch (err) {
+      if (isQingmeiWineBusinessError(err)) {
+        let activity = null;
+        try {
+          activity = await provider.getHeluActivity(accountId);
+        } catch (_) {
+          activity = null;
+        }
+        res.json({
+          ok: false,
+          stage: err?.stage || '',
+          error: err?.message || '青梅酿售卖失败',
+          activity,
+          qingmei: activity?.qingmei || null,
+        });
+        return;
+      }
       sendProviderError(res, err);
     }
   });

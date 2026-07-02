@@ -80,6 +80,7 @@ const {
   passportClaimLoading,
   solarClaimLoading,
   qingmeiClaimLoading,
+  qingmeiSellLoading,
   heluError,
 } = storeToRefs(activityStore)
 
@@ -217,10 +218,26 @@ async function claimQingmei() {
     return
 
   const result = await activityStore.claimQingmeiSeeds(currentAccountId.value)
-  if (result?.ok)
+  if (result?.ok && result.alreadyClaimed)
+    toast.success('今日已领取青梅种子')
+  else if (result?.ok)
     toast.success(`已领取青梅种子 × ${result.claimedCount || 24}`)
   else
     toast.error(result?.error || '青梅种子领取失败')
+}
+
+async function sellQingmeiWine() {
+  if (!currentAccountId.value)
+    return
+
+  const result = await activityStore.brewAndSellQingmeiWine(currentAccountId.value)
+  if (result?.ok) {
+    const gold = Number(result.sell?.gold || result.sell?.item?.itemCount || 0)
+    toast.success(gold > 0 ? `青梅酿售卖完成，获得金币 ${gold.toLocaleString()}` : '青梅酿售卖完成')
+  }
+  else {
+    toast.error(result?.error || '青梅酿售卖失败')
+  }
 }
 
 watch(sectionTabs, (sections) => {
@@ -262,19 +279,20 @@ onMounted(() => {
           </div>
         </div>
 
-        <div class="flex shrink-0 flex-wrap items-center gap-2">
-          <div class="h-9 inline-flex overflow-hidden border border-gray-200 rounded-lg bg-white p-0.5 dark:border-gray-700 dark:bg-gray-800">
-            <button
-              v-for="section in sectionTabs"
-              :key="section.key"
-              class="min-w-20 rounded-md px-3 text-sm font-medium transition"
-              :class="segmentedButtonClasses(activeSection === section.key)"
-              :style="activeSection === section.key ? { backgroundColor: 'var(--theme-primary)' } : {}"
-              @click="activeSection = section.key"
-            >
-              <span>{{ section.label }}</span>
-              <span v-if="section.count" class="ml-1 text-xs opacity-80">{{ section.count }}</span>
-            </button>
+        <div class="min-w-0 flex flex-wrap items-center gap-2">
+          <div class="max-w-full min-w-0 overflow-x-auto pb-1">
+            <div class="h-9 inline-flex min-w-max overflow-hidden border border-gray-200 rounded-lg bg-white p-0.5 dark:border-gray-700 dark:bg-gray-800">
+              <button
+                v-for="section in sectionTabs"
+                :key="section.key"
+                class="min-w-20 shrink-0 rounded-md px-3 text-sm font-medium transition"
+                :class="segmentedButtonClasses(activeSection === section.key)"
+                :style="activeSection === section.key ? { backgroundColor: 'var(--theme-primary)' } : {}"
+                @click="activeSection = section.key"
+              >
+                <span>{{ section.label }}</span>
+              </button>
+            </div>
           </div>
           <BaseButton
             class="w-24"
@@ -367,7 +385,9 @@ onMounted(() => {
           v-else-if="activeSection === 'qingmei'"
           :activity="qingmeiActivity"
           :loading="qingmeiClaimLoading"
+          :sell-loading="qingmeiSellLoading"
           @claim="claimQingmei"
+          @sell-wine="sellQingmeiWine"
         />
 
         <ActivitySubActivityPanel

@@ -3,44 +3,105 @@ import { storeToRefs } from 'pinia'
 import { computed, ref } from 'vue'
 import AccountModal from '@/components/AccountModal.vue'
 import RemarkModal from '@/components/RemarkModal.vue'
+import type { Account } from '@/stores/account'
 import { getPlatformClass, getPlatformLabel, useAccountStore } from '@/stores/account'
 import { useStatusStore } from '@/stores/status'
 
 const accountStore = useAccountStore()
 const statusStore = useStatusStore()
 const { accounts, currentAccount } = storeToRefs(accountStore)
-const { status } = storeToRefs(statusStore)
+const { currentStatusReady, status } = storeToRefs(statusStore)
 
 const showAccountDropdown = ref(false)
 const showAccountModal = ref(false)
 const showRemarkModal = ref(false)
 const accountToEdit = ref<any>(null)
+const failedAvatars = ref(new Set<string>())
 
 const platform = computed(() => getPlatformLabel(currentAccount.value?.platform))
 
-const displayName = computed(() => {
-  const acc = currentAccount.value
+function cleanText(value: unknown) {
+  return String(value || '').trim()
+}
+
+function liveAccountName() {
+  if (!currentStatusReady.value)
+    return ''
+  const name = cleanText(status.value?.status?.name)
+  return name && name !== '未登录' ? name : ''
+}
+
+function liveAccountAvatar() {
+  if (!currentStatusReady.value)
+    return ''
+  return cleanText(
+    status.value?.status?.avatar
+    || status.value?.status?.avatarUrl
+    || status.value?.status?.avatar_url,
+  )
+}
+
+function accountDisplayName(acc?: Account | null) {
   if (!acc)
     return '选择账号'
 
-  const liveName = status.value?.status?.name
-  if (liveName && liveName !== '未登录') {
-    if (acc.name)
-      return `${liveName} (${acc.name})`
-    return liveName
-  }
+  const liveName = currentAccount.value?.id === acc.id ? liveAccountName() : ''
+  const nick = cleanText(liveName || acc.nick)
+  const remark = cleanText(acc.name)
+  if (nick && remark && nick !== remark)
+    return `${nick} (${remark})`
+  if (nick)
+    return nick
+  if (remark)
+    return remark
+  return cleanText(acc.uin || acc.qq || acc.id) || '选择账号'
+}
 
-  if (acc.name) {
-    if (acc.nick)
-      return `${acc.nick} (${acc.name})`
-    return acc.name
-  }
+function accountSubtitle(acc?: Account | null) {
+  if (!acc)
+    return ''
+  return cleanText(acc.uin || acc.qq || acc.id)
+}
 
-  if (acc.nick)
-    return acc.nick
+function avatarSource(acc?: Account | null) {
+  if (!acc)
+    return ''
+  const explicit = currentAccount.value?.id === acc.id
+    ? cleanText(liveAccountAvatar() || acc.avatar)
+    : cleanText(acc.avatar)
+  if (explicit)
+    return explicit
+  const qq = cleanText(acc.uin || acc.qq)
+  if (qq && /^\d+$/.test(qq))
+    return `https://q1.qlogo.cn/g?b=qq&nk=${qq}&s=100`
+  return ''
+}
 
-  return acc.uin || acc.id || '选择账号'
-})
+function avatarKey(acc?: Account | null) {
+  return cleanText(acc?.id || acc?.uin || acc?.qq || acc?.wxid || '')
+}
+
+function shouldShowAvatar(acc?: Account | null) {
+  const key = avatarKey(acc)
+  return !!avatarSource(acc) && !!key && !failedAvatars.value.has(key)
+}
+
+function markAvatarFailed(acc?: Account | null) {
+  const key = avatarKey(acc)
+  if (!key)
+    return
+  const next = new Set(failedAvatars.value)
+  next.add(key)
+  failedAvatars.value = next
+}
+
+function avatarInitial(acc?: Account | null) {
+  return accountDisplayName(acc).replace(/[()（）\s]/g, '').slice(0, 1) || '账'
+}
+
+const displayName = computed(() => accountDisplayName(currentAccount.value))
+const currentAvatarSrc = computed(() => avatarSource(currentAccount.value))
+const currentSubtitle = computed(() => accountSubtitle(currentAccount.value))
 
 function selectAccount(acc: any) {
   accountStore.setCurrentAccount(acc)
@@ -70,19 +131,22 @@ async function handleAccountSaved() {
 <template>
   <div class="relative">
     <button
-      class="max-w-[280px] flex items-center gap-3 rounded-xl px-3 py-2 text-left transition hover:bg-gray-100/70 dark:hover:bg-gray-700/50"
+      class="max-w-[min(76vw,280px)] flex items-center gap-3 rounded-xl px-3 py-2 text-left transition hover:bg-gray-100/70 dark:hover:bg-gray-700/50"
       @click="showAccountDropdown = !showAccountDropdown"
     >
       <div class="h-9 w-9 flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-100 ring-1 ring-gray-200 dark:bg-gray-700 dark:ring-gray-600">
         <img
-          v-if="currentAccount?.uin"
-          :src="`https://q1.qlogo.cn/g?b=qq&nk=${currentAccount.uin}&s=100`"
+          v-if="shouldShowAvatar(currentAccount)"
+          :src="currentAvatarSrc"
+          :alt="displayName"
           class="h-full w-full object-cover"
-          @error="(e) => (e.target as HTMLImageElement).style.display = 'none'"
+          @error="markAvatarFailed(currentAccount)"
         >
-        <div v-else class="i-carbon-user text-gray-400" />
+        <span v-else class="text-sm text-gray-500 font-semibold dark:text-gray-300">
+          {{ avatarInitial(currentAccount) }}
+        </span>
       </div>
-      <div class="hidden min-w-0 flex-col sm:flex">
+      <div class="min-w-0 flex flex-col">
         <span class="truncate text-sm text-gray-900 font-semibold dark:text-gray-100">
           {{ displayName }}
         </span>
@@ -94,7 +158,7 @@ async function handleAccountSaved() {
           >
             {{ platform }}
           </span>
-          <span class="truncate">{{ currentAccount?.uin || currentAccount?.id || '未选择' }}</span>
+          <span v-if="currentSubtitle" class="truncate">{{ currentSubtitle }}</span>
         </span>
       </div>
       <div
@@ -118,16 +182,19 @@ async function handleAccountSaved() {
           >
             <div class="h-7 w-7 flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-200 dark:bg-gray-600">
               <img
-                v-if="acc.uin"
-                :src="`https://q1.qlogo.cn/g?b=qq&nk=${acc.uin}&s=100`"
+                v-if="shouldShowAvatar(acc)"
+                :src="avatarSource(acc)"
+                :alt="accountDisplayName(acc)"
                 class="h-full w-full object-cover"
-                @error="(e) => (e.target as HTMLImageElement).style.display = 'none'"
+                @error="markAvatarFailed(acc)"
               >
-              <div v-else class="i-carbon-user text-gray-400" />
+              <span v-else class="text-xs text-gray-500 font-semibold dark:text-gray-300">
+                {{ avatarInitial(acc) }}
+              </span>
             </div>
             <div class="min-w-0 flex flex-1 flex-col items-start">
               <span class="w-full truncate text-left text-sm font-medium">
-                {{ acc.nick && acc.name ? `${acc.nick} (${acc.name})` : acc.name || acc.nick || acc.uin }}
+                {{ accountDisplayName(acc) }}
               </span>
               <div class="flex items-center gap-1.5">
                 <span
@@ -137,7 +204,7 @@ async function handleAccountSaved() {
                 >
                   {{ getPlatformLabel(acc.platform) }}
                 </span>
-                <span class="text-xs text-gray-400">{{ acc.uin || acc.id }}</span>
+                <span v-if="accountSubtitle(acc)" class="text-xs text-gray-400">{{ accountSubtitle(acc) }}</span>
               </div>
             </div>
             <button

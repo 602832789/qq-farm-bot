@@ -933,6 +933,11 @@ async function handleApiCall(msg) {
                 result = await claimQingmeiSeeds();
                 break;
             }
+            case 'brewAndSellQingmeiWine': {
+                const { brewAndSellQingmeiWine } = require('../services/activity');
+                result = await brewAndSellQingmeiWine(args[0] || {});
+                break;
+            }
             case 'getIllustratedList': {
                 const { getIllustratedListV2 } = require('../services/illustrated');
                 result = await getIllustratedListV2(args[0], args[1]);

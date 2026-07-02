@@ -19,9 +19,32 @@ const activityLogger = createModuleLogger('activity');
 
 const HELU_DRAW_REQUEST_GAP_MS = 450;
 const HELU_DRAW_REFRESH_DELAY_MS = 350;
+const QINGMEI_WINE_STEP_DELAY_MS = 1000;
+const qingmeiClaimedDateByAccount = new Map();
 
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+}
+
+function getLocalDateKey() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getQingmeiClaimStateKey() {
+  const state = getUserState();
+  return String(state?.gid || state?.openid || 'current');
+}
+
+function markQingmeiClaimedToday() {
+  qingmeiClaimedDateByAccount.set(getQingmeiClaimStateKey(), getLocalDateKey());
+}
+
+function isQingmeiClaimedToday() {
+  return qingmeiClaimedDateByAccount.get(getQingmeiClaimStateKey()) === getLocalDateKey();
 }
 
 function assertActivityConnection(action) {
@@ -48,9 +71,15 @@ const HELU_NOTES_ACTIVITY_ID = 2026060104;
 const HELU_CURRENCY_ITEM_ID = 1018;
 const QINGMEI_ACTIVITY_ID = 2026080100;
 const QINGMEI_SEED_CLAIM_ACTIVITY_ID = 2026080101;
+const QINGMEI_WINE_ACTIVITY_ID = 2026080102;
 const QINGMEI_SEED_CLAIM_CMD = 4;
+const QINGMEI_WINE_PREVIEW_CMD = 14;
+const QINGMEI_WINE_BREW_CMD = 15;
+const QINGMEI_WINE_SELL_CMD = 16;
 const QINGMEI_SEED_ITEM_ID = 21221;
+const QINGMEI_FRUIT_ITEM_ID = 41221;
 const QINGMEI_SEED_REWARD_COUNT = 24;
+const QINGMEI_FINE_BREW_STEPS = 3;
 const HELU_PASSPORT_UID = 'SAIJI_PASSPORT';
 const HELU_TITLE = '荷风十里蝉初鸣';
 const HELU_SUB_ACTIVITY_KEYS = {
@@ -124,6 +153,27 @@ async function operateActivity(activityId, cmd, options = {}) {
   if (options?.helu_paid_draw && typeof options.helu_paid_draw === 'object') {
     payload.helu_paid_draw = options.helu_paid_draw;
   }
+  if (options?.qingmeiClaim && typeof options.qingmeiClaim === 'object') {
+    payload.qingmei_claim_params = {
+      type: Math.max(0, toNum(options.qingmeiClaim.type)),
+    };
+  }
+  if (options?.qingmeiWineStart && typeof options.qingmeiWineStart === 'object') {
+    payload.qingmei_wine_start = {
+      items: (options.qingmeiWineStart.items || []).map(item => ({
+        id: toNum(item?.id),
+        count: toNum(item?.count),
+      })),
+    };
+  }
+  if (options?.qingmeiWineBrew) {
+    payload.qingmei_wine_brew = {};
+  }
+  if (options?.qingmeiWineSell && typeof options.qingmeiWineSell === 'object') {
+    payload.qingmei_wine_sell = {
+      multiple: Math.max(1, toNum(options.qingmeiWineSell.multiple) || 1),
+    };
+  }
 
   activityLogger.info('活动操作请求', {
     activityId: payload.id,
@@ -132,6 +182,10 @@ async function operateActivity(activityId, cmd, options = {}) {
     exchangeShopOperate: payload.exchange_shop_operate,
     randomShopOperate: payload.random_shop_operate,
     heluPaidDraw: payload.helu_paid_draw,
+    qingmeiClaim: payload.qingmei_claim_params,
+    qingmeiWineStartCount: payload.qingmei_wine_start?.items?.length || 0,
+    qingmeiWineBrew: !!payload.qingmei_wine_brew,
+    qingmeiWineSell: payload.qingmei_wine_sell,
   });
 
   const request = types.ActivityOperateRequest.encode(
@@ -140,6 +194,112 @@ async function operateActivity(activityId, cmd, options = {}) {
 
   const { body } = await sendMsgAsync('gamepb.activitypb.ActivityService', 'Operate', request);
   return body;
+}
+
+async function operateActivityReply(activityId, cmd, options = {}) {
+  const body = await operateActivity(activityId, cmd, options);
+  return types.ActivityOperateReply.decode(body);
+}
+
+function normalizeCoreItem(item) {
+  const itemId = toNum(item?.id);
+  const count = toNum(item?.count);
+  const info = getItemById(itemId);
+  return {
+    itemId,
+    itemCount: count,
+    count,
+    itemName: info?.name || (itemId ? `物品#${itemId}` : ''),
+    image: getItemImageById(itemId) || '',
+  };
+}
+
+function normalizeQingmeiPreviewResult(result) {
+  if (!result) return null;
+  return {
+    price: toNum(result?.price),
+  };
+}
+
+function normalizeQingmeiBrewResult(result) {
+  if (!result) return null;
+  return {
+    wineType: toNum(result?.wine_type ?? result?.wineType),
+    cost: toNum(result?.cost),
+    price: toNum(result?.price),
+    canDouble: !!(result?.can_double ?? result?.canDouble),
+  };
+}
+
+function normalizeQingmeiSellResult(result) {
+  if (!result) return null;
+  const item = normalizeCoreItem(result?.item || {});
+  return {
+    multiple: toNum(result?.multiple),
+    gold: toNum(result?.gold) || item.itemCount,
+    item,
+  };
+}
+
+function normalizeQingmeiClaimResult(result) {
+  const items = (Array.isArray(result?.items) ? result.items : [])
+    .map(normalizeCoreItem)
+    .filter(item => item.itemId > 0 && item.itemCount > 0);
+  const seed = items.find(item => item.itemId === QINGMEI_SEED_ITEM_ID);
+  return {
+    items,
+    claimedCount: seed?.itemCount || 0,
+  };
+}
+
+function isAlreadyClaimedError(err) {
+  const message = String(err?.message || err || '');
+  return message.includes('已领取')
+    || message.includes('已经领取')
+    || message.includes('重复领取')
+    || message.includes('already')
+    || message.includes('1009001');
+}
+
+function createQingmeiWineError(stage, message, cause) {
+  const err = new Error(message || cause?.message || '青梅酿操作失败');
+  err.stage = stage;
+  err.cause = cause;
+  err.qingmeiWine = true;
+  return err;
+}
+
+function isNoOngoingQingmeiBrewError(err) {
+  const message = String(err?.message || err || '');
+  return message.includes('1034027') || message.includes('无进行中的酿造记录');
+}
+
+async function reportQingmeiShareForDouble() {
+  const checkRequest = types.CheckCanShareRequest.encode(
+    types.CheckCanShareRequest.create({})
+  ).finish();
+  const { body: checkBody } = await sendMsgAsync('gamepb.sharepb.ShareService', 'CheckCanShare', checkRequest);
+  const checkResult = types.CheckCanShareReply.decode(checkBody);
+
+  if (!checkResult?.can_share) {
+    throw new Error('当前不可分享，无法执行青梅酿售卖翻倍');
+  }
+
+  const reportRequest = types.ReportShareRequest.encode(
+    types.ReportShareRequest.create({ shared: true })
+  ).finish();
+  const { body: reportBody } = await sendMsgAsync('gamepb.sharepb.ShareService', 'ReportShare', reportRequest);
+  const reportResult = types.ReportShareReply.decode(reportBody);
+
+  if (reportResult && Object.hasOwn(reportResult, 'success') && !reportResult.success) {
+    throw new Error('青梅酿分享上报失败');
+  }
+
+  return {
+    canShare: !!checkResult?.can_share,
+    shared: true,
+    success: reportResult?.success !== false,
+  };
 }
 
 async function getSeasonInfoRaw() {
@@ -871,18 +1031,46 @@ async function getHeluBalance() {
 async function getBagItemCount(itemId) {
   try {
     const bag = await getBag();
-    const item = (getBagItems(bag) || []).find(entry => toNum(entry?.id) === toNum(itemId));
-    return Math.max(0, toNum(item?.count));
+    return (getBagItems(bag) || [])
+      .filter(entry => toNum(entry?.id) === toNum(itemId))
+      .reduce((sum, item) => sum + Math.max(0, toNum(item?.count)), 0);
   } catch (_) {
     return 0;
   }
+}
+
+async function getQingmeiWineMaterialItems() {
+  const bag = await getBag();
+  return (getBagItems(bag) || [])
+    .map(item => ({
+      id: toNum(item?.id),
+      uid: toNum(item?.uid),
+      count: Math.max(0, toNum(item?.count)),
+      mutantType: Array.isArray(item?.mutant_types) && item.mutant_types.length
+        ? Math.min(...item.mutant_types.map(toNum).filter(value => value > 0))
+        : 0,
+    }))
+    .filter(item => item.id === QINGMEI_FRUIT_ITEM_ID && item.uid > 0 && item.count > 0)
+    .sort((a, b) => {
+      const aOrder = a.mutantType > 0 ? a.mutantType : Number.MAX_SAFE_INTEGER;
+      const bOrder = b.mutantType > 0 ? b.mutantType : Number.MAX_SAFE_INTEGER;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      return a.uid - b.uid;
+    })
+    .map(item => ({
+      id: item.uid,
+      count: item.count,
+    }));
 }
 
 function normalizeQingmeiActivity(reply) {
   const activities = flattenActivityChildren(reply);
   const root = reply?.group?.activity || activities.find(item => toNum(item?.id) === QINGMEI_ACTIVITY_ID) || {};
   const claim = activities.find(item => toNum(item?.id) === QINGMEI_SEED_CLAIM_ACTIVITY_ID) || {};
+  const wine = activities.find(item => toNum(item?.id) === QINGMEI_WINE_ACTIVITY_ID) || {};
   const status = toNum(claim?.status);
+  const claimedToday = isQingmeiClaimedToday();
+  const materialInfo = getItemById(QINGMEI_FRUIT_ITEM_ID);
 
   return {
     uid: reply?.__activityUid || QINGMEI_ACTIVITY_UID,
@@ -890,32 +1078,51 @@ function normalizeQingmeiActivity(reply) {
     activityId: toNum(root?.id) || QINGMEI_ACTIVITY_ID,
     claimActivityId: toNum(claim?.id) || QINGMEI_SEED_CLAIM_ACTIVITY_ID,
     claimCommand: QINGMEI_SEED_CLAIM_CMD,
+    wineActivityId: toNum(wine?.id) || QINGMEI_WINE_ACTIVITY_ID,
+    wineTitle: wine?.title || '青酿换万金',
+    winePreviewCommand: QINGMEI_WINE_PREVIEW_CMD,
+    wineBrewCommand: QINGMEI_WINE_BREW_CMD,
+    wineSellCommand: QINGMEI_WINE_SELL_CMD,
     startTime: toNum(root?.start_time ?? root?.startTime ?? claim?.start_time ?? claim?.startTime),
     endTime: toNum(root?.end_time ?? root?.endTime ?? claim?.end_time ?? claim?.endTime),
     status,
-    claimed: status === 3,
-    claimable: status !== 3 && claim?.enabled !== false,
+    claimed: claimedToday || status === 3,
+    claimable: !claimedToday && status !== 3 && claim?.enabled !== false,
     reward: {
       itemId: QINGMEI_SEED_ITEM_ID,
       itemCount: QINGMEI_SEED_REWARD_COUNT,
       itemName: getItemById(QINGMEI_SEED_ITEM_ID)?.name || '青梅种子',
       image: getItemImageById(QINGMEI_SEED_ITEM_ID) || '',
     },
-    payload: parsePayload(root?.payload || claim?.payload),
+    material: {
+      itemId: QINGMEI_FRUIT_ITEM_ID,
+      itemCount: 0,
+      itemName: materialInfo?.name || '青梅',
+      image: getItemImageById(QINGMEI_FRUIT_ITEM_ID) || '',
+    },
+    payload: parsePayload(root?.payload || wine?.payload || claim?.payload),
   };
 }
 
 async function getQingmeiActivity() {
   try {
     const reply = await getActivityGroupWithUidFallback(QINGMEI_ACTIVITY_ID, [QINGMEI_ACTIVITY_UID, '']);
-    return normalizeQingmeiActivity(reply);
+    const activity = normalizeQingmeiActivity(reply);
+    activity.material.itemCount = await getBagItemCount(QINGMEI_FRUIT_ITEM_ID);
+    return activity;
   } catch (err) {
+    const materialInfo = getItemById(QINGMEI_FRUIT_ITEM_ID);
     return {
       uid: QINGMEI_ACTIVITY_UID,
       title: '青梅酿万金',
       activityId: QINGMEI_ACTIVITY_ID,
       claimActivityId: QINGMEI_SEED_CLAIM_ACTIVITY_ID,
       claimCommand: QINGMEI_SEED_CLAIM_CMD,
+      wineActivityId: QINGMEI_WINE_ACTIVITY_ID,
+      wineTitle: '青酿换万金',
+      winePreviewCommand: QINGMEI_WINE_PREVIEW_CMD,
+      wineBrewCommand: QINGMEI_WINE_BREW_CMD,
+      wineSellCommand: QINGMEI_WINE_SELL_CMD,
       claimed: false,
       claimable: false,
       reward: {
@@ -924,6 +1131,12 @@ async function getQingmeiActivity() {
         itemName: getItemById(QINGMEI_SEED_ITEM_ID)?.name || '青梅种子',
         image: getItemImageById(QINGMEI_SEED_ITEM_ID) || '',
       },
+      material: {
+        itemId: QINGMEI_FRUIT_ITEM_ID,
+        itemCount: await getBagItemCount(QINGMEI_FRUIT_ITEM_ID),
+        itemName: materialInfo?.name || '青梅',
+        image: getItemImageById(QINGMEI_FRUIT_ITEM_ID) || '',
+      },
       warning: err?.message || String(err),
     };
   }
@@ -931,10 +1144,34 @@ async function getQingmeiActivity() {
 
 async function claimQingmeiSeeds() {
   const beforeCount = await getBagItemCount(QINGMEI_SEED_ITEM_ID);
-  await operateActivity(QINGMEI_SEED_CLAIM_ACTIVITY_ID, QINGMEI_SEED_CLAIM_CMD);
+  let reply = null;
+  try {
+    reply = await operateActivityReply(QINGMEI_SEED_CLAIM_ACTIVITY_ID, QINGMEI_SEED_CLAIM_CMD, {
+      qingmeiClaim: { type: 2 },
+    });
+  } catch (err) {
+    if (isAlreadyClaimedError(err)) {
+      markQingmeiClaimedToday();
+      return {
+        ok: true,
+        alreadyClaimed: true,
+        claimedCount: 0,
+        beforeCount,
+        afterCount: beforeCount,
+        qingmei: await getQingmeiActivity(),
+      };
+    }
+    throw err;
+  }
+
+  const claimResult = normalizeQingmeiClaimResult(reply?.qingmei_claim);
   await delay(HELU_DRAW_REFRESH_DELAY_MS);
   const afterCount = await getBagItemCount(QINGMEI_SEED_ITEM_ID);
-  const claimedCount = Math.max(0, afterCount - beforeCount);
+  const claimedCount = claimResult.claimedCount || Math.max(0, afterCount - beforeCount);
+  if (claimedCount <= 0) {
+    throw new Error('领取青梅种子失败: 服务端未返回奖励，背包数量也未增加');
+  }
+  if (claimedCount > 0) markQingmeiClaimedToday();
 
   activityLogger.info('领取青梅种子完成', {
     event: 'qingmei_seed_claim',
@@ -942,14 +1179,129 @@ async function claimQingmeiSeeds() {
     beforeCount,
     afterCount,
     claimedCount,
+    rewardItems: claimResult.items,
   });
 
   return {
     ok: true,
-    claimedCount: claimedCount || QINGMEI_SEED_REWARD_COUNT,
+    claimedCount,
     beforeCount,
     afterCount,
+    rewards: claimResult.items,
     qingmei: await getQingmeiActivity(),
+  };
+}
+
+async function brewAndSellQingmeiWine(options = {}) {
+  const share = options?.share !== false;
+  const brewSteps = Math.max(1, Number(options?.brewSteps) || QINGMEI_FINE_BREW_STEPS);
+  const materialItems = await getQingmeiWineMaterialItems();
+  const beforeMaterialCount = materialItems.reduce((sum, item) => sum + Math.max(0, toNum(item?.count)), 0);
+  if (beforeMaterialCount <= 0) {
+    throw createQingmeiWineError('material', '青梅不足，无法精酿');
+  }
+
+  let previewReply = null;
+  let previewWarning = '';
+  try {
+    previewReply = await operateActivityReply(QINGMEI_WINE_ACTIVITY_ID, QINGMEI_WINE_PREVIEW_CMD, {
+      qingmeiWineStart: { items: materialItems },
+    });
+  } catch (err) {
+    previewWarning = `打开青梅酿售卖失败，已尝试直接精酿: ${err.message}`;
+  }
+  const preview = normalizeQingmeiPreviewResult(previewReply?.qingmei_preview);
+  await delay(QINGMEI_WINE_STEP_DELAY_MS);
+
+  const brews = [];
+  for (let index = 0; index < brewSteps; index += 1) {
+    let brewReply = null;
+    try {
+      brewReply = await operateActivityReply(QINGMEI_WINE_ACTIVITY_ID, QINGMEI_WINE_BREW_CMD, {
+        qingmeiWineBrew: true,
+      });
+    } catch (err) {
+      if (index === 0 && isNoOngoingQingmeiBrewError(err)) {
+        try {
+          const retryMaterialItems = await getQingmeiWineMaterialItems();
+          previewReply = await operateActivityReply(QINGMEI_WINE_ACTIVITY_ID, QINGMEI_WINE_PREVIEW_CMD, {
+            qingmeiWineStart: { items: retryMaterialItems },
+          });
+          await delay(QINGMEI_WINE_STEP_DELAY_MS);
+          brewReply = await operateActivityReply(QINGMEI_WINE_ACTIVITY_ID, QINGMEI_WINE_BREW_CMD, {
+            qingmeiWineBrew: true,
+          });
+        } catch (retryErr) {
+          throw createQingmeiWineError('brew', `青梅酿精酿失败: ${retryErr.message}`, retryErr);
+        }
+      } else {
+        throw createQingmeiWineError('brew', `青梅酿精酿失败: ${err.message}`, err);
+      }
+    }
+    const brew = normalizeQingmeiBrewResult(brewReply?.qingmei_brew);
+    if (brew) brews.push(brew);
+    await delay(QINGMEI_WINE_STEP_DELAY_MS);
+  }
+
+  const finalBrew = brews[brews.length - 1] || null;
+  if (!finalBrew) {
+    throw createQingmeiWineError('brew', beforeMaterialCount <= 0
+      ? '青梅不足，无法精酿'
+      : '精酿未返回有效结果，请稍后重试');
+  }
+
+  let shareResult = { canShare: false, shared: false, success: false };
+  if (share && finalBrew?.canDouble) {
+    try {
+      shareResult = await reportQingmeiShareForDouble();
+    } catch (err) {
+      throw createQingmeiWineError('share', `青梅酿分享翻倍失败: ${err.message}`, err);
+    }
+    await delay(HELU_DRAW_REFRESH_DELAY_MS);
+  }
+
+  let sellReply = null;
+  const sellMultiple = shareResult.shared ? 2 : 1;
+  try {
+    sellReply = await operateActivityReply(QINGMEI_WINE_ACTIVITY_ID, QINGMEI_WINE_SELL_CMD, {
+      qingmeiWineSell: { multiple: sellMultiple },
+    });
+  } catch (err) {
+    throw createQingmeiWineError('sell', `青梅酿售卖失败: ${err.message}`, err);
+  }
+  const sell = normalizeQingmeiSellResult(sellReply?.qingmei_sell);
+  if (!sell || sell.gold <= 0) {
+    throw createQingmeiWineError('sell', '售卖未返回金币收益，请稍后刷新活动状态');
+  }
+  await delay(HELU_DRAW_REFRESH_DELAY_MS);
+  const afterMaterialCount = await getBagItemCount(QINGMEI_FRUIT_ITEM_ID);
+
+  activityLogger.info('青梅酿售卖完成', {
+    event: 'qingmei_wine_sell',
+    beforeMaterialCount,
+    afterMaterialCount,
+    materialBatchCount: materialItems.length,
+    brewSteps: brews.length,
+    wineType: finalBrew?.wineType,
+    price: finalBrew?.price,
+    shared: shareResult.shared,
+    sellMultiple,
+    gold: sell?.gold,
+  });
+
+  return {
+    ok: true,
+    beforeMaterialCount,
+    afterMaterialCount,
+    consumedCount: Math.max(0, beforeMaterialCount - afterMaterialCount),
+    materialBatchCount: materialItems.length,
+    preview,
+    previewWarning,
+    brews,
+    brew: finalBrew,
+    share: shareResult,
+    sell,
+    activity: await getHeluActivity().catch(() => null),
   };
 }
 
@@ -1594,6 +1946,7 @@ module.exports = {
   HELU_EXCHANGE_ACTIVITY_ID,
   QINGMEI_ACTIVITY_ID,
   QINGMEI_SEED_CLAIM_ACTIVITY_ID,
+  QINGMEI_WINE_ACTIVITY_ID,
   HELU_SUB_ACTIVITY_KEYS,
   NANGUA_SHOP_BUY_CMD,
   NANGUA_SHOP_REFRESH_CMD,
@@ -1604,6 +1957,7 @@ module.exports = {
   getHeluActivity,
   getQingmeiActivity,
   claimQingmeiSeeds,
+  brewAndSellQingmeiWine,
   getSeasonPassport,
   claimSeasonPassportRewards,
   getSolarTermsInfo,

@@ -146,6 +146,14 @@ async function loadProto() {
     types.ActivityExchangeShopOperateParams = root.lookupType('gamepb.activitypb.ExchangeShopOperateParams');
     types.ActivityDrawInfo = root.lookupType('gamepb.activitypb.DrawInfo');
     types.ActivityDrawResult = root.lookupType('gamepb.activitypb.DrawResult');
+    types.ActivityQingmeiClaimParams = root.lookupType('gamepb.activitypb.QingmeiClaimParams');
+    types.ActivityQingmeiWineStartParams = root.lookupType('gamepb.activitypb.QingmeiWineStartParams');
+    types.ActivityQingmeiWineBrewParams = root.lookupType('gamepb.activitypb.QingmeiWineBrewParams');
+    types.ActivityQingmeiWineSellParams = root.lookupType('gamepb.activitypb.QingmeiWineSellParams');
+    types.ActivityQingmeiPreviewResult = root.lookupType('gamepb.activitypb.QingmeiPreviewResult');
+    types.ActivityQingmeiBrewResult = root.lookupType('gamepb.activitypb.QingmeiBrewResult');
+    types.ActivityQingmeiSellResult = root.lookupType('gamepb.activitypb.QingmeiSellResult');
+    types.ActivityQingmeiClaimResult = root.lookupType('gamepb.activitypb.QingmeiClaimResult');
     types.ActivityActivityInfo = root.lookupType('gamepb.activitypb.ActivityInfo');
     types.ActivityListRequest = root.lookupType('gamepb.activitypb.ListRequest');
     types.ActivityListReply = root.lookupType('gamepb.activitypb.ListReply');

@@ -1,15 +1,20 @@
 <script setup lang="ts">
 import type { QingmeiActivity } from '@/stores/activity'
+import { computed } from 'vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 
-defineProps<{
+const props = defineProps<{
   activity?: QingmeiActivity | null
   loading?: boolean
+  sellLoading?: boolean
 }>()
 
 defineEmits<{
   claim: []
+  sellWine: []
 }>()
+
+const materialCount = computed(() => Number(props.activity?.material?.itemCount || 0))
 
 function formatTime(value?: number) {
   if (!value)
@@ -72,6 +77,45 @@ function formatTime(value?: number) {
         >
           {{ activity?.claimed ? '今日已领取' : '领取 24 个' }}
         </BaseButton>
+      </div>
+
+      <div class="mt-5 border-t border-gray-100 pt-5 dark:border-gray-700">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div class="flex items-center gap-4">
+            <div class="grid h-18 w-18 shrink-0 place-items-center rounded-lg bg-lime-50 dark:bg-lime-900/20">
+              <img
+                v-if="activity?.material?.image"
+                :src="activity.material.image"
+                alt="青梅"
+                class="h-14 w-14 object-contain"
+              >
+              <div v-else class="i-carbon-fruit-bowl text-3xl text-lime-600 dark:text-lime-300" />
+            </div>
+            <div>
+              <div class="flex flex-wrap items-center gap-2">
+                <h3 class="text-base text-gray-900 font-semibold dark:text-gray-100">
+                  {{ activity?.wineTitle || '青酿换万金' }}
+                </h3>
+                <span class="rounded bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200">
+                  精酿
+                </span>
+              </div>
+              <div class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                当前{{ activity?.material?.itemName || '青梅' }} {{ materialCount.toLocaleString() }}
+              </div>
+            </div>
+          </div>
+
+          <BaseButton
+            class="min-w-44"
+            variant="primary"
+            :loading="sellLoading"
+            :disabled="sellLoading || materialCount <= 0"
+            @click="$emit('sellWine')"
+          >
+            精酿并分享售卖
+          </BaseButton>
+        </div>
       </div>
     </div>
   </section>
