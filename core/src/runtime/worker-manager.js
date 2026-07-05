@@ -486,7 +486,8 @@ function createWorkerManager(deps) {
             stopWorker(accountId);
         } else if (msg.type === 'automation_patch') {
             const patch = msg.patch && typeof msg.patch === 'object' ? msg.patch : {};
-            if (patch.automation && typeof patch.automation === 'object') {
+            if ((patch.automation && typeof patch.automation === 'object')
+                || patch.friendBadRetryDate !== undefined) {
                 const store = require('../models/store');
                 store.applyConfigSnapshot(patch, { accountId });
                 const currentWrk = workers[accountId];

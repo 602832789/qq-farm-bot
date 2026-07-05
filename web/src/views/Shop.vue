@@ -4,6 +4,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import DecorationGoodsCard from '@/components/shop/DecorationGoodsCard.vue'
 import MallGoodsCard from '@/components/shop/MallGoodsCard.vue'
+import MysteryGoodsCard from '@/components/shop/MysteryGoodsCard.vue'
 import PetGoodsCard from '@/components/shop/PetGoodsCard.vue'
 import PurchaseQuantityModal from '@/components/shop/PurchaseQuantityModal.vue'
 import SeedGoodsCard from '@/components/shop/SeedGoodsCard.vue'
@@ -29,18 +30,21 @@ const {
   pets,
   decorations,
   mallGoods,
+  mysteryOffer,
   loading,
   petLoading,
   decorationLoading,
   mallLoading,
+  mysteryLoading,
   error,
   petError,
   decorationError,
   mallError,
+  mysteryError,
   userGoldBean,
 } = storeToRefs(shopStore)
 
-const tab = ref<'seed' | 'pet' | 'decoration' | 'mall'>('seed')
+const tab = ref<'seed' | 'pet' | 'decoration' | 'mall' | 'mystery'>('seed')
 const ascending = ref(true)
 const FERTILIZER_MALL_GOODS_IDS = new Set([1002, 1003])
 
@@ -61,7 +65,14 @@ const quantityModal = ref({
 const currentLevel = computed(() => status.value?.status?.level || 0)
 const currentGold = computed(() => status.value?.status?.gold || 0)
 const currentCoupon = computed(() => status.value?.status?.coupon || 0)
-const isAnyLoading = computed(() => loading.value || petLoading.value || decorationLoading.value || mallLoading.value)
+const isAnyLoading = computed(() => loading.value || petLoading.value || decorationLoading.value || mallLoading.value || mysteryLoading.value)
+const mysteryBalance = computed(() => {
+  if (mysteryOffer.value?.currencyId === 1002)
+    return currentCoupon.value
+  if (mysteryOffer.value?.currencyId === 1005)
+    return userGoldBean.value
+  return currentGold.value
+})
 const {
   canAffordGoods,
   canAffordDecoration,
@@ -92,7 +103,9 @@ const activeError = computed(() => {
     return petError.value
   if (tab.value === 'decoration')
     return decorationError.value
-  return mallError.value
+  if (tab.value === 'mall')
+    return mallError.value
+  return mysteryError.value
 })
 const activeIsEmpty = computed(() => {
   if (tab.value === 'seed')
@@ -101,7 +114,9 @@ const activeIsEmpty = computed(() => {
     return pets.value.length === 0
   if (tab.value === 'decoration')
     return decorations.value.length === 0
-  return mallGoods.value.length === 0
+  if (tab.value === 'mall')
+    return mallGoods.value.length === 0
+  return !mysteryOffer.value?.active
 })
 const activeEmptyMessage = computed(() => {
   switch (tab.value) {
@@ -113,6 +128,8 @@ const activeEmptyMessage = computed(() => {
       return '暂无装扮商品。'
     case 'mall':
       return '暂无道具商品。'
+    case 'mystery':
+      return '神秘商人暂未出现，请稍后刷新看看。'
   }
   return '暂无商品。'
 })
@@ -184,6 +201,50 @@ async function buyMallGoods(item: any, quantity = 1) {
   }
 }
 
+async function buyMysteryGoods(item: any) {
+  if (!currentAccountId.value)
+    return
+  const result = await shopStore.buyMysteryShopGoods(currentAccountId.value, item.npcId)
+  if (result?.ok) {
+    const count = Number(result.data?.reward?.count || item.itemCount || 0)
+    toast.success(`已从神秘商人处购买 ${item.itemName} x${count}`)
+    await shopStore.fetchMysteryShop(currentAccountId.value)
+  }
+  else {
+    toast.error(result?.error || '购买失败')
+  }
+}
+
+function confirmBuyMysteryGoods(item: any) {
+  openConfirm(
+    '确认购买神秘商品',
+    `确定购买 ${item.itemName} x${item.itemCount} 吗？
+价格：${formatCurrencyAmountByLabel(item.price || 0, item.currencyName)} ${item.currencyName}
+购买完成后神秘商人将离开。`,
+    () => buyMysteryGoods(item),
+  )
+}
+
+async function abandonMysteryMerchant() {
+  if (!currentAccountId.value)
+    return
+  const result = await shopStore.abandonMysteryShop(currentAccountId.value)
+  if (result?.ok) {
+    toast.success('已请离神秘商人')
+    await shopStore.fetchMysteryShop(currentAccountId.value)
+  }
+  else {
+    toast.error(result?.error || '请离失败')
+  }
+}
+
+function confirmAbandonMysteryMerchant() {
+  openConfirm(
+    '请离神秘商人',
+    '确定请离当前神秘商人吗？请离后本次商品将无法购买。',
+    abandonMysteryMerchant,
+  )
+}
 
 function getShopMaxQuantity(item: any, balance: number) {
   const price = Number(item?.price || 0)
@@ -350,7 +411,7 @@ onMounted(() => {
         </div>
       </div>
 
-      <div v-else class="space-y-4">
+      <div v-else-if="tab === 'mall'" class="space-y-4">
         <div v-if="mallError" class="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
           {{ mallError }}
         </div>
@@ -366,6 +427,21 @@ onMounted(() => {
             @buy="confirmBuyMallGoods"
           />
         </div>
+      </div>
+
+      <div v-else class="space-y-4">
+        <div v-if="mysteryError" class="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
+          {{ mysteryError }}
+        </div>
+        <ShopEmptyState v-if="!mysteryOffer?.active" :message="activeEmptyMessage" />
+        <MysteryGoodsCard
+          v-else
+          :offer="mysteryOffer"
+          :balance="mysteryBalance"
+          :loading="confirmLoading"
+          @buy="confirmBuyMysteryGoods"
+          @abandon="confirmAbandonMysteryMerchant"
+        />
       </div>
     </div>
 

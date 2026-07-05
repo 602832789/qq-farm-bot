@@ -5,6 +5,7 @@ const {
   getAutoAcceptFriendMinLevel,
   getKnownFriendGids,
   applyConfigSnapshot,
+  getFriendBadRetryDate,
   readFriendDogInfoCache,
 } = require('../models/store');
 const { getUserState, isConnected, networkEvents } = require('../utils/network');
@@ -79,20 +80,44 @@ function resetBadFailureCount() {
   consecutiveBadFailureCount = 0;
 }
 
-function disableFriendBadAfterFailures(reason) {
+function getLocalDateKey(offsetDays = 0) {
+  const date = new Date();
+  date.setDate(date.getDate() + offsetDays);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function pauseFriendBadUntilTomorrow(reason) {
   const accountId = process.env.FARM_ACCOUNT_ID || '';
+  const retryDate = getLocalDateKey(1);
   applyConfigSnapshot(
-    { automation: { friend_bad: false } },
+    { friendBadRetryDate: retryDate },
     { accountId }
   );
-  syncAutomationPatchToMaster({ automation: { friend_bad: false } });
-  log('好友', `捣乱连续失败 ${BAD_FAILURE_LIMIT} 次，已自动停止自动捣乱。最后错误: ${reason || '未知'}`, {
+  syncAutomationPatchToMaster({ friendBadRetryDate: retryDate });
+  resetBadFailureCount();
+  log('好友', `捣乱连续失败 ${BAD_FAILURE_LIMIT} 次，已暂停至 ${retryDate} 再尝试。最后错误: ${reason || '未知'}`, {
     module: 'friend',
-    event: '自动停止捣乱',
-    result: 'disabled',
+    event: '自动暂停捣乱',
+    result: 'paused',
     failureCount: BAD_FAILURE_LIMIT,
+    retryDate,
     reason,
   });
+}
+
+function isFriendBadPaused() {
+  const accountId = process.env.FARM_ACCOUNT_ID || '';
+  const retryDate = getFriendBadRetryDate(accountId);
+  if (!retryDate) return false;
+  if (getLocalDateKey() < retryDate) return true;
+
+  applyConfigSnapshot({ friendBadRetryDate: '' }, { accountId });
+  syncAutomationPatchToMaster({ friendBadRetryDate: '' });
+  resetBadFailureCount();
+  return false;
 }
 
 function recordBadFailure(reason, context = {}) {
@@ -108,7 +133,7 @@ function recordBadFailure(reason, context = {}) {
   });
 
   if (consecutiveBadFailureCount >= BAD_FAILURE_LIMIT) {
-    disableFriendBadAfterFailures(reason);
+    pauseFriendBadUntilTomorrow(reason);
     return true;
   }
 
@@ -339,7 +364,7 @@ async function checkFriends(options = {}) {
     }
 
     // Bad (put weeds/insects)
-    if (doBad) {
+    if (doBad && !isFriendBadPaused()) {
       log('好友', '开始自动放虫放草', {
         module: 'friend',
         event: '开始自动放虫放草',
@@ -655,6 +680,7 @@ async function runBadOnceOnStartup(force = false) {
 
   const badEnabled = isAutomationOn('friend_bad');
   if (!badEnabled) return;
+  if (isFriendBadPaused()) return;
 
   const userState = getUserState();
   if (!userState.gid) {

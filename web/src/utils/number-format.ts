@@ -1,6 +1,5 @@
 export type ResourceCurrency = 'gold' | 'coupon' | 'goldBean'
 
-const YI_UNIT = '\u4EBF'
 const WAN_UNIT = '\u4E07'
 
 function toFiniteNumber(value: unknown) {
@@ -16,7 +15,7 @@ function formatCompactAmount(value: unknown, threshold: number, divisor: number,
 }
 
 export function formatGoldAmount(value: unknown) {
-  return formatCompactAmount(value, 100000000, 100000000, YI_UNIT)
+  return formatWanAmount(value)
 }
 
 export function formatWanAmount(value: unknown) {

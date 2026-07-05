@@ -253,7 +253,9 @@ function startDailyRoutineTimer() {
         const today = getLocalDateKey();
         if (today === lastDailyRunDate) return;
         lastDailyRunDate = today;
-        runDailyRoutines(true).catch(() => null);
+        runDailyRoutines(true)
+            .then(() => runBadOnceOnStartup(true))
+            .catch(() => null);
     });
 }
 
@@ -886,6 +888,21 @@ async function handleApiCall(msg) {
             case 'buyMallGoods': {
                 const { purchaseMallGoods } = require('../services/mall');
                 result = await purchaseMallGoods(args[0], args[1]);
+                break;
+            }
+            case 'getMysteryShop': {
+                const { getActiveMysteryShop } = require('../services/mystery-shop');
+                result = await getActiveMysteryShop();
+                break;
+            }
+            case 'buyMysteryShopGoods': {
+                const { buyMysteryShopGoods } = require('../services/mystery-shop');
+                result = await buyMysteryShopGoods(args[0]);
+                break;
+            }
+            case 'abandonMysteryShop': {
+                const { abandonMysteryShop } = require('../services/mystery-shop');
+                result = await abandonMysteryShop();
                 break;
             }
             case 'getActivityShop': {
