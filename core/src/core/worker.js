@@ -495,7 +495,7 @@ function applyRuntimeConfig(config, syncStatusAfter = false) {
             const prevFert = String(prevAuto && prevAuto.fertilizer ? prevAuto.fertilizer : '').toLowerCase();
             const newFert = String(newAuto && newAuto.fertilizer ? newAuto.fertilizer : '').toLowerCase();
             const fertChanged = prevFert !== newFert;
-            if (fertChanged && (newFert === 'both' || newFert === 'organic' || newFert === 'smart' || newFert === 'smart_only' || newFert === 'smart_normal')) {
+            if (fertChanged && (newFert === 'both' || newFert === 'organic' || newFert === 'smart' || newFert === 'smart_only' || newFert === 'smart_normal' || newFert === 'final_normal' || newFert === 'final_organic')) {
                 workerScheduler.setTimeoutTask('fertilizer_immediate_after_save', 1000, async () => {
                     if (!loginReady) return;
                     try {

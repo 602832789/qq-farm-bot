@@ -157,7 +157,8 @@ async function runFarmOperation(opType) {
 
   // ── 多季作物补肥 ──
   if (opType === 'all' && removeResult && Array.isArray(removeResult.growing) &&
-      removeResult.growing.length > 0 && isAutomationOn('fertilizer_multi_season')) {
+      removeResult.growing.length > 0 && isAutomationOn('fertilizer_multi_season') &&
+      (getAutomation().fertilizer || 'none') !== 'final_normal') {
     const multiSeasonLands = [...new Set(
       removeResult.growing.map(id => toNum(id)).filter(Boolean)
     )];
@@ -227,7 +228,8 @@ async function runFarmOperation(opType) {
   // ── 智能施肥（巡田时触发）──
   if (opType === 'all') {
     const fertilizerMode = getAutomation().fertilizer || 'none';
-    if (fertilizerMode === 'smart' || fertilizerMode === 'smart_only' || fertilizerMode === 'smart_normal') {
+    if (fertilizerMode === 'smart' || fertilizerMode === 'smart_only' || fertilizerMode === 'smart_normal' ||
+        fertilizerMode === 'final_normal' || fertilizerMode === 'final_organic') {
       try {
         const fertResult = await runFertilizerByConfig([], { skipNormal: true });
         if (fertResult.organic > 0) actions.push(`有机肥${  fertResult.organic}`);

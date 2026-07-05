@@ -5,6 +5,7 @@ import ConfirmModal from '@/components/ConfirmModal.vue'
 import DecorationGoodsCard from '@/components/shop/DecorationGoodsCard.vue'
 import MallGoodsCard from '@/components/shop/MallGoodsCard.vue'
 import PetGoodsCard from '@/components/shop/PetGoodsCard.vue'
+import PurchaseQuantityModal from '@/components/shop/PurchaseQuantityModal.vue'
 import SeedGoodsCard from '@/components/shop/SeedGoodsCard.vue'
 import ShopAccountHeader from '@/components/shop/ShopAccountHeader.vue'
 import ShopEmptyState from '@/components/shop/ShopEmptyState.vue'
@@ -14,6 +15,7 @@ import { useAccountStore } from '@/stores/account'
 import { useShopStore } from '@/stores/shop'
 import { useStatusStore } from '@/stores/status'
 import { useToastStore } from '@/stores/toast'
+import { formatCouponAmount, formatCurrencyAmountByLabel } from '@/utils/number-format'
 
 const accountStore = useAccountStore()
 const shopStore = useShopStore()
@@ -40,12 +42,21 @@ const {
 
 const tab = ref<'seed' | 'pet' | 'decoration' | 'mall'>('seed')
 const ascending = ref(true)
+const FERTILIZER_MALL_GOODS_IDS = new Set([1002, 1003])
 
 const showConfirm = ref(false)
 const confirmTitle = ref('确认购买')
 const confirmMessage = ref('')
 const confirmLoading = ref(false)
 const pendingAction = ref<null | (() => Promise<void>)>(null)
+const quantityModal = ref({
+  show: false,
+  item: null as any,
+  mode: 'shop' as 'shop' | 'mall',
+  currencyLabel: '',
+  balance: 0,
+  maxQuantity: 99,
+})
 
 const currentLevel = computed(() => status.value?.status?.level || 0)
 const currentGold = computed(() => status.value?.status?.gold || 0)
@@ -134,18 +145,25 @@ function closeConfirm() {
   pendingAction.value = null
 }
 
+function closeQuantityModal() {
+  if (confirmLoading.value)
+    return
+  quantityModal.value.show = false
+  quantityModal.value.item = null
+}
+
 async function refreshAll() {
   if (!currentAccountId.value)
     return
   await shopStore.refreshAll(currentAccountId.value)
 }
 
-async function buyGoods(item: any) {
+async function buyGoods(item: any, quantity = 1) {
   if (!currentAccountId.value)
     return
-  const result = await shopStore.buyGoods(currentAccountId.value, item.id, 1, item.price)
+  const result = await shopStore.buyGoods(currentAccountId.value, item.id, quantity, item.price)
   if (result?.ok) {
-    toast.success(`已购买 ${item.name}`)
+    toast.success(`已购买 ${item.name} x${quantity}`)
     await refreshAll()
   }
   else {
@@ -153,32 +171,81 @@ async function buyGoods(item: any) {
   }
 }
 
-async function buyMallGoods(item: any) {
+async function buyMallGoods(item: any, quantity = 1) {
   if (!currentAccountId.value)
     return
-  const result = await shopStore.buyMallGoods(currentAccountId.value, item.goodsId, 1)
+  const result = await shopStore.buyMallGoods(currentAccountId.value, item.goodsId, quantity)
   if (result?.ok) {
-    toast.success(`已购买 ${item.name}`)
+    toast.success(`已购买 ${item.name} x${quantity}`)
     await refreshAll()
   }
   else {
     toast.error(result?.error || '购买失败')
   }
+}
+
+
+function getShopMaxQuantity(item: any, balance: number) {
+  const price = Number(item?.price || 0)
+  const byBalance = price > 0 ? Math.floor(Number(balance || 0) / price) : 99
+  const limitCount = Number(item?.limitCount || 0)
+  const boughtNum = Number(item?.boughtNum || 0)
+  const byLimit = limitCount > 0 ? Math.max(0, limitCount - boughtNum) : 99
+  return Math.max(1, Math.min(99, byBalance, byLimit))
+}
+
+function openQuantityModal(item: any, mode: 'shop' | 'mall', currencyLabel: string, balance: number) {
+  quantityModal.value = {
+    show: true,
+    item,
+    mode,
+    currencyLabel,
+    balance,
+    maxQuantity: getShopMaxQuantity(item, balance),
+  }
+}
+
+async function runQuantityPurchase(quantity: number) {
+  const target = quantityModal.value.item
+  if (!target)
+    return
+  confirmLoading.value = true
+  try {
+    if (quantityModal.value.mode === 'mall')
+      await buyMallGoods(target, quantity)
+    else
+      await buyGoods(target, quantity)
+    closeQuantityModal()
+  }
+  finally {
+    confirmLoading.value = false
+  }
+}
+
+function confirmBuySeedGoods(item: any) {
+  openQuantityModal(item, 'shop', '金币', currentGold.value)
 }
 
 function confirmBuyGoods(item: any, currencyLabel: string) {
   openConfirm(
     '确认购买',
-    `确定购买 ${item.name} 吗？\n价格：${Number(item.price || 0).toLocaleString()} ${currencyLabel}`,
+    `确定购买 ${item.name} 吗？
+价格：${formatCurrencyAmountByLabel(item.price || 0, currencyLabel)} ${currencyLabel}`,
     () => buyGoods(item),
   )
 }
 
 function confirmBuyMallGoods(item: any) {
-  const priceText = item.isFree ? '免费' : `${Number(item.price || 0).toLocaleString()} 点券`
+  if (FERTILIZER_MALL_GOODS_IDS.has(Number(item.goodsId))) {
+    openQuantityModal(item, 'mall', '点券', currentCoupon.value)
+    return
+  }
+
+  const priceText = item.isFree ? '免费' : `${formatCouponAmount(item.price || 0)} 点券`
   openConfirm(
     '确认购买',
-    `确定购买 ${item.name} 吗？\n价格：${priceText}`,
+    `确定购买 ${item.name} 吗？
+价格：${priceText}`,
     () => buyMallGoods(item),
   )
 }
@@ -241,7 +308,7 @@ onMounted(() => {
             :can-afford="canAffordGoods(item)"
             :status-label="getSeedStatusLabel(item)"
             :hint="getSeedHint(item)"
-            @buy="confirmBuyGoods($event, '金币')"
+            @buy="confirmBuySeedGoods"
           />
         </div>
       </div>
@@ -310,6 +377,19 @@ onMounted(() => {
       @confirm="runConfirmedAction"
       @close="closeConfirm"
       @cancel="closeConfirm"
+    />
+    <PurchaseQuantityModal
+      :show="quantityModal.show"
+      :item-name="quantityModal.item?.name || ''"
+      :unit-price="Number(quantityModal.item?.price || 0)"
+      :currency-label="quantityModal.currencyLabel"
+      :balance="quantityModal.balance"
+      :max-quantity="quantityModal.maxQuantity"
+      :loading="confirmLoading"
+      :is-free="!!quantityModal.item?.isFree"
+      @confirm="runQuantityPurchase"
+      @close="closeQuantityModal"
+      @cancel="closeQuantityModal"
     />
   </section>
 </template>

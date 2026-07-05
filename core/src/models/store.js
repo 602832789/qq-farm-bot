@@ -510,7 +510,7 @@ function normalizeAccountConfig(raw, fallbackConfig = accountFallbackConfig) {
             if (!ALLOWED_AUTOMATION_KEYS.has(key)) continue;
 
             if (key === 'fertilizer') {
-                const allowed = ['both', 'normal', 'organic', 'smart', 'smart_only', 'smart_normal', 'none'];
+                const allowed = ['both', 'normal', 'organic', 'smart', 'smart_only', 'smart_normal', 'final_normal', 'final_organic', 'none'];
                 cfg.automation[key] = allowed.includes(value) ? value : cfg.automation[key];
             } else if (key === 'fertilizer_land_types') {
                 cfg.automation[key] = normalizeFertilizerLandTypes(value, cfg.automation[key]);
@@ -932,7 +932,7 @@ function applyConfigSnapshot(patch = {}, opts = {}) {
         for (const [key, value] of Object.entries(patch.automation)) {
             if (cfg.automation[key] === undefined) continue;
             if (key === 'fertilizer') {
-                const allowed = ['both', 'normal', 'organic', 'smart', 'smart_only', 'smart_normal', 'none'];
+                const allowed = ['both', 'normal', 'organic', 'smart', 'smart_only', 'smart_normal', 'final_normal', 'final_organic', 'none'];
                 cfg.automation[key] = allowed.includes(value) ? value : cfg.automation[key];
             } else if (key === 'fertilizer_land_types') {
                 cfg.automation[key] = normalizeFertilizerLandTypes(value, cfg.automation[key]);
