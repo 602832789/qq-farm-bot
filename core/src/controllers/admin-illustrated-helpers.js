@@ -1,9 +1,10 @@
 const {
   getFruitLayerByFruitId,
   getItemById,
+  getItemImageById,
   getPlantByFruitId,
-  getSeedImageBySeedId,
 } = require("../config/gameConfig");
+const { getNongmeSeedImageUrl } = require("../services/nongme-plant-data");
 const { toNum } = require("../utils/utils");
 
 const SEED_SHOP_TYPE = 2;
@@ -58,10 +59,13 @@ async function getSeedShopGoodsMap({
   }
 }
 
-function getPlantSeedInfo(fruitId) {
+function getPlantSeedInfo(fruitId, nongmePlant) {
   const plant = getPlantByFruitId(fruitId);
-  const seedId = plant ? plant.seed_id || 0 : 0;
-  const seedLevel = seedId > 0 ? getItemById(seedId)?.level || 0 : 0;
+  const seedId = plant?.seed_id || nongmePlant?.seed_id || 0;
+  const seedLevel =
+    (seedId > 0 ? getItemById(seedId)?.level || 0 : 0) ||
+    toNum(nongmePlant?.level) ||
+    0;
 
   return {
     seedId,
@@ -69,10 +73,14 @@ function getPlantSeedInfo(fruitId) {
   };
 }
 
-function buildIllustratedItem(rawItem, { seedGoodsMap, userLevel, adminLogger }) {
+function buildIllustratedItem(
+  rawItem,
+  { seedGoodsMap, userLevel, adminLogger, nongmeFruitMap },
+) {
   const fruitId = toNum(rawItem.seed_id) || 0;
   const fruitConfig = getItemById(fruitId);
-  const { seedId, seedLevel } = getPlantSeedInfo(fruitId);
+  const nongmePlant = nongmeFruitMap?.get(fruitId);
+  const { seedId, seedLevel } = getPlantSeedInfo(fruitId, nongmePlant);
   const unlocked = !!rawItem.unlocked;
   const seedGoods = seedGoodsMap.get(seedId);
   const goodsId = seedGoods?.goodsId || 0;
@@ -101,9 +109,9 @@ function buildIllustratedItem(rawItem, { seedGoodsMap, userLevel, adminLogger })
     unlocked,
     plantedCount: toNum(rawItem.planted_count) || 0,
     harvestCount: toNum(rawItem.harvest_count) || 0,
-    name: fruitConfig?.name || `果实${  fruitId}`,
-    image: getSeedImageBySeedId(fruitId),
-    level: Number(fruitConfig?.level) || 0,
+    name: fruitConfig?.name || nongmePlant?.name || `果实${  fruitId}`,
+    image: getItemImageById(fruitId) || getNongmeSeedImageUrl(seedId),
+    level: Number(fruitConfig?.level) || Number(nongmePlant?.level) || 0,
     layer: getFruitLayerByFruitId(fruitId),
     canBuy,
     goodsId,
@@ -121,14 +129,18 @@ function summarizeIllustratedItems(items) {
   };
 }
 
-function collectBuyableIllustratedItems(rawItems, { seedGoodsMap, userLevel }) {
+function collectBuyableIllustratedItems(
+  rawItems,
+  { seedGoodsMap, userLevel, nongmeFruitMap },
+) {
   const buyableItems = [];
 
   for (const rawItem of rawItems || []) {
     const fruitId = toNum(rawItem.seed_id) || 0;
     if (rawItem.unlocked) continue;
 
-    const { seedId, seedLevel } = getPlantSeedInfo(fruitId);
+    const nongmePlant = nongmeFruitMap?.get(fruitId);
+    const { seedId, seedLevel } = getPlantSeedInfo(fruitId, nongmePlant);
     if (seedId <= 0 || seedLevel <= 0 || userLevel < seedLevel) continue;
 
     const seedGoods = seedGoodsMap.get(seedId);
@@ -139,7 +151,7 @@ function collectBuyableIllustratedItems(rawItems, { seedGoodsMap, userLevel }) {
       seedId,
       goodsId: seedGoods.goodsId,
       price: seedGoods.price,
-      name: getItemById(fruitId)?.name || `果实${  fruitId}`,
+      name: getItemById(fruitId)?.name || nongmePlant?.name || `果实${  fruitId}`,
     });
   }
 

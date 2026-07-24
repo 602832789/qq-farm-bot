@@ -3,6 +3,7 @@ const {
   getSeedShopGoodsMap,
   getUserLevel,
 } = require("./admin-illustrated-helpers");
+const { getNongmePlantData } = require("../services/nongme-plant-data");
 
 const BUY_ALL_DELAY_MS = 200;
 
@@ -83,22 +84,22 @@ function registerAdminIllustratedPurchaseRoutes({
 
     try {
       const userLevel = getUserLevel(provider, accountId);
-      const seedGoodsMap = await getSeedShopGoodsMap({
-        provider,
-        accountId,
-        adminLogger,
-      });
       const illustratedType = Number(req.body?.illustrated_type) || 1;
-      const illustratedList = await provider.getIllustratedList(
-        accountId,
-        false,
-        illustratedType,
-      );
+      const [seedGoodsMap, illustratedList, nongmeData] = await Promise.all([
+        getSeedShopGoodsMap({
+          provider,
+          accountId,
+          adminLogger,
+        }),
+        provider.getIllustratedList(accountId, false, illustratedType),
+        getNongmePlantData(),
+      ]);
       const buyableItems = collectBuyableIllustratedItems(
         illustratedList?.items || [],
         {
           seedGoodsMap,
           userLevel,
+          nongmeFruitMap: nongmeData.byFruitId,
         },
       );
 

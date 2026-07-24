@@ -7,6 +7,7 @@ const {
 const {
   registerAdminIllustratedPurchaseRoutes,
 } = require("./admin-illustrated-purchase-routes");
+const { getNongmePlantData } = require("../services/nongme-plant-data");
 
 function getAuthorizedAccountId(req, res, { getAccountIdFromRequest, canAccessAccount }) {
   const accountId = getAccountIdFromRequest(req);
@@ -65,17 +66,16 @@ function registerAdminIllustratedRoutes({
         illustratedType,
       });
 
-      const seedGoodsMap = await getSeedShopGoodsMap({
-        provider,
-        accountId,
-        adminLogger,
-        tolerateFailure: true,
-      });
-      const illustratedList = await provider.getIllustratedList(
-        accountId,
-        refresh,
-        illustratedType,
-      );
+      const [seedGoodsMap, illustratedList, nongmeData] = await Promise.all([
+        getSeedShopGoodsMap({
+          provider,
+          accountId,
+          adminLogger,
+          tolerateFailure: true,
+        }),
+        provider.getIllustratedList(accountId, refresh, illustratedType),
+        getNongmePlantData(refresh),
+      ]);
 
       adminLogger.info("图鉴列表数据", {
         itemsCount: illustratedList?.items?.length || 0,
@@ -88,6 +88,7 @@ function registerAdminIllustratedRoutes({
           seedGoodsMap,
           userLevel,
           adminLogger,
+          nongmeFruitMap: nongmeData.byFruitId,
         }),
       );
       const summary = summarizeIllustratedItems(items);
