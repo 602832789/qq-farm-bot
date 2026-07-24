@@ -2,13 +2,15 @@ FROM docker.1ms.run/library/node:20-alpine AS builder
 
 WORKDIR /app
 
+ENV COREPACK_NPM_REGISTRY=https://registry.npmmirror.com
+ENV npm_config_registry=https://registry.npmmirror.com
+
 RUN corepack enable
 
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY core/package.json ./core/
 COPY web/package.json ./web/
 
-RUN pnpm config set registry https://registry.npmmirror.com/
 RUN pnpm install --frozen-lockfile
 
 COPY core ./core
@@ -20,6 +22,9 @@ RUN pnpm build:web
 FROM docker.1ms.run/library/node:20-alpine AS prod-deps
 
 WORKDIR /app
+
+ENV COREPACK_NPM_REGISTRY=https://registry.npmmirror.com
+ENV npm_config_registry=https://registry.npmmirror.com
 
 RUN corepack enable
 
