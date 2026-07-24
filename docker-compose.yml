@@ -6,29 +6,28 @@ services:
     image: qq-farm-bot:latest
     container_name: qq-farm-bot
     restart: unless-stopped
+
     ports:
-      - "${PORT:-3007}:3007"
+      - "3007:3007"
+
     volumes:
-      - qq-farm-data:/app/core/data
-      - qq-farm-logs:/app/core/data/logs
+      - ../data:/app/core/data
+
     environment:
-      - TZ=${TZ:-Asia/Shanghai}
-      - NODE_ENV=production
-      - ADMIN_PORT=3007
+      TZ: Asia/Shanghai
+      NODE_ENV: production
+      ADMIN_PORT: "3007"
+      FARM_DATA_DIR: /app/core/data
+
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:3007/api/status"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 20s
+
     logging:
-      driver: "json-file"
+      driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
-
-volumes:
-  qq-farm-data:
-    name: qq-farm-data
-  qq-farm-logs:
-    name: qq-farm-logs
