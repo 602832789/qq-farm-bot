@@ -8,6 +8,7 @@ ENV npm_config_registry=https://registry.npmmirror.com
 RUN corepack enable
 
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+COPY UPDATE_README.md ./
 COPY core/package.json ./core/
 COPY web/package.json ./web/
 
