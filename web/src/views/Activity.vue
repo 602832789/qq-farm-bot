@@ -74,14 +74,15 @@ const {
   passportClaimLoading,
   solarClaimLoading,
   starRecordClaimLoading,
+  exchangeLoading,
   heluError,
 } = storeToRefs(activityStore)
 
-const activeSection = ref<ActivitySectionKey>('records')
+const activeSection = ref<ActivitySectionKey>('journey')
 const sections = computed<ActivitySection[]>(() => [
+  { key: 'journey', label: '千星游记', icon: 'i-carbon-map', count: activity.value?.passport?.claimableLevels || 0 },
   { key: 'records', label: '观星礼录', icon: 'i-carbon-star', count: activity.value?.starRecord?.claimableCount || 0 },
   { key: 'shop', label: '星砂兑换商店', icon: 'i-carbon-store', count: activity.value?.exchangeShop?.length || 0 },
-  { key: 'journey', label: '千星游记', icon: 'i-carbon-map', count: activity.value?.passport?.claimableLevels || 0 },
   { key: 'notes', label: '节令小札', icon: 'i-carbon-notebook', count: activity.value?.solarTerms?.claimableCount || 0 },
 ])
 
@@ -119,6 +120,15 @@ async function claimSolar(term: { id: number, title?: string }) {
     : toast.error(result?.error || '节令小札领取失败')
 }
 
+async function exchangeStarSand(item: { id: number, itemName?: string, name?: string }, count: number) {
+  if (!currentAccountId.value)
+    return
+  const result = await activityStore.exchangeStarSand(currentAccountId.value, item.id, count)
+  result?.ok
+    ? toast.success(`${L.exchangeDone}${item.itemName || item.name || item.id} ×${count}`)
+    : toast.error(result?.error || L.exchangeFail)
+}
+
 watch(currentAccountId, () => {
   activityStore.clearActivityData()
   refreshAll()
@@ -128,30 +138,42 @@ onMounted(refreshAll)
 
 <template>
   <section class="space-y-4">
-    <header class="rounded-lg bg-white p-4 shadow-sm dark:bg-gray-800">
-      <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+    <header class="relative min-h-40 overflow-hidden rounded-lg bg-[#071b43] shadow-sm">
+      <img
+        src="/activity/star-festival/star-sky.png"
+        alt=""
+        class="absolute inset-0 h-full w-full object-cover opacity-80"
+      >
+      <div class="absolute inset-0 bg-gradient-to-r from-[#061632]/95 via-[#0b2e61]/80 to-[#0b2e61]/25" />
+      <img
+        src="/activity/star-festival/star-farm.png"
+        alt=""
+        class="pointer-events-none absolute -bottom-32 right-0 hidden h-96 w-96 object-contain opacity-85 lg:block"
+      >
+
+      <div class="relative flex min-h-40 flex-col justify-between gap-4 p-4 xl:flex-row xl:items-center">
         <div class="min-w-0">
-          <div class="flex items-center gap-2">
-            <div class="i-carbon-star-filled text-2xl text-amber-500" />
-            <h1 class="text-xl text-gray-900 font-bold dark:text-gray-100">
-              {{ activity?.title || L.heluTitle }}
-            </h1>
-          </div>
-          <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          <img
+            src="/activity/star-festival/event-title.png"
+            :alt="activity?.title || L.heluTitle"
+            class="h-auto w-72 max-w-full object-contain object-left"
+          >
+          <div class="mt-1 text-xs text-sky-100/75">
             活动中心 · {{ L.currentAccount }} {{ currentAccount?.name || L.none }}
           </div>
         </div>
-        <div class="flex min-w-0 flex-wrap items-center gap-2">
-          <span class="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+        <div class="flex min-w-0 flex-wrap items-center gap-2 xl:max-w-[68%] xl:justify-end">
+          <span class="inline-flex items-center rounded-lg border border-sky-200/20 bg-[#071b43]/70 px-3 py-1.5 text-xs text-sky-50 backdrop-blur-sm">
+            <img src="/activity/star-festival/star-token.png" alt="" class="mr-1.5 h-5 w-7 object-contain">
             {{ L.heluBalance }} {{ Number(activity?.starSandBalance || 0).toLocaleString() }}
           </span>
           <div class="max-w-full overflow-x-auto">
-            <div class="min-w-max inline-flex border border-gray-200 rounded-lg p-0.5 dark:border-gray-700">
+            <div class="min-w-max inline-flex border border-sky-200/20 rounded-lg bg-[#071b43]/70 p-0.5 backdrop-blur-sm">
               <button
                 v-for="section in sections"
                 :key="section.key"
                 class="rounded-md px-3 py-1.5 text-sm transition"
-                :class="activeSection === section.key ? 'text-white' : 'text-gray-600 dark:text-gray-300'"
+                :class="activeSection === section.key ? 'text-white' : 'text-sky-100/80 hover:text-white'"
                 :style="activeSection === section.key ? { backgroundColor: 'var(--theme-primary)' } : {}"
                 @click="activeSection = section.key"
               >
@@ -194,9 +216,10 @@ onMounted(refreshAll)
         <HeluExchangePanel
           :items="activity?.exchangeShop || []"
           :balance="activity?.starSandBalance || 0"
-          :exchange-loading="false"
+          :exchange-loading="exchangeLoading"
           :read-only="activity?.shopReadOnly"
           :labels="L"
+          @exchange="exchangeStarSand"
         />
       </div>
       <HeluPassportPanel

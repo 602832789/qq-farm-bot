@@ -165,6 +165,7 @@ function createDataProvider(deps) {
         getHeluActivity: (ref) => callWorkerApi(resolveAccountId(ref), 'getHeluActivity'),
         getStarActivity: (ref) => callWorkerApi(resolveAccountId(ref), 'getStarActivity'),
         claimStarRecordRewards: (ref) => callWorkerApi(resolveAccountId(ref), 'claimStarRecordRewards'),
+        exchangeStarShopItem: (ref, slotId, count) => callWorkerApi(resolveAccountId(ref), 'exchangeStarShopItem', slotId, count),
         exchangeHeluShopItem: (ref, slotId, count) => callWorkerApi(resolveAccountId(ref), 'exchangeHeluShopItem', slotId, count),
         drawHeluGiftLotus: (ref, options) => callWorkerApi(resolveAccountId(ref), 'drawHeluGiftLotus', options || {}),
         claimSeasonPassportRewards: (ref) => callWorkerApi(resolveAccountId(ref), 'claimSeasonPassportRewards'),

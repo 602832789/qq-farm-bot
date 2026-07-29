@@ -59,6 +59,29 @@ function loadConfigs() {
             }
             console.warn(`[配置] 已加载植物配置 (${  plantConfig.length  } 种)`);
         }
+
+        // 活动植物通常早于全量静态配置发布，使用轻量增量表补齐植物、
+        // 种子和果实三者的关系，避免土地与图鉴显示裸 ID。
+        const eventPlantPath = path.join(basePath, 'EventPlants.json');
+        if (fs.existsSync(eventPlantPath)) {
+            const eventPlants = JSON.parse(fs.readFileSync(eventPlantPath, 'utf8'));
+            for (const entry of eventPlants) {
+                const plant = {
+                    id: Number(entry.id),
+                    name: entry.name,
+                    seed_id: Number(entry.seed_id),
+                    fruit: { id: Number(entry.fruit_id), count: Number(entry.fruit_count) || 0 },
+                    seasons: Number(entry.seasons) || 1,
+                    grow_phases: entry.grow_phases || '',
+                    exp: Number(entry.exp) || 0,
+                };
+                plantMap.set(plant.id, plant);
+                seedToPlant.set(plant.seed_id, plant);
+                fruitToPlant.set(plant.fruit.id, plant);
+            }
+            plantConfig = [...plantMap.values()];
+            console.warn(`[配置] 已合并活动植物配置 (${  eventPlants.length  } 种)`);
+        }
     } catch (err) {
         console.warn('[配置] 加载 Plant.json 失败:', err.message);
     }
@@ -80,6 +103,48 @@ function loadConfigs() {
                 }
             }
             console.warn(`[配置] 已加载物品配置 (${  itemInfoConfig.length  } 项)`);
+        }
+
+        const eventPlantPath = path.join(basePath, 'EventPlants.json');
+        if (fs.existsSync(eventPlantPath)) {
+            const eventPlants = JSON.parse(fs.readFileSync(eventPlantPath, 'utf8'));
+            for (const entry of eventPlants) {
+                const seedId = Number(entry.seed_id);
+                const fruitId = Number(entry.fruit_id);
+                const baseItem = {
+                    asset_name: entry.asset_name,
+                    level: Number(entry.level) || 1,
+                    rarity: Number(entry.rarity) || 3,
+                    rarity_color: entry.rarity_color || 'EEC55A',
+                };
+                if (!itemInfoMap.has(seedId)) {
+                    const seedItem = {
+                        ...baseItem,
+                        id: seedId,
+                        type: 5,
+                        name: `${entry.name}种子`,
+                        interaction_type: 'plant',
+                        max_count: 9999,
+                        max_own: 9999,
+                        desc: `种植后，可以收获一定数量的${entry.name}。`,
+                        effectDesc: entry.name,
+                    };
+                    itemInfoMap.set(seedId, seedItem);
+                    seedItemMap.set(seedId, seedItem);
+                }
+                if (!itemInfoMap.has(fruitId)) {
+                    itemInfoMap.set(fruitId, {
+                        ...baseItem,
+                        id: fruitId,
+                        type: 4,
+                        name: entry.name,
+                        max_count: 99999,
+                        max_own: 999990,
+                        layer: Number(entry.layer) || 0,
+                    });
+                }
+            }
+            itemInfoConfig = Array.from(itemInfoMap.values());
         }
     } catch (err) {
         console.warn('[配置] 加载 ItemInfo.json 失败:', err.message);

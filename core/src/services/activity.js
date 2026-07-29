@@ -76,6 +76,7 @@ const STAR_SHOP_ACTIVITY_ID = 2026072702;
 const STAR_SAND_ITEM_ID = 1023;
 const STAR_RECORD_CLAIM_CMD = 21;
 const STAR_SHOP_OPEN_CMD = 7;
+const STAR_SHOP_EXCHANGE_CMD = 1;
 const QINGMEI_ACTIVITY_ID = 2026080100;
 const QINGMEI_SEED_CLAIM_ACTIVITY_ID = 2026080101;
 const QINGMEI_WINE_ACTIVITY_ID = 2026080102;
@@ -1673,8 +1674,8 @@ async function getStarActivity() {
     endTime: toNum(rootNode?.activity?.end_time),
     starRecord: normalizeStarRecord(recordNode),
     exchangeShop: shopItems,
-    shopReadOnly: true,
-    shopWarning: shopWarning || '当前抓包未包含实际兑换请求，兑换按钮暂未开放。',
+    shopReadOnly: false,
+    shopWarning,
     starSandCurrencyId: currencyId,
     starSandBalance,
     passport,
@@ -1710,6 +1711,73 @@ async function claimStarRecordRewards() {
     recordIds,
     rewards,
     activity: after,
+  };
+}
+
+async function exchangeStarShopItem(slotId, count = 1) {
+  const slotIdNum = Number(slotId) || 0;
+  if (slotIdNum <= 0) throw new Error('缺少有效的星砂商店槽位');
+
+  const exchangeCount = Math.floor(Number(count) || 0);
+  if (exchangeCount <= 0) throw new Error('兑换数量必须大于 0');
+
+  const before = await getStarActivity();
+  const slots = Array.isArray(before?.exchangeShop) ? before.exchangeShop : [];
+  const slot = slots.find(item => toNum(item?.id) === slotIdNum);
+  if (!slot) throw new Error(`星砂商店未找到槽位: ${slotIdNum}`);
+
+  const price = Math.max(0, toNum(slot?.price));
+  const balance = Math.max(0, toNum(before?.starSandBalance));
+  const exchangeLimit = Math.max(0, toNum(slot?.exchangeLimit));
+  const totalPrice = price * exchangeCount;
+  const ownedBlocksExchange = slot?.ownedBlocksExchange !== false
+    && slot?.owned
+    && !slot?.isRepeatable;
+
+  if (toNum(slot?.currencyId) !== STAR_SAND_ITEM_ID) {
+    throw new Error(`暂不支持非星砂货币兑换: slotId=${slotIdNum}`);
+  }
+  if (ownedBlocksExchange) throw new Error(`该商品已拥有，不能重复兑换: slotId=${slotIdNum}`);
+  if (!slot?.isRepeatable && exchangeCount > 1) throw new Error('该商品每次只能兑换 1 个');
+  if (exchangeLimit > 0 && exchangeCount > exchangeLimit) {
+    throw new Error(`兑换数量超过上限: 最多可兑换 ${exchangeLimit} 个`);
+  }
+  if (totalPrice > balance) throw new Error(`星砂不足: 需要 ${totalPrice}, 当前 ${balance}`);
+
+  activityLogger.info('星砂商店兑换开始', {
+    slotId: slotIdNum,
+    itemId: toNum(slot?.itemId),
+    itemName: slot?.itemName || slot?.name || '',
+    price,
+    count: exchangeCount,
+    totalPrice,
+    balance,
+    activityId: STAR_SHOP_ACTIVITY_ID,
+    cmd: STAR_SHOP_EXCHANGE_CMD,
+  });
+
+  try {
+    await operateActivity(STAR_SHOP_ACTIVITY_ID, STAR_SHOP_EXCHANGE_CMD, {
+      exchangeShopOperate: {
+        id: slotIdNum,
+        count: exchangeCount,
+      },
+    });
+  } catch (err) {
+    throw new Error(
+      `星砂商店兑换失败: slotId=${slotIdNum}, itemId=${toNum(slot?.itemId)}, price=${price}: ${err.message}`
+    );
+  }
+
+  return {
+    ok: true,
+    slotId: slotIdNum,
+    price,
+    count: exchangeCount,
+    totalPrice,
+    currencyId: STAR_SAND_ITEM_ID,
+    item: slot,
+    activity: await getStarActivity(),
   };
 }
 
@@ -2138,6 +2206,7 @@ module.exports = {
   STAR_ACTIVITY_ID,
   STAR_RECORD_ACTIVITY_ID,
   STAR_SHOP_ACTIVITY_ID,
+  STAR_SHOP_EXCHANGE_CMD,
   HELU_DRAW_ACTIVITY_ID,
   HELU_EXCHANGE_ACTIVITY_ID,
   QINGMEI_ACTIVITY_ID,
@@ -2153,6 +2222,7 @@ module.exports = {
   getHeluActivity,
   getStarActivity,
   claimStarRecordRewards,
+  exchangeStarShopItem,
   getQingmeiActivity,
   claimQingmeiSeeds,
   brewAndSellQingmeiWine,

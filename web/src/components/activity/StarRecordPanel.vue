@@ -54,10 +54,16 @@ function stateLabel(item: StarActivityData['starRecord']['records'][number]) {
       <article
         v-for="item in record.records"
         :key="item.id"
-        class="min-h-44 min-w-0 flex flex-col border border-gray-200 rounded-lg p-3 dark:border-gray-700"
+        class="relative min-h-44 min-w-0 flex flex-col overflow-hidden border border-gray-200 rounded-lg p-3 dark:border-gray-700"
         :class="item.claimable ? 'bg-amber-50/60 dark:bg-amber-900/10' : 'bg-gray-50 dark:bg-gray-900/30'"
       >
-        <div class="flex items-center justify-between gap-2">
+        <img
+          src="/activity/star-festival/constellation-glow.png"
+          alt=""
+          class="pointer-events-none absolute -right-8 -top-8 h-28 w-28 object-contain transition"
+          :class="item.claimed || item.claimable ? 'opacity-35' : 'grayscale opacity-10'"
+        >
+        <div class="relative flex items-center justify-between gap-2">
           <span class="text-sm text-gray-900 font-semibold dark:text-gray-100">{{ item.title }}</span>
           <span
             class="rounded px-1.5 py-0.5 text-[10px]"
@@ -70,18 +76,19 @@ function stateLabel(item: StarActivityData['starRecord']['records'][number]) {
             {{ stateLabel(item) }}
           </span>
         </div>
-        <div class="mt-1 text-xs text-sky-600 dark:text-sky-300">
+        <div class="relative mt-1 text-xs text-sky-600 dark:text-sky-300">
           {{ item.category || '二十八星宿' }}
         </div>
-        <p class="line-clamp-4 mt-2 text-xs text-gray-500 leading-5 dark:text-gray-400">
+        <p class="relative line-clamp-4 mt-2 text-xs text-gray-500 leading-5 dark:text-gray-400">
           {{ item.explain }}
         </p>
-        <div v-if="item.rewards?.length" class="mt-auto flex flex-wrap gap-1 pt-3">
+        <div v-if="item.rewards?.length" class="relative mt-auto flex flex-wrap gap-1 pt-3">
           <span
             v-for="reward in item.rewards"
             :key="`${item.id}-${reward.itemId}`"
-            class="rounded-full bg-white px-2 py-1 text-[10px] text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+            class="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 text-[10px] text-gray-600 dark:bg-gray-800 dark:text-gray-300"
           >
+            <img v-if="reward.image" :src="reward.image" :alt="reward.itemName" class="h-4 w-4 object-contain">
             {{ reward.itemName }} ×{{ reward.itemCount }}
           </span>
         </div>

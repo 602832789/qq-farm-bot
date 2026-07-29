@@ -354,6 +354,25 @@ export const useActivityStore = defineStore('activity', () => {
     }
   }
 
+  async function exchangeStarSand(accountId: string, slotId: number, count: number) {
+    const requestedId = String(accountId)
+    exchangeLoading.value = true
+    try {
+      const { data } = await api.post('/api/activity/star/exchange', {
+        slotId,
+        count,
+      }, {
+        headers: { 'x-account-id': accountId },
+      })
+      if (isCurrentAccount(requestedId) && data.ok && data.activity)
+        heluActivity.value = data.activity
+      return data
+    }
+    finally {
+      exchangeLoading.value = false
+    }
+  }
+
   async function claimHeluPassport(accountId: string) {
     const requestedId = String(accountId)
     passportClaimLoading.value = true
@@ -440,6 +459,7 @@ export const useActivityStore = defineStore('activity', () => {
     claimStarRecords,
     drawHelu,
     exchangeHelu,
+    exchangeStarSand,
     claimHeluPassport,
     claimHeluSolar,
     claimQingmeiSeeds,

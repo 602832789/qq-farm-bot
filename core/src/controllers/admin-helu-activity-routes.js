@@ -57,6 +57,28 @@ function registerAdminHeluActivityRoutes({
     }
   });
 
+  app.post("/api/activity/star/exchange", async (req, res) => {
+    const accountId = getAuthorizedAccountId(req, res, routeContext);
+    if (!accountId) return;
+
+    try {
+      if (!requireConnectedAccount(res, provider, accountId, "星砂商店兑换失败: 账号未运行"))
+        return;
+
+      const slotId = Number(req.body?.slotId) || 0;
+      const count = Math.floor(Number(req.body?.count) || 0);
+      if (slotId <= 0) {
+        return res.status(400).json({ ok: false, error: "缺少有效的星砂商店槽位" });
+      }
+      if (count <= 0) {
+        return res.status(400).json({ ok: false, error: "兑换数量必须大于 0" });
+      }
+      res.json(await provider.exchangeStarShopItem(accountId, slotId, count));
+    } catch (err) {
+      sendProviderError(res, err);
+    }
+  });
+
   app.get("/api/activity/helu", async (req, res) => {
     const accountId = getAuthorizedAccountId(req, res, routeContext);
     if (!accountId) return;

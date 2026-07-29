@@ -72,17 +72,17 @@ function getExchangeState(item: ExchangeItem): ExchangeState {
   if (props.readOnly)
     return { canExchange: false, label: '待补兑换协议' }
   const price = Number(item.price || 0)
-  const isHeluCurrency = Number(item.currencyId || 0) === 1018
+  const isSupportedCurrency = [1018, 1023].includes(Number(item.currencyId || 0))
   const ownedBlocksExchange = item.ownedBlocksExchange !== false && item.owned === true && item.isRepeatable !== true
-  const canExchange = isHeluCurrency && !ownedBlocksExchange && price > 0 && props.balance >= price
+  const canExchange = isSupportedCurrency && !ownedBlocksExchange && price > 0 && props.balance >= price
 
   if (ownedBlocksExchange)
     return { canExchange: false, label: props.labels.owned }
   if (canExchange)
     return { canExchange: true, label: props.labels.canExchange }
-  if (isHeluCurrency && props.balance < price)
+  if (isSupportedCurrency && props.balance < price)
     return { canExchange: false, label: props.labels.noHelu }
-  if (!isHeluCurrency)
+  if (!isSupportedCurrency)
     return { canExchange: false, label: props.labels.unsupportedCurrency }
 
   return { canExchange: false, label: item.statusLabel || props.labels.unavailable }
@@ -105,9 +105,9 @@ function getCurrencyLabel(item: ExchangeItem) {
       <article
         v-for="item in items"
         :key="item.id"
-        class="min-h-[216px] min-w-0 flex flex-col overflow-hidden border border-gray-200 rounded-lg bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800"
+        class="min-h-[232px] min-w-0 flex flex-col overflow-hidden border border-gray-200 rounded-lg bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800"
       >
-        <div class="relative grid h-24 place-items-center bg-gray-50 dark:bg-gray-900/40">
+        <div class="relative grid h-28 place-items-center overflow-hidden bg-gray-50 dark:bg-gray-900/40">
           <span class="absolute left-0 top-0 rounded-br-lg bg-white/90 px-2 py-0.5 text-[10px] text-gray-500 font-semibold dark:bg-gray-800/90 dark:text-gray-300">
             {{ getExchangeState(item).label }}
           </span>
@@ -115,7 +115,7 @@ function getCurrencyLabel(item: ExchangeItem) {
             v-if="hasImage(item)"
             :src="itemImage(item)"
             :alt="item.itemName"
-            class="max-h-14 max-w-14 object-contain"
+            class="max-h-24 max-w-[104px] object-contain"
             @error="imageErrors[item.id] = true"
           >
           <div v-else class="grid h-14 w-14 place-items-center rounded-lg bg-white text-sm text-gray-500 font-semibold dark:bg-gray-800">
