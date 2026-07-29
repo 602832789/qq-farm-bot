@@ -827,7 +827,7 @@ function normalizeExchangeShopItem(raw) {
     name,
     itemId: item.itemId,
     itemCount: item.count,
-    itemName: item.name,
+    itemName: name,
     image: item.image || '',
     itemType,
     itemTypeLabel: isDecoration ? '装扮' : itemType === 7 ? '道具' : `类型${itemType || 0}`,

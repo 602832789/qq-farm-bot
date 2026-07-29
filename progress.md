@@ -8,7 +8,19 @@
 
 # 当前状态
 
-- TSDK/ACE 安全链路已按 `任务.md` 落地到 `codex/tsdk-ace-runtime`：保留旧 WASM 为 `tsdk-legacy.wasm`，新增官方 `v3.8.2.1783066265` 版本化 WASM、Node 宿主运行时、ACE Proto/上报服务、动态网关 Token、账号级启停与重连清理。运行时会校验 SHA-256 和导出表，处理官方 mergewasm 数据段解密；失败时显式中止，不再回退伪 Token。调用映射和内存所有权见 `core/docs/tsdk-ace-runtime.md`。离线测试 4/4、触碰文件 ESLint、Proto 加载及后端 require 均通过；受控在线 5/30 分钟好友操作仍需测试账号实测。
+- TSDK/ACE 安全链路已升级到 QQ Mac 客户端 2026-07-29 包内的官方
+  `v3.8.6.1785240280` WASM（SHA-256
+  `8a94a43c9f96a24ca99c46912244ad8d39535944acfa223426c4c51d282e769a`）。
+  最新 `game.js` 和 WASM 反汇编确认 22 个 imports、导出映射、59 字节运行时表、
+  `SdkInitEx(3167, 0)`、17 个 mergewasm 数据段及解密密钥均与现有 Node 宿主兼容；
+  默认运行文件已切换为 `tsdk-v3.8.6.wasm`，完整后端测试 30/30 通过。调用映射和
+  内存所有权见 `core/docs/tsdk-ace-runtime.md`；受控在线 5/30 分钟好友操作仍需
+  测试账号实测。
+- WASM 后续更新已标准化：新增 `core/scripts/inspect-tsdk-update.js` 和
+  `npm run inspect:tsdk`，可静态输出 SHA-256、imports、exports、active data
+  segments、解密高频常量、`game.js` 版本/关键标记及基线兼容性；完整发现、快照、
+  差异分级、更新、离线/在线验收和回退流程见
+  `core/docs/tsdk-update-runbook.md`。
 - 技术栈：后端 `core` 是 Node.js/CommonJS + Express + Socket.IO；前端 `web` 是 Vue 3 + Vite + TypeScript + Pinia + UnoCSS。
 - 最新快速体检结果：`web/src` 全量 ESLint 通过，`web` 生产构建通过；`core/src/**/*.js` 全量 `node --check` 通过。源码扫描未发现真实替换字符类乱码、孤立 `undefined` 行或 `_v###` 反编译变量残留；`core` ESLint 因本地 `core/node_modules` 缺少 `@antfu/eslint-config` 未作为源码失败处理。
 - UTF-8 源码扫描未发现 `core/src`、`web/src` 存在真实替换字符类乱码；PowerShell 仍可能把中文显示成乱码，不能据此改源码。

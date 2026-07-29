@@ -8,8 +8,8 @@ const { performance } = require('node:perf_hooks');
 
 const { ensureDataDir } = require('../config/runtime-paths');
 
-const OFFICIAL_VERSION = 'v3.8.2.1783066265';
-const OFFICIAL_SHA256 = '705e326caad538d6cccb40cb1bd54573525a42d12215c9da9c9c513ec4850a5f';
+const OFFICIAL_VERSION = 'v3.8.6.1785240280';
+const OFFICIAL_SHA256 = '8a94a43c9f96a24ca99c46912244ad8d39535944acfa223426c4c51d282e769a';
 const DEFAULT_APP_ID = '1112386029';
 const DEFAULT_GAME_ID = 3167;
 const DEFAULT_APP_KEY = '0';
@@ -83,7 +83,7 @@ class TsdkRuntime {
         this.appId = String(options.appId || DEFAULT_APP_ID);
         this.gameId = Number(options.gameId || process.env.FARM_TSDK_GAME_ID || DEFAULT_GAME_ID);
         this.appKey = String(options.appKey ?? process.env.FARM_TSDK_APP_KEY ?? DEFAULT_APP_KEY);
-        this.wasmPath = options.wasmPath || path.join(__dirname, 'tsdk-v3.8.2.wasm');
+        this.wasmPath = options.wasmPath || path.join(__dirname, 'tsdk-v3.8.6.wasm');
         this.dataDir = options.dataDir || path.join(ensureDataDir(), 'tsdk', this.accountId);
         this.deviceInfo = options.deviceInfo || {};
         this.logger = typeof options.logger === 'function' ? options.logger : () => {};
@@ -344,6 +344,9 @@ class TsdkRuntime {
             if (typeof decryptSegment !== 'function') {
                 throw new TypeError('TSDK merged-data decryptor is missing');
             }
+            // The official mergewasm loader decrypts every active data segment
+            // before running constructors. These values are verified against the
+            // v3.8.6 WASM data section and decrypt_all_data function body.
             for (const [ptr, length] of MERGED_DATA_SEGMENTS) {
                 this.ensureBounds(ptr, length);
                 decryptSegment(ptr, length, MERGED_DATA_KEY);
