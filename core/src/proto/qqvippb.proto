@@ -16,7 +16,7 @@ message GetQQVipRewardsStatusReply {
 
 // --- 领取QQ会员礼包 ---
 message ClaimQQVipRewardsRequest {
-    repeated int32 vip_types = 1;  // 1: QQ会员，2: 超级会员
+    repeated int32 vip_types = 1;  // 1: QQ会员，2: 超级会员；每次只提交一个礼包类型
 }
 
 message ClaimQQVipRewardsReply {

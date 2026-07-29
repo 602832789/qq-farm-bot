@@ -86,7 +86,9 @@ async function getDailyGiftStatus() {
 
 async function claimDailyGift() {
   const request = types.ClaimQQVipRewardsRequest.encode(
-    types.ClaimQQVipRewardsRequest.create({ vip_types: [1, 2] })
+    // 官方客户端领取 SVIP 礼包时仅发送类型 2。
+    // 同时发送 [1, 2] 会被服务端视为不存在的礼包配置（code=1021003）。
+    types.ClaimQQVipRewardsRequest.create({ vip_types: [2] })
   ).finish();
   const { body } = await sendMsgAsync(
     'gamepb.qqvippb.QQVipService',
