@@ -19,6 +19,9 @@ const seedItemMap = new Map();       // seedItemId → itemInfo
 const seedImageMap = new Map();      // seedId/itemId → imageUrl
 const seedAssetImageMap = new Map(); // assetName → imageUrl
 const skinDetailImageMap = new Map();// itemId → skinDetailImageUrl
+const staticItemImageMap = new Map([
+    [1023, '/activity/star-festival/star-token.png'],
+]);
 
 // 变异效果配置
 let mutantEffectConfig = null;
@@ -403,6 +406,9 @@ function getSeedImageBySeedId(seedId) {
 function getItemImageById(itemId) {
     const numericId = Number(itemId) || 0;
     if (numericId <= 0) return '';
+
+    const staticImage = staticItemImageMap.get(numericId);
+    if (staticImage) return staticImage;
 
     const tryGetImage = (targetId) => {
         const img = seedImageMap.get(targetId);
