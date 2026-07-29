@@ -206,6 +206,9 @@ pnpm package:release
 - 更新 TSDK/WASM 时遵循
   [TSDK/WASM 标准更新手册](core/docs/tsdk-update-runbook.md)，并先运行
   `cd core && npm run inspect:tsdk -- --wasm <文件> --game-js <文件> --baseline <当前版本>`。
+- 适配新限时活动时遵循
+  [限时活动适配标准手册](core/docs/activity-update-runbook.md)，先采集“打开、领取、操作、
+  刷新”完整抓包，再补协议、资源和种子/植物/果实映射。
 - 更新功能前优先确认是可见功能、隐藏功能、内部能力还是休眠能力。
 - 前端大页面逐步拆分到 `components/`、`composables/` 和 `stores/`。
 - 后端入口只保留 wiring，具体接口逻辑优先下沉到领域路由、helper 或 service。
