@@ -31,6 +31,32 @@ function registerAdminHeluActivityRoutes({
     canAccessAccount,
   };
 
+  app.get("/api/activity/star", async (req, res) => {
+    const accountId = getAuthorizedAccountId(req, res, routeContext);
+    if (!accountId) return;
+
+    try {
+      if (!requireConnectedAccount(res, provider, accountId, "获取心许千灯星垂野失败: 账号未运行"))
+        return;
+      res.json({ ok: true, activity: await provider.getStarActivity(accountId) });
+    } catch (err) {
+      sendProviderError(res, err);
+    }
+  });
+
+  app.post("/api/activity/star/records/claim", async (req, res) => {
+    const accountId = getAuthorizedAccountId(req, res, routeContext);
+    if (!accountId) return;
+
+    try {
+      if (!requireConnectedAccount(res, provider, accountId, "观星礼录领取失败: 账号未运行"))
+        return;
+      res.json(await provider.claimStarRecordRewards(accountId));
+    } catch (err) {
+      sendProviderError(res, err);
+    }
+  });
+
   app.get("/api/activity/helu", async (req, res) => {
     const accountId = getAuthorizedAccountId(req, res, routeContext);
     if (!accountId) return;
@@ -87,6 +113,20 @@ function registerAdminHeluActivityRoutes({
     }
   });
 
+  app.post("/api/activity/star/passport/claim", async (req, res) => {
+    const accountId = getAuthorizedAccountId(req, res, routeContext);
+    if (!accountId) return;
+
+    try {
+      if (!requireConnectedAccount(res, provider, accountId, "千星游记领取失败: 账号未运行"))
+        return;
+      const result = await provider.claimSeasonPassportRewards(accountId);
+      res.json({ ok: true, ...result, activity: await provider.getStarActivity(accountId) });
+    } catch (err) {
+      sendProviderError(res, err);
+    }
+  });
+
   app.post("/api/activity/helu/solar/claim", async (req, res) => {
     const accountId = getAuthorizedAccountId(req, res, routeContext);
     if (!accountId) return;
@@ -103,6 +143,20 @@ function registerAdminHeluActivityRoutes({
         ...result,
         activity,
       });
+    } catch (err) {
+      sendProviderError(res, err);
+    }
+  });
+
+  app.post("/api/activity/star/solar/claim", async (req, res) => {
+    const accountId = getAuthorizedAccountId(req, res, routeContext);
+    if (!accountId) return;
+
+    try {
+      if (!requireConnectedAccount(res, provider, accountId, "节令小札领取失败: 账号未运行"))
+        return;
+      const result = await provider.claimSolarTermsReward(accountId, Number(req.body?.termId) || 0);
+      res.json({ ok: true, ...result, activity: await provider.getStarActivity(accountId) });
     } catch (err) {
       sendProviderError(res, err);
     }

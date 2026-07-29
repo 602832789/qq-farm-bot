@@ -176,14 +176,42 @@ message ActivityNode {
     RandomShopInfo random_shop = 101;
     ExchangeShopInfo exchange_shop = 102;
     DrawInfo draw_info = 105;
+    StarRecordInfo star_record = 110;
 }
 
 message ListReply {
-    repeated ActivityInfo activities = 1;
+    repeated ActivityNode groups = 1;
 }
 
 message GetGroupReply {
     ActivityNode group = 1;
+}
+
+message StarRecordReward {
+    int32 id = 1;
+    bool unlocked = 2;
+    bool claimed = 3;
+    repeated corepb.Item rewards = 5;
+}
+
+message StarRecordConfig {
+    int32 id = 1;
+    bool featured = 2;
+    string title = 3;
+    string graph = 4;
+    string extra = 5;
+}
+
+message StarRecordInfo {
+    int32 status = 1;
+    int32 opened_days = 2;
+    repeated StarRecordReward records = 4;
+    repeated StarRecordConfig configs = 5;
+}
+
+message StarRecordClaimResult {
+    repeated int32 record_ids = 1;
+    repeated corepb.Item rewards = 2;
 }
 
 message OperateReply {
@@ -195,4 +223,5 @@ message OperateReply {
     QingmeiBrewResult qingmei_brew = 114;
     QingmeiSellResult qingmei_sell = 115;
     QingmeiClaimResult qingmei_claim = 104;
+    StarRecordClaimResult star_record_claim = 120;
 }

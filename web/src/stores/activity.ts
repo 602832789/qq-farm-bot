@@ -97,6 +97,44 @@ export interface HeluSolarTerms {
   warning?: string
 }
 
+export interface StarRecordItem {
+  id: number
+  title: string
+  category: string
+  explain: string
+  graph: string
+  featured: boolean
+  unlocked: boolean
+  claimed: boolean
+  claimable: boolean
+  rewards: HeluDrawReward[]
+}
+
+export interface StarActivityData {
+  uid: string
+  title: string
+  activityId: number
+  startTime?: number
+  endTime?: number
+  starRecord: {
+    status: number
+    openedDays: number
+    records: StarRecordItem[]
+    totalCount: number
+    unlockedCount: number
+    claimedCount: number
+    claimableCount: number
+  }
+  exchangeShop: ActivityExchangeShopItem[]
+  shopReadOnly: boolean
+  shopWarning?: string
+  starSandCurrencyId: number
+  starSandBalance: number
+  passport?: HeluSeasonPassport | null
+  solarTerms?: HeluSolarTerms | null
+  warning?: string
+}
+
 export type HeluSubActivityKey = 'giftLotus' | 'shop' | 'journey' | 'notes'
 
 export interface QingmeiActivity {
@@ -203,13 +241,14 @@ export interface HeluActivityData {
 }
 
 export const useActivityStore = defineStore('activity', () => {
-  const heluActivity = ref<HeluActivityData | null>(null)
+  const heluActivity = ref<StarActivityData | null>(null)
 
   const heluLoading = ref(false)
   const drawLoading = ref(false)
   const exchangeLoading = ref(false)
   const passportClaimLoading = ref(false)
   const solarClaimLoading = ref(false)
+  const starRecordClaimLoading = ref(false)
   const qingmeiClaimLoading = ref(false)
   const qingmeiSellLoading = ref(false)
 
@@ -224,6 +263,7 @@ export const useActivityStore = defineStore('activity', () => {
     exchangeLoading.value = false
     passportClaimLoading.value = false
     solarClaimLoading.value = false
+    starRecordClaimLoading.value = false
     qingmeiClaimLoading.value = false
     qingmeiSellLoading.value = false
     heluError.value = ''
@@ -243,7 +283,7 @@ export const useActivityStore = defineStore('activity', () => {
     heluLoading.value = true
     heluError.value = ''
     try {
-      const { data } = await api.get('/api/activity/helu', {
+      const { data } = await api.get('/api/activity/star', {
         headers: { 'x-account-id': accountId },
       })
       if (requestId !== heluRequestId || !isCurrentAccount(requestedId))
@@ -251,15 +291,31 @@ export const useActivityStore = defineStore('activity', () => {
       if (data.ok)
         heluActivity.value = data.activity || null
       else
-        heluError.value = data.error || '\u83B7\u53D6\u8377\u9732\u6D3B\u52A8\u5931\u8D25'
+        heluError.value = data.error || '获取心许千灯星垂野失败'
     }
     catch (err: any) {
       if (requestId === heluRequestId && isCurrentAccount(requestedId))
-        heluError.value = err.message || '\u83B7\u53D6\u8377\u9732\u6D3B\u52A8\u5931\u8D25'
+        heluError.value = err.message || '获取心许千灯星垂野失败'
     }
     finally {
       if (requestId === heluRequestId)
         heluLoading.value = false
+    }
+  }
+
+  async function claimStarRecords(accountId: string) {
+    const requestedId = String(accountId)
+    starRecordClaimLoading.value = true
+    try {
+      const { data } = await api.post('/api/activity/star/records/claim', {}, {
+        headers: { 'x-account-id': accountId },
+      })
+      if (isCurrentAccount(requestedId) && data.ok && data.activity)
+        heluActivity.value = data.activity
+      return data
+    }
+    finally {
+      starRecordClaimLoading.value = false
     }
   }
 
@@ -302,7 +358,7 @@ export const useActivityStore = defineStore('activity', () => {
     const requestedId = String(accountId)
     passportClaimLoading.value = true
     try {
-      const { data } = await api.post('/api/activity/helu/passport/claim', {}, {
+      const { data } = await api.post('/api/activity/star/passport/claim', {}, {
         headers: { 'x-account-id': accountId },
       })
       if (isCurrentAccount(requestedId) && data.ok && data.activity)
@@ -318,7 +374,7 @@ export const useActivityStore = defineStore('activity', () => {
     const requestedId = String(accountId)
     solarClaimLoading.value = true
     try {
-      const { data } = await api.post('/api/activity/helu/solar/claim', {
+      const { data } = await api.post('/api/activity/star/solar/claim', {
         termId,
       }, {
         headers: { 'x-account-id': accountId },
@@ -341,17 +397,7 @@ export const useActivityStore = defineStore('activity', () => {
       })
       if (isCurrentAccount(requestedId) && data.ok && data.activity) {
         heluActivity.value = data.activity
-        if (heluActivity.value?.qingmei) {
-          heluActivity.value.qingmei.claimed = true
-          heluActivity.value.qingmei.claimable = false
-        }
-      }
-      else if (isCurrentAccount(requestedId) && data.ok && data.qingmei && heluActivity.value) {
-        heluActivity.value.qingmei = {
-          ...data.qingmei,
-          claimed: true,
-          claimable: false,
-        }
+        // 新活动中心不展示青梅活动；保留接口兼容旧调用。
       }
       return data
     }
@@ -385,11 +431,13 @@ export const useActivityStore = defineStore('activity', () => {
     exchangeLoading,
     passportClaimLoading,
     solarClaimLoading,
+    starRecordClaimLoading,
     qingmeiClaimLoading,
     qingmeiSellLoading,
     heluError,
     clearActivityData,
     fetchHeluActivity,
+    claimStarRecords,
     drawHelu,
     exchangeHelu,
     claimHeluPassport,

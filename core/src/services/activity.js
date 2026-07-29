@@ -69,6 +69,13 @@ const HELU_EXCHANGE_ACTIVITY_ID = 2026060102;
 const HELU_JOURNEY_ACTIVITY_ID = 2026060103;
 const HELU_NOTES_ACTIVITY_ID = 2026060104;
 const HELU_CURRENCY_ITEM_ID = 1018;
+const STAR_ACTIVITY_UID = 'SAIJI_MEGA_EVENT';
+const STAR_ACTIVITY_ID = 2026072700;
+const STAR_RECORD_ACTIVITY_ID = 2026072701;
+const STAR_SHOP_ACTIVITY_ID = 2026072702;
+const STAR_SAND_ITEM_ID = 1023;
+const STAR_RECORD_CLAIM_CMD = 21;
+const STAR_SHOP_OPEN_CMD = 7;
 const QINGMEI_ACTIVITY_ID = 2026080100;
 const QINGMEI_SEED_CLAIM_ACTIVITY_ID = 2026080101;
 const QINGMEI_WINE_ACTIVITY_ID = 2026080102;
@@ -124,6 +131,14 @@ async function getActivityGroup(activityId = NANGUA_SHOP_ACTIVITY_ID, uid = NANG
   });
 
   return decoded;
+}
+
+async function listActivityGroups() {
+  const request = types.ActivityListRequest.encode(
+    types.ActivityListRequest.create({})
+  ).finish();
+  const { body } = await sendMsgAsync('gamepb.activitypb.ActivityService', 'List', request);
+  return types.ActivityListReply.decode(body);
 }
 
 /**
@@ -842,6 +857,9 @@ function flattenActivityNode(node, result = []) {
 
 function flattenActivityChildren(reply) {
   const list = flattenActivityNode(reply?.group, []);
+  for (const group of Array.isArray(reply?.groups) ? reply.groups : []) {
+    flattenActivityNode(group, list);
+  }
   if (Array.isArray(reply?.activities)) list.push(...reply.activities);
   return list.filter(Boolean);
 }
@@ -1545,6 +1563,156 @@ async function claimSolarTermsReward(termId = 0) {
   };
 }
 
+function parseStarRecordExtra(value) {
+  try {
+    const parsed = JSON.parse(String(value || ''));
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function normalizeStarRecord(node) {
+  const info = node?.star_record || node?.starRecord || {};
+  const configs = Array.isArray(info?.configs) ? info.configs : [];
+  const states = new Map(
+    (Array.isArray(info?.records) ? info.records : [])
+      .map(record => [toNum(record?.id), record])
+  );
+
+  const records = configs.map((config) => {
+    const id = toNum(config?.id);
+    const state = states.get(id) || {};
+    const extra = parseStarRecordExtra(config?.extra);
+    return {
+      id,
+      title: String(config?.title || `星宿${id}`),
+      category: String(extra?.category || ''),
+      explain: String(extra?.explain || ''),
+      graph: String(config?.graph || ''),
+      featured: !!config?.featured,
+      unlocked: !!state?.unlocked,
+      claimed: !!state?.claimed,
+      claimable: !!state?.unlocked && !state?.claimed,
+      rewards: (state?.rewards || []).map(normalizeCoreItem).filter(item => item.itemId > 0),
+    };
+  });
+
+  return {
+    status: toNum(info?.status),
+    openedDays: toNum(info?.opened_days ?? info?.openedDays),
+    records,
+    totalCount: records.length,
+    unlockedCount: records.filter(record => record.unlocked).length,
+    claimedCount: records.filter(record => record.claimed).length,
+    claimableCount: records.filter(record => record.claimable).length,
+  };
+}
+
+function findActivityNode(nodes, activityId) {
+  for (const node of Array.isArray(nodes) ? nodes : []) {
+    if (toNum(node?.activity?.id) === toNum(activityId)) return node;
+    const child = findActivityNode(node?.children, activityId);
+    if (child) return child;
+  }
+  return null;
+}
+
+async function getStarActivity() {
+  if (!getUserState()) {
+    return {
+      uid: STAR_ACTIVITY_UID,
+      title: '心许千灯星垂野',
+      activityId: STAR_ACTIVITY_ID,
+      starRecord: normalizeStarRecord(null),
+      exchangeShop: [],
+      starSandBalance: 0,
+      passport: null,
+      solarTerms: null,
+      warning: 'runtime connection is not open',
+    };
+  }
+
+  const listed = await listActivityGroups();
+  const rootNode = findActivityNode(listed?.groups, STAR_ACTIVITY_ID);
+  const recordNode = findActivityNode(listed?.groups, STAR_RECORD_ACTIVITY_ID);
+  if (!rootNode || !recordNode) {
+    throw new Error('未在活动列表中找到“心许千灯星垂野”');
+  }
+
+  let shopItems = [];
+  let shopWarning = '';
+  try {
+    const shopReply = await operateActivityReply(STAR_SHOP_ACTIVITY_ID, STAR_SHOP_OPEN_CMD);
+    const shopNode = shopReply?.group || null;
+    const shop = shopNode?.exchange_shop || shopNode?.exchangeShop || null;
+    shopItems = (shop?.items || []).map(normalizeExchangeShopItem).filter(Boolean).map(item => ({
+      ...item,
+      currencyName: item.currencyId === STAR_SAND_ITEM_ID ? '星砂' : item.currencyName,
+    }));
+  } catch (err) {
+    shopWarning = err?.message || String(err);
+  }
+
+  const currencyId = toNum(shopItems.find(item => item.currencyId > 0)?.currencyId) || STAR_SAND_ITEM_ID;
+  const [passport, solarTerms, starSandBalance] = await Promise.all([
+    getSeasonPassport().catch(err => ({ title: '千星游记', warning: err?.message || String(err), claimableLevels: 0 })),
+    getSolarTermsInfo().catch(err => ({ terms: [], claimableCount: 0, warning: err?.message || String(err) })),
+    currencyId > 0 ? getBagItemCount(currencyId) : Promise.resolve(0),
+  ]);
+
+  return {
+    uid: STAR_ACTIVITY_UID,
+    title: String(rootNode?.activity?.title || '心许千灯星垂野'),
+    activityId: STAR_ACTIVITY_ID,
+    recordActivityId: STAR_RECORD_ACTIVITY_ID,
+    recordClaimCommand: STAR_RECORD_CLAIM_CMD,
+    shopActivityId: STAR_SHOP_ACTIVITY_ID,
+    shopOpenCommand: STAR_SHOP_OPEN_CMD,
+    startTime: toNum(rootNode?.activity?.start_time),
+    endTime: toNum(rootNode?.activity?.end_time),
+    starRecord: normalizeStarRecord(recordNode),
+    exchangeShop: shopItems,
+    shopReadOnly: true,
+    shopWarning: shopWarning || '当前抓包未包含实际兑换请求，兑换按钮暂未开放。',
+    starSandCurrencyId: currencyId,
+    starSandBalance,
+    passport,
+    solarTerms,
+    summary: {
+      starCount: normalizeStarRecord(recordNode).totalCount,
+      exchangeShopCount: shopItems.length,
+    },
+  };
+}
+
+async function claimStarRecordRewards() {
+  assertActivityConnection('观星礼录领取');
+  const before = await getStarActivity();
+  if (before?.starRecord?.claimableCount <= 0) {
+    throw new Error('当前没有可点亮或领取的星宿');
+  }
+
+  const reply = await operateActivityReply(STAR_RECORD_ACTIVITY_ID, STAR_RECORD_CLAIM_CMD);
+  const result = reply?.star_record_claim || reply?.starRecordClaim || {};
+  const recordIds = (result?.record_ids || result?.recordIds || []).map(toNum).filter(id => id > 0);
+  const rewards = (result?.rewards || []).map(normalizeCoreItem).filter(item => item.itemId > 0);
+  const after = await getStarActivity();
+
+  activityLogger.info('观星礼录领取成功', {
+    event: 'star_record_claim',
+    recordIds,
+    rewardCount: rewards.length,
+  });
+
+  return {
+    ok: true,
+    recordIds,
+    rewards,
+    activity: after,
+  };
+}
+
 function normalizeHeluGroup(reply, lastDrawResult = null) {
   const activities = flattenActivityChildren(reply);
   const getDrawInfo = (act) => act?.draw_info || act?.drawInfo || null;
@@ -1962,10 +2130,14 @@ async function getNanguaShop() {
 module.exports = {
   NANGUA_ACTIVITY_UID,
   HELU_ACTIVITY_UID,
+  STAR_ACTIVITY_UID,
   QINGMEI_ACTIVITY_UID,
   NANGUA_SHOP_ACTIVITY_ID,
   NANGUA_RANDOM_SHOP_ACTIVITY_ID,
   HELU_ACTIVITY_ID,
+  STAR_ACTIVITY_ID,
+  STAR_RECORD_ACTIVITY_ID,
+  STAR_SHOP_ACTIVITY_ID,
   HELU_DRAW_ACTIVITY_ID,
   HELU_EXCHANGE_ACTIVITY_ID,
   QINGMEI_ACTIVITY_ID,
@@ -1979,6 +2151,8 @@ module.exports = {
   getActivityGroup,
   getNanguaShop,
   getHeluActivity,
+  getStarActivity,
+  claimStarRecordRewards,
   getQingmeiActivity,
   claimQingmeiSeeds,
   brewAndSellQingmeiWine,

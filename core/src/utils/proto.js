@@ -169,6 +169,8 @@ async function loadProto() {
     types.ActivityActivityInfo = root.lookupType('gamepb.activitypb.ActivityInfo');
     types.ActivityListRequest = root.lookupType('gamepb.activitypb.ListRequest');
     types.ActivityListReply = root.lookupType('gamepb.activitypb.ListReply');
+    types.ActivityStarRecordInfo = root.lookupType('gamepb.activitypb.StarRecordInfo');
+    types.ActivityStarRecordClaimResult = root.lookupType('gamepb.activitypb.StarRecordClaimResult');
 
     // 好友
     types.GetAllFriendsRequest = root.lookupType('gamepb.friendpb.GetAllRequest');

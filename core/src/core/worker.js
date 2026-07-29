@@ -936,6 +936,16 @@ async function handleApiCall(msg) {
                 result = await getHeluActivity();
                 break;
             }
+            case 'getStarActivity': {
+                const { getStarActivity } = require('../services/activity');
+                result = await getStarActivity();
+                break;
+            }
+            case 'claimStarRecordRewards': {
+                const { claimStarRecordRewards } = require('../services/activity');
+                result = await claimStarRecordRewards();
+                break;
+            }
             case 'exchangeHeluShopItem': {
                 const { exchangeHeluShopItem } = require('../services/activity');
                 result = await exchangeHeluShopItem(args[0], args[1]);
