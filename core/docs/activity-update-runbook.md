@@ -161,13 +161,52 @@ find "$HOME/Library/Containers/com.tencent.xinWeChat/Data" \
 
 ### macOS QQ 缓存
 
-常见展开目录：
+QQ 农场小程序的已确认展开目录：
 
 ```text
-~/Library/Containers/com.tencent.qqexminiprogram/Data/Library/Application Support/QQEX/
+~/Library/Containers/com.tencent.qqexminiprogram/Data/Library/Application Support/QQEX/miniapp/temps/miniapp_src
 ```
 
-QQ 端通常已有 `miniapp_src`，优先使用展开目录，不默认套用 `.wxapkg` 工具。
+QQ 端通常已有 `miniapp_src`，优先使用展开目录，不默认套用 `.wxapkg` 工具。两类目录
+承担不同职责，不能只检查其中一个：
+
+| 位置 | 主要内容 | 用途 |
+| --- | --- | --- |
+| `miniapp_src` | 活动代码、入口、`game.js`、基础资源索引 | 确认活动 ID、入口、模块名和 CDN 资源索引 |
+| `gamecaches` | 启动后下载的界面、种子、作物、Spine、装扮 | 提取实际图片和运行时资源 |
+
+定位当前农场展开包：
+
+```bash
+QQ_MINIAPP_SRC="$HOME/Library/Containers/com.tencent.qqexminiprogram/Data/Library/Application Support/QQEX/miniapp/temps/miniapp_src"
+
+find "$QQ_MINIAPP_SRC" -maxdepth 1 -type d -name '1112386029_3_*' -print
+```
+
+按修改时间选择最新版本，再搜索活动 ID 和资源关键词：
+
+```bash
+rg -n -S \
+  '2026072700|Season/S2|S2BigEvent|S2Shop|S2BattlePass|S2Jieqi|qianxing_entrance|xingsha' \
+  "$QQ_MINIAPP_SRC/1112386029_3_最新目录/game.js"
+```
+
+`game.js` 能证明模块和资源索引存在，但不代表大图已经写入展开包。需要图片时继续查
+`gamecaches`。
+
+### 新旧缓存差分
+
+识别新增作物时优先比较两个时间点的资源清单，不要只凭活动页面猜测：
+
+```bash
+find "/旧缓存/gamecaches/plant" -type f -print | sort > /tmp/plant-old.txt
+find "/新缓存/gamecaches/plant" -type f -print | sort > /tmp/plant-new.txt
+comm -13 /tmp/plant-old.txt /tmp/plant-new.txt
+```
+
+缓存文件名可能是哈希或时间戳，最终还要比较 JSON 中的逻辑路径，例如
+`model/v4/Crop_9003`、`Crop_9003_Seed`。建议记录旧版本日期、最新版本日期、逻辑
+路径、缓存文件和解码 PNG；只把最终配置与确认后的 PNG 提交到仓库。
 
 ### Cocos 与 ASTC
 
@@ -193,6 +232,23 @@ QQ 端通常已有 `miniapp_src`，优先使用展开目录，不默认套用 `.
 
 物品图放入 `core/src/gameConfig/seed_images_named/`；活动背景和标题放入
 `web/public/activity/{activity-slug}/`。
+
+### S2 活动资源检索基线
+
+“心许千灯星垂野”已确认使用以下资源族。以后更新 S2 或相邻赛季时先搜索这些名称，
+再寻找新增或替换项：
+
+- `Season/S2/S2MainUI`
+- `S2BigEvent`，包含 28 个星宿点位
+- `S2Shop`
+- `S2BattlePass`
+- `S2Jieqi`
+- `qianxing_entrance`
+- `xingsha`
+
+当前缓存还包含至少 14 张星砂商品图、8 个月相素材、星砂图标、星宿/流星/夜景效果，
+以及 S2 头像、名牌和成套农场装扮。资源清单用于发现候选项；最终商品名称、物品 ID
+和槽位仍以活动协议为准。
 
 ## 5. 新植物必须补全 ID 链
 
@@ -226,6 +282,50 @@ seed item ID → plant ID → fruit item ID → asset_name → 名称 → 图片
 4. 人工识图临时名。
 
 临时名必须在更新记录中标注，拿到正式名称后覆盖，不能把推测写成官方名称。
+
+### 本次 plant 差分基线
+
+相较 2026-07-22 的旧资源快照，最新 `plant` 资源包增加了以下 12 组。它们包含本期
+新增植物和本期奖励引用的旧植物，不能把“缓存新增”全部等同于“游戏首次新增”：
+
+| 作物资源 | 种子物品 ID | 当前项目名称 |
+| --- | ---: | --- |
+| `Crop_9003` | `29003` | 星语铃花 |
+| `Crop_1353` | `21353` | 粉樱花 |
+| `Crop_264` | `20264` | 红色郁金香 |
+| `Crop_1404` | `21404` | 白牵牛花 |
+| `Crop_108` | `20108` | 铃兰 |
+| `Crop_1037` | `21037` | 粉花凤仙 |
+| `Crop_6032` | `26032` | 金盏花 |
+| `Crop_1050` | `21050` | 卷丹百合 |
+| `Crop_1251` | `21251` | 紫玫瑰 |
+| `Crop_1380` | `21380` | 米兰花 |
+| `Crop_129` | `20129` | 勿忘我 |
+| `Crop_375` | `20375` | 木槿 |
+
+其中活动新增证据最明确的是：
+
+- `29003 → Crop_9003_Seed → 星语铃花`
+- `21353 → Crop_1353_Seed → 粉樱花`
+
+已导入资源：
+
+- `core/src/gameConfig/seed_images_named/29003_Crop_9003_Seed.png`
+- `core/src/gameConfig/seed_images_named/21353_Crop_1353_Seed.png`
+- `core/src/gameConfig/EventPlants.json`
+
+星语铃花还存在以下稀有作物 Spine 路径：
+
+```text
+spine/v2/xiyouzhongzi/xingyulinghua/1028003
+spine/v2/xiyouzhongzi/xingyulinghua/1029003
+spine/v2/xiyouzhongzi/xingyulinghua/1128003
+spine/v2/xiyouzhongzi/xingyulinghua/1129003
+```
+
+这些编号是资源变体或普通/稀有植物 ID 的候选证据，不可直接全部写入 `plantMap`。
+必须结合土地响应中的真实 `plant.id`、种子 ID 和变异字段确认；当前土地抓包已确认
+`29003 → 1029003`。
 
 ## 6. 代码接入顺序
 
