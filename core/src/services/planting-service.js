@@ -187,16 +187,15 @@ function select2x2Reservations(groups, emptyLandIds, desiredCount, lands) {
   const waiting = candidates
     .filter(group => !group.landIds.every(id => emptySet.has(id)))
     .sort((a, b) => {
-      // 已经开始为某个 2x2 区域腾地后必须保持该预留，否则作物逐块成熟时，
-      // 每轮重算可能改选另一区域，并把刚空出的原预留地交给单格补种。
-      const reservedA = previousReservations.has(a.key) ? 1 : 0;
-      const reservedB = previousReservations.has(b.key) ? 1 : 0;
-      if (reservedA !== reservedB) return reservedB - reservedA;
       // 用户手动催熟/收获形成的区域应优先：三块已空、只等一块的组合，
-      // 不能因为另一区域的预计成熟时间略早就被放弃并补种单格作物。
+      // 必须允许它超过尚未形成同等清空进度的旧预留区域。
       const emptyA = a.landIds.filter(id => emptySet.has(id)).length;
       const emptyB = b.landIds.filter(id => emptySet.has(id)).length;
       if (emptyA !== emptyB) return emptyB - emptyA;
+      // 清空进度相同时保持既有预留，避免仅因预计成熟时间波动而来回漂移。
+      const reservedA = previousReservations.has(a.key) ? 1 : 0;
+      const reservedB = previousReservations.has(b.key) ? 1 : 0;
+      if (reservedA !== reservedB) return reservedB - reservedA;
       const clearAtA = Math.max(...a.landIds.map(id => getEstimatedLandClearAt(landMap.get(id), emptySet)));
       const clearAtB = Math.max(...b.landIds.map(id => getEstimatedLandClearAt(landMap.get(id), emptySet)));
       if (clearAtA !== clearAtB) return clearAtA - clearAtB;
