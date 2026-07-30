@@ -192,12 +192,15 @@ function select2x2Reservations(groups, emptyLandIds, desiredCount, lands) {
       const reservedA = previousReservations.has(a.key) ? 1 : 0;
       const reservedB = previousReservations.has(b.key) ? 1 : 0;
       if (reservedA !== reservedB) return reservedB - reservedA;
+      // 用户手动催熟/收获形成的区域应优先：三块已空、只等一块的组合，
+      // 不能因为另一区域的预计成熟时间略早就被放弃并补种单格作物。
+      const emptyA = a.landIds.filter(id => emptySet.has(id)).length;
+      const emptyB = b.landIds.filter(id => emptySet.has(id)).length;
+      if (emptyA !== emptyB) return emptyB - emptyA;
       const clearAtA = Math.max(...a.landIds.map(id => getEstimatedLandClearAt(landMap.get(id), emptySet)));
       const clearAtB = Math.max(...b.landIds.map(id => getEstimatedLandClearAt(landMap.get(id), emptySet)));
       if (clearAtA !== clearAtB) return clearAtA - clearAtB;
-      const emptyA = a.landIds.filter(id => emptySet.has(id)).length;
-      const emptyB = b.landIds.filter(id => emptySet.has(id)).length;
-      return emptyB - emptyA || a.masterLandId - b.masterLandId;
+      return a.masterLandId - b.masterLandId;
     });
 
   // 已完整空闲的区域可以种植多组；需要等待的区域最多只预留一组。

@@ -411,6 +411,7 @@ async function getBagDetail() {
     if (id <= 0 || count <= 0) continue;
 
     const info = getItemById(id) || null;
+    const seedPlant = getPlantBySeedId(id);
     let name = info && info.name ? String(info.name) : '';
     let category = 'item';
 
@@ -419,9 +420,8 @@ async function getBagDetail() {
     else if (getPlantByFruitId(id)) {
       if (!name) name = `${getFruitName(id)  }果实`;
       category = 'fruit';
-    } else if (getPlantBySeedId(id)) {
-      const plant = getPlantBySeedId(id);
-      if (!name) name = `${plant && plant.name ? plant.name : '未知'  }种子`;
+    } else if (seedPlant) {
+      if (!name) name = `${seedPlant.name || '未知'  }种子`;
       category = 'seed';
     }
 
@@ -445,6 +445,7 @@ async function getBagDetail() {
         price: info ? Number(info.price) || 0 : 0,
         priceUnit,
         level: info ? Number(info.level) || 0 : 0,
+        plantSize: seedPlant ? Math.max(1, Number(seedPlant.size || 1)) : 1,
         interactionType,
         hoursText: '',
       });

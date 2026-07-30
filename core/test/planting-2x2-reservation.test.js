@@ -49,3 +49,27 @@ test('keeps an existing 2x2 reservation while its lands are cleared one by one',
   assert.deepEqual(second.map(group => group.key), [groupA.key]);
   assert.ok(second[0].landIds.includes(1));
 });
+
+test('prefers a 2x2 group with three empty lands over an earlier but less-cleared group', () => {
+  const almostReady = { key: '9-10-13-14', masterLandId: 13, landIds: [13, 14, 9, 10] };
+  const earlier = { key: '3-4-7-8', masterLandId: 7, landIds: [7, 8, 3, 4] };
+  const lands = [
+    { id: 10, unlocked: true },
+    { id: 13, unlocked: true },
+    { id: 14, unlocked: true },
+    growingLand(9, 300),
+    { id: 3, unlocked: true },
+    growingLand(4, 100),
+    growingLand(7, 100),
+    growingLand(8, 100),
+  ];
+
+  const selected = select2x2Reservations(
+    [earlier, almostReady],
+    [3, 10, 13, 14],
+    1,
+    lands,
+  );
+
+  assert.deepEqual(selected.map(group => group.key), [almostReady.key]);
+});

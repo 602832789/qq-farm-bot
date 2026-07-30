@@ -79,3 +79,18 @@ WASM 更新的完整发现、快照、比较、验证和回退流程见：
 ```text
 core/docs/tsdk-update-runbook.md
 ```
+
+## 活动植物占地大小
+
+向 `core/src/gameConfig/EventPlants.json` 补充活动植物时，不要只填写 ID、名称和
+资源映射。必须同时核实作物占地大小；四格（2x2）作物需要显式填写：
+
+```json
+{ "id": 1029003, "seed_id": 29003, "fruit_id": 49003, "name": "星语铃花", "size": 2 }
+```
+
+省略 `size: 2` 会使活动作物默认按单格作物处理，导致它无法进入 2x2 优先种植与
+土地预留流程，甚至被背包单格种植策略选中。新增或更新该字段时还要确认
+`core/src/config/gameConfig.js` 将 `size` 透传到植物配置，并用测试断言
+`getPlantBySeedId(seedId).size === 2`；必要时同时检查背包接口返回的
+`plantSize` 是否为 `2`。

@@ -504,8 +504,15 @@ useIntervalFn(loadBag, 60000)
             </div>
           </div>
 
-          <div class="mb-1 w-full truncate px-2 text-center text-sm font-bold" :title="item.name">
-            {{ item.name || `物品${item.id}` }}
+          <div class="mb-1 w-full flex items-center justify-center gap-1 px-2 text-center text-sm font-bold" :title="item.name">
+            <span class="truncate">{{ item.name || `物品${item.id}` }}</span>
+            <span
+              v-if="getItemCategory(item) === 'seed' && Number(item.plantSize) === 2"
+              class="shrink-0 border border-emerald-300 rounded bg-emerald-50 px-1 py-0.5 text-[10px] text-emerald-700 font-semibold leading-none dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+              title="四格作物，占用 2×2 土地"
+            >
+              &lt;2x2&gt;
+            </span>
           </div>
 
           <div class="mb-2 flex flex-col items-center gap-0.5 text-xs text-gray-400">
