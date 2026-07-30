@@ -309,7 +309,7 @@ onUnmounted(() => {
         </div>
 
         <div v-else class="farm-land-viewport overflow-hidden pb-3">
-          <div class="farm-land-grid farm-land-single mx-auto grid w-max gap-3">
+          <div class="farm-land-grid farm-land-single grid mx-auto w-max gap-3">
             <LandCard
               v-for="land in lands"
               :key="land.id"
@@ -449,8 +449,6 @@ onUnmounted(() => {
   }
 
   .farm-land-grid :deep(.land-card-meta),
-  .farm-land-grid :deep(.rainbow-progress-bar),
-  .farm-land-grid :deep(.land-card-type),
   .farm-land-grid :deep(.land-card-season),
   .farm-land-grid :deep(.land-card-flags) {
     display: none;

@@ -187,12 +187,14 @@ function select2x2Reservations(groups, emptyLandIds, desiredCount, lands) {
   const waiting = candidates
     .filter(group => !group.landIds.every(id => emptySet.has(id)))
     .sort((a, b) => {
-      const clearAtA = Math.max(...a.landIds.map(id => getEstimatedLandClearAt(landMap.get(id), emptySet)));
-      const clearAtB = Math.max(...b.landIds.map(id => getEstimatedLandClearAt(landMap.get(id), emptySet)));
-      if (clearAtA !== clearAtB) return clearAtA - clearAtB;
+      // 已经开始为某个 2x2 区域腾地后必须保持该预留，否则作物逐块成熟时，
+      // 每轮重算可能改选另一区域，并把刚空出的原预留地交给单格补种。
       const reservedA = previousReservations.has(a.key) ? 1 : 0;
       const reservedB = previousReservations.has(b.key) ? 1 : 0;
       if (reservedA !== reservedB) return reservedB - reservedA;
+      const clearAtA = Math.max(...a.landIds.map(id => getEstimatedLandClearAt(landMap.get(id), emptySet)));
+      const clearAtB = Math.max(...b.landIds.map(id => getEstimatedLandClearAt(landMap.get(id), emptySet)));
+      if (clearAtA !== clearAtB) return clearAtA - clearAtB;
       const emptyA = a.landIds.filter(id => emptySet.has(id)).length;
       const emptyB = b.landIds.filter(id => emptySet.has(id)).length;
       return emptyB - emptyA || a.masterLandId - b.masterLandId;

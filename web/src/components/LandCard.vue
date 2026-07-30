@@ -32,18 +32,6 @@ onUnmounted(() => {
     clearInterval(timer)
 })
 
-const growProgress = computed(() => {
-  const matureInSec = land.value.matureInSec || 0
-  const totalGrowTime = land.value.totalGrowTime || 0
-
-  if (totalGrowTime <= 0 || matureInSec <= 0)
-    return 0
-
-  return Math.min(100, Math.max(0, (matureInSec / totalGrowTime) * 100))
-})
-
-const hasKnownGrowProgress = computed(() => Number(land.value?.totalGrowTime) > 0)
-
 const canFertilize = computed(() =>
   props.showActions
   && Number(land.value?.matureInSec) > 0
@@ -61,6 +49,34 @@ const canRemove = computed(() =>
     || Number(land.value?.matureInSec) > 0
     || ['dead', 'growing', 'harvestable', 'stealable'].includes(String(land.value?.status || '')),
   ),
+)
+
+const landTextureName = computed(() => {
+  const targetLand = land.value || {}
+  const level = Math.min(5, Math.max(1, Number(targetLand.level) || 1))
+  const isSnow = Boolean(
+    targetLand.isSnow
+    || targetLand.snow
+    || targetLand.snowy
+    || String(targetLand.weather || '').toLowerCase() === 'snow',
+  )
+
+  if (targetLand.status === 'locked')
+    return isSnow ? 'land_locked_snow' : 'land_locked'
+
+  if (targetLand.needWater) {
+    if (level === 1 && isSnow)
+      return 'land_dry1_snow'
+    return `land_dry${level}`
+  }
+
+  if (level === 1 && isSnow)
+    return 'land_valid1_snow'
+  return `land_valid${level}`
+})
+
+const landTextureUrl = computed(() =>
+  `/game-config/land_images/${landTextureName.value}.png`,
 )
 
 const mutantEffects = computed(() => {
@@ -84,27 +100,9 @@ function getLandStatusClass(targetLand: any) {
   const level = Number(targetLand.level) || 0
 
   if (status === 'locked')
-    return 'bg-gray-100 dark:bg-gray-800 opacity-60 border-dashed'
+    return 'land-level-locked bg-slate-50/90 dark:bg-slate-900/80 border-slate-300 dark:border-slate-700 border-dashed'
 
-  let baseClass = 'bg-stone-100 dark:bg-stone-900/60 border-stone-400 dark:border-stone-600'
-
-  switch (level) {
-    case 1:
-      baseClass = 'bg-stone-100 dark:bg-stone-900/60 border-stone-400 dark:border-stone-600'
-      break
-    case 2:
-      baseClass = 'bg-red-100 dark:bg-red-950/50 border-red-500 dark:border-red-700'
-      break
-    case 3:
-      baseClass = 'land-level-black bg-slate-400 dark:bg-slate-800 border-slate-800 dark:border-slate-400 text-gray-900 dark:text-gray-100'
-      break
-    case 4:
-      baseClass = 'bg-amber-100 dark:bg-amber-950/50 border-amber-500 dark:border-amber-600'
-      break
-    case 5:
-      baseClass = 'bg-purple-100 dark:bg-purple-950/50 border-purple-500 dark:border-purple-600'
-      break
-  }
+  const baseClass = `land-level-${Math.min(5, Math.max(1, level || 1))} bg-stone-50/90 dark:bg-stone-950/80 border-stone-300 dark:border-stone-700`
 
   if (status === 'dead')
     return 'bg-gray-200 dark:bg-gray-700 border-gray-300 dark:border-gray-600 grayscale'
@@ -137,35 +135,6 @@ function getSafeImageUrl(url: string) {
   if (url.startsWith('http://'))
     return url.replace('http://', 'https://')
   return url
-}
-
-function getLandTypeName(level: number) {
-  const typeMap: Record<number, string> = {
-    0: '普通地',
-    1: '黄土地',
-    2: '红土地',
-    3: '黑土地',
-    4: '金土地',
-    5: '紫土地',
-  }
-  return typeMap[Number(level) || 0] || ''
-}
-
-function getDisplayLandTypeName(targetLand: any) {
-  return targetLand?.landTypeName || getLandTypeName(Number(targetLand?.level) || 0)
-}
-
-function getLandTypeBadgeClass(targetLand: any) {
-  const level = Number(targetLand?.level) || 0
-  const classMap: Record<number, string> = {
-    0: 'bg-stone-700 text-white ring-stone-900/20',
-    1: 'bg-stone-700 text-white ring-stone-900/20',
-    2: 'bg-red-600 text-white ring-red-900/20',
-    3: 'bg-slate-900 text-white ring-black/30 dark:bg-slate-200 dark:text-slate-900',
-    4: 'bg-amber-500 text-amber-950 ring-amber-900/20',
-    5: 'bg-purple-600 text-white ring-purple-900/20',
-  }
-  return classMap[level] || classMap[0]
 }
 
 function getPlantSizeText(targetLand: any) {
@@ -206,6 +175,17 @@ function getFarmGridStyle(targetLand: any) {
     ]"
     :style="getFarmGridStyle(land)"
   >
+    <div
+      class="land-ground-layer pointer-events-none absolute inset-0"
+      aria-hidden="true"
+    >
+      <img
+        :src="landTextureUrl"
+        alt=""
+        :class="Number(land.plantSize) > 1 ? 'land-ground-merged' : 'land-ground-single'"
+      >
+    </div>
+
     <div class="land-card-id absolute left-1 top-1 text-[10px] text-gray-400 font-mono">
       #{{ land.id }}
     </div>
@@ -255,7 +235,7 @@ function getFarmGridStyle(targetLand: any) {
     </div>
 
     <div class="land-card-meta mb-0.5 mt-0.5 w-full shrink-0 text-center text-[10px] text-gray-500">
-      <span v-if="land.matureInSec > 0" class="text-orange-500">
+      <span v-if="land.matureInSec > 0" class="text-orange-800 font-medium dark:text-orange-300">
         预计 {{ formatTime(land.matureInSec) }} 后成熟
       </span>
       <span v-else>
@@ -263,24 +243,8 @@ function getFarmGridStyle(targetLand: any) {
       </span>
     </div>
 
-    <div v-if="land.matureInSec > 0" class="w-full shrink-0 px-1">
-      <div class="rainbow-progress-bar">
-        <div
-          class="rainbow-progress-fill"
-          :class="{ 'rainbow-progress-indeterminate': !hasKnownGrowProgress }"
-          :style="{ width: hasKnownGrowProgress ? `${growProgress}%` : '45%' }"
-        />
-      </div>
-    </div>
-
     <div class="mb-0.5 mt-0.5 flex shrink-0 items-center justify-center gap-1.5">
-      <span
-        class="land-card-type rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide ring-1 ring-inset"
-        :class="getLandTypeBadgeClass(land)"
-      >
-        {{ getDisplayLandTypeName(land) }}
-      </span>
-      <span class="land-card-season whitespace-nowrap text-[10px] text-gray-500 dark:text-gray-400">
+      <span class="land-card-season whitespace-nowrap text-[10px] text-gray-800 font-medium dark:text-gray-200">
         季数 {{ land.totalSeason > 0 ? (`${land.currentSeason}/${land.totalSeason}`) : '-/-' }}
       </span>
     </div>
@@ -295,7 +259,7 @@ function getFarmGridStyle(targetLand: any) {
 
     <div
       v-if="canFertilize || canRemove"
-      class="land-actions absolute bottom-2 left-2 right-2 grid h-7 grid-cols-2 gap-1"
+      class="land-actions absolute bottom-2 left-2 right-2 grid grid-cols-2 h-7 gap-1"
     >
       <button
         v-if="canFertilize"
@@ -324,6 +288,63 @@ function getFarmGridStyle(targetLand: any) {
 </template>
 
 <style scoped>
+.land-ground-layer {
+  z-index: 0;
+}
+
+.land-ground-single {
+  position: absolute;
+  left: 50%;
+  top: 47%;
+  width: 94%;
+  height: auto;
+  max-height: 68%;
+  object-fit: contain;
+  transform: translate(-50%, -50%);
+  opacity: 0.82;
+  filter: saturate(1.05) drop-shadow(0 3px 4px rgba(71, 53, 35, 0.16));
+}
+
+.land-card.col-span-2 .land-ground-layer {
+  left: 7%;
+  right: 7%;
+  top: 12%;
+  bottom: 15%;
+}
+
+.land-ground-merged {
+  position: absolute;
+  left: 50%;
+  top: 48%;
+  width: 94%;
+  height: auto;
+  max-height: 74%;
+  object-fit: contain;
+  transform: translate(-50%, -50%);
+  opacity: 0.82;
+  filter: saturate(1.05) drop-shadow(0 3px 4px rgba(71, 53, 35, 0.14));
+}
+
+.land-card > :not(.land-ground-layer) {
+  z-index: 1;
+}
+
+.land-card-name,
+.land-card-meta,
+.land-card-season {
+  text-shadow:
+    0 1px 2px rgba(255, 255, 255, 0.95),
+    0 0 5px rgba(255, 255, 255, 0.88);
+}
+
+:global(.dark) .land-card-name,
+:global(.dark) .land-card-meta,
+:global(.dark) .land-card-season {
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.95),
+    0 0 5px rgba(0, 0, 0, 0.8);
+}
+
 .land-action-button {
   height: 28px;
   min-width: 0;
@@ -374,110 +395,5 @@ function getFarmGridStyle(targetLand: any) {
 
 :global(.dark) .land-level-black .land-action-button {
   background: rgba(255, 255, 255, 0.9);
-}
-
-.rainbow-progress-bar {
-  width: 80%;
-  margin: 0 auto;
-  height: 8px;
-  background: linear-gradient(145deg, #f0f0f0, #e6e6e6);
-  border-radius: 10px;
-  overflow: hidden;
-  box-shadow:
-    inset 3px 3px 6px rgba(0, 0, 0, 0.1),
-    inset -3px -3px 6px rgba(255, 255, 255, 0.9),
-    2px 2px 4px rgba(0, 0, 0, 0.05);
-  position: relative;
-}
-
-.rainbow-progress-bar::before {
-  content: '';
-  position: absolute;
-  top: 1px;
-  left: 2px;
-  right: 2px;
-  height: 3px;
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.2));
-  border-radius: 10px 10px 0 0;
-  pointer-events: none;
-}
-
-.rainbow-progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #ff6b9d 0%, #ff9f43 20%, #ffd32a 40%, #26de81 60%, #45aaf2 80%, #a55eea 100%);
-  border-radius: 10px;
-  transition: width 1s linear;
-  position: relative;
-  box-shadow:
-    inset 0 2px 4px rgba(255, 255, 255, 0.6),
-    inset 0 -1px 2px rgba(0, 0, 0, 0.1);
-  animation: cute-pulse 2s ease-in-out infinite;
-}
-
-.rainbow-progress-indeterminate {
-  animation:
-    progress-slide 1.6s ease-in-out infinite alternate,
-    cute-pulse 2s ease-in-out infinite;
-}
-
-@keyframes progress-slide {
-  from {
-    transform: translateX(-15%);
-  }
-
-  to {
-    transform: translateX(135%);
-  }
-}
-
-.rainbow-progress-fill::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.4) 50%, transparent 100%);
-  animation: shimmer 2s infinite;
-  border-radius: 10px;
-}
-
-@keyframes cute-pulse {
-  0%,
-  100% {
-    filter: brightness(1) saturate(1);
-  }
-  50% {
-    filter: brightness(1.1) saturate(1.1);
-  }
-}
-
-@keyframes shimmer {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(100%);
-  }
-}
-
-@media (prefers-color-scheme: dark) {
-  .rainbow-progress-bar {
-    background: linear-gradient(145deg, #2a2a2a, #1e1e1e);
-    box-shadow:
-      inset 3px 3px 6px rgba(0, 0, 0, 0.3),
-      inset -3px -3px 6px rgba(60, 60, 60, 0.3),
-      2px 2px 4px rgba(0, 0, 0, 0.2);
-  }
-
-  .rainbow-progress-bar::before {
-    background: linear-gradient(90deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.02));
-  }
-
-  .rainbow-progress-fill {
-    box-shadow:
-      inset 0 2px 4px rgba(255, 255, 255, 0.2),
-      inset 0 -1px 2px rgba(0, 0, 0, 0.2);
-  }
 }
 </style>
