@@ -338,10 +338,33 @@ function registerAdminAccountRoutes({
           accountId,
           logs: Array.isArray(accountLogs) ? accountLogs : [],
         });
+        const historicalAccountLogs =
+          typeof provider.getAccountLogs === "function"
+            ? provider
+                .getAccountLogs(300)
+                .filter(
+                  (log) =>
+                    String(log.accountId || log.id || "") === String(accountId),
+                )
+            : [];
+        io.to(`account:${  accountId}`).emit("account-logs:snapshot", {
+          accountId,
+          logs: historicalAccountLogs,
+        });
         const allLogs = provider.getLogs("", { limit: 100 });
         io.to("account:all").emit("logs:snapshot", {
           accountId: "all",
           logs: Array.isArray(allLogs) ? allLogs : [],
+        });
+        const allHistoricalAccountLogs =
+          typeof provider.getAccountLogs === "function"
+            ? provider.getAccountLogs(300)
+            : [];
+        io.to("account:all").emit("account-logs:snapshot", {
+          accountId: "all",
+          logs: Array.isArray(allHistoricalAccountLogs)
+            ? allHistoricalAccountLogs
+            : [],
         });
       }
       res.json({ ok: true, data });

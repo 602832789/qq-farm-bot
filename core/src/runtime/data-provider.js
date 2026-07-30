@@ -98,22 +98,42 @@ function createDataProvider(deps) {
             const id = resolveAccountId(ref);
 
             if (!normalized || normalized === 'all') {
+                const clearedRuntimeLogs = globalLogs.length;
+                const clearedAccountLogs = accountLogs.length;
                 globalLogs.length = 0;
-                return { cleared: 'all' };
+                accountLogs.length = 0;
+                return {
+                    cleared: 'all',
+                    clearedRuntimeLogs,
+                    clearedAccountLogs
+                };
             }
 
-            const result = { cleared: 0 };
+            const result = {
+                cleared: 0,
+                clearedRuntimeLogs: 0,
+                clearedAccountLogs: 0
+            };
             if (!id) return result;
 
             const idStr = String(id || '');
-            const before = globalLogs.length;
+            const runtimeLogsBefore = globalLogs.length;
             for (let i = globalLogs.length - 1; i >= 0; i--) {
                 if (String(globalLogs[i].accountId || '') === idStr) {
                     globalLogs.splice(i, 1);
                 }
             }
-            const after = globalLogs.length;
-            return { cleared: before - after, accountId: id };
+            const accountLogsBefore = accountLogs.length;
+            for (let i = accountLogs.length - 1; i >= 0; i--) {
+                if (String(accountLogs[i].accountId || accountLogs[i].id || '') === idStr) {
+                    accountLogs.splice(i, 1);
+                }
+            }
+
+            result.clearedRuntimeLogs = runtimeLogsBefore - globalLogs.length;
+            result.clearedAccountLogs = accountLogsBefore - accountLogs.length;
+            result.cleared = result.clearedRuntimeLogs + result.clearedAccountLogs;
+            return { ...result, accountId: id };
         },
 
         // ========== Farm API ==========
