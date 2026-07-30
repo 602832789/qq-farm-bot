@@ -200,6 +200,19 @@ function buildDailyTasksForDebug(taskInfoRaw) {
   return allTasks.filter((t) => toNum(t && t.task_type) === 3);
 }
 
+/**
+ * 构建成长任务列表。
+ * 新版服务端可能把任务统一放在 tasks 中，仅通过 task_type=1 区分。
+ */
+function buildGrowthTasks(taskInfoRaw) {
+  const info = taskInfoRaw && typeof taskInfoRaw === 'object' ? taskInfoRaw : {};
+  const growthTasks = Array.isArray(info.growth_tasks) ? info.growth_tasks : [];
+  if (growthTasks.length > 0) return growthTasks;
+
+  const tasks = Array.isArray(info.tasks) ? info.tasks : [];
+  return tasks.filter((t) => toNum(t && t.task_type) === 1);
+}
+
 // ---- 活跃奖励处理 ----
 
 /**
@@ -435,6 +448,7 @@ module.exports = {
   cleanupTaskSystem,
   claimTaskReward,
   doClaim,
+  buildGrowthTasks,
 
   getTaskClaimDailyState: () => ({
     key: 'task_claim',
@@ -495,7 +509,7 @@ module.exports = {
     try {
       const reply = await getTaskInfo();
       const taskInfo = (reply && reply.task_info) ? reply.task_info : {};
-      const growthTasks = Array.isArray(taskInfo.growth_tasks) ? taskInfo.growth_tasks : [];
+      const growthTasks = buildGrowthTasks(taskInfo);
 
       const tasks = growthTasks.map((t) => {
         const progress = Math.max(0, toNum(t && t.progress));
