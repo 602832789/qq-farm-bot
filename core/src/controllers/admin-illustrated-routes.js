@@ -2,6 +2,7 @@ const {
   buildIllustratedItem,
   getSeedShopGoodsMap,
   getUserLevel,
+  sortIllustratedItems,
   summarizeIllustratedItems,
 } = require("./admin-illustrated-helpers");
 const {
@@ -83,13 +84,15 @@ function registerAdminIllustratedRoutes({
         rawCount: illustratedList?.__raw?.rawItemCount || 0,
       });
 
-      const items = (illustratedList?.items || []).map(item =>
-        buildIllustratedItem(item, {
-          seedGoodsMap,
-          userLevel,
-          adminLogger,
-          nongmeFruitMap: nongmeData.byFruitId,
-        }),
+      const items = sortIllustratedItems(
+        (illustratedList?.items || []).map(item =>
+          buildIllustratedItem(item, {
+            seedGoodsMap,
+            userLevel,
+            adminLogger,
+            nongmeFruitMap: nongmeData.byFruitId,
+          }),
+        ),
       );
       const summary = summarizeIllustratedItems(items);
 

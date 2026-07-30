@@ -168,6 +168,29 @@ const showInitialLoading = computed(() =>
   !farmLoaded.value && (loading.value || statusLoading.value),
 )
 
+function getLandAnchorId(land: any) {
+  const occupiedIds = Array.isArray(land?.occupiedLandIds)
+    ? land.occupiedLandIds.map(Number).filter((id: number) => id > 0)
+    : []
+  return occupiedIds.length > 1 ? Math.min(...occupiedIds) : Number(land?.id) || 0
+}
+
+const desktopLandRegions = computed(() => {
+  const source = Array.isArray(lands.value) ? lands.value : []
+  return [
+    {
+      key: 'upper',
+      rowOffset: 0,
+      lands: source.filter(land => getLandAnchorId(land) <= 16),
+    },
+    {
+      key: 'lower',
+      rowOffset: 4,
+      lands: source.filter(land => getLandAnchorId(land) > 16),
+    },
+  ]
+})
+
 watch(currentAccountId, (newId, oldId) => {
   if (oldId !== undefined && newId !== oldId) {
     farmLoaded.value = false
@@ -285,14 +308,35 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div v-else class="grid grid-cols-2 gap-4 lg:grid-cols-6 md:grid-cols-4 sm:grid-cols-3">
-          <LandCard
-            v-for="land in lands"
-            :key="land.id"
-            :land="land"
-            @fertilize="handleLandFertilize"
-            @remove="handleLandRemove"
-          />
+        <div v-else class="farm-land-viewport overflow-hidden pb-3">
+          <div class="farm-land-grid farm-land-single mx-auto grid w-max gap-3">
+            <LandCard
+              v-for="land in lands"
+              :key="land.id"
+              :land="land"
+              farm-grid
+              @fertilize="handleLandFertilize"
+              @remove="handleLandRemove"
+            />
+          </div>
+
+          <div class="farm-land-dual hidden items-start justify-center gap-4">
+            <div
+              v-for="region in desktopLandRegions"
+              :key="region.key"
+              class="farm-land-grid farm-land-grid-desktop grid w-max gap-3"
+            >
+              <LandCard
+                v-for="land in region.lands"
+                :key="land.id"
+                :land="land"
+                farm-grid
+                :farm-grid-row-offset="region.rowOffset"
+                @fertilize="handleLandFertilize"
+                @remove="handleLandRemove"
+              />
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -308,3 +352,148 @@ onUnmounted(() => {
     />
   </div>
 </template>
+
+<style scoped>
+.farm-land-viewport {
+  container-type: inline-size;
+}
+
+.farm-land-grid {
+  --farm-cell-size: 168px;
+  grid-template-columns: repeat(4, var(--farm-cell-size));
+  grid-auto-rows: var(--farm-cell-size);
+}
+
+.farm-land-single {
+  --farm-cell-size: 140px;
+}
+
+.farm-land-grid-desktop {
+  --farm-cell-size: 140px;
+}
+
+.farm-land-grid-desktop :deep(.land-card:not(.col-span-2)) {
+  padding: 3px 3px 32px;
+}
+
+.farm-land-grid-desktop :deep(.land-card:not(.col-span-2) .land-card-image) {
+  width: 28px;
+  height: 28px;
+  margin-top: 4px;
+}
+
+.farm-land-grid-desktop :deep(.land-card.col-span-2 .land-card-image) {
+  width: 56px;
+  height: 56px;
+}
+
+.farm-land-grid-desktop :deep(.land-card-flags) {
+  display: none;
+}
+
+.farm-land-grid-desktop :deep(.land-card:not(.col-span-2) .land-actions) {
+  bottom: 4px;
+  height: 24px;
+}
+
+.farm-land-grid-desktop :deep(.land-card:not(.col-span-2) .land-action-button) {
+  height: 24px;
+}
+
+.farm-land-single :deep(.land-card:not(.col-span-2)) {
+  padding: 3px 3px 32px;
+}
+
+.farm-land-single :deep(.land-card:not(.col-span-2) .land-card-image) {
+  width: 28px;
+  height: 28px;
+  margin-top: 4px;
+}
+
+.farm-land-single :deep(.land-card.col-span-2 .land-card-image) {
+  width: 56px;
+  height: 56px;
+}
+
+.farm-land-single :deep(.land-card-flags) {
+  display: none;
+}
+
+.farm-land-single :deep(.land-actions) {
+  bottom: 4px;
+  left: 4px;
+  right: 4px;
+  height: 24px;
+}
+
+.farm-land-single :deep(.land-action-button) {
+  height: 24px;
+}
+
+@container (min-width: 1220px) {
+  .farm-land-single {
+    display: none;
+  }
+
+  .farm-land-dual {
+    display: flex;
+  }
+}
+
+@media (max-width: 639px) {
+  .farm-land-grid {
+    width: 100%;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-auto-rows: calc((100cqw - 36px) / 4);
+    margin: 0;
+  }
+
+  .farm-land-grid :deep(.land-card-meta),
+  .farm-land-grid :deep(.rainbow-progress-bar),
+  .farm-land-grid :deep(.land-card-type),
+  .farm-land-grid :deep(.land-card-season),
+  .farm-land-grid :deep(.land-card-flags) {
+    display: none;
+  }
+
+  .farm-land-grid :deep(.land-card-name) {
+    font-size: 10px;
+    line-height: 14px;
+  }
+
+  .farm-land-grid :deep(.land-card) {
+    padding: 3px 3px 28px;
+    border-width: 1px;
+  }
+
+  .farm-land-grid :deep(.land-card-image) {
+    width: 24px;
+    height: 24px;
+    margin-top: 4px;
+  }
+
+  .farm-land-grid :deep(.land-card.col-span-2 .land-card-image) {
+    width: 48px;
+    height: 48px;
+  }
+
+  .farm-land-grid :deep(.land-actions) {
+    bottom: 3px;
+    left: 3px;
+    right: 3px;
+    height: 22px;
+  }
+
+  .farm-land-grid :deep(.land-actions button > span:last-child) {
+    display: none;
+  }
+
+  .farm-land-grid :deep(.land-action-button) {
+    height: 22px;
+  }
+
+  .farm-land-grid :deep(.land-card-id) {
+    font-size: 8px;
+  }
+}
+</style>

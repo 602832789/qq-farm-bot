@@ -106,6 +106,7 @@ function buildIllustratedItem(
 
   return {
     seedId: fruitId,
+    illustratedTier: toNum(rawItem.illustrated_tier ?? rawItem.illustratedTier) || 0,
     unlocked,
     plantedCount: toNum(rawItem.planted_count) || 0,
     harvestCount: toNum(rawItem.harvest_count) || 0,
@@ -118,6 +119,16 @@ function buildIllustratedItem(
     price,
     seedLevel,
   };
+}
+
+function sortIllustratedItems(items) {
+  return [...(items || [])].sort((left, right) => {
+    const tierDiff =
+      (toNum(left.illustratedTier) || Number.MAX_SAFE_INTEGER) -
+      (toNum(right.illustratedTier) || Number.MAX_SAFE_INTEGER);
+    if (tierDiff !== 0) return tierDiff;
+    return (toNum(left.seedId) || 0) - (toNum(right.seedId) || 0);
+  });
 }
 
 function summarizeIllustratedItems(items) {
@@ -163,5 +174,6 @@ module.exports = {
   getSeedShopGoodsMap,
   getUserLevel,
   buildIllustratedItem,
+  sortIllustratedItems,
   summarizeIllustratedItems,
 };

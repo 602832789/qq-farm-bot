@@ -48,12 +48,23 @@ test('supplemental source mappings resolve names and official images', () => {
     [1041353, '黄金·粉樱花'],
     [1049003, '黄金·星语铃花'],
     [301102, '足球'],
+    [204003, '黄金·哈哈南瓜塔'],
+    [204006, '星语花铃'],
+    [204007, '黄金·星语花铃'],
   ]);
 
   for (const [itemId, name] of expected) {
     assert.equal(getItemById(itemId)?.name, name);
     assert.match(getItemImageById(itemId), /^\/game-config\/seed_images_named\/.+\.png$/);
   }
+});
+
+test('decoration fruits in the mutant illustrated have complete images', () => {
+  assertImageExists(204003, 'golden pumpkin tower image');
+  assertImageExists(204004, 'moon lotus tower image');
+  assertImageExists(204005, 'golden moon lotus tower image');
+  assertImageExists(204006, 'star bell tower image');
+  assertImageExists(204007, 'golden star bell tower image');
 });
 
 test('current activity plants cover crop and mutant illustrated mappings', () => {

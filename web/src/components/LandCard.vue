@@ -4,8 +4,12 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 const props = withDefaults(defineProps<{
   land: any
   showActions?: boolean
+  farmGrid?: boolean
+  farmGridRowOffset?: number
 }>(), {
   showActions: true,
+  farmGrid: false,
+  farmGridRowOffset: 0,
 })
 
 defineEmits<{
@@ -37,6 +41,8 @@ const growProgress = computed(() => {
 
   return Math.min(100, Math.max(0, (matureInSec / totalGrowTime) * 100))
 })
+
+const hasKnownGrowProgress = computed(() => Number(land.value?.totalGrowTime) > 0)
 
 const canFertilize = computed(() =>
   props.showActions
@@ -80,23 +86,23 @@ function getLandStatusClass(targetLand: any) {
   if (status === 'locked')
     return 'bg-gray-100 dark:bg-gray-800 opacity-60 border-dashed'
 
-  let baseClass = 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'
+  let baseClass = 'bg-stone-100 dark:bg-stone-900/60 border-stone-400 dark:border-stone-600'
 
   switch (level) {
     case 1:
-      baseClass = 'bg-yellow-50/80 dark:bg-yellow-900/10 border-yellow-200 dark:border-yellow-800'
+      baseClass = 'bg-stone-100 dark:bg-stone-900/60 border-stone-400 dark:border-stone-600'
       break
     case 2:
-      baseClass = 'bg-red-50/80 dark:bg-red-900/10 border-red-200 dark:border-red-800'
+      baseClass = 'bg-red-100 dark:bg-red-950/50 border-red-500 dark:border-red-700'
       break
     case 3:
-      baseClass = 'land-level-black bg-gray-300 dark:bg-gray-700 border-gray-400 dark:border-gray-500 text-gray-900 dark:text-gray-100'
+      baseClass = 'land-level-black bg-slate-400 dark:bg-slate-800 border-slate-800 dark:border-slate-400 text-gray-900 dark:text-gray-100'
       break
     case 4:
-      baseClass = 'bg-amber-100/80 dark:bg-amber-900/20 border-amber-300 dark:border-amber-600'
+      baseClass = 'bg-amber-100 dark:bg-amber-950/50 border-amber-500 dark:border-amber-600'
       break
     case 5:
-      baseClass = 'bg-purple-100/80 dark:bg-purple-900/20 border-purple-300 dark:border-purple-700'
+      baseClass = 'bg-purple-100 dark:bg-purple-950/50 border-purple-500 dark:border-purple-600'
       break
   }
 
@@ -149,18 +155,56 @@ function getDisplayLandTypeName(targetLand: any) {
   return targetLand?.landTypeName || getLandTypeName(Number(targetLand?.level) || 0)
 }
 
+function getLandTypeBadgeClass(targetLand: any) {
+  const level = Number(targetLand?.level) || 0
+  const classMap: Record<number, string> = {
+    0: 'bg-stone-700 text-white ring-stone-900/20',
+    1: 'bg-stone-700 text-white ring-stone-900/20',
+    2: 'bg-red-600 text-white ring-red-900/20',
+    3: 'bg-slate-900 text-white ring-black/30 dark:bg-slate-200 dark:text-slate-900',
+    4: 'bg-amber-500 text-amber-950 ring-amber-900/20',
+    5: 'bg-purple-600 text-white ring-purple-900/20',
+  }
+  return classMap[level] || classMap[0]
+}
+
 function getPlantSizeText(targetLand: any) {
   const size = Number(targetLand?.plantSize) || 1
   if (size <= 1)
     return ''
   return `${size}x${size}`
 }
+
+function getFarmGridStyle(targetLand: any) {
+  if (!props.farmGrid)
+    return undefined
+
+  const occupiedIds = Array.isArray(targetLand?.occupiedLandIds)
+    ? targetLand.occupiedLandIds.map(Number).filter((id: number) => id > 0)
+    : []
+  const anchorId = occupiedIds.length > 1
+    ? Math.min(...occupiedIds)
+    : Number(targetLand?.id)
+  if (!anchorId)
+    return undefined
+
+  return {
+    gridColumnStart: ((anchorId - 1) % 4) + 1,
+    gridRowStart: Math.max(1, Math.floor((anchorId - 1) / 4) + 1 - props.farmGridRowOffset),
+  }
+}
 </script>
 
 <template>
   <div
-    class="relative min-h-[140px] flex flex-col items-center border rounded-lg p-2 transition dark:border-gray-700 hover:shadow-md"
-    :class="getLandStatusClass(land)"
+    class="land-card relative h-full min-h-0 flex flex-col items-center overflow-hidden border-2 rounded-lg px-2 pb-11 pt-2 transition hover:shadow-md"
+    :class="[
+      getLandStatusClass(land),
+      {
+        'col-span-2 row-span-2 justify-center px-4 pt-3': Number(land.plantSize) > 1,
+      },
+    ]"
+    :style="getFarmGridStyle(land)"
   >
     <div class="land-card-id absolute left-1 top-1 text-[10px] text-gray-400 font-mono">
       #{{ land.id }}
@@ -188,7 +232,10 @@ function getPlantSizeText(targetLand: any) {
       >
     </div>
 
-    <div class="mb-1 mt-4 h-10 w-10 flex items-center justify-center">
+    <div
+      class="land-card-image mb-0.5 mt-3 flex shrink-0 items-center justify-center"
+      :class="Number(land.plantSize) > 1 ? 'h-16 w-16' : 'h-9 w-9'"
+    >
       <img
         v-if="land.seedImage"
         :src="getSafeImageUrl(land.seedImage)"
@@ -199,11 +246,15 @@ function getPlantSizeText(targetLand: any) {
       <div v-else class="i-carbon-sprout text-xl text-gray-300" />
     </div>
 
-    <div class="land-card-name w-full truncate px-1 text-center text-xs text-gray-900 font-bold dark:text-gray-100" :title="land.plantName">
+    <div
+      class="land-card-name w-full shrink-0 truncate px-1 text-center text-gray-900 font-bold leading-5 dark:text-gray-100"
+      :class="Number(land.plantSize) > 1 ? 'text-sm' : 'text-xs'"
+      :title="land.plantName"
+    >
       {{ land.plantName || '-' }}
     </div>
 
-    <div class="land-card-meta mb-0.5 mt-0.5 w-full text-center text-[10px] text-gray-500">
+    <div class="land-card-meta mb-0.5 mt-0.5 w-full shrink-0 text-center text-[10px] text-gray-500">
       <span v-if="land.matureInSec > 0" class="text-orange-500">
         预计 {{ formatTime(land.matureInSec) }} 后成熟
       </span>
@@ -212,24 +263,29 @@ function getPlantSizeText(targetLand: any) {
       </span>
     </div>
 
-    <div v-if="land.matureInSec > 0 && land.totalGrowTime > 0" class="w-full px-1">
+    <div v-if="land.matureInSec > 0" class="w-full shrink-0 px-1">
       <div class="rainbow-progress-bar">
         <div
           class="rainbow-progress-fill"
-          :style="{ width: `${growProgress}%` }"
+          :class="{ 'rainbow-progress-indeterminate': !hasKnownGrowProgress }"
+          :style="{ width: hasKnownGrowProgress ? `${growProgress}%` : '45%' }"
         />
       </div>
     </div>
 
-    <div class="land-card-type text-[10px] text-gray-400">
-      {{ getDisplayLandTypeName(land) }}
+    <div class="mb-0.5 mt-0.5 flex shrink-0 items-center justify-center gap-1.5">
+      <span
+        class="land-card-type rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide ring-1 ring-inset"
+        :class="getLandTypeBadgeClass(land)"
+      >
+        {{ getDisplayLandTypeName(land) }}
+      </span>
+      <span class="land-card-season whitespace-nowrap text-[10px] text-gray-500 dark:text-gray-400">
+        季数 {{ land.totalSeason > 0 ? (`${land.currentSeason}/${land.totalSeason}`) : '-/-' }}
+      </span>
     </div>
 
-    <div class="land-card-type mb-1 text-[10px] text-gray-400">
-      季数 {{ land.totalSeason > 0 ? (`${land.currentSeason}/${land.totalSeason}`) : '-/-' }}
-    </div>
-
-    <div class="mt-auto flex origin-bottom scale-90 gap-0.5 text-[10px]">
+    <div class="land-card-flags min-h-4 flex shrink-0 origin-bottom scale-90 gap-0.5 text-[10px]">
       <span v-if="land.needWater" class="rounded bg-blue-100 px-0.5 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">水</span>
       <span v-if="land.needWeed" class="rounded bg-green-100 px-0.5 text-green-700 dark:bg-green-900/30 dark:text-green-400">草</span>
       <span v-if="land.needBug" class="rounded bg-red-100 px-0.5 text-red-700 dark:bg-red-900/30 dark:text-red-400">虫</span>
@@ -237,7 +293,10 @@ function getPlantSizeText(targetLand: any) {
       <span v-else-if="land.status === 'stealable'" class="rounded bg-purple-100 px-0.5 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">可偷</span>
     </div>
 
-    <div v-if="canFertilize || canRemove" class="grid grid-cols-2 mt-2 h-7 w-full gap-1">
+    <div
+      v-if="canFertilize || canRemove"
+      class="land-actions absolute bottom-2 left-2 right-2 grid h-7 grid-cols-2 gap-1"
+    >
       <button
         v-if="canFertilize"
         type="button"
@@ -289,13 +348,13 @@ function getPlantSizeText(targetLand: any) {
 
 .land-level-black .land-card-id,
 .land-level-black .land-card-meta,
-.land-level-black .land-card-type {
+.land-level-black .land-card-season {
   color: #475569;
 }
 
 :global(.dark) .land-level-black .land-card-id,
 :global(.dark) .land-level-black .land-card-meta,
-:global(.dark) .land-level-black .land-card-type {
+:global(.dark) .land-level-black .land-card-season {
   color: #cbd5e1;
 }
 
@@ -353,6 +412,22 @@ function getPlantSizeText(targetLand: any) {
     inset 0 2px 4px rgba(255, 255, 255, 0.6),
     inset 0 -1px 2px rgba(0, 0, 0, 0.1);
   animation: cute-pulse 2s ease-in-out infinite;
+}
+
+.rainbow-progress-indeterminate {
+  animation:
+    progress-slide 1.6s ease-in-out infinite alternate,
+    cute-pulse 2s ease-in-out infinite;
+}
+
+@keyframes progress-slide {
+  from {
+    transform: translateX(-15%);
+  }
+
+  to {
+    transform: translateX(135%);
+  }
 }
 
 .rainbow-progress-fill::after {

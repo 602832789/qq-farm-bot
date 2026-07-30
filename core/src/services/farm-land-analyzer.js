@@ -96,15 +96,23 @@ function hasPlantData(land) {
 function getLinkedMasterLand(land, landMap) {
   const landId = toNum(land && land.id);
   const masterId = toNum(land && land.master_land_id);
-  if (!masterId || masterId === landId) return null;
+  if (masterId && masterId !== landId) {
+    const masterLand = landMap.get(masterId);
+    if (masterLand) {
+      const slaveIds = getSlaveLandIds(masterLand);
+      if (slaveIds.length === 0 || slaveIds.includes(landId)) return masterLand;
+    }
+  }
 
-  const masterLand = landMap.get(masterId);
-  if (!masterLand) return null;
+  // 部分服务端响应只在主土地上返回 slave_land_ids，从属土地的
+  // master_land_id 可能为空；此时通过主土地声明的从属列表反查。
+  for (const candidate of landMap.values()) {
+    const candidateId = toNum(candidate && candidate.id);
+    if (!candidateId || candidateId === landId || !hasPlantData(candidate)) continue;
+    if (getSlaveLandIds(candidate).includes(landId)) return candidate;
+  }
 
-  const slaveIds = getSlaveLandIds(masterLand);
-  if (slaveIds.length > 0 && !slaveIds.includes(landId)) return null;
-
-  return masterLand;
+  return null;
 }
 
 /**
@@ -123,11 +131,13 @@ function getDisplayLandContext(land, landMap) {
     };
   }
   const landId = toNum(land && land.id);
+  const slaveIds = hasPlantData(land) ? getSlaveLandIds(land) : [];
+  const occupiedLandIds = [landId, ...slaveIds].filter(Boolean);
   return {
     sourceLand: land,
     occupiedByMaster: false,
     masterLandId: landId,
-    occupiedLandIds: [landId].filter(Boolean)
+    occupiedLandIds
   };
 }
 
@@ -389,6 +399,9 @@ async function getLandsDetail() {
       const { sourceLand, occupiedByMaster, masterLandId, occupiedLandIds } =
         getDisplayLandContext(land, landMap);
 
+      // 合种作物只展示主土地；从属土地的信息已经合并到主土地卡片。
+      if (occupiedByMaster) continue;
+
       // 未解锁
       if (!land.unlocked) {
         details.push({
@@ -437,7 +450,14 @@ async function getLandsDetail() {
       const plantInfo = getPlantById(plantId);
       const seedId = toNum(plantInfo && plantInfo.seed_id);
       const seedImage = seedId > 0 ? getSeedImageBySeedId(seedId) : '';
-      const plantSize = Math.max(1, toNum(plantInfo && plantInfo.size) || 1);
+      const occupiedPlantSize = occupiedLandIds.length > 1
+        ? Math.round(Math.sqrt(occupiedLandIds.length))
+        : 1;
+      const plantSize = Math.max(
+        1,
+        toNum(plantInfo && plantInfo.size) || 1,
+        occupiedPlantSize
+      );
       const totalSeason = Math.max(1, toNum(plantInfo && plantInfo.seasons) || 1);
       const rawSeason = toNum(plant.season);
       const currentSeason = rawSeason > 0 ? Math.min(rawSeason, totalSeason) : 1;

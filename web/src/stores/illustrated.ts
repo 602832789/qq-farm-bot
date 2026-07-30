@@ -5,6 +5,7 @@ import { useAccountStore } from '@/stores/account'
 
 export interface IllustratedItem {
   seedId: number
+  illustratedTier?: number
   name: string
   image?: string
   level: number
