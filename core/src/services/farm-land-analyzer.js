@@ -340,10 +340,16 @@ async function resolveRemovableHarvestedLands(harvestedLandIds, harvestResult) {
     }
   }
 
-  // 依然未知的地块归入可铲除
+  // 补拉后依然未知时必须保守跳过。收获响应可能省略 2x2 主地块，
+  // 或全量土地响应暂时不完整；把未知状态当成枯死会误铲仍在生长/
+  // 进入下一季的合种作物。确认 empty/dead 的地块才允许铲除。
   if (unknown.length > 0) {
-    removable.push(...unknown);
-    fallbackRemoved = unknown.length;
+    logWarn('农场', `收后仍有 ${unknown.length} 块土地状态未知，已跳过铲除 (${unknown.join(',')})`, {
+      module: 'farm',
+      event: '收获后状态补拉',
+      result: 'skip_unknown',
+      landIds: unknown,
+    });
   }
 
   return {

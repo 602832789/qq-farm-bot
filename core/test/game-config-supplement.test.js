@@ -59,6 +59,10 @@ test('supplemental source mappings resolve names and official images', () => {
   }
 });
 
+test('star bell flower is configured as a 2x2 crop', () => {
+  assert.equal(getPlantBySeedId(29003)?.size, 2);
+});
+
 test('decoration fruits in the mutant illustrated have complete images', () => {
   assertImageExists(204003, 'golden pumpkin tower image');
   assertImageExists(204004, 'moon lotus tower image');

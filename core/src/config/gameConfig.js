@@ -74,6 +74,7 @@ function loadConfigs() {
                     name: entry.name,
                     seed_id: Number(entry.seed_id),
                     fruit: { id: Number(entry.fruit_id), count: Number(entry.fruit_count) || 0 },
+                    size: Math.max(1, Number(entry.size) || 1),
                     seasons: Number(entry.seasons) || 1,
                     grow_phases: entry.grow_phases || '',
                     exp: Number(entry.exp) || 0,
