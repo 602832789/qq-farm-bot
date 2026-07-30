@@ -76,6 +76,14 @@ function isAlreadyClaimedError(err) {
 
 // ---- RPC 调用 ----
 
+async function refreshVipInfo() {
+  const request = types.RefreshVipInfoRequest.encode(
+    types.RefreshVipInfoRequest.create({})
+  ).finish();
+  const { body } = await sendMsgAsync('gamepb.qqvippb.QQVipService', 'RefreshVipInfo', request);
+  return types.RefreshVipInfoReply.decode(body);
+}
+
 async function getDailyGiftStatus() {
   const request = types.GetQQVipRewardsStatusRequest.encode(
     types.GetQQVipRewardsStatusRequest.create({})
@@ -84,11 +92,30 @@ async function getDailyGiftStatus() {
   return types.GetQQVipRewardsStatusReply.decode(body);
 }
 
-async function claimDailyGift() {
+function getAvailableVipTypes(status) {
+  const configs = Array.isArray(status && status.reward_configs)
+    ? status.reward_configs
+    : [];
+  return configs
+    .map(config => toNum(config && config.vip_type))
+    .filter((vipType, index, list) => (
+      (vipType === 1 || vipType === 2) && list.indexOf(vipType) === index
+    ));
+}
+
+function getVipRewardLabels(vipTypes) {
+  const labels = {
+    1: 'VIP奖励',
+    2: 'SVIP奖励',
+  };
+  return (Array.isArray(vipTypes) ? vipTypes : [])
+    .map(vipType => labels[toNum(vipType)])
+    .filter(Boolean);
+}
+
+async function claimDailyGift(vipTypes) {
   const request = types.ClaimQQVipRewardsRequest.encode(
-    // 官方客户端领取 SVIP 礼包时仅发送类型 2。
-    // 同时发送 [1, 2] 会被服务端视为不存在的礼包配置（code=1021003）。
-    types.ClaimQQVipRewardsRequest.create({ vip_types: [2] })
+    types.ClaimQQVipRewardsRequest.create({ vip_types: vipTypes })
   ).finish();
   const { body } = await sendMsgAsync(
     'gamepb.qqvippb.QQVipService',
@@ -113,25 +140,36 @@ async function performDailyVipGift(force = false) {
   lastCheckAt = now;
 
   try {
+    await refreshVipInfo();
     const status = await getDailyGiftStatus();
+    const availableVipTypes = getAvailableVipTypes(status);
 
-    lastHasGift = !!(status && status.has_gift);
-    lastCanClaim = !!(status && status.can_claim);
+    lastHasGift = availableVipTypes.length > 0;
+    lastCanClaim = availableVipTypes.length > 0;
 
-    if (!status || !status.can_claim) {
+    if (!availableVipTypes.length) {
       markDoneToday();
       lastResult = 'none';
       log('会员', '今日暂无可领取会员礼包', { module: 'task', event: DAILY_KEY, result: 'none' });
       return false;
     }
 
-    const reply = await claimDailyGift();
+    const reply = await claimDailyGift(availableVipTypes);
     const items = Array.isArray(reply && reply.items) ? reply.items : [];
     const summary = getRewardSummary(items);
+    const vipRewards = getVipRewardLabels(availableVipTypes);
+    const rewardLabel = vipRewards.join('、') || '会员礼包';
 
     log('会员',
-      summary ? `领取成功 → ${summary}` : '领取成功',
-      { module: 'task', event: DAILY_KEY, result: 'ok', count: items.length }
+      summary ? `${rewardLabel}领取成功 → ${summary}` : `${rewardLabel}领取成功`,
+      {
+        module: 'task',
+        event: DAILY_KEY,
+        result: 'ok',
+        count: items.length,
+        vipTypes: availableVipTypes,
+        vipRewards,
+      }
     );
 
     lastClaimAt = Date.now();
@@ -158,6 +196,8 @@ async function performDailyVipGift(force = false) {
 
 module.exports = {
   performDailyVipGift,
+  getAvailableVipTypes,
+  getVipRewardLabels,
   getVipDailyState: () => ({
     key: DAILY_KEY,
     doneToday: isDoneToday(),

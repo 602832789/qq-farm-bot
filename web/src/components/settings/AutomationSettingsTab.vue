@@ -17,6 +17,8 @@ interface AutomationSettings {
     friend_bad: boolean
     friend_golden_bug: boolean
     friend_help_exp_limit: boolean
+    star_passport_claim: boolean
+    star_record_claim: boolean
     golden_bug_clear: boolean
     fertilizer_gift: boolean
     fertilizer_buy_organic: boolean
@@ -97,6 +99,8 @@ function isFastMatureFertilizerMode(mode: string) {
       <div class="grid grid-cols-2 gap-3 md:grid-cols-3">
         <BaseSwitch v-model="settings.automation.farm" label="自动种植收获" />
         <BaseSwitch v-model="settings.automation.task" label="自动做任务" />
+        <BaseSwitch v-model="settings.automation.star_passport_claim" label="自动领取千星游记" />
+        <BaseSwitch v-model="settings.automation.star_record_claim" label="自动领取观星礼录" />
         <BaseSwitch v-model="settings.automation.sell" label="自动卖果实" />
         <BaseSwitch v-model="settings.automation.friend" label="自动好友互动" />
         <BaseSwitch v-model="settings.automation.farm_push" label="推送触发巡田" />

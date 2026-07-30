@@ -132,6 +132,8 @@ async function loadProto() {
     types.BuyMysteryShopReply = root.lookupType('gamepb.mysteryshoppb.BuyReply');
     types.AbandonMysteryShopRequest = root.lookupType('gamepb.mysteryshoppb.AbandonRequest');
     types.AbandonMysteryShopReply = root.lookupType('gamepb.mysteryshoppb.AbandonReply');
+    types.RefreshVipInfoRequest = root.lookupType('gamepb.qqvippb.RefreshVipInfoRequest');
+    types.RefreshVipInfoReply = root.lookupType('gamepb.qqvippb.RefreshVipInfoReply');
     types.GetQQVipRewardsStatusRequest = root.lookupType('gamepb.qqvippb.GetQQVipRewardsStatusRequest');
     types.GetQQVipRewardsStatusReply = root.lookupType('gamepb.qqvippb.GetQQVipRewardsStatusReply');
     types.ClaimQQVipRewardsRequest = root.lookupType('gamepb.qqvippb.ClaimQQVipRewardsRequest');
