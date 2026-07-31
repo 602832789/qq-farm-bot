@@ -1,16 +1,20 @@
 # QQ 农场多账号挂机 + Web 面板
 
-基于 Node.js 的 QQ 农场自动化工具，支持多账号管理、Web 控制面板、实时日志与数据分析。
+基于 Node.js 的 QQ 农场自动化工具，支持多账号管理、Web 控制面板、实时日志、活动中心与数据分析。
 
 > 📖 喜欢的点一个 star ⭐ 吧！
 >
-> 🔐 默认账号密码都是 `admin`，端口 `3007`，请部署登录后尽快修改密码！
+> 🔐 默认面板管理员账号/密码都是 `admin`，端口 `3007`，请部署登录后尽快修改密码！
 
 ---
 
 ## 功能截图
 
 <div align="center">
+  <img src="https://free.picui.cn/free/2026/07/31/6a6c6cf9386ed.png" alt="功能截图" width="45%" />
+  <img src="https://free.picui.cn/free/2026/07/31/6a6c6cf94b80e.png" alt="功能截图" width="45%" />
+  <img src="https://free.picui.cn/free/2026/07/31/6a6c6cf941c24.png" alt="功能截图" width="45%" />
+  <img src="https://free.picui.cn/free/2026/07/31/6a6c6cf83a963.png" alt="功能截图" width="45%" />
   <img src="https://free.picui.cn/free/2026/05/09/69fefa26411d9.png" alt="功能截图" width="45%" />
   <img src="https://free.picui.cn/free/2026/05/09/69fefa25d5f5b.png" alt="功能截图" width="45%" />
   <img src="https://free.picui.cn/free/2026/05/09/69fefa269814f.png" alt="功能截图" width="45%" />
@@ -26,18 +30,25 @@
 ### 🌾 核心功能
 
 - **多账号管理** — 同时挂机多个 QQ 农场账号，独立配置策略
-- **Code 登录** — 通过抓包获取 code 登录游戏账号
+- **Code / 扫码登录** — 支持抓包 code 和微信小程序二维码登录游戏账号
 - **自动化农场** — 自动种植、浇水、施肥、收获、偷菜
 - **智能施肥** — 支持有机肥/普通肥/智能施肥模式，多季作物自动补肥
 - **化肥自动购买** — 定时检测并自动购买化肥（有机肥/普通肥分别配置）
 - **好友互动** — 自动访问好友农场、除草除虫、批量操作
-- **数据分析** — 作物收益统计、种植策略推荐、黑名单管理
+- **数据分析** — 作物收益统计、种植策略推荐、游戏配置查询与黑名单管理
+
+### ✨ 活动中心
+
+- **千星游记** — 查看赛季进度，领取可用游记奖励
+- **观星礼录** — 点亮星座并领取星宿奖励
+- **星砂商店** — 查看星砂余额，兑换当前活动商品
+- **节令活动** — 查看当前节令并领取开放奖励
 
 ### 🎫 用户系统
 
 - **卡密管理** — 支持时间卡密和额度卡密，批量创建与导出
 - **卡密领取** — 用户注册时可免费领取时间卡密（管理员可开关）
-- **用户认证** — 完整的登录注册系统，JWT 令牌认证
+- **用户认证** — 完整的登录注册系统，服务端 Token 令牌认证
 
 ### 📡 通知与面板
 
@@ -78,6 +89,7 @@
 qq-farm-bot/
 ├── core/                          # 后端（Node.js 机器人引擎）
 │   ├── src/
+│   │   ├── activity-data/         # 活动中心静态数据
 │   │   ├── config/                # 配置管理 & 游戏配置
 │   │   ├── controllers/admin/     # HTTP API 路由（账号、农场、好友、认证）
 │   │   ├── core/                  # Worker 进程管理
@@ -89,15 +101,17 @@ qq-farm-bot/
 │   │   ├── proto/                 # Protobuf 协议定义（20+ .proto 文件）
 │   │   ├── runtime/               # 运行时引擎、状态管理、Worker 调度
 │   │   ├── services/              # 业务逻辑
+│   │   │   ├── activity-center.ts # 活动中心（游记、星座、商店、节令）
 │   │   │   ├── farm/              # 农场核心（种植、土地分析、调度）
 │   │   │   └── friend/            # 好友系统（访问策略、GID 管理、调度）
 │   │   ├── types/                 # TypeScript 类型定义
 │   │   └── utils/                 # 工具函数（加密 WASM、网络、Proto 解析）
-│   └── data/                      # 运行时数据（accounts.json、store.json）
+│   └── data/                      # 运行时数据（账号、用户、卡密、日志等）
 ├── web/                           # 前端（Vue 3 + Vite）
 │   ├── src/
 │   │   ├── api/                   # API 客户端 & Socket.io 连接
 │   │   ├── components/            # 通用组件（LandCard、BagPanel、Modal 等）
+│   │   │   ├── activity/          # 活动中心组件
 │   │   │   └── ui/                # 基础 UI 组件（Button、Input、Select、Switch）
 │   │   ├── layouts/               # 页面布局（DefaultLayout）
 │   │   ├── router/                # 路由配置 & 菜单定义
@@ -105,12 +119,20 @@ qq-farm-bot/
 │   │   └── views/                 # 页面视图
 │   │       ├── Dashboard.vue      # 概览 — 实时状态、日志、快捷操作
 │   │       ├── Personal.vue       # 个人 — 仓库、背包、作物管理
+│   │       ├── ActivityCenter.vue # 活动 — 游记、星座、星砂商店、节令
 │   │       ├── Friends.vue        # 好友 — 访问、互动、黑名单
 │   │       ├── Analytics.vue      # 分析 — 收益统计、种植策略
 │   │       ├── Settings.vue       # 设置 — 账号、策略、自动化、用户
+│   │       ├── ConfigManage.vue   # 游戏配置 — 种子、果实、道具查询与维护
 │   │       ├── AdminPanel.vue     # 后台 — 系统管理（管理员）
 │   │       └── Login.vue          # 登录页
+│   ├── public/
+│   │   └── activity-center/       # 活动中心静态图片资源
 │   └── dist/                      # 构建产物
+├── tools/                         # 游戏配置 / 图片下载工具
+│   ├── README.md                  # 工具说明
+│   ├── download-game-config.js    # 下载并解析游戏配置
+│   └── download-game-images.js    # 下载游戏图片资源
 ├── docker-compose.yml             # Docker Compose 配置
 ├── pnpm-workspace.yaml            # pnpm 工作区
 └── package.json                   # 根 package.json（统一脚本）
@@ -152,7 +174,7 @@ $env:ADMIN_PORT="你的新端口"
 pnpm dev:core
 ```
 
-### 方式一：源码运行（Linux）
+### 方式二：源码运行（Linux）
 
 建议使用宝塔面板部署最为便捷，在网站其他项目选项中按照如图所示配置即可：
 
@@ -173,12 +195,15 @@ pnpm dev:core
 
 ---
 
-### 方式二：Docker 部署
+### 方式三：Docker 部署
 
 ```bash
 # 拉取仓库
 git clone https://github.com/XyhTender/qq-farm-bot.git
 cd qq-farm-bot
+
+# （可选）修改根目录 .env 中的 PORT，调整宿主机访问端口
+# PORT=3008
 
 # 构建并后台启动
 docker compose up -d --build
@@ -190,11 +215,11 @@ docker compose logs -f
 docker compose down
 ```
 
-浏览器访问 `http://你的IP:3007`
+浏览器访问 `http://你的IP:3007`；如果修改了 `.env` 的 `PORT`，请使用对应端口访问。
 
 ---
 
-### 方式三：二进制发布版（无需 Node.js）
+### 方式四：二进制发布版（无需 Node.js）
 
 #### 构建
 
@@ -222,7 +247,7 @@ pnpm package:release
 chmod +x ./qq-farm-bot && ./qq-farm-bot
 ```
 
-程序会在可执行文件同级目录自动创建 `data/` 并写入 `store.json`、`accounts.json`。
+程序会在可执行文件同级目录自动创建 `data/`，并写入账号、用户、卡密、日志和活动状态等运行数据。
 
 ---
 
@@ -232,9 +257,13 @@ chmod +x ./qq-farm-bot && ./qq-farm-bot
 
 | 变量名 | 默认值 | 说明 |
 |--------|--------|------|
-| `ADMIN_PORT` | `3007` | Web 面板端口 |
-| `ADMIN_USER` | `admin` | 管理员用户名 |
-| `ADMIN_PASS` | `admin` | 管理员密码 |
+| `ADMIN_PORT` | `3007` | Web 面板监听端口；源码运行时可直接设置，Docker 容器内固定为 `3007` |
+| `PORT` | `3007` | Docker Compose 对外映射端口（读取根目录 `.env`） |
+| `TZ` | `Asia/Shanghai` | Docker 容器时区 |
+| `NODE_ENV` | `production` | Docker 运行环境 |
+| `LOG_LEVEL` | `info` | 服务端日志级别 |
+
+> 管理员账号不是通过环境变量配置的。首次运行会自动创建 `admin` / `admin`，登录后请在面板中修改密码。
 
 ### 种植策略
 
@@ -263,9 +292,22 @@ chmod +x ./qq-farm-bot && ./qq-farm-bot
 ## 登录与安全
 
 - 面板首次访问需要登录
-- 默认管理账号：`admin` / `admin`
+- 首次运行会自动创建默认管理员：`admin` / `admin`
 - ⚠️ **建议部署后立即修改为强密码**
-- 支持 JWT 令牌认证，Token 有效期可配置
+- 用户和卡密数据保存在 `data/users.json`、`data/cards.json`
+- 登录失败会记录日志，并启用 IP 频率限制与账户锁定
+- 会话 Token 保存在服务端内存中，退出登录、账号过期/封禁或服务重启后需重新登录
+
+---
+
+## 辅助工具
+
+`tools/` 目录提供独立的游戏配置与图片下载工具：
+
+- `node tools/download-game-config.js` — 从微信小程序 CDN 下载并解析 `ItemInfo.json`、`Plant.json`、`RoleLevel.json`、`Land.json`
+- `node tools/download-game-images.js` — 根据配置下载种子、果实和道具图片
+
+工具默认输出到 `tools/json` 和 `tools/img`，不会自动覆盖 `core/src/gameConfig`；正式更新游戏配置前请先人工核对差异。
 
 ---
 
