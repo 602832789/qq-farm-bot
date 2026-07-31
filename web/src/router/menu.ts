@@ -5,6 +5,9 @@ export interface MenuItem {
   icon: string
   component: () => Promise<any>
   adminOnly?: boolean
+  meta?: {
+    fullBleed?: boolean
+  }
 }
 
 export const menuRoutes: MenuItem[] = [
@@ -22,14 +25,14 @@ export const menuRoutes: MenuItem[] = [
     icon: '🌾',
     component: () => import('@/views/Personal.vue'),
   },
-  // 暂时隐藏活动菜单，抽奖功能还有 bug 待修复
-  // {
-  //   path: 'activity',
-  //   name: 'activity',
-  //   label: '活动',
-  //   icon: '🎉',
-  //   component: () => import('@/views/Activity.vue'),
-  // },
+  {
+    path: 'activity',
+    name: 'activity-center',
+    label: '活动',
+    icon: '✨',
+    component: () => import('@/views/ActivityCenter.vue'),
+    meta: { fullBleed: true },
+  },
   {
     path: 'friends',
     name: 'friends',

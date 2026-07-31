@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package gamepb.plantpb;
 
+import "corepb.proto";
+
 // ============ 生长阶段枚举 ============
 enum PlantPhase {
     PHASE_UNKNOWN = 0;
@@ -193,11 +195,19 @@ message WaterLandReply {
 message FarmingRequest {
     repeated int64 land_ids = 1;
     int64 host_gid = 2;
+    int32 field_3 = 3; // 场景字段，普通好友抓包值为 0
+    int32 field_4 = 4; // 场景字段，普通好友抓包值为 2
+}
+
+message FarmingResult {
+    int64 land_id = 1;
+    corepb.Item reward = 2;
 }
 
 message FarmingReply {
     repeated LandInfo land = 1;
     repeated OperationLimit operation_limits = 2;
+    repeated FarmingResult results = 3;
 }
 
 // --- 除草 (旧版兼容) ---
@@ -300,17 +310,6 @@ message UnlockLandRequest {
 
 message UnlockLandReply {
     LandInfo land = 1;
-}
-
-// --- 检查能否操作 ---
-message CheckCanOperateRequest {
-    int64 host_gid = 1;
-    int64 operation_id = 2;
-}
-
-message CheckCanOperateReply {
-    bool can_operate = 1;
-    int64 can_steal_num = 2;
 }
 
 // --- 放置社交道具 (如友谊果实) ---

@@ -25,6 +25,8 @@ const FERTILIZER_LAND_TYPE_SET: Set<string> = new Set(DEFAULT_FERTILIZER_LAND_TY
 const INTERVAL_MAX_SEC: number = 86400;
 const DEFAULT_KNOWN_FRIEND_GID_SYNC_COOLDOWN_SEC: number = 300;
 const DEFAULT_FRIENDS_LIST_CACHE_TTL_SEC: number = 60;
+const PREVIOUS_DEFAULT_CLIENT_VERSION: string = '1.12.5.29_20260721';
+let systemConfigMigrated: boolean = false;
 
 const DEFAULT_OFFLINE_REMINDER: OfflineReminder = {
     channel: 'webhook',
@@ -453,8 +455,14 @@ function loadGlobalConfig(): void {
                 const srcDevice = (data.systemConfig.deviceInfo && typeof data.systemConfig.deviceInfo === 'object')
                     ? data.systemConfig.deviceInfo : {};
                 const deviceOs = String(srcDevice.os || data.systemConfig.os || 'Windows').trim();
-                const deviceClientVersion = String(srcDevice.clientVersion || data.systemConfig.clientVersion || DEFAULT_CLIENT_VERSION).trim();
-                globalConfig.systemConfig = {
+                const savedTopVersion = String(data.systemConfig.clientVersion || '').trim();
+                const savedDeviceVersion = String(srcDevice.clientVersion || '').trim();
+                const customDeviceVersion = savedDeviceVersion && savedDeviceVersion !== PREVIOUS_DEFAULT_CLIENT_VERSION
+                    ? savedDeviceVersion : '';
+                const customTopVersion = savedTopVersion && savedTopVersion !== PREVIOUS_DEFAULT_CLIENT_VERSION
+                    ? savedTopVersion : '';
+                const deviceClientVersion = customDeviceVersion || customTopVersion || DEFAULT_CLIENT_VERSION;
+                const normalizedSystemConfig = {
                     serverUrl: String(data.systemConfig.serverUrl || '').trim(),
                     clientVersion: deviceClientVersion,
                     platform: String(data.systemConfig.platform || 'qq').trim(),
@@ -462,13 +470,16 @@ function loadGlobalConfig(): void {
                     deviceInfo: {
                         os: deviceOs,
                         clientVersion: deviceClientVersion,
-                        sysSoftware: String(srcDevice.sysSoftware || 'Windows 10').trim(),
+                        sysSoftware: String(srcDevice.sysSoftware || 'Windows').trim(),
                         network: String(srcDevice.network || 'wifi').trim(),
                         memory: String(srcDevice.memory || '16384').trim(),
                         deviceId: String(srcDevice.deviceId || 'DESKTOP-PC<WPC>').trim(),
                         userAgent: String(srcDevice.userAgent || '').trim(),
                     },
                 };
+                systemConfigMigrated = savedTopVersion !== deviceClientVersion
+                    || savedDeviceVersion !== deviceClientVersion;
+                globalConfig.systemConfig = normalizedSystemConfig;
             }
         }
     } catch (e: any) {
@@ -492,11 +503,14 @@ module.exports = {
     DEFAULT_FRIENDS_LIST_CACHE_TTL_SEC,
     DEFAULT_OFFLINE_REMINDER,
     DEFAULT_ACCOUNT_CONFIG,
+    PREVIOUS_DEFAULT_CLIENT_VERSION,
     ALLOWED_AUTOMATION_KEYS,
     // Mutable shared state (by reference)
     globalConfig,
     get accountFallbackConfig() { return accountFallbackConfig; },
     set accountFallbackConfig(v: AccountConfig) { accountFallbackConfig = v; },
+    get systemConfigMigrated() { return systemConfigMigrated; },
+    set systemConfigMigrated(v: boolean) { systemConfigMigrated = !!v; },
     // Helpers
     normalizeKnownFriendGids,
     normalizeKnownFriendGidSyncCooldownSec,

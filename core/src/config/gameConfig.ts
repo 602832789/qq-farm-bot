@@ -88,6 +88,13 @@ interface SeedInfo {
     harvestCount: number;
 }
 
+interface LandConfigItem {
+    id: number;
+    grid_x: number;
+    grid_y: number;
+    [key: string]: any;
+}
+
 // ============ 等级经验表 ============
 let roleLevelConfig: RoleLevelItem[] | null = null;
 let levelExpTable: number[] | null = null;
@@ -100,6 +107,13 @@ const fruitToPlant = new Map<number, PlantItem>();
 let itemInfoConfig: ItemInfo[] | null = null;
 const itemInfoMap = new Map<number, ItemInfo>();
 const seedItemMap = new Map<number, ItemInfo>();
+let landConfig: LandConfigItem[] | null = null;
+const landConfigMap = new Map<number, LandConfigItem>();
+const landCoordinateMap = new Map<string, LandConfigItem>();
+
+function getLandCoordinateKey(gridX: number, gridY: number): string {
+    return `${gridX},${gridY}`;
+}
 
 /**
  * 加载配置文件
@@ -170,6 +184,27 @@ function loadConfigs(): void {
         }
     } catch (e: any) {
         console.warn('[配置] 加载 ItemInfo.json 失败:', e.message);
+    }
+
+    // 加载土地网格配置（多格作物布局）
+    try {
+        const landPath = path.join(configDir, 'Land.json');
+        if (fs.existsSync(landPath)) {
+            landConfig = JSON.parse(fs.readFileSync(landPath, 'utf8'));
+            landConfigMap.clear();
+            landCoordinateMap.clear();
+            for (const land of landConfig!) {
+                const id = Number(land && land.id) || 0;
+                const gridX = Number(land && land.grid_x);
+                const gridY = Number(land && land.grid_y);
+                if (id <= 0 || !Number.isInteger(gridX) || !Number.isInteger(gridY)) continue;
+                landConfigMap.set(id, land);
+                landCoordinateMap.set(getLandCoordinateKey(gridX, gridY), land);
+            }
+            console.warn(`[配置] 已加载土地网格配置 (${landConfigMap.size} 块)`);
+        }
+    } catch (e: any) {
+        console.warn('[配置] 加载 Land.json 失败:', e.message);
     }
 
 }
@@ -349,6 +384,19 @@ function getPlantMap(): Map<number, PlantItem> {
     return plantMap;
 }
 
+function getLandConfigById(landId: number): LandConfigItem | undefined {
+    return landConfigMap.get(Number(landId) || 0);
+}
+
+function getLandConfigByCoordinate(gridX: number, gridY: number): LandConfigItem | undefined {
+    if (!Number.isInteger(gridX) || !Number.isInteger(gridY)) return undefined;
+    return landCoordinateMap.get(getLandCoordinateKey(gridX, gridY));
+}
+
+function getAllLandConfigs(): LandConfigItem[] {
+    return Array.from(landConfigMap.values());
+}
+
 // 启动时加载配置
 loadConfigs();
 
@@ -382,4 +430,7 @@ module.exports = {
     getItemsByType,
     getItemInfoMap,
     getPlantMap,
+    getLandConfigById,
+    getLandConfigByCoordinate,
+    getAllLandConfigs,
 };

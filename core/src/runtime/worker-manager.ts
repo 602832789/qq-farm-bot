@@ -113,6 +113,7 @@ function createWorkerManager(options: WorkerManagerOptions) {
             stopping: false,
             disconnectedSince: 0,
             autoDeleteTriggered: false,
+            terminalHandled: false,
             wsError: null,
         };
 
@@ -126,7 +127,7 @@ function createWorkerManager(options: WorkerManagerOptions) {
         child.send({ type: 'config_sync', config: buildConfigSnapshotForAccount(account.id) });
 
         child.on('message', (msg: any) => {
-            handleWorkerMessage(account.id, msg);
+            handleWorkerMessage(account.id, child, msg);
         });
 
         child.on('error', (err: any) => {
@@ -135,7 +136,8 @@ function createWorkerManager(options: WorkerManagerOptions) {
 
         child.on('exit', (code: number, signal: string) => {
             const current = workers[account.id];
-            const displayName = (current && current.name) || account.name;
+            if (!current || current.process !== child) return;
+            const displayName = current.name || account.name;
             log('系统', `账号 ${displayName} 进程退出 (code=${code}, signal=${signal || 'none'})`, {
                 accountId: String(account.id),
                 accountName: displayName,
@@ -217,9 +219,17 @@ function createWorkerManager(options: WorkerManagerOptions) {
         });
     }
 
-    function handleWorkerMessage(accountId: string, msg: any): void {
+    function errorFromWorkerPayload(payload: any): Error & { code?: string | number } {
+        if (!payload || typeof payload !== 'object') return new Error(String(payload || 'Worker API error'));
+        const error: Error & { code?: string | number } = new Error(String(payload.message || 'Worker API error'));
+        if (payload.name) error.name = String(payload.name);
+        if (payload.code !== undefined && payload.code !== null && payload.code !== '') error.code = payload.code;
+        return error;
+    }
+
+    function handleWorkerMessage(accountId: string, sourceProcess: any, msg: any): void {
         const worker = workers[accountId];
-        if (!worker) return;
+        if (!worker || worker.process !== sourceProcess) return;
 
         if (msg.type === 'status_sync') {
             worker.status = normalizeStatusForPanel(msg.data, accountId, worker.name);
@@ -297,7 +307,13 @@ function createWorkerManager(options: WorkerManagerOptions) {
                 onWorkerLog(logEntry, accountId, worker.name);
             }
         } else if (msg.type === 'error') {
-            log('错误', `账号[${accountId}]进程报错: ${msg.error}`, { accountId: String(accountId), accountName: worker.name });
+            const workerError = errorFromWorkerPayload(msg.error);
+            log('错误', `账号[${accountId}]进程报错: ${workerError.message}`, {
+                accountId: String(accountId),
+                accountName: worker.name,
+                errorCode: workerError.code,
+                errorName: workerError.name,
+            });
         } else if (msg.type === 'ws_error') {
             const code = Number(msg.code) || 0;
             const message = msg.message || '';
@@ -311,6 +327,8 @@ function createWorkerManager(options: WorkerManagerOptions) {
                 );
             }
         } else if (msg.type === 'account_kicked') {
+            if (worker.terminalHandled) return;
+            worker.terminalHandled = true;
             const reason = msg.reason || '未知';
             log('系统', `账号 ${worker.name} 被踢下线，已自动停止账号`, { accountId: String(accountId), accountName: worker.name });
             triggerOfflineReminder({
@@ -321,12 +339,49 @@ function createWorkerManager(options: WorkerManagerOptions) {
             });
             addAccountLog('kickout_stop', `账号 ${worker.name} 被踢下线，已自动停止`, accountId, worker.name, { reason });
             stopWorker(accountId);
+        } else if (msg.type === 'account_disconnected') {
+            if (worker.terminalHandled) return;
+            worker.terminalHandled = true;
+            const source = String(msg.source || 'ws_close');
+            const code = Number(msg.code) || 0;
+            const reason = String(msg.reason || '连接已断开');
+            const phase = String(msg.phase || 'unknown');
+            if (worker.status?.connection) worker.status.connection.connected = false;
+            if (worker.requests.size > 0) {
+                for (const [reqId, req] of worker.requests.entries()) {
+                    managerScheduler.clear(`api_timeout_${accountId}_${reqId}`);
+                    try { req.reject(new Error('账号连接已断开')); } catch {}
+                }
+                worker.requests.clear();
+            }
+            log('系统', `账号 ${worker.name} 连接已断开，已停止运行并等待重新扫码`, {
+                accountId: String(accountId),
+                accountName: worker.name,
+                source,
+                code,
+                phase,
+            });
+            triggerOfflineReminder({
+                accountId,
+                accountName: worker.name,
+                username: worker.username,
+                reason: `disconnect:${source}:${phase}:${code}`,
+                offlineMs: 0,
+            });
+            addAccountLog(
+                'disconnect_stop',
+                `账号 ${worker.name} 连接已断开，已停止运行并等待重新扫码`,
+                accountId,
+                worker.name,
+                { source, code, reason, phase, connectionId: Number(msg.connectionId) || 0 },
+            );
+            stopWorker(accountId);
         } else if (msg.type === 'api_response') {
             const { id, result, error } = msg;
             managerScheduler.clear(`api_timeout_${accountId}_${id}`);
             const req = worker.requests.get(id);
             if (req) {
-                if (error) req.reject(new Error(error));
+                if (error) req.reject(errorFromWorkerPayload(error));
                 else req.resolve(result);
                 worker.requests.delete(id);
             }
@@ -353,6 +408,7 @@ function createWorkerManager(options: WorkerManagerOptions) {
     function callWorkerApi(accountId: string, method: string, ...args: any[]): Promise<any> {
         const worker = workers[accountId];
         if (!worker) return Promise.reject(new Error('账号未运行'));
+        if (worker.stopping || worker.terminalHandled) return Promise.reject(new Error('账号已离线'));
 
         return new Promise((resolve, reject) => {
             const id = worker.reqId++;

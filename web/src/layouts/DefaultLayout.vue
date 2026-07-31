@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia'
 import { onMounted, onUnmounted } from 'vue'
+import { useRoute } from 'vue-router'
 import Sidebar from '@/components/Sidebar.vue'
 import { useAppStore } from '@/stores/app'
 
 const appStore = useAppStore()
+const route = useRoute()
 const { sidebarOpen } = storeToRefs(appStore)
 
 onMounted(() => {
@@ -29,7 +31,7 @@ onUnmounted(() => {
 
     <main class="relative h-full min-w-0 flex flex-1 flex-col overflow-hidden">
       <!-- Top Bar (Mobile/Tablet only or for additional actions) -->
-      <header class="h-16 flex shrink-0 items-center justify-between border-b-3 border-[#8b6914]/30 bg-gradient-to-r from-[#f5e6c8] to-[#fef9ef] px-6 lg:hidden dark:border-gray-700/50 dark:bg-gray-800">
+      <header v-if="!route.meta.fullBleed" class="h-16 flex shrink-0 items-center justify-between border-b-3 border-[#8b6914]/30 bg-gradient-to-r from-[#f5e6c8] to-[#fef9ef] px-6 lg:hidden dark:border-gray-700/50 dark:bg-gray-800">
         <div class="font-display text-lg text-[#3d2b1f]">
           🌾 QQ农场智能助手
         </div>
@@ -43,10 +45,13 @@ onUnmounted(() => {
 
       <!-- Main Content Area -->
       <div class="flex flex-1 flex-col overflow-hidden">
-        <div class="custom-scrollbar flex flex-1 flex-col overflow-y-auto p-2 md:p-6 sm:p-4">
-          <RouterView v-slot="{ Component, route }">
+        <div
+          class="custom-scrollbar flex flex-1 flex-col"
+          :class="route.meta.fullBleed ? 'overflow-hidden p-0' : 'overflow-y-auto p-2 md:p-6 sm:p-4'"
+        >
+          <RouterView v-slot="{ Component, route: currentRoute }">
             <Transition name="slide-fade" mode="out-in">
-              <component :is="Component" :key="route.path" />
+              <component :is="Component" :key="currentRoute.path" />
             </Transition>
           </RouterView>
         </div>

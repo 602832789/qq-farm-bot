@@ -2,22 +2,6 @@ syntax = "proto3";
 
 package gamepb.activitypb;
 
-import "corepb.proto";
-
-// ============ 活动服务 ============
-
-// --- 活动组信息 (GroupInfo, 嵌套在 ActivityGroup.field 1) ---
-message GroupInfo {
-    int64 group_id = 1;
-    int64 status = 3;
-    string name = 4;
-    int64 begin_time = 6;
-    int64 end_time = 7;
-    int64 sort_order = 8;
-    int64 field_20 = 20;
-}
-
-// --- 活动内容 (嵌套在 ActivityItem.field 1) ---
 message ActivityContent {
     int64 activity_id = 1;
     int64 group_id = 2;
@@ -31,49 +15,91 @@ message ActivityContent {
     int64 field_23 = 23;
 }
 
-// --- 活动项 (ActivityItem, 嵌套在 ActivityGroup.field 2) ---
 message ActivityItem {
-    ActivityContent content = 1;
-    bytes field_105 = 105;
+    int64 item_id = 1;
+    int64 count = 2;
 }
 
-// --- 活动组 (ActivityGroup, 嵌套在 GetGroupReply.field 1) ---
-message ActivityGroup {
-    GroupInfo info = 1;
-    repeated ActivityItem activities = 2;
+message StarSandGoods {
+    int64 goods_id = 1;
+    ActivityItem item = 2;
+    ActivityItem cost = 3;
+    int64 status = 4; // Previously decoded as field_4.
+    bool owned = 5;
+    int64 sort_order = 6;
+    bytes name = 7;
+    bytes resource_json = 8;
+    int64 field_10 = 10;
+    int64 field_11 = 11;
+    bytes category = 12;
 }
 
-// --- 获取活动列表 ---
-message ListRequest {}
-
-message ListReply {
-    repeated ActivityContent activities = 1;
+message StarSandGoodsList {
+    repeated StarSandGoods goods = 1;
 }
 
-// --- 获取活动组 ---
-message GetGroupRequest {
+message ConstellationNode {
+    int64 node_id = 1;
+    bool field_2 = 2;
+    bool field_3 = 3;
+    bool field_4 = 4;
+    repeated ActivityItem rewards = 5;
+}
+
+message ConstellationGroup {
     int64 group_id = 1;
+    bool field_2 = 2;
+    string name = 3;
+    string links = 4;
+    string config_json = 5;
 }
 
-message GetGroupReply {
-    ActivityGroup group = 1;
+message ConstellationData {
+    int64 field_1 = 1;
+    int64 field_2 = 2;
+    int64 field_3 = 3;
+    repeated ConstellationNode nodes = 4;
+    repeated ConstellationGroup groups = 5;
 }
 
-// --- 活动操作 (参与/领取奖励) ---
-message OperateRequest {
+message ActivityData {
+    ActivityContent activity = 1;
+    StarSandGoodsList catalog = 102;
+    ConstellationData constellation = 110;
+}
+
+// ActivityService.Operate selectors are fixed by the callers below. No generic
+// operate_type is exposed by the HTTP API.
+message QueryActivityRequest {
     int64 activity_id = 1;
-    int32 operate_type = 2;     // 操作类型
-    int64 param = 3;            // 附加参数
+    int64 operate_type = 2;
 }
 
-message OperateReply {
+message ExchangeShopOperateParams {
+    int64 goods_id = 1;
+    int64 count = 2;
+}
+
+message ExchangeShopRequest {
     int64 activity_id = 1;
-    int64 result = 2;
-    bytes data = 3;
-    bytes rewards = 108;
+    int64 operate_type = 2;
+    ExchangeShopOperateParams exchange_shop_operate = 101;
 }
 
-// --- 活动变更通知 ---
+message OperateConstellationRequest {
+    message Empty {}
+
+    int64 activity_id = 1;
+    int64 operate_type = 2;
+    Empty field_119 = 119;
+}
+
+message ActivityOperateReply {
+    int64 activity_id = 1;
+    int64 operate_type = 2;
+    ActivityData data = 3;
+}
+
 message ActiviesChangeNotify {
     repeated ActivityContent activities = 1;
 }

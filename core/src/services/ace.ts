@@ -1,48 +1,71 @@
 export {};
 /**
- * 反作弊服务 - 定期上报 AntiData
- * 从抓包看，客户端每 ~5 秒发送一次
+ * TSDK/ACE 生命周期 - 提取客户端安全数据并回灌服务端响应
  */
 
-const { sendMsgAsync } = require('../utils/network');
+const { createScheduler } = require('./scheduler');
 const { types } = require('../utils/proto');
-const { log } = require('../utils/utils');
+const cryptoWasm = require('../utils/crypto-wasm');
+const { log, logWarn } = require('../utils/utils');
 
-let antiDataTimer: ReturnType<typeof setInterval> | null = null;
-const ANTI_DATA_INTERVAL = 5000; // 5秒
+const aceScheduler = createScheduler('ace');
+let requestRunning = false;
+let readyLogged = false;
+let sendRequest: ((service: string, method: string, body: Buffer, timeout?: number) => Promise<any>) | null = null;
+let lastSpeedCheckAt = 0;
 
 async function sendAntiData(): Promise<void> {
+    if (!sendRequest || requestRunning) return;
+    const data = cryptoWasm.getDataToServer();
+    if (!data || data.length === 0) return;
+
+    requestRunning = true;
     try {
-        const body: Uint8Array = types.AntiDataRequest.encode(types.AntiDataRequest.create({
-            data: '{}',
-            timestamp: Date.now(),
-            device_id: '',
-            platform: 0,
-        })).finish();
-        await sendMsgAsync('gamepb.acepb.AceService', 'AntiData', body, 5000);
-    } catch {
-        // 静默失败，不影响主流程
+        const body: Uint8Array = types.AntiDataRequest.encode(types.AntiDataRequest.create({ data })).finish();
+        const { body: replyBody } = await sendRequest('gamepb.acepb.AceService', 'AntiData', Buffer.from(body), 10000);
+        const reply = types.AntiDataReply.decode(replyBody);
+        if (reply.result && reply.result.length > 0) {
+            cryptoWasm.sendDataFromServer(Buffer.from(reply.result));
+            if (!readyLogged) {
+                readyLogged = true;
+                log('ACE', `AntiData 链路正常: 上报 ${data.length} 字节，回灌 ${reply.result.length} 字节`);
+            }
+        }
+    } catch (e: any) {
+        logWarn('ACE', `AntiData 上报失败: ${e.message}`);
+    } finally {
+        requestRunning = false;
     }
 }
 
-function startAntiDataLoop(): void {
-    stopAntiDataLoop();
-    antiDataTimer = setInterval(() => {
-        sendAntiData();
-    }, ANTI_DATA_INTERVAL);
-    // 启动时立即发一次
-    sendAntiData();
+function startAceRuntime(sender: (service: string, method: string, body: Buffer, timeout?: number) => Promise<any>): void {
+    stopAceRuntime(false);
+    sendRequest = sender;
+    readyLogged = false;
+    lastSpeedCheckAt = Date.now();
+
+    aceScheduler.setIntervalTask('anti_data', 5000, sendAntiData, { preventOverlap: true });
+    aceScheduler.setIntervalTask('process_received_data', 5000, () => cryptoWasm.processReceivedData());
+    aceScheduler.setIntervalTask('heartbeat_tick', 25000, () => cryptoWasm.heartbeatTick());
+    aceScheduler.setIntervalTask('speed_check', 30000, () => {
+        const now = Date.now();
+        cryptoWasm.detectSpeedHack(now - lastSpeedCheckAt);
+        lastSpeedCheckAt = now;
+    });
+    aceScheduler.setIntervalTask('status_report', 150000, () => cryptoWasm.sendStatus());
 }
 
-function stopAntiDataLoop(): void {
-    if (antiDataTimer) {
-        clearInterval(antiDataTimer);
-        antiDataTimer = null;
-    }
+function stopAceRuntime(destroyWasm = false): void {
+    aceScheduler.clearAll();
+    requestRunning = false;
+    readyLogged = false;
+    sendRequest = null;
+    lastSpeedCheckAt = 0;
+    if (destroyWasm) cryptoWasm.destroyWasm();
 }
 
 module.exports = {
     sendAntiData,
-    startAntiDataLoop,
-    stopAntiDataLoop,
+    startAceRuntime,
+    stopAceRuntime,
 };

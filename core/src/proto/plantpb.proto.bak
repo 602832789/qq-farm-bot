@@ -277,17 +277,6 @@ message UnlockLandReply {
     LandInfo land = 1;
 }
 
-// --- 检查能否操作 ---
-message CheckCanOperateRequest {
-    int64 host_gid = 1;
-    int64 operation_id = 2;
-}
-
-message CheckCanOperateReply {
-    bool can_operate = 1;
-    int64 can_steal_num = 2;
-}
-
 // --- 放置社交道具 (如友谊果实) ---
 message PutSocialItemRequest {
     int64 host_gid = 1;       // 好友农场GID

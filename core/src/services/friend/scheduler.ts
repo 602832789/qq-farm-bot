@@ -26,6 +26,7 @@ const {
     visitFriendForSteal,
     visitFriendForHelp,
     inFriendQuietHours,
+    clearFriendsListCache,
 } = require('./visit-strategy');
 
 // ============ 内部状态 ============
@@ -40,6 +41,7 @@ const operationLimits: Map<number, any> = new Map();
 let canGetHelpExp: boolean = true;
 let helpAutoDisabledByLimit: boolean = false;
 let badExecutedOnStartup: boolean = false;
+let badOperationLimitReached: boolean = false;
 
 const OP_NAMES: Record<number, string> = {
     10001: '浇水',
@@ -73,6 +75,7 @@ export function checkDailyReset(): void {
         }
         operationLimits.clear();
         canGetHelpExp = true;
+        badOperationLimitReached = false;
         if (helpAutoDisabledByLimit) {
             helpAutoDisabledByLimit = false;
             log('好友', '新的一天已开始，自动恢复帮忙操作功能', {
@@ -83,6 +86,25 @@ export function checkDailyReset(): void {
         }
         lastResetDate = today;
     }
+}
+
+export function isBadOperationLimitReached(): boolean {
+    checkDailyReset();
+    return badOperationLimitReached;
+}
+
+export function markBadOperationLimitReached(method: string = ''): boolean {
+    checkDailyReset();
+    if (badOperationLimitReached) return false;
+    badOperationLimitReached = true;
+    log('好友', '今日放虫/放草次数已达上限，停止两类操作', {
+        module: 'friend',
+        event: '放虫放草次数上限',
+        result: 'limit',
+        code: 1001046,
+        method: String(method || ''),
+    });
+    return true;
 }
 
 export function autoDisableHelpByExpLimit(): void {
@@ -138,6 +160,8 @@ export function canGetExp(opId: number): boolean {
  * 检查某操作是否还有次数
  */
 export function canOperate(opId: number): boolean {
+    checkDailyReset();
+    if ((opId === 10005 || opId === 10006) && badOperationLimitReached) return false;
     const limit: any = operationLimits.get(opId);
     if (!limit) return true;
     if (limit.dayTimesLimit <= 0) return true;
@@ -148,6 +172,8 @@ export function canOperate(opId: number): boolean {
  * 获取某操作剩余次数
  */
 export function getRemainingTimes(opId: number): number {
+    checkDailyReset();
+    if ((opId === 10005 || opId === 10006) && badOperationLimitReached) return 0;
     const limit: any = operationLimits.get(opId);
     if (!limit || limit.dayTimesLimit <= 0) return 999;
     return Math.max(0, limit.dayTimesLimit - limit.dayTimes);
@@ -323,7 +349,7 @@ export async function checkFriends(options: CheckFriendsOptions = {}): Promise<b
         }
 
         // 第四阶段：批量捣乱（放虫放草）
-        if (effectiveBadEnabled) {
+        if (effectiveBadEnabled && !isBadOperationLimitReached()) {
             log('好友', '开始自动放虫放草', { module: 'friend', event: '开始自动放虫放草' });
 
             const badFriends: any[] = [];
@@ -362,6 +388,7 @@ export async function checkFriends(options: CheckFriendsOptions = {}): Promise<b
 
                 for (let i: number = 0; i < topBadFriends.length; i++) {
                     const friend: any = topBadFriends[i];
+                    if (isBadOperationLimitReached()) break;
 
                     // 检查是否还有捣乱次数
                     const canPutBug: boolean = canOperate(10005);
@@ -376,6 +403,7 @@ export async function checkFriends(options: CheckFriendsOptions = {}): Promise<b
                     } catch (e: any) {
                         // 单个好友失败不影响整体
                     }
+                    if (isBadOperationLimitReached()) break;
                     await randomDelay(2000, 3500);
                 }
             }
@@ -445,6 +473,7 @@ export function stopFriendCheckLoop(): void {
     friendLoopRunning = false;
     externalSchedulerMode = false;
     clearAllInvalidKnownFriendGidCooldowns();
+    clearFriendsListCache();
     networkEvents.off('friendApplicationReceived', onFriendApplicationReceived);
     friendScheduler.clearAll();
 }
@@ -525,6 +554,7 @@ export async function runBadOnceOnStartup(): Promise<void> {
     }
 
     const accountId: string = process.env.FARM_ACCOUNT_ID || '';
+    if (isBadOperationLimitReached()) return;
 
     log('好友', '========== 启动时放虫放草开始 ==========', { module: 'friend', event: '启动放虫放草开始' });
 
@@ -575,6 +605,7 @@ export async function runBadOnceOnStartup(): Promise<void> {
 
         for (let i: number = 0; i < topBadFriends.length; i++) {
             const friend: any = topBadFriends[i];
+            if (isBadOperationLimitReached()) break;
 
             // 检查是否还有捣乱次数
             const canPutBug: boolean = canOperate(10005);
@@ -594,6 +625,7 @@ export async function runBadOnceOnStartup(): Promise<void> {
                 log('好友', `放虫放草失败: ${friend.name}, 错误: ${e.message}`, { module: 'friend', event: '放虫放草失败', friendName: friend.name, error: e.message });
             }
 
+            if (isBadOperationLimitReached()) break;
             await randomDelay(2000, 3500);
         }
 

@@ -2,36 +2,42 @@ syntax = "proto3";
 
 package gamepb.solartermspb;
 
-// ============ 节气系统 ============
-
-// 节令奖励配置 (嵌套在 SolarTermInfo.field 5)
+// SolarTermsService.GetSolarTerms 抓包中已确认的只读字段。
 message SolarTermReward {
-    int64 item_id = 1;             // 物品ID
-    int64 count = 2;               // 数量
+    int64 item_id = 1;
+    int64 count = 2;
 }
 
-// 节气信息
 message SolarTermInfo {
-    int64 term_id = 1;             // 节气ID (101=端午, 102=夏至, 103=小暑)
-    int64 status = 2;              // 状态
-    int64 start_time = 3;          // 开始时间
-    int64 end_time = 4;            // 结束时间
-    repeated SolarTermReward rewards = 5;  // 节令奖励
-    string name = 6;               // 节气名称
+    int64 term_id = 1;
+    int64 status = 2;
+    int64 begin_time = 3;
+    int64 end_time = 4;
+    repeated SolarTermReward rewards = 5;
+    bytes name = 6;
 }
 
-// --- 获取节气信息 ---
+message SolarTermsConfig {
+    int64 config_id = 1;
+    int64 activity_id = 2;
+    bytes rules_json = 3;
+    bytes field_4 = 4;
+}
+
 message GetSolarTermsRequest {}
 
 message GetSolarTermsReply {
     repeated SolarTermInfo terms = 1;
-    int64 server_time = 2;         // 服务器时间
-    bytes config = 3;              // 活动配置 (JSON)
+    int64 server_time = 2;
+    SolarTermsConfig current_config = 3;
+    repeated SolarTermsConfig configs = 4;
 }
 
-// --- 获取节气红点 ---
-message GetSolarTermsRedDotRequest {}
+message ClaimSolarTermsRequest {
+    int64 term_id = 1;
+}
 
-message GetSolarTermsRedDotReply {
-    bool has_red_dot = 1;          // 是否有红点
+message ClaimSolarTermsReply {
+    repeated SolarTermReward rewards = 1;
+    SolarTermInfo term = 2;
 }

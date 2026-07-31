@@ -71,18 +71,9 @@ function createRuntimeState(options: RuntimeStateOptions) {
     }
 
     function buildConfigSnapshotForAccount(accountId: string): any {
+        const { ui: _ui, ...accountConfig } = store.getConfigSnapshot(accountId);
         return {
-            automation: store.getAutomation(accountId),
-            plantingStrategy: store.getPlantingStrategy(accountId),
-            preferredSeedId: store.getPreferredSeed(accountId),
-            intervals: store.getIntervals(accountId),
-            friendQuietHours: store.getFriendQuietHours(accountId),
-            friendBlacklist: store.getFriendBlacklist(accountId),
-            plantBlacklist: store.getPlantBlacklist(accountId),
-            knownFriendGids: store.getKnownFriendGids(accountId),
-            knownFriendGidSyncCooldownSec: store.getKnownFriendGidSyncCooldownSec(accountId),
-            bagSeedPriority: store.getBagSeedPriority(accountId),
-            bagSeedFallbackStrategy: store.getBagSeedFallbackStrategy(accountId),
+            ...accountConfig,
             __revision: configRevision,
         };
     }

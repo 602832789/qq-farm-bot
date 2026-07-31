@@ -31,6 +31,8 @@ function formatTime(timestamp: number) {
 function getGiftStatusText(gift: any) {
   if (!gift)
     return '未知'
+  if (gift.key === 'daily_share' && gift.mode === 'check_only')
+    return '仅检测/待人工确认'
   if (gift.key === 'vip_daily_gift' && gift.hasGift === false)
     return '未开通'
   if (gift.key === 'month_card_gift' && gift.hasCard === false)
@@ -45,6 +47,17 @@ function getGiftStatusText(gift: any) {
 function formatGiftSubText(gift: any) {
   if (!gift)
     return ''
+  if (gift.key === 'daily_share' && gift.mode === 'check_only') {
+    const checkedAt = Number(gift.lastAt || 0)
+    const timeText = checkedAt ? `，最近检测 ${formatTime(checkedAt)}` : ''
+    if (gift.checkStatus === 'entry_available')
+      return `入口可用${timeText}`
+    if (gift.checkStatus === 'entry_unavailable')
+      return `入口暂不可用${timeText}`
+    if (gift.checkStatus === 'check_failed')
+      return `检测失败，待下次重试${timeText}`
+    return '尚未检测'
+  }
   if (gift.key === 'vip_daily_gift' && gift.hasGift === false)
     return '未开通QQ会员或无每日礼包'
   if (gift.key === 'month_card_gift' && gift.hasCard === false)
@@ -102,7 +115,9 @@ function formatGiftProgress(gift: any) {
           <div class="mb-2 flex items-center gap-2">
             <div
               class="h-7 w-7 flex flex-shrink-0 items-center justify-center rounded-lg text-base 2xl:h-8 2xl:w-8 2xl:text-lg"
-              :class="gift.doneToday ? 'bg-green-100 dark:bg-green-900/30' : (gift.enabled ? 'bg-blue-100 dark:bg-blue-900/30' : 'bg-gray-100 dark:bg-gray-700')"
+              :class="gift.key === 'daily_share' && gift.mode === 'check_only'
+                ? 'bg-blue-100 dark:bg-blue-900/30'
+                : (gift.doneToday ? 'bg-green-100 dark:bg-green-900/30' : (gift.enabled ? 'bg-blue-100 dark:bg-blue-900/30' : 'bg-gray-100 dark:bg-gray-700'))"
             >
               <span>{{ getGiftIcon(gift.key) }}</span>
               />
@@ -115,7 +130,9 @@ function formatGiftProgress(gift: any) {
           <div class="flex items-end justify-between">
             <span
               class="text-xs 2xl:text-sm"
-              :class="gift.doneToday ? 'text-green-500' : (gift.enabled ? 'text-blue-500' : 'text-gray-400')"
+              :class="gift.key === 'daily_share' && gift.mode === 'check_only'
+                ? 'text-blue-500'
+                : (gift.doneToday ? 'text-green-500' : (gift.enabled ? 'text-blue-500' : 'text-gray-400'))"
             >
               {{ getGiftStatusText(gift) }}
             </span>

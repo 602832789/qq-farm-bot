@@ -16,9 +16,8 @@ const { processInviteCodes } = require('../services/invite');
 const { autoBuyOrganicFertilizer, autoBuyFertilizer, checkAndBuyFertilizerBoth, buyFreeGifts, getFreeGiftDailyState } = require('../services/mall');
 const { performDailyMonthCardGift, getMonthCardDailyState } = require('../services/monthcard');
 const { performDailyVipGift, getVipDailyState } = require('../services/qqvip');
-const { autoClaimActivityRewards } = require('../services/activity');
 const { createScheduler, getSchedulerRegistrySnapshot } = require('../services/scheduler');
-const { performDailyShare, getShareDailyState } = require('../services/share');
+const { checkDailyShareStatus, getShareDailyState } = require('../services/share');
 const { setInitialValues, resetSessionGains, recordOperation, initStatsWithPersistence, saveStats } = require('../services/stats');
 const { initStatusBar, setStatusPlatform, statusData } = require('../services/status');
 const { setRecordGoldExpHook } = require('../services/status');
@@ -123,7 +122,10 @@ let onSellGain: ((deltaGold: any) => void) | null = null;
 let onFarmHarvested: (() => Promise<void>) | null = null;
 let harvestSellRunning: boolean = false;
 let onWsError: ((payload: any) => void) | null = null;
+let onDisconnected: ((payload: any) => void) | null = null;
 let wsErrorHandledAt: number = 0;
+let shutdownStarted: boolean = false;
+let runtimeGeneration: number = 0;
 let lastDailyRunDate: string = '';
 const workerScheduler = createScheduler('worker');
 
@@ -145,11 +147,10 @@ async function runDailyRoutines(force: boolean = false): Promise<void> {
     try {
         // 以下功能默认启用，不再检查开关
         await checkAndClaimEmails(force);
-        await performDailyShare(force);
+        await checkDailyShareStatus(force);
         await performDailyMonthCardGift(force);
         await buyFreeGifts(force);
         await performDailyVipGift(force);
-        await autoClaimActivityRewards();
     } catch (e: any) {
         log('系统', `每日任务调度失败: ${e.message}`, { module: 'system', event: '每日任务', result: 'error' });
     }
@@ -366,12 +367,17 @@ function stopUnifiedScheduler(): void {
     workerScheduler.clear('unified_next_tick');
 }
 
-function applyRuntimeConfig(snapshot: any, syncNow: boolean = false): void {
+function applyRuntimeConfig(snapshot: any, syncNow: boolean = false): number {
+    const rev = Number((snapshot || {}).__revision || 0);
+    if (rev > 0 && rev < appliedConfigRevision) {
+        if (syncNow) syncStatus();
+        return appliedConfigRevision;
+    }
+
     const prevAuto = getAutomation();
     const accountId = process.env.FARM_ACCOUNT_ID || '';
     applyConfigSnapshot(snapshot || {}, { persist: false, accountId });
-    const rev = Number((snapshot || {}).__revision || 0);
-    if (rev > 0) appliedConfigRevision = rev;
+    if (rev > appliedConfigRevision) appliedConfigRevision = rev;
 
     // 优先使用本次下发的间隔，避免 worker 内部 store 漂移导致回退默认值
     const incomingIntervals = (snapshot && snapshot.intervals && typeof snapshot.intervals === 'object')
@@ -424,6 +430,7 @@ function applyRuntimeConfig(snapshot: any, syncNow: boolean = false): void {
     }
 
     if (syncNow) syncStatus();
+    return appliedConfigRevision;
 }
 
 // 接收主进程指令
@@ -441,13 +448,22 @@ onMasterMessage(async (msg: any) => {
             if (typeof loadConfigs === 'function') loadConfigs();
         }
     } catch (e: any) {
-        sendToMaster({ type: 'error', error: e.message });
+        sendToMaster({
+            type: 'error',
+            error: {
+                message: String(e?.message || e || 'Worker error'),
+                code: e?.code,
+                name: String(e?.name || 'Error'),
+            },
+        });
     }
 });
 
 async function startBot(config: any): Promise<void> {
     if (isRunning) return;
     isRunning = true;
+    shutdownStarted = false;
+    runtimeGeneration += 1;
 
     const { code, platform } = config;
 
@@ -480,16 +496,29 @@ async function startBot(config: any): Promise<void> {
             message: payload?.message || '',
         });
         if (isRunning) {
-            workerScheduler.setTimeoutTask('ws_error_cleanup', 1000, () => {
-                if (isRunning) cleanup();
+            handleTerminalDisconnect({
+                source: 'ws_error',
+                code: 400,
+                reason: payload?.message || '连接被拒绝',
+                phase: 'connecting',
             });
         }
     };
     networkEvents.on('ws_error', onWsError);
 
+    if (onDisconnected) {
+        networkEvents.off('disconnected', onDisconnected);
+    }
+    onDisconnected = (payload: any) => {
+        handleTerminalDisconnect(payload);
+    };
+    networkEvents.on('disconnected', onDisconnected);
     networkEvents.on('kickout', onKickout);
 
+    const generation = runtimeGeneration;
+    const canContinueLogin = (): boolean => isRunning && !shutdownStarted && generation === runtimeGeneration;
     const onLoginSuccess = async (): Promise<void> => {
+        if (!canContinueLogin()) return;
         loginReady = true;
         if (onSellGain) {
             networkEvents.off('sell', onSellGain);
@@ -542,8 +571,10 @@ async function startBot(config: any): Promise<void> {
 
         // 登录成功后启动各模块
         await processInviteCodes();
+        if (!canContinueLogin()) return;
         if (getAutomation().fertilizer_gift) {
             await openFertilizerGiftPacksSilently().catch(() => 0);
+            if (!canContinueLogin()) return;
         }
 
         // 启动时执行一次放虫放草（只在账号启动时执行）
@@ -555,6 +586,7 @@ async function startBot(config: any): Promise<void> {
             }
         });
 
+        if (!canContinueLogin()) return;
         startFarmCheckLoop({ externalScheduler: true });
         startFriendCheckLoop({ externalScheduler: true });
         startUnifiedScheduler();
@@ -571,13 +603,12 @@ async function startBot(config: any): Promise<void> {
     workerScheduler.setIntervalTask('status_sync', 3000, syncStatus, { preventOverlap: true });
 }
 
-async function stopBot(): Promise<void> {
-    if (!isRunning) return exitWorker(0);
-    saveStats();
-    isRunning = false;
-    loginReady = false;
-    stopUnifiedScheduler();
+function detachRuntimeListeners(): void {
     networkEvents.off('kickout', onKickout);
+    if (onDisconnected) {
+        networkEvents.off('disconnected', onDisconnected);
+        onDisconnected = null;
+    }
     if (onWsError) {
         networkEvents.off('ws_error', onWsError);
         onWsError = null;
@@ -590,34 +621,78 @@ async function stopBot(): Promise<void> {
         networkEvents.off('farmHarvested', onFarmHarvested);
         onFarmHarvested = null;
     }
+}
+
+function quiesceBot(reason: string): void {
+    shutdownStarted = true;
+    runtimeGeneration += 1;
+    isRunning = false;
+    loginReady = false;
+    stopUnifiedScheduler();
     stopFarmCheckLoop();
     stopFriendCheckLoop();
     stopDailyRoutineTimer();
     cleanupTaskSystem();
     workerScheduler.clearAll();
-    cleanup();
-    const ws = getWs();
-    if (ws) ws.close();
+    detachRuntimeListeners();
+    cleanup(reason);
+    syncStatus(true);
+}
+
+async function stopBot(): Promise<void> {
+    if (!shutdownStarted) {
+        saveStats();
+        quiesceBot('主动停止');
+    }
     exitWorker(0);
 }
 
+function handleTerminalDisconnect(payload: any): void {
+    if (shutdownStarted) return;
+    const source = String(payload?.source || 'ws_close');
+    const code = Number(payload?.code) || 0;
+    const reason = String(payload?.reason || '连接已断开');
+    const phase = String(payload?.phase || 'unknown');
+    log('系统', `连接已断开，不再使用旧 Code 重连 (source=${source}, code=${code}, phase=${phase})`);
+    saveStats();
+    quiesceBot(`连接断开: ${source}`);
+    sendToMaster({
+        type: 'account_disconnected',
+        source,
+        code,
+        reason,
+        phase,
+        connectionId: Number(payload?.connectionId) || 0,
+        at: Number(payload?.at) || Date.now(),
+    });
+    setTimeout(() => exitWorker(0), 300);
+}
+
 function onKickout(payload: any): void {
+    if (shutdownStarted) return;
     const reason = payload && payload.reason ? payload.reason : '未知';
     log('系统', `检测到踢下线，准备自动停止账号。原因: ${reason}`);
+    saveStats();
+    quiesceBot(`踢下线: ${reason}`);
     sendToMaster({ type: 'account_kicked', reason });
-    workerScheduler.setTimeoutTask('kickout_stop', 200, () => {
-        stopBot().catch(() => exitWorker(0));
-    });
+    setTimeout(() => exitWorker(0), 300);
 }
 
 // 处理来自 Admin 面板的直接调用请求 (如: 购买种子、开关设置等)
 async function handleApiCall(msg: any): Promise<void> {
     const { id, method, args } = msg;
     let result: any = null;
-    let error: string | null = null;
+    let error: { message: string; code?: string | number; name?: string } | string | null = null;
 
     try {
-        switch (method) {
+        if (method === 'applyRuntimeConfigSnapshot') {
+            const appliedRevision = applyRuntimeConfig((args && args[0]) || {}, true);
+            result = { appliedRevision };
+        } else {
+            if (!isRunning || shutdownStarted || !loginReady) {
+                throw new Error('账号未连接');
+            }
+            switch (method) {
             case 'getLands':
                 result = await getLandsDetail();
                 break;
@@ -687,45 +762,43 @@ async function handleApiCall(msg: any): Promise<void> {
             case 'getDailyGiftOverview':
                 result = await getDailyGiftOverview();
                 break;
+            case 'getActivityCenterSnapshot':
+                result = await require('../services/activity-center').getActivityCenterSnapshot();
+                break;
+            case 'getCurrentSeasonEvent':
+                result = await require('../services/activity-center').getCurrentSeasonEvent();
+                break;
+            case 'getCurrentStarSandShop':
+                result = await require('../services/activity-center').getCurrentStarSandShop();
+                break;
+            case 'getCurrentSolarTerms':
+                result = await require('../services/activity-center').getCurrentSolarTerms();
+                break;
+            case 'claimBattlePassRewards':
+                result = await require('../services/activity-center').claimBattlePassRewards();
+                break;
+            case 'exchangeStarSandGoods':
+                result = await require('../services/activity-center').exchangeStarSandGoods(args[0], args[1]);
+                break;
+            case 'lightConstellation':
+                result = await require('../services/activity-center').lightConstellation();
+                break;
+            case 'claimSolarTerm':
+                result = await require('../services/activity-center').claimSolarTerm(String(args[0] || ''));
+                break;
             case 'getSchedulers':
                 result = getSchedulerRegistrySnapshot();
                 break;
-            case 'getActivityGroup': {
-                const { getActivitiesInGroup } = require('../services/activity');
-                result = await getActivitiesInGroup(args[0]);
-                break;
-            }
-            case 'getActivityList': {
-                const { getActivityList: _getList } = require('../services/activity');
-                result = await _getList();
-                break;
-            }
-            case 'operateActivity': {
-                const { operateActivity: _op } = require('../services/activity');
-                result = await _op(args[0], args[1], args[2]);
-                break;
-            }
-            case 'getSolarTerms': {
-                const { sendMsgAsync } = require('../utils/network');
-                const { types } = require('../utils/proto');
-                const body = types.GetSolarTermsRequest.encode(types.GetSolarTermsRequest.create({})).finish();
-                const { body: replyBody } = await sendMsgAsync('gamepb.solartermspb.SolarTermsService', 'GetSolarTerms', body);
-                result = types.GetSolarTermsReply.decode(replyBody);
-                break;
-            }
-            case 'getSeasonInfo': {
-                const { sendMsgAsync } = require('../utils/network');
-                const { types } = require('../utils/proto');
-                const body = types.GetSeasonInfoRequest.encode(types.GetSeasonInfoRequest.create({})).finish();
-                const { body: replyBody } = await sendMsgAsync('gamepb.seasonpb.SeasonService', 'GetSeasonInfo', body);
-                result = types.GetSeasonInfoReply.decode(replyBody);
-                break;
-            }
             default:
                 error = 'Unknown method';
+            }
         }
     } catch (e: any) {
-        error = e.message;
+        error = {
+            message: String(e?.message || e || 'Worker API error'),
+            code: e?.code,
+            name: String(e?.name || 'Error'),
+        };
     }
 
     sendToMaster({ type: 'api_response', id, result, error });
@@ -768,7 +841,17 @@ async function getDailyGiftOverview(): Promise<any> {
             // 以下功能默认启用，enabled 固定为 true
             { key: 'email_rewards', label: '邮箱奖励', enabled: true, doneToday: !!email.doneToday, lastAt: Number(email.lastCheckAt || 0) },
             { key: 'mall_free_gifts', label: '商城免费礼包', enabled: true, doneToday: !!free.doneToday, lastAt: Number(free.lastClaimAt || 0) },
-            { key: 'daily_share', label: '分享礼包', enabled: true, doneToday: !!share.doneToday, lastAt: Number(share.lastClaimAt || 0) },
+            {
+                key: 'daily_share',
+                label: '分享礼包',
+                enabled: true,
+                mode: 'check_only',
+                doneToday: false,
+                checkedToday: !!share.checkedToday,
+                checkStatus: String(share.checkStatus || 'unchecked'),
+                canShare: typeof share.canShare === 'boolean' ? share.canShare : null,
+                lastAt: Number(share.lastCheckAt || 0),
+            },
             {
                 key: 'vip_daily_gift',
                 label: '会员礼包',
@@ -793,7 +876,7 @@ async function getDailyGiftOverview(): Promise<any> {
     };
 }
 
-function syncStatus(): void {
+function syncStatus(force: boolean = false): void {
     if (!process.send && !parentPort) return;
 
     const userState = getUserState();
@@ -827,7 +910,7 @@ function syncStatus(): void {
     fullStats.configRevision = appliedConfigRevision;
     const hash = JSON.stringify(fullStats);
     const now = Date.now();
-    if (hash !== lastStatusHash || now - lastStatusSentAt > 8000) {
+    if (force || hash !== lastStatusHash || now - lastStatusSentAt > 8000) {
         lastStatusHash = hash;
         lastStatusSentAt = now;
         sendToMaster({ type: 'status_sync', data: fullStats });

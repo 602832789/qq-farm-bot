@@ -10,40 +10,46 @@ import "corepb.proto";
 message CheckCanShareRequest {}
 
 message CheckCanShareReply {
-    bool can_share = 1;  // 是否可以分享
+    bool can_share = 1;
 }
 
-// --- 报告分享 ---
+// --- 分享上报（仅保留抓包已确认的 wire 字段，当前不主动调用） ---
 message ReportShareRequest {
-    bool shared = 1;  // 是否已分享
+    bool field_1 = 1;
+    int32 field_4 = 4;
 }
 
 message ReportShareReply {
-    bool success = 1;  // 是否成功
+    bytes result = 1;
 }
 
-// --- 领取分享奖励 ---
-message ClaimShareRewardRequest {
-    bool claimed = 1;  // 请求领取
-}
-
+// --- 分享奖励（请求结构待完整领奖抓包确认） ---
 message ClaimShareRewardReply {
-    bool success = 1;           // 是否成功
-    bool has_reward = 2;        // 是否有奖励
-    repeated corepb.Item items = 3;  // 奖励物品列表
+    repeated corepb.Item items = 1;
 }
 
 // --- 获取邀请信息 ---
-message GetInviteInfoRequest {
-    int64 share_cfg_id = 1;
+message GetInviteInfoRequest {}
+
+message InviteUser {
+    int64 gid = 1;
+    int64 field_2 = 2;
+    string name = 3;
+    string avatar = 4;
 }
 
-// 注意: InviteInfo 结构已大幅变更 (field 2 从 string 改为 int64,
-// field 3/4 改为嵌套消息)，暂时无法完全逆向。
-// 只保留 share_cfg_id，其他字段由 protobufjs 自动跳过。
+message InviteRewardStage {
+    int64 index = 1;
+    int64 reward_index = 2;
+    corepb.Item item = 3;
+    int32 status = 4;
+}
+
 message InviteInfo {
-    int64 share_cfg_id = 1;
-    // field 2-14 已变更，待后续逆向确认
+    InviteUser user_a = 1;
+    int32 status = 2;
+    InviteUser user_b = 3;
+    repeated InviteRewardStage reward_stages = 4;
 }
 
 message GetInviteInfoReply {

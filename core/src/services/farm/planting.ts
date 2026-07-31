@@ -27,7 +27,35 @@ const {
     filterLandIdsByTypes,
     getLandTypeByLevel,
     resolveRemovableHarvestedLands,
+    buildPlantingLayouts,
+    selectNonOverlappingLayouts,
+    resolveOccupiedLandIds,
 } = require('./land-analysis');
+
+interface PlantingLayout {
+    anchorLandId: number;
+    landIds: number[];
+}
+
+interface PlantSeedsResult {
+    planted: number;
+    plantedLandIds: number[];
+    occupiedLandIds: number[];
+    reservedLandIds: number[];
+    uncertain: boolean;
+}
+
+function confirmsPlantedFootprint(
+    expectedLandIds: Set<number>,
+    masterLandId: number,
+    occupiedLandIds: number[],
+    lands: any[],
+): boolean {
+    if (![...expectedLandIds].every(id => occupiedLandIds.includes(id))) return false;
+    const landsMap = buildLandMap(lands);
+    const master = landsMap.get(masterLandId);
+    return !!(master && master.plant);
+}
 
 // ============ 种植 ============
 
@@ -37,49 +65,98 @@ function getPlantSizeBySeedId(seedId: number | string): number {
 }
 
 /**
- * 种植 - 游戏中拖动种植间隔很短，这里用 50ms
+ * 种植 - 游戏中拖动种植间隔很短，这里用 50ms。
+ * 多格作物必须传入预先选好的布局；回复占地不完整时会补拉全量土地确认。
  */
-async function plantSeeds(seedId: number | string, landIds: number[], options: { maxPlantCount?: number } = {}): Promise<{
-    planted: number;
-    plantedLandIds: number[];
-    occupiedLandIds: number[];
-}> {
-    let successCount: number = 0;
+async function plantSeeds(seedId: number | string, landIds: number[], options: {
+    maxPlantCount?: number;
+    layouts?: PlantingLayout[];
+} = {}): Promise<PlantSeedsResult> {
+    const normalizedLandIds = (Array.isArray(landIds) ? landIds : []).map((id: any) => toNum(id)).filter(Boolean);
+    const maxPlantCount: number = Math.max(0, toNum(options.maxPlantCount) || 0) || Number.POSITIVE_INFINITY;
+    const suppliedLayouts: PlantingLayout[] = Array.isArray(options.layouts) ? options.layouts : [];
+    const layouts: PlantingLayout[] = suppliedLayouts.length > 0
+        ? suppliedLayouts
+            .map((layout: any) => ({
+                anchorLandId: toNum(layout && layout.anchorLandId),
+                landIds: [...new Set<number>((Array.isArray(layout && layout.landIds) ? layout.landIds : [])
+                    .map((id: any) => toNum(id)).filter((id: number) => id > 0))],
+            }))
+            .filter((layout: PlantingLayout) => layout.anchorLandId > 0 && layout.landIds.length > 0)
+        : normalizedLandIds.map((id: number) => ({ anchorLandId: id, landIds: [id] }));
+    const selectedLayouts = layouts.slice(0, maxPlantCount);
     const plantedLandIds: number[] = [];
     const occupiedLandIds = new Set<number>();
-    const maxPlantCount: number = Math.max(0, toNum(options.maxPlantCount) || 0) || Number.POSITIVE_INFINITY;
-    const pendingLandIds = new Set<number>((Array.isArray(landIds) ? landIds : []).map((id: any) => toNum(id)).filter(Boolean));
+    const reservedLandIds = new Set<number>();
+    let uncertain = false;
 
-    for (const rawLandId of landIds) {
-        const landId = toNum(rawLandId);
-        if (!landId || !pendingLandIds.has(landId)) continue;
-        if (successCount >= maxPlantCount) break;
+    for (let index = 0; index < selectedLayouts.length; index++) {
+        const layout = selectedLayouts[index];
+        const landId = layout.anchorLandId;
+        let rpcSucceeded = false;
+        let resolvedMasterId = 0;
+        let resolvedOccupiedIds: number[] = [];
         try {
             const body = encodePlantRequest(seedId, [landId]);
             const { body: replyBody } = await sendMsgAsync('gamepb.plantpb.PlantService', 'Plant', body);
+            rpcSucceeded = true;
             const reply = types.PlantReply.decode(replyBody);
             const changedLands = Array.isArray(reply && reply.land) ? reply.land : [];
-            const changedMap = buildLandMap(changedLands);
-            const selfLand = changedMap.get(landId);
-            const displayContext = getDisplayLandContext(selfLand || { id: landId }, changedMap);
-            const occupiedIds = displayContext.occupiedLandIds.length > 0
-                ? displayContext.occupiedLandIds
-                : [landId];
-            successCount++;
-            plantedLandIds.push(displayContext.masterLandId || landId);
-            for (const occupiedId of occupiedIds) {
-                occupiedLandIds.add(occupiedId);
-                pendingLandIds.delete(occupiedId);
+            let resolved = resolveOccupiedLandIds(landId, changedLands);
+            resolvedMasterId = toNum(resolved.masterLandId) || landId;
+            resolvedOccupiedIds = (Array.isArray(resolved.occupiedLandIds) ? resolved.occupiedLandIds : [])
+                .map((id: any) => toNum(id)).filter(Boolean);
+
+            const expectedIds = new Set(layout.landIds);
+            let confirmed = confirmsPlantedFootprint(expectedIds, resolvedMasterId, resolvedOccupiedIds, changedLands);
+            if (!confirmed) {
+                try {
+                    const latest = await getAllLands();
+                    const latestLands = Array.isArray(latest && latest.lands) ? latest.lands : [];
+                    resolved = resolveOccupiedLandIds(landId, latestLands);
+                    resolvedMasterId = toNum(resolved.masterLandId) || landId;
+                    resolvedOccupiedIds = (Array.isArray(resolved.occupiedLandIds) ? resolved.occupiedLandIds : [])
+                        .map((id: any) => toNum(id)).filter(Boolean);
+                    confirmed = confirmsPlantedFootprint(expectedIds, resolvedMasterId, resolvedOccupiedIds, latestLands);
+                } catch (e: any) {
+                    uncertain = true;
+                    logWarn('种植', `土地#${landId} 种植成功但补拉占地失败: ${e.message}`, {
+                        module: 'farm', event: '种植种子', result: 'footprint_uncertain', seedId: toNum(seedId), landId
+                    });
+                }
             }
+
+            if (!confirmed) {
+                uncertain = true;
+                // RPC 已成功但服务端状态无法确认：保留预期占地，避免继续请求重叠土地，
+                // 但不能将其计为成功种植或交给施肥。
+                for (const expectedId of layout.landIds) reservedLandIds.add(expectedId);
+                logWarn('种植', `土地#${landId} 无法确认完整占地 (${resolvedOccupiedIds.join(',') || '无'})`, {
+                    module: 'farm', event: '种植种子', result: 'footprint_uncertain', seedId: toNum(seedId), landId,
+                    expectedLandIds: layout.landIds,
+                });
+                break;
+            }
+
+            plantedLandIds.push(resolvedMasterId);
+            for (const occupiedId of resolvedOccupiedIds) occupiedLandIds.add(occupiedId);
+            for (const expectedId of layout.landIds) reservedLandIds.add(expectedId);
         } catch (e: any) {
-            logWarn('种植', `土地#${landId} 失败: ${e.message}`);
+            uncertain = true;
+            logWarn('种植', `土地#${landId} 失败: ${e.message}`, {
+                module: 'farm', event: '种植种子', result: 'rpc_uncertain', seedId: toNum(seedId), landId
+            });
+            break;
         }
-        if (landIds.length > 1) await sleep(50);  // 50ms 间隔
+        if (!rpcSucceeded) break;
+        if (selectedLayouts.length > 1 && index < selectedLayouts.length - 1) await sleep(50);
     }
     return {
-        planted: successCount,
-        plantedLandIds,
+        planted: plantedLandIds.length,
+        plantedLandIds: [...new Set(plantedLandIds)],
         occupiedLandIds: [...occupiedLandIds],
+        reservedLandIds: [...reservedLandIds],
+        uncertain,
     };
 }
 
@@ -138,75 +215,78 @@ async function plantFromBagSeeds(landsToPlant: any[]): Promise<{
     totalPlanted: number;
     occupiedCount: number;
 }> {
-    const targetLandIds: number[] = (Array.isArray(landsToPlant) ? landsToPlant : []).map((id: any) => Number(id)).filter((id: number) => id > 0);
+    const targetLandIds: number[] = [...new Set((Array.isArray(landsToPlant) ? landsToPlant : [])
+        .map((id: any) => toNum(id)).filter(Boolean))];
     if (targetLandIds.length === 0) {
         return { remainingLandIds: [], fallbackAllowed: false, plantedLandIds: [], totalPlanted: 0, occupiedCount: 0 };
     }
 
     const bagSeeds = await getBagSeeds();
-    const allBagSeeds: any[] = Array.isArray(bagSeeds) ? bagSeeds : [];
+    const state = getUserState();
     const usableSeeds = sortBagSeedsForPlanting(
-        allBagSeeds.filter((seed: any) => Number(seed && seed.count) > 0 && Number(seed && seed.plantSize) === 1),
+        (Array.isArray(bagSeeds) ? bagSeeds : []).filter((seed: any) => (
+            toNum(seed && seed.count) > 0
+            && toNum(seed && seed.requiredLevel) <= toNum(state && state.level)
+        )),
         getBagSeedPriority(),
     );
 
     if (usableSeeds.length === 0) {
-        const hasAnyBagSeed = allBagSeeds.some((seed: any) => Number(seed && seed.count) > 0);
-        log('种植', hasAnyBagSeed
-            ? '背包中没有可用的 1x1 种子，准备按第二优先策略补种'
-            : '背包种子已用完，准备按第二优先策略补种', {
-            module: 'farm',
-            event: '种植种子',
-            result: 'fallback_ready',
-            strategy: 'bag_priority',
+        log('种植', '背包种子已用完，准备按第二优先策略补种', {
+            module: 'farm', event: '种植种子', result: 'fallback_ready', strategy: 'bag_priority'
         });
         return { remainingLandIds: targetLandIds, fallbackAllowed: true, plantedLandIds: [], totalPlanted: 0, occupiedCount: 0 };
     }
 
     let remainingLandIds: number[] = [...targetLandIds];
-    let fallbackAllowed: boolean = true;
-    let totalPlanted: number = 0;
-    let occupiedCount: number = 0;
+    let fallbackAllowed = true;
+    let totalPlanted = 0;
+    const occupiedIds = new Set<number>();
     const plantedLandIds: number[] = [];
     const usedSeedLogs: string[] = [];
 
     for (const seed of usableSeeds) {
-        if (remainingLandIds.length === 0) break;
+        if (remainingLandIds.length === 0 || !fallbackAllowed) break;
 
-        const maxPlantCount = Math.min(Number(seed.count || 0), remainingLandIds.length);
-        if (maxPlantCount <= 0) continue;
-
-        const result = await plantSeeds(seed.seedId, remainingLandIds, { maxPlantCount });
-        const currentOccupied: number[] = (Array.isArray(result.occupiedLandIds) ? result.occupiedLandIds : []).map(Number).filter((id: number) => id > 0);
-        const currentPlantedLandIds: number[] = (Array.isArray(result.plantedLandIds) ? result.plantedLandIds : []).map(Number).filter((id: number) => id > 0);
-        if (result.planted > 0) {
-            totalPlanted += result.planted;
-            occupiedCount += currentOccupied.length > 0 ? currentOccupied.length : result.planted;
-            plantedLandIds.push(...currentPlantedLandIds);
-            remainingLandIds = remainingLandIds.filter((id: number) => !currentOccupied.includes(id));
-            usedSeedLogs.push(`${seed.name}x${result.planted}`);
+        const plantSize = Math.max(1, toNum(seed && seed.plantSize) || getPlantSizeBySeedId(seed.seedId));
+        const allLayouts: PlantingLayout[] = buildPlantingLayouts(remainingLandIds, plantSize);
+        const layouts: PlantingLayout[] = selectNonOverlappingLayouts(allLayouts, toNum(seed.count));
+        if (layouts.length === 0) {
+            log('种植', `背包种子 ${seed.name} 无合法 ${plantSize}x${plantSize} 布局，已跳过`, {
+                module: 'farm', event: '种植种子', result: 'skip_no_layout', strategy: 'bag_priority',
+                seedId: seed.seedId, plantSize, emptyCount: remainingLandIds.length
+            });
+            continue;
         }
 
-        if (result.planted < maxPlantCount && remainingLandIds.length > 0) {
+        const result = await plantSeeds(seed.seedId, layouts.map(layout => layout.anchorLandId), {
+            maxPlantCount: layouts.length,
+            layouts,
+        });
+        const consumed = new Set<number>([
+            ...(Array.isArray(result.reservedLandIds) ? result.reservedLandIds : []),
+            ...(Array.isArray(result.occupiedLandIds) ? result.occupiedLandIds : []),
+        ].map((id: any) => toNum(id)).filter(Boolean));
+        consumed.forEach(id => occupiedIds.add(id));
+        remainingLandIds = remainingLandIds.filter(id => !consumed.has(id));
+
+        if (result.planted > 0) {
+            totalPlanted += result.planted;
+            plantedLandIds.push(...result.plantedLandIds);
+            usedSeedLogs.push(`${seed.name}x${result.planted}`);
+        }
+        if (result.uncertain) {
             fallbackAllowed = false;
-            logWarn('种植', `背包种子 ${seed.name} 实际种植 ${result.planted}/${maxPlantCount}，为避免误购商店种子，本轮不执行第二优先策略`, {
-                module: 'farm',
-                event: '种植种子',
-                result: 'partial_bag_failure',
-                seedId: seed.seedId,
-                requested: maxPlantCount,
-                planted: result.planted,
+            logWarn('种植', `背包种子 ${seed.name} 的种植或占地状态不确定，为避免误购商店种子，本轮不执行第二优先策略`, {
+                module: 'farm', event: '种植种子', result: 'bag_plant_uncertain', seedId: seed.seedId,
+                requested: layouts.length, planted: result.planted
             });
         }
     }
 
     if (usedSeedLogs.length > 0) {
         log('种植', `已按背包优先策略种植: ${usedSeedLogs.join('，')}`, {
-            module: 'farm',
-            event: '种植种子',
-            result: 'ok',
-            strategy: 'bag_priority',
-            count: totalPlanted,
+            module: 'farm', event: '种植种子', result: 'ok', strategy: 'bag_priority', count: totalPlanted
         });
     }
 
@@ -215,17 +295,17 @@ async function plantFromBagSeeds(landsToPlant: any[]): Promise<{
         fallbackAllowed,
         plantedLandIds: [...new Set(plantedLandIds)],
         totalPlanted,
-        occupiedCount,
+        occupiedCount: occupiedIds.size,
     };
 }
 
-async function findBestSeed(overrideStrategy?: string): Promise<any | null> {
+async function findBestSeed(overrideStrategy?: string): Promise<any[]> {
     const SEED_SHOP_ID: number = 2;
     const { getShopInfo } = require('./api');
     const shopReply = await getShopInfo(SEED_SHOP_ID);
     if (!shopReply.goods_list || shopReply.goods_list.length === 0) {
         logWarn('商店', '种子商店无商品');
-        return null;
+        return [];
     }
 
     const state = getUserState();
@@ -260,16 +340,20 @@ async function findBestSeed(overrideStrategy?: string): Promise<any | null> {
             seedId: toNum(goods.item_id),
             price: toNum(goods.price),
             requiredLevel,
+            unitItemCount: Math.max(1, toNum(goods.item_count) || 1),
+            maxPurchaseCount: limitCount > 0 ? Math.max(0, limitCount - boughtNum) : Number.POSITIVE_INFINITY,
         });
     }
 
     if (available.length === 0) {
         logWarn('商店', '没有可购买的种子');
-        return null;
+        return [];
     }
 
-    // 按策略排序
+    // 返回完整候选序列，让调用方能按剩余土地布局逐个尝试。
     const strategy: string = overrideStrategy || getPlantingStrategy();
+    const byLevelAndId = (a: any, b: any): number =>
+        (b.requiredLevel - a.requiredLevel) || (a.seedId - b.seedId);
     const analyticsSortByMap: Record<string, string> = {
         max_exp: 'exp',
         max_fert_exp: 'fert',
@@ -280,68 +364,34 @@ async function findBestSeed(overrideStrategy?: string): Promise<any | null> {
     if (analyticsSortBy) {
         try {
             const rankings = getPlantRankings(analyticsSortBy);
-            const availableBySeedId = new Map<number, any>(available.map((a: any) => [a.seedId, a]));
-            const tried: number[] = [];
-            for (const row of rankings) {
-                const seedId = Number(row && row.seedId) || 0;
-                if (seedId <= 0) continue;
-                const lv = Number(row && row.level);
-                if (Number.isFinite(lv) && lv > state.level) continue;
-                const found = availableBySeedId.get(seedId);
-                if (found) {
-                    if (tried.length > 0) {
-                        log('商店', `策略 ${strategy} 排名第1的作物不可用，已跳过 ${tried.length} 个备选`, {
-                            module: 'farm', event: '选择种子', result: 'fallback_rank', strategy, skipped: tried
-                        });
-                    }
-                    return found;
-                }
-                tried.push(seedId);
-            }
-            // 回退：按策略排名排序可购买列表，而不是无脑选最高等级
             const rankingBySeedId = new Map<number, number>();
             rankings.forEach((row: any, index: number) => {
-                const sid = Number(row && row.seedId) || 0;
-                if (sid > 0) rankingBySeedId.set(sid, index);
+                const seedId = toNum(row && row.seedId);
+                const level = Number(row && row.level);
+                if (seedId > 0 && (!Number.isFinite(level) || level <= state.level) && !rankingBySeedId.has(seedId)) {
+                    rankingBySeedId.set(seedId, index);
+                }
             });
-            available.sort((a: any, b: any) => {
-                const aRank = rankingBySeedId.has(a.seedId) ? rankingBySeedId.get(a.seedId)! : Number.MAX_SAFE_INTEGER;
-                const bRank = rankingBySeedId.has(b.seedId) ? rankingBySeedId.get(b.seedId)! : Number.MAX_SAFE_INTEGER;
-                if (aRank !== bRank) return aRank - bRank;
-                return b.requiredLevel - a.requiredLevel;
+            return available.sort((a: any, b: any) => {
+                const aRank = rankingBySeedId.get(a.seedId) ?? Number.MAX_SAFE_INTEGER;
+                const bRank = rankingBySeedId.get(b.seedId) ?? Number.MAX_SAFE_INTEGER;
+                return (aRank - bRank) || byLevelAndId(a, b);
             });
-            log('商店', `策略 ${strategy} 排名内无可购买作物（共尝试 ${tried.length} 个），按策略排名回退`, {
-                module: 'farm', event: '选择种子', result: 'fallback_strategy', strategy
-            });
-            return available[0];
         } catch (e: any) {
             logWarn('商店', `策略 ${strategy} 计算失败: ${e.message}，回退最高等级`);
         }
-        available.sort((a: any, b: any) => b.requiredLevel - a.requiredLevel);
-        return available[0];
     }
 
-    // 偏好模式
+    available.sort(byLevelAndId);
     if (strategy === 'preferred') {
         const preferred = getPreferredSeed();
         if (preferred > 0) {
-            const found = available.find((a: any) => a.seedId === preferred);
-            if (found) return found;
-            logWarn('商店', `优先种子 ${preferred} 当前不可购买，回退自动选择`);
+            const index = available.findIndex((candidate: any) => candidate.seedId === preferred);
+            if (index >= 0) available.unshift(...available.splice(index, 1));
+            else logWarn('商店', `优先种子 ${preferred} 当前不可购买，回退自动选择`);
         }
-        // 如果偏好未找到或未设置，回退到默认（等级最高）
-        available.sort((a: any, b: any) => b.requiredLevel - a.requiredLevel);
     }
-    // 最高等级模式
-    else if (strategy === 'level') {
-        available.sort((a: any, b: any) => b.requiredLevel - a.requiredLevel);
-    }
-    // 默认
-    else {
-        available.sort((a: any, b: any) => b.requiredLevel - a.requiredLevel);
-    }
-
-    return available[0];
+    return available;
 }
 
 async function getAvailableSeeds(): Promise<any[]> {
@@ -559,27 +609,33 @@ async function getLandsDetail(): Promise<{ lands: any[]; summary: any }> {
 }
 
 async function autoPlantEmptyLands(deadLandIds: number[], emptyLandIds: number[]): Promise<any> {
-    const landsToPlant: number[] = [...emptyLandIds];
+    let landsToPlant: number[] = [...new Set<number>((Array.isArray(emptyLandIds) ? emptyLandIds : [])
+        .map((id: any) => toNum(id)).filter((id: number) => id > 0))];
     const state = getUserState();
 
-    // 1. 铲除枯死/收获残留植物（一键操作）
-    if (deadLandIds.length > 0) {
+    // 1. 铲除枯死/收获残留植物（一键操作），随后以服务端最新状态确认可用土地。
+    if (Array.isArray(deadLandIds) && deadLandIds.length > 0) {
         try {
             await removePlant(deadLandIds);
             log('铲除', `已铲除 ${deadLandIds.length} 块 (${deadLandIds.join(',')})`, {
                 module: 'farm', event: '铲除植物', result: 'ok', count: deadLandIds.length
             });
-            landsToPlant.push(...deadLandIds);
+            try {
+                const latest = await getAllLands();
+                landsToPlant = analyzeLands(Array.isArray(latest && latest.lands) ? latest.lands : []).empty;
+            } catch (e: any) {
+                logWarn('铲除', `铲除后确认土地失败，保留原有空地且不使用枯死地块: ${e.message}`, {
+                    module: 'farm', event: '铲除植物', result: 'confirm_error'
+                });
+            }
         } catch (e: any) {
             logWarn('铲除', `批量铲除失败: ${e.message}`, {
                 module: 'farm', event: '铲除植物', result: 'error'
             });
-            // 失败时仍然尝试种植
-            landsToPlant.push(...deadLandIds);
         }
     }
 
-    if (landsToPlant.length === 0) return;
+    if (landsToPlant.length === 0) return { plantedLands: [] };
 
     const accountStrategy = String(getPlantingStrategy() || '').trim();
 
@@ -617,7 +673,7 @@ async function autoPlantEmptyLands(deadLandIds: number[], emptyLandIds: number[]
         if (plantedLands.length > 0) {
             await runFertilizerByConfig(plantedLands);
         }
-        return;
+        return { plantedLands: [...new Set(plantedLands)] };
     }
 
     // 其他策略：从商店购买种植
@@ -625,106 +681,124 @@ async function autoPlantEmptyLands(deadLandIds: number[], emptyLandIds: number[]
     if (shopResult.plantedLands && shopResult.plantedLands.length > 0) {
         await runFertilizerByConfig(shopResult.plantedLands);
     }
+    return shopResult;
 }
 
 async function plantFromShop(landsToPlant: number[], state: any, overrideStrategy?: string): Promise<any> {
-    // 2. 查询种子商店
-    let bestSeed: any;
+    let candidates: any[] = [];
     try {
-        bestSeed = await findBestSeed(overrideStrategy);
+        candidates = await findBestSeed(overrideStrategy);
     } catch (e: any) {
         logWarn('商店', `查询失败: ${e.message}`);
-        return { plantedLands: [] };
+        return { plantedLands: [], remainingLandIds: [...landsToPlant], uncertain: true };
     }
-    if (!bestSeed) return { plantedLands: [] };
+    if (candidates.length === 0) return { plantedLands: [], remainingLandIds: [...landsToPlant], uncertain: false };
 
-    const seedName = getPlantNameBySeedId(bestSeed.seedId);
-    const plantCfg = getPlantBySeedId(bestSeed.seedId);
-    const growTime = plantCfg ? getPlantGrowTime(plantCfg.id) : 0;
-    const growTimeStr = growTime > 0 ? ` 生长${formatGrowTime(growTime)}` : '';
-    const plantSize = getPlantSizeBySeedId(bestSeed.seedId);
-    const landFootprint = plantSize * plantSize;
-    log('商店', `最佳种子: ${seedName} (${bestSeed.seedId}) 价格=${bestSeed.price}金币${growTimeStr}`, {
-        module: 'warehouse', event: '选择种子', seedId: bestSeed.seedId, price: bestSeed.price
-    });
+    let remainingLandIds: number[] = [...new Set<number>((Array.isArray(landsToPlant) ? landsToPlant : [])
+        .map((id: any) => toNum(id)).filter((id: number) => id > 0))];
+    const plantedLands: number[] = [];
+    let uncertain = false;
 
-    // 3. 购买
-    let needCount = landsToPlant.length;
-    if (landFootprint > 1) {
-        needCount = Math.floor(landsToPlant.length / landFootprint);
-        if (needCount <= 0) {
-            log('种植', `${seedName} 需要至少 ${landFootprint} 块空地才能合并种植，当前仅 ${landsToPlant.length} 块可用，已跳过`, {
-                module: 'farm',
-                event: '种植种子',
-                result: 'skip',
-                seedId: bestSeed.seedId,
-                landFootprint,
-                emptyCount: landsToPlant.length,
+    for (const candidate of candidates) {
+        if (remainingLandIds.length === 0 || uncertain) break;
+        const seedName = getPlantNameBySeedId(candidate.seedId);
+        const plantCfg = getPlantBySeedId(candidate.seedId);
+        const plantSize = getPlantSizeBySeedId(candidate.seedId);
+        const growTime = plantCfg ? getPlantGrowTime(plantCfg.id) : 0;
+        const growTimeStr = growTime > 0 ? ` 生长${formatGrowTime(growTime)}` : '';
+        const allLayouts: PlantingLayout[] = buildPlantingLayouts(remainingLandIds, plantSize);
+        let layouts: PlantingLayout[] = selectNonOverlappingLayouts(allLayouts, allLayouts.length);
+        if (layouts.length === 0) {
+            log('种植', `${seedName} 无合法 ${plantSize}x${plantSize} 布局，继续下一候选`, {
+                module: 'farm', event: '种植种子', result: 'skip_no_layout', seedId: candidate.seedId,
+                plantSize, emptyCount: remainingLandIds.length
             });
-            return;
+            continue;
         }
-    }
-    const totalCost = bestSeed.price * needCount;
-    if (totalCost > state.gold) {
-        logWarn('商店', `金币不足! 需要 ${totalCost} 金币, 当前 ${state.gold} 金币`, {
-            module: 'farm', event: '购买种子跳过', result: 'insufficient_gold', need: totalCost, current: state.gold
-        });
-        const canBuy = Math.floor(state.gold / bestSeed.price);
-        if (canBuy <= 0) return { plantedLands: [] };
-        needCount = canBuy;
-        log('商店', plantSize > 1 ? `金币有限，只尝试种植 ${canBuy} 组 ${plantSize}x${plantSize} 作物` : `金币有限，只种 ${canBuy} 块地`);
-    }
 
-    let actualSeedId = bestSeed.seedId;
-    try {
-        const buyReply = await buyGoods(bestSeed.goodsId, needCount, bestSeed.price);
-        if (buyReply.get_items && buyReply.get_items.length > 0) {
-            const gotItem = buyReply.get_items[0];
-            const gotId = toNum(gotItem.id);
-            if (gotId > 0) actualSeedId = gotId;
+        const unitItemCount = Math.max(1, toNum(candidate.unitItemCount) || 1);
+        const requiredSeedCount = layouts.length;
+        const requiredPurchaseUnits = Math.ceil(requiredSeedCount / unitItemCount);
+        const maxPurchaseUnits = Number(candidate.maxPurchaseCount);
+        const affordablePurchaseUnits = Math.floor(Math.max(0, toNum(state && state.gold)) / candidate.price);
+        const purchaseUnits = Math.min(
+            requiredPurchaseUnits,
+            Number.isFinite(maxPurchaseUnits) ? maxPurchaseUnits : requiredPurchaseUnits,
+            affordablePurchaseUnits,
+        );
+        if (purchaseUnits <= 0) {
+            logWarn('商店', `金币或限购额度不足，无法购买 ${seedName} 种子，继续下一候选`, {
+                module: 'farm', event: '购买种子跳过', result: 'insufficient_gold_or_limit',
+                seedId: candidate.seedId, price: candidate.price, current: toNum(state && state.gold)
+            });
+            continue;
         }
-        if (buyReply.cost_items) {
-            for (const item of buyReply.cost_items) {
-                state.gold -= toNum(item.count);
+        let needCount = Math.min(requiredSeedCount, purchaseUnits * unitItemCount);
+        layouts = layouts.slice(0, needCount);
+        if (needCount < requiredSeedCount) {
+            log('商店', plantSize > 1
+                ? `金币或限购额度有限，只尝试种植 ${needCount} 组 ${plantSize}x${plantSize} 作物`
+                : `金币或限购额度有限，只种 ${needCount} 块地`);
+        }
+
+        log('商店', `选择种子: ${seedName} (${candidate.seedId}) 价格=${candidate.price}金币${growTimeStr}`, {
+            module: 'warehouse', event: '选择种子', seedId: candidate.seedId, price: candidate.price,
+            count: needCount, purchaseUnits, unitItemCount
+        });
+
+        let actualSeedId = candidate.seedId;
+        try {
+            const buyReply = await buyGoods(candidate.goodsId, purchaseUnits, candidate.price);
+            if (buyReply.get_items && buyReply.get_items.length > 0) {
+                const gotItem = buyReply.get_items[0];
+                const gotId = toNum(gotItem && gotItem.id);
+                const gotCount = toNum(gotItem && gotItem.count);
+                if (gotId > 0) actualSeedId = gotId;
+                if (gotCount > 0 && gotCount < needCount) {
+                    needCount = gotCount;
+                    layouts = layouts.slice(0, needCount);
+                }
             }
+            if (buyReply.cost_items) {
+                for (const item of buyReply.cost_items) state.gold -= toNum(item.count);
+            }
+            log('购买', `已购买 ${getPlantNameBySeedId(actualSeedId)}种子 x${purchaseUnits * unitItemCount}, 花费 ${candidate.price * purchaseUnits} 金币`, {
+                module: 'warehouse', event: '购买种子', result: 'ok', seedId: actualSeedId,
+                count: purchaseUnits * unitItemCount, purchaseUnits, cost: candidate.price * purchaseUnits
+            });
+        } catch (e: any) {
+            logWarn('购买', `${seedName} 购买结果不确定，停止后续购买: ${e.message}`, {
+                module: 'warehouse', event: '购买种子', result: 'purchase_uncertain', seedId: candidate.seedId
+            });
+            uncertain = true;
+            break;
         }
-        const boughtName = getPlantNameBySeedId(actualSeedId);
-        log('购买', `已购买 ${boughtName}种子 x${needCount}, 花费 ${bestSeed.price * needCount} 金币`, {
-            module: 'warehouse',
-            event: '购买种子',
-            result: 'ok',
-            seedId: actualSeedId,
-            count: needCount,
-            cost: bestSeed.price * needCount,
-        });
-    } catch (e: any) {
-        logWarn('购买', e.message);
-        return { plantedLands: [] };
-    }
 
-    // 4. 种植（逐块拖动，间隔50ms）
-    let plantedLands: number[] = [];
-    try {
-        const { planted, plantedLandIds, occupiedLandIds } = await plantSeeds(actualSeedId, landsToPlant, { maxPlantCount: needCount });
-        const occupiedCount = occupiedLandIds.length > 0 ? occupiedLandIds.length : planted;
+        const result = await plantSeeds(actualSeedId, layouts.map(layout => layout.anchorLandId), {
+            maxPlantCount: needCount,
+            layouts,
+        });
+        plantedLands.push(...result.plantedLandIds);
+        const consumed = new Set<number>([
+            ...result.reservedLandIds,
+            ...result.occupiedLandIds,
+        ].map((id: any) => toNum(id)).filter((id: number) => id > 0));
+        remainingLandIds = remainingLandIds.filter(id => !consumed.has(id));
         log('种植', plantSize > 1
-            ? `已种植 ${planted} 组 ${plantSize}x${plantSize} 作物，占用 ${occupiedCount} 块地 (${occupiedLandIds.join(',')})`
-            : `已在 ${planted} 块地种植 (${landsToPlant.slice(0, planted).join(',')})`, {
-            module: 'farm',
-            event: '种植种子',
-            result: 'ok',
-            seedId: actualSeedId,
-            count: planted,
-            occupiedCount,
+            ? `已种植 ${result.planted} 组 ${plantSize}x${plantSize} 作物，占用 ${result.occupiedLandIds.length} 块地 (${result.occupiedLandIds.join(',')})`
+            : `已在 ${result.planted} 块地种植 (${result.plantedLandIds.join(',')})`, {
+            module: 'farm', event: '种植种子', result: result.uncertain ? 'uncertain' : 'ok',
+            seedId: actualSeedId, count: result.planted, occupiedCount: result.occupiedLandIds.length
         });
-        if (planted > 0) {
-            plantedLands = plantedLandIds;
+        if (result.uncertain) {
+            uncertain = true;
+            logWarn('种植', `${seedName} 种植或占地状态不确定，停止后续购买`, {
+                module: 'farm', event: '种植种子', result: 'plant_uncertain', seedId: actualSeedId
+            });
         }
-    } catch (e: any) {
-        logWarn('种植', e.message);
     }
 
-    return { plantedLands };
+    return { plantedLands: [...new Set(plantedLands)], remainingLandIds, uncertain };
 }
 
 async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNormal?: boolean; reason?: string } = {}): Promise<{ normal: number; organic: number }> {

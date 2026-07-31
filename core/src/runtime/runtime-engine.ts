@@ -114,6 +114,7 @@ function createRuntimeEngine(options: RuntimeEngineOptions = {}) {
         addAccountLog,
         nextConfigRevision,
         broadcastConfigToWorkers,
+        buildConfigSnapshotForAccount,
         broadcastGameConfigReload,
         startWorker,
         stopWorker,

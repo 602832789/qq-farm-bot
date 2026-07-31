@@ -11,6 +11,7 @@ const {
     STORE_FILE,
     PUSHOO_CHANNELS,
     DEFAULT_OFFLINE_REMINDER,
+    PREVIOUS_DEFAULT_CLIENT_VERSION,
     globalConfig,
     normalizeAccountConfig,
     cloneAccountConfig,
@@ -216,16 +217,21 @@ function setSystemConfig(config: Partial<SystemConfig> | undefined): SystemConfi
     const DEFAULT_DEVICE_INFO = {
         os: 'Windows',
         clientVersion: DEFAULT_CLIENT_VERSION,
-        sysSoftware: 'Windows 10',
+        sysSoftware: 'Windows',
         network: 'wifi',
         memory: '16384',
         deviceId: 'DESKTOP-PC<WPC>',
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) NetType/WIFI MiniProgramEnv/Windows WindowsWechat/WMPF WindowsWechat(0x63090a13)',
     };
     const srcDevice = (config.deviceInfo && typeof config.deviceInfo === 'object') ? config.deviceInfo : {};
+    const topVersion = String(config.clientVersion || '').trim();
+    const deviceVersion = String((srcDevice as any).clientVersion || '').trim();
+    const customDeviceVersion = deviceVersion && deviceVersion !== PREVIOUS_DEFAULT_CLIENT_VERSION ? deviceVersion : '';
+    const customTopVersion = topVersion && topVersion !== PREVIOUS_DEFAULT_CLIENT_VERSION ? topVersion : '';
+    const clientVersion = customDeviceVersion || customTopVersion || DEFAULT_DEVICE_INFO.clientVersion;
     const deviceInfo = {
         os: String((srcDevice as any).os || DEFAULT_DEVICE_INFO.os).trim(),
-        clientVersion: String((srcDevice as any).clientVersion || DEFAULT_DEVICE_INFO.clientVersion).trim(),
+        clientVersion,
         sysSoftware: String((srcDevice as any).sysSoftware || DEFAULT_DEVICE_INFO.sysSoftware).trim(),
         network: String((srcDevice as any).network || DEFAULT_DEVICE_INFO.network).trim(),
         memory: String((srcDevice as any).memory || DEFAULT_DEVICE_INFO.memory).trim(),
@@ -250,6 +256,10 @@ loadGlobalConfig();
 globalConfig.offlineReminder = normalizeOfflineReminder(globalConfig.offlineReminder);
 for (const [username, cfg] of Object.entries(globalConfig.userOfflineReminders || {})) {
     globalConfig.userOfflineReminders[username] = normalizeOfflineReminder(cfg);
+}
+if (sharedState.systemConfigMigrated) {
+    saveGlobalConfig();
+    sharedState.systemConfigMigrated = false;
 }
 
 module.exports = {

@@ -144,11 +144,12 @@ function getDisplayLandContext(land: any, landsMap: Map<number, any>): {
     }
 
     const selfId = toNum(land && land.id);
+    const selfOccupiedLandIds = [selfId, ...getSlaveLandIds(land)].filter(Boolean);
     return {
         sourceLand: land,
         occupiedByMaster: false,
         masterLandId: selfId,
-        occupiedLandIds: [selfId].filter(Boolean),
+        occupiedLandIds: [...new Set(selfOccupiedLandIds)],
     };
 }
 
@@ -394,6 +395,102 @@ function buildLandMap(lands: any[] | undefined | null): Map<number, any> {
     return map;
 }
 
+interface PlantingLayout {
+    anchorLandId: number;
+    landIds: number[];
+}
+
+function buildPlantingLayouts(availableLandIds: number[], plantSize: number): PlantingLayout[] {
+    const size = Math.max(1, toNum(plantSize) || 1);
+    const orderedIds = [...new Set((Array.isArray(availableLandIds) ? availableLandIds : [])
+        .map((id: any) => toNum(id))
+        .filter(Boolean))];
+    if (size === 1) {
+        return orderedIds.map((id: number) => ({ anchorLandId: id, landIds: [id] }));
+    }
+
+    const { getLandConfigById, getLandConfigByCoordinate } = require('../../config/gameConfig');
+    const available = new Set<number>(orderedIds);
+    const layouts: PlantingLayout[] = [];
+    const seen = new Set<string>();
+
+    for (const anchorLandId of orderedIds) {
+        const anchor = getLandConfigById(anchorLandId);
+        if (!anchor) continue;
+        const footprint: number[] = [];
+        let complete = true;
+        for (let yOffset = 0; yOffset < size && complete; yOffset++) {
+            for (let xOffset = 0; xOffset < size; xOffset++) {
+                const land = getLandConfigByCoordinate(
+                    Number(anchor.grid_x) + xOffset,
+                    Number(anchor.grid_y) + yOffset,
+                );
+                const landId = toNum(land && land.id);
+                if (!landId || !available.has(landId)) {
+                    complete = false;
+                    break;
+                }
+                footprint.push(landId);
+            }
+        }
+        if (!complete) continue;
+        const key = [...footprint].sort((a, b) => a - b).join(',');
+        if (seen.has(key)) continue;
+        seen.add(key);
+        layouts.push({ anchorLandId, landIds: footprint });
+    }
+    return layouts;
+}
+
+function selectNonOverlappingLayouts(layouts: PlantingLayout[], maxCount: number): PlantingLayout[] {
+    const source = Array.isArray(layouts) ? layouts : [];
+    const limit = Math.max(0, toNum(maxCount) || 0);
+    if (limit === 0 || source.length === 0) return [];
+
+    let best: PlantingLayout[] = [];
+    function visit(index: number, selected: PlantingLayout[], occupied: Set<number>): void {
+        if (selected.length > best.length) best = [...selected];
+        if (selected.length >= limit || index >= source.length) return;
+        if (selected.length + source.length - index <= best.length) return;
+
+        const layout = source[index];
+        if (layout.landIds.every(id => !occupied.has(id))) {
+            const nextOccupied = new Set(occupied);
+            layout.landIds.forEach(id => nextOccupied.add(id));
+            selected.push(layout);
+            visit(index + 1, selected, nextOccupied);
+            selected.pop();
+        }
+        visit(index + 1, selected, occupied);
+    }
+    visit(0, [], new Set<number>());
+    return best.slice(0, limit);
+}
+
+function resolveOccupiedLandIds(anchorLandId: number, lands: any[] | undefined | null): {
+    masterLandId: number;
+    occupiedLandIds: number[];
+} {
+    const anchorId = toNum(anchorLandId);
+    const list: any[] = Array.isArray(lands) ? lands : [];
+    const landsMap = buildLandMap(list);
+    const slaveToMaster = buildSlaveToMasterMap(list);
+    const anchor = landsMap.get(anchorId);
+    const declaredMasterId = toNum(anchor && anchor.master_land_id);
+    const masterLandId = declaredMasterId || slaveToMaster.get(anchorId) || anchorId;
+    const master = landsMap.get(masterLandId) || anchor;
+    const occupied = new Set<number>();
+    if (masterLandId) occupied.add(masterLandId);
+    getSlaveLandIds(master).forEach(id => occupied.add(id));
+    for (const land of list) {
+        const landId = toNum(land && land.id);
+        if (landId && toNum(land && land.master_land_id) === masterLandId) occupied.add(landId);
+        if (landId === masterLandId) getSlaveLandIds(land).forEach(id => occupied.add(id));
+    }
+    if (occupied.size === 0 && anchorId) occupied.add(anchorId);
+    return { masterLandId: masterLandId || anchorId, occupiedLandIds: [...occupied] };
+}
+
 function getLandLifecycleState(land: any): string {
     if (!land) return 'unknown';
     const plant = land.plant;
@@ -506,6 +603,9 @@ module.exports = {
     formatFertilizerLandTypes,
     analyzeLands,
     buildLandMap,
+    buildPlantingLayouts,
+    selectNonOverlappingLayouts,
+    resolveOccupiedLandIds,
     getLandLifecycleState,
     classifyHarvestedLandsByMap,
     resolveRemovableHarvestedLands,

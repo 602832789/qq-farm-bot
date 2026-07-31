@@ -15,6 +15,7 @@ interface DataProviderOptions {
     addAccountLog: (action: string, msg: string, accountId?: string, accountName?: string, extra?: any) => void;
     nextConfigRevision: () => number;
     broadcastConfigToWorkers: (accountId?: string) => void;
+    buildConfigSnapshotForAccount: (accountId: string) => any;
     broadcastGameConfigReload?: () => void;
     startWorker: (account: any) => boolean;
     stopWorker: (accountId: string) => void;
@@ -35,6 +36,7 @@ function createDataProvider(options: DataProviderOptions) {
         addAccountLog,
         nextConfigRevision,
         broadcastConfigToWorkers,
+        buildConfigSnapshotForAccount,
         broadcastGameConfigReload: broadcastGameConfigReloadOpt,
         startWorker,
         stopWorker,
@@ -121,6 +123,16 @@ function createDataProvider(options: DataProviderOptions) {
         useItem: (accountRef: string, itemId: number, count: number) => callWorkerApi(resolveAccountRefId(accountRef), 'useItem', itemId, count),
         sellItems: (accountRef: string, items: any[]) => callWorkerApi(resolveAccountRefId(accountRef), 'sellItems', items),
         getDailyGifts: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getDailyGiftOverview'),
+        getActivityCenterSnapshot: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getActivityCenterSnapshot'),
+        getCurrentSeasonEvent: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getCurrentSeasonEvent'),
+        getCurrentStarSandShop: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getCurrentStarSandShop'),
+        getCurrentSolarTerms: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getCurrentSolarTerms'),
+        claimBattlePassRewards: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'claimBattlePassRewards'),
+        exchangeStarSandGoods: (accountRef: string, goodsId: unknown, count: unknown) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'exchangeStarSandGoods', goodsId, count)
+        ),
+        lightConstellation: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'lightConstellation'),
+        claimSolarTerm: (accountRef: string, termId: string) => callWorkerApi(resolveAccountRefId(accountRef), 'claimSolarTerm', termId),
         getSeeds: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getSeeds'),
 
         setAutomation: async (accountRef: string, key: string, value: any) => {
@@ -136,12 +148,6 @@ function createDataProvider(options: DataProviderOptions) {
 
         doFarmOp: (accountRef: string, opType: string) => callWorkerApi(resolveAccountRefId(accountRef), 'doFarmOp', opType),
 
-        // 活动
-        getActivityGroup: (accountRef: string, groupId: number) => callWorkerApi(resolveAccountRefId(accountRef), 'getActivityGroup', groupId),
-        getActivityList: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getActivityList'),
-        operateActivity: (accountRef: string, activityId: number, operateType: number, param: number) => callWorkerApi(resolveAccountRefId(accountRef), 'operateActivity', activityId, operateType, param),
-        getSolarTerms: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getSolarTerms'),
-        getSeasonInfo: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getSeasonInfo'),
         doAnalytics: (accountRef: string, sortBy: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getAnalytics', sortBy),
         buyFertilizer: (accountRef: string, type: string, count: number) => callWorkerApi(resolveAccountRefId(accountRef), 'buyFertilizer', type, count),
         checkAndBuyFertilizer: (accountRef: string, options: any) => callWorkerApi(resolveAccountRefId(accountRef), 'checkAndBuyFertilizer', options),
@@ -151,44 +157,90 @@ function createDataProvider(options: DataProviderOptions) {
                 throw new Error('Missing x-account-id');
             }
             const body = (payload && typeof payload === 'object') ? payload : {};
-            const plantingStrategy = (body.plantingStrategy !== undefined) ? body.plantingStrategy : body.strategy;
-            const preferredSeedId = (body.preferredSeedId !== undefined) ? body.preferredSeedId : body.seedId;
-            const snapshot = {
-                plantingStrategy,
-                preferredSeedId,
-                intervals: body.intervals,
-                friendQuietHours: body.friendQuietHours,
-                stealDelaySeconds: body.stealDelaySeconds,
-                plantOrderRandom: body.plantOrderRandom,
-                plantDelaySeconds: body.plantDelaySeconds,
-                fertilizerBuyOrganicCount: body.fertilizerBuyOrganicCount,
-                fertilizerBuyOrganicThresholdHours: body.fertilizerBuyOrganicThresholdHours,
-                fertilizerBuyNormalCount: body.fertilizerBuyNormalCount,
-                fertilizerBuyNormalThresholdHours: body.fertilizerBuyNormalThresholdHours,
-                fertilizerBuyCheckIntervalMinutes: body.fertilizerBuyCheckIntervalMinutes,
-                bagSeedPriority: body.bagSeedPriority,
-                bagSeedFallbackStrategy: body.bagSeedFallbackStrategy,
+            const snapshot: Record<string, any> = {};
+            const copyIfPresent = (sourceKey: string, targetKey: string = sourceKey): void => {
+                if (Object.prototype.hasOwnProperty.call(body, sourceKey)) {
+                    snapshot[targetKey] = body[sourceKey];
+                }
             };
+
+            copyIfPresent('plantingStrategy');
+            if (!Object.prototype.hasOwnProperty.call(snapshot, 'plantingStrategy')) copyIfPresent('strategy', 'plantingStrategy');
+            copyIfPresent('preferredSeedId');
+            if (!Object.prototype.hasOwnProperty.call(snapshot, 'preferredSeedId')) copyIfPresent('seedId', 'preferredSeedId');
+            for (const key of [
+                'automation',
+                'intervals',
+                'friendQuietHours',
+                'stealDelaySeconds',
+                'plantOrderRandom',
+                'plantDelaySeconds',
+                'fertilizerBuyOrganicCount',
+                'fertilizerBuyOrganicThresholdHours',
+                'fertilizerBuyNormalCount',
+                'fertilizerBuyNormalThresholdHours',
+                'fertilizerBuyCheckIntervalMinutes',
+                'bagSeedPriority',
+                'bagSeedFallbackStrategy',
+            ]) {
+                copyIfPresent(key);
+            }
+
+            // One apply performs the only persistence for this save request.
             store.applyConfigSnapshot(snapshot, { accountId });
             const rev = nextConfigRevision();
-            broadcastConfigToWorkers(accountId);
-            return {
-                strategy: store.getPlantingStrategy(accountId),
-                preferredSeed: store.getPreferredSeed(accountId),
-                intervals: store.getIntervals(accountId),
-                friendQuietHours: store.getFriendQuietHours(accountId),
-                stealDelaySeconds: store.getStealDelaySeconds(accountId),
-                plantOrderRandom: store.getPlantOrderRandom(accountId),
-                plantDelaySeconds: store.getPlantDelaySeconds(accountId),
-                fertilizerBuyOrganicCount: store.getFertilizerBuyOrganicCount(accountId),
-                fertilizerBuyOrganicThresholdHours: store.getFertilizerBuyOrganicThresholdHours(accountId),
-                fertilizerBuyNormalCount: store.getFertilizerBuyNormalCount(accountId),
-                fertilizerBuyNormalThresholdHours: store.getFertilizerBuyNormalThresholdHours(accountId),
-                fertilizerBuyCheckIntervalMinutes: store.getFertilizerBuyCheckIntervalMinutes(accountId),
-                bagSeedPriority: store.getBagSeedPriority(accountId),
-                bagSeedFallbackStrategy: store.getBagSeedFallbackStrategy(accountId),
+            const config = buildConfigSnapshotForAccount(accountId);
+            const { ui: _ui, ...savedConfig } = store.getConfigSnapshot(accountId);
+            const result: Record<string, any> = {
+                ...savedConfig,
+                strategy: savedConfig.plantingStrategy,
+                preferredSeed: savedConfig.preferredSeedId,
+                saved: true,
                 configRevision: rev,
             };
+
+            const targetWorker = workers[accountId];
+            if (!targetWorker || targetWorker.stopping || targetWorker.terminalHandled) {
+                return {
+                    ...result,
+                    status: 'stopped',
+                    stopped: true,
+                    confirmed: false,
+                    appliedRevision: null,
+                };
+            }
+
+            try {
+                const ack = await callWorkerApi(accountId, 'applyRuntimeConfigSnapshot', config);
+                const appliedRevision = Number(ack && ack.appliedRevision);
+                if (!Number.isFinite(appliedRevision) || appliedRevision < rev) {
+                    const error: any = new Error(`Worker applied revision ${appliedRevision || 0}, expected at least ${rev}`);
+                    error.code = 'CONFIG_ACK_REVISION_MISMATCH';
+                    throw error;
+                }
+                return {
+                    ...result,
+                    status: 'confirmed',
+                    stopped: false,
+                    confirmed: true,
+                    appliedRevision,
+                };
+            } catch (e: any) {
+                const message = String(e?.message || e || 'Worker configuration ACK failed');
+                const code = e?.code || (message === 'API Timeout' ? 'CONFIG_ACK_TIMEOUT' : 'CONFIG_ACK_FAILED');
+                return {
+                    ...result,
+                    status: 'unconfirmed',
+                    stopped: false,
+                    confirmed: false,
+                    unconfirmed: true,
+                    appliedRevision: null,
+                    confirmationError: {
+                        code: String(code),
+                        message,
+                    },
+                };
+            }
         },
 
         setUITheme: async (theme: string) => {

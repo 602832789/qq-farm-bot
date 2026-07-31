@@ -27,7 +27,6 @@ const {
     putWeeds,
     putInsectsDetailed,
     putWeedsDetailed,
-    checkCanOperateRemote,
 } = require('./api');
 const {
     postToMaster,
@@ -44,6 +43,83 @@ function schedulerRef(): any {
 // ============ 内部状态 ============
 let friendsListCache: any[] | null = null;
 let friendsListCacheTime: number = 0;
+
+interface FarmingOutcome {
+    effect: 'confirmed' | 'noop' | 'uncertain';
+    operationCount: number;
+    landCount: number;
+    landIds: number[];
+    operationLimits: any[];
+    code?: number;
+}
+
+interface RecentHelpEntry {
+    state: 'in_flight' | 'confirmed' | 'noop';
+    snapshotKey: string;
+    expiresAt: number;
+}
+
+const recentHelp = new Map<string, RecentHelpEntry>();
+const HELP_IN_FLIGHT_TTL_MS = 15000;
+const HELP_RESULT_TTL_MS = 30000;
+const HELP_CACHE_MAX = 2048;
+
+function getHelpKey(hostGid: number, landId: number): string {
+    return `${hostGid}:${landId}`;
+}
+
+function pruneRecentHelp(now: number = Date.now()): void {
+    for (const [key, entry] of recentHelp) {
+        if (entry.expiresAt <= now) recentHelp.delete(key);
+    }
+    while (recentHelp.size > HELP_CACHE_MAX) {
+        const oldestKey = recentHelp.keys().next().value;
+        if (!oldestKey) break;
+        recentHelp.delete(oldestKey);
+    }
+}
+
+function getHelpSnapshotKey(lands: any[]): string {
+    return (Array.isArray(lands) ? lands : []).map((land: any) => {
+        const plant: any = land && land.plant;
+        const phase: any = plant && Array.isArray(plant.phases) ? getCurrentPhase(plant.phases) : null;
+        const weeds: string = (plant && Array.isArray(plant.weed_owners) ? plant.weed_owners : []).map(toNum).join(',');
+        const insects: string = (plant && Array.isArray(plant.insect_owners) ? plant.insect_owners : []).map(toNum).join(',');
+        return [
+            toNum(land && land.id),
+            toNum(plant && plant.id),
+            toNum(phase && phase.phase),
+            toNum(plant && plant.dry_num),
+            weeds,
+            insects,
+        ].join(':');
+    }).join('|');
+}
+
+function filterRecentHelp(hostGid: number, landIds: number[], snapshotKey: string): number[] {
+    const now = Date.now();
+    pruneRecentHelp(now);
+    return [...new Set<number>(landIds.map((id: any) => toNum(id)).filter((id: number) => id > 0))].filter((landId: number) => {
+        const key = getHelpKey(hostGid, landId);
+        const entry = recentHelp.get(key);
+        if (!entry || entry.expiresAt <= now) return true;
+        if (entry.snapshotKey !== snapshotKey) {
+            recentHelp.delete(key);
+            return true;
+        }
+        return false;
+    });
+}
+
+function markRecentHelp(hostGid: number, landIds: number[], state: RecentHelpEntry['state'], ttlMs: number, snapshotKey: string): void {
+    const expiresAt = Date.now() + ttlMs;
+    for (const landId of landIds) recentHelp.set(getHelpKey(hostGid, landId), { state, snapshotKey, expiresAt });
+    pruneRecentHelp();
+}
+
+function releaseRecentHelp(hostGid: number, landIds: number[]): void {
+    for (const landId of landIds) recentHelp.delete(getHelpKey(hostGid, landId));
+}
 
 function getFriendsListCacheTtlMs(): number {
     const sec: number = Number(getFriendsListCacheTtlSec ? getFriendsListCacheTtlSec() : 0);
@@ -478,6 +554,59 @@ export async function runBatchWithFallback(ids: number[], batchFn: (ids: number[
     }
 }
 
+function emptyFarmingOutcome(effect: FarmingOutcome['effect'] = 'noop'): FarmingOutcome {
+    return { effect, operationCount: 0, landCount: 0, landIds: [], operationLimits: [] };
+}
+
+function mergeFarmingOutcomes(outcomes: FarmingOutcome[]): FarmingOutcome {
+    const confirmed = outcomes.filter((outcome: FarmingOutcome) => outcome.effect === 'confirmed');
+    const landIds = [...new Set(confirmed.flatMap((outcome: FarmingOutcome) => outcome.landIds || []))];
+    const operationLimits = confirmed.flatMap((outcome: FarmingOutcome) => outcome.operationLimits || []);
+    return {
+        effect: confirmed.length > 0 ? 'confirmed' : (outcomes.some((outcome: FarmingOutcome) => outcome.effect === 'uncertain') ? 'uncertain' : 'noop'),
+        operationCount: confirmed.reduce((sum: number, outcome: FarmingOutcome) => sum + (Number(outcome.operationCount) || 0), 0),
+        landCount: landIds.length,
+        landIds,
+        operationLimits,
+    };
+}
+
+async function runFarmingWithFallback(hostGid: number, ids: number[], stopWhenExpLimit: boolean = false, snapshotKey: string = ''): Promise<FarmingOutcome> {
+    const target: number[] = filterRecentHelp(hostGid, Array.isArray(ids) ? ids : [], snapshotKey);
+    if (target.length === 0) return emptyFarmingOutcome();
+    markRecentHelp(hostGid, target, 'in_flight', HELP_IN_FLIGHT_TTL_MS, snapshotKey);
+    try {
+        const batch: FarmingOutcome = await helpFarming(hostGid, target, stopWhenExpLimit);
+        if (batch.effect === 'noop') {
+            markRecentHelp(hostGid, target, 'noop', HELP_RESULT_TTL_MS, snapshotKey);
+            return batch;
+        }
+        if (batch.effect === 'confirmed') {
+            markRecentHelp(hostGid, batch.landIds, 'confirmed', HELP_RESULT_TTL_MS, snapshotKey);
+        }
+        const unconfirmed = target.filter((landId: number) => !batch.landIds.includes(landId));
+        releaseRecentHelp(hostGid, unconfirmed);
+        return batch;
+    } catch {
+        releaseRecentHelp(hostGid, target);
+        const outcomes: FarmingOutcome[] = [];
+        for (const landId of target) {
+            markRecentHelp(hostGid, [landId], 'in_flight', HELP_IN_FLIGHT_TTL_MS, snapshotKey);
+            try {
+                const outcome: FarmingOutcome = await helpFarming(hostGid, [landId], stopWhenExpLimit);
+                outcomes.push(outcome);
+                if (outcome.effect === 'noop') markRecentHelp(hostGid, [landId], 'noop', HELP_RESULT_TTL_MS, snapshotKey);
+                else if (outcome.effect === 'confirmed') markRecentHelp(hostGid, outcome.landIds, 'confirmed', HELP_RESULT_TTL_MS, snapshotKey);
+                else releaseRecentHelp(hostGid, [landId]);
+            } catch {
+                releaseRecentHelp(hostGid, [landId]);
+            }
+            await sleep(100);
+        }
+        return mergeFarmingOutcomes(outcomes);
+    }
+}
+
 /**
  * 面板手动好友操作（单个好友）
  * opType: 'steal' | 'water' | 'weed' | 'bug' | 'bad'
@@ -485,6 +614,16 @@ export async function runBatchWithFallback(ids: number[], batchFn: (ids: number[
 export async function doFriendOperation(friendGid: any, opType: string): Promise<any> {
     const gid: number = toNum(friendGid);
     if (!gid) return { ok: false, message: '无效好友ID', opType };
+    if (opType === 'bad' && schedulerRef().isBadOperationLimitReached()) {
+        return {
+            ok: true,
+            opType,
+            count: 0,
+            bugCount: 0,
+            weedCount: 0,
+            message: '今日放虫/放草次数已达上限',
+        };
+    }
 
     let enterReply: any;
     try {
@@ -509,10 +648,7 @@ export async function doFriendOperation(friendGid: any, opType: string): Promise
 
         if (opType === 'steal') {
             if (!status.stealable.length) return { ok: true, opType, count: 0, message: '没有可偷取土地' };
-            const precheck: { canOperate: boolean; canStealNum: number } = await checkCanOperateRemote(gid, 10004);
-            if (!precheck.canOperate) return { ok: true, opType, count: 0, message: 'Ta已经被偷的精光了QAQ' };
-            const maxNum: number = precheck.canStealNum > 0 ? precheck.canStealNum : status.stealable.length;
-            const target: number[] = status.stealable.slice(0, maxNum);
+            const target: number[] = status.stealable;
             count = await runBatchWithFallback(target, (ids: number[]) => stealHarvest(gid, ids), (ids: number[]) => stealHarvest(gid, ids));
             if (count > 0) {
                 recordOperation('steal', count);
@@ -538,11 +674,17 @@ export async function doFriendOperation(friendGid: any, opType: string): Promise
                 : opType === 'weed' ? status.needWeed
                 : status.needBug;
             if (!landIds.length) return { ok: true, opType, count: 0, message: '没有需要照顾的土地' };
-            const precheck: { canOperate: boolean; canStealNum: number } = await checkCanOperateRemote(gid, 10001);
-            if (!precheck.canOperate) return { ok: true, opType, count: 0, message: '一键务农失败，来晚一步，可惜' };
-            count = await runBatchWithFallback(landIds, (ids: number[]) => helpFarming(gid, ids), (ids: number[]) => helpFarming(gid, ids));
-            if (count > 0) recordOperation('helpFarming', count);
-            return { ok: true, opType, count, message: `一键务农完成 ${count} 块` };
+            const outcome: FarmingOutcome = await runFarmingWithFallback(gid, landIds, false, getHelpSnapshotKey(lands));
+            count = outcome.landCount;
+            if (outcome.operationCount > 0) recordOperation('helpFarming', outcome.operationCount);
+            return {
+                ok: true,
+                opType,
+                count,
+                landCount: outcome.landCount,
+                operationCount: outcome.operationCount,
+                message: `一键务农完成 ${outcome.landCount} 块 / ${outcome.operationCount} 项操作`,
+            };
         }
 
         if (opType === 'bad') {
@@ -555,18 +697,28 @@ export async function doFriendOperation(friendGid: any, opType: string): Promise
             // 手动捣乱不依赖预检查，逐块执行（与 terminal-farm-main 保持一致）
             let failDetails: string[] = [];
             if (status.canPutBug.length) {
-                const bugRet: { ok: number; failed: any[] } = await putInsectsDetailed(gid, status.canPutBug);
+                const bugRet: { ok: number; failed: any[]; limitReached?: boolean } = await putInsectsDetailed(gid, status.canPutBug);
                 bugCount = bugRet.ok;
                 failDetails = failDetails.concat((bugRet.failed || []).map((f: any) => `放虫#${f.landId}:${f.reason}`));
                 if (bugCount > 0) recordOperation('bug', bugCount);
             }
-            if (status.canPutWeed.length) {
-                const weedRet: { ok: number; failed: any[] } = await putWeedsDetailed(gid, status.canPutWeed);
+            if (!schedulerRef().isBadOperationLimitReached() && status.canPutWeed.length) {
+                const weedRet: { ok: number; failed: any[]; limitReached?: boolean } = await putWeedsDetailed(gid, status.canPutWeed);
                 weedCount = weedRet.ok;
                 failDetails = failDetails.concat((weedRet.failed || []).map((f: any) => `放草#${f.landId}:${f.reason}`));
                 if (weedCount > 0) recordOperation('weed', weedCount);
             }
             count = bugCount + weedCount;
+            if (schedulerRef().isBadOperationLimitReached()) {
+                return {
+                    ok: true,
+                    opType,
+                    count,
+                    bugCount,
+                    weedCount,
+                    message: '今日放虫/放草次数已达上限',
+                };
+            }
             if (count <= 0) {
                 const reasonPreview: string = failDetails.slice(0, 2).join(' | ');
                 return {
@@ -641,83 +793,68 @@ export async function visitFriend(friend: any, totalActions: any, myGid: number,
         const allExpIds: number[] = [10001, 10002, 10003, 10004, 10005, 10006];
         const allowByExp: boolean = (!stopWhenExpLimit) || (schedulerRef().canGetExpByCandidates(allExpIds) && schedulerRef().getCanGetHelpExp());
         if (allHelpLandIds.length > 0 && allowByExp) {
-            const precheck: { canOperate: boolean; canStealNum: number } = await checkCanOperateRemote(gid, 10001);
-            if (precheck.canOperate) {
-                const count: number = await runBatchWithFallback(
-                    allHelpLandIds,
-                    (ids: number[]) => helpFarming(gid, ids, stopWhenExpLimit),
-                    (ids: number[]) => helpFarming(gid, ids, stopWhenExpLimit)
-                );
-                if (count > 0) {
-                    const parts: string[] = [];
-                    if (status.needWeed.length) parts.push(`草${status.needWeed.length}`);
-                    if (status.needBug.length) parts.push(`虫${status.needBug.length}`);
-                    if (status.needWater.length) parts.push(`水${status.needWater.length}`);
-                    actions.push(`一键务农${count}(${parts.join('/')})`);
-                    totalActions.farming += count;
-                    recordOperation('helpFarming', count);
-                }
+            const outcome: FarmingOutcome = await runFarmingWithFallback(gid, allHelpLandIds, stopWhenExpLimit, getHelpSnapshotKey(lands));
+            if (outcome.landCount > 0) {
+                const parts: string[] = [];
+                if (status.needWeed.length) parts.push(`草${status.needWeed.length}`);
+                if (status.needBug.length) parts.push(`虫${status.needBug.length}`);
+                if (status.needWater.length) parts.push(`水${status.needWater.length}`);
+                actions.push(`一键务农${outcome.landCount}块/${outcome.operationCount}项(${parts.join('/')})`);
+                totalActions.farming += outcome.landCount;
+                recordOperation('helpFarming', outcome.operationCount);
             }
         }
     }
 
     // 2. 偷菜操作
     if (isAutomationOn('friend_steal') && status.stealable.length > 0) {
-        const precheck: { canOperate: boolean; canStealNum: number } = await checkCanOperateRemote(gid, 10004);
-        if (precheck.canOperate) {
-            const canStealNum: number = precheck.canStealNum > 0 ? precheck.canStealNum : status.stealable.length;
-            const targetLands: number[] = status.stealable.slice(0, canStealNum);
+        const targetLands: number[] = status.stealable;
 
-            let ok: number = 0;
-            const stolenPlants: string[] = [];
+        let ok: number = 0;
+        const stolenPlants: string[] = [];
 
-            // 尝试批量偷取
-            try {
-                await stealHarvest(gid, targetLands);
-                ok = targetLands.length;
-                targetLands.forEach((id: number) => {
-                    const info: any = status.stealableInfo.find((x: any) => x.landId === id);
+        // 尝试批量偷取
+        try {
+            await stealHarvest(gid, targetLands);
+            ok = targetLands.length;
+            targetLands.forEach((id: number) => {
+                const info: any = status.stealableInfo.find((x: any) => x.landId === id);
+                if (info) stolenPlants.push(info.name);
+            });
+        } catch {
+            // 批量失败，降级为单个
+            for (const landId of targetLands) {
+                try {
+                    await stealHarvest(gid, [landId]);
+                    ok++;
+                    const info: any = status.stealableInfo.find((x: any) => x.landId === landId);
                     if (info) stolenPlants.push(info.name);
-                });
-            } catch {
-                // 批量失败，降级为单个
-                for (const landId of targetLands) {
-                    try {
-                        await stealHarvest(gid, [landId]);
-                        ok++;
-                        const info: any = status.stealableInfo.find((x: any) => x.landId === landId);
-                        if (info) stolenPlants.push(info.name);
-                    } catch { /* ignore */ }
-                    await randomDelay(500, 800);
-                }
-            }
-
-            if (ok > 0) {
-                const plantNames: string = [...new Set(stolenPlants)].join('/');
-                actions.push(`偷${ok}${plantNames ? `(${  plantNames  })` : ''}`);
-                totalActions.steal += ok;
-                recordOperation('steal', ok);
+                } catch { /* ignore */ }
                 await randomDelay(500, 800);
             }
+        }
+
+        if (ok > 0) {
+            const plantNames: string = [...new Set(stolenPlants)].join('/');
+            actions.push(`偷${ok}${plantNames ? `(${  plantNames  })` : ''}`);
+            totalActions.steal += ok;
+            recordOperation('steal', ok);
+            await randomDelay(500, 800);
         }
     }
 
     // 3. 捣乱操作 (放虫/放草)
     const autoBad: boolean = isAutomationOn('friend_bad');
-    if (autoBad) {
-        // 使用远程检查获取准确的剩余次数
-        const bugCheck: { canOperate: boolean; canStealNum: number } = await checkCanOperateRemote(gid, 10005);
-        const weedCheck: { canOperate: boolean; canStealNum: number } = await checkCanOperateRemote(gid, 10006);
-
-        if (status.canPutBug.length > 0 && bugCheck.canOperate) {
+    if (autoBad && !schedulerRef().isBadOperationLimitReached()) {
+        if (status.canPutBug.length > 0) {
             const remaining: number = schedulerRef().getRemainingTimes(10005);
             const toProcess: number[] = status.canPutBug.slice(0, remaining);
             const ok: number = await putInsects(gid, toProcess);
             if (ok > 0) { actions.push(`放虫${ok}`); totalActions.putBug += ok; }
-            await randomDelay(500, 800);
+            if (!schedulerRef().isBadOperationLimitReached()) await randomDelay(500, 800);
         }
 
-        if (status.canPutWeed.length > 0 && weedCheck.canOperate) {
+        if (!schedulerRef().isBadOperationLimitReached() && status.canPutWeed.length > 0) {
             const remaining: number = schedulerRef().getRemainingTimes(10006);
             const toProcess: number[] = status.canPutWeed.slice(0, remaining);
             const ok: number = await putWeeds(gid, toProcess);
@@ -808,42 +945,38 @@ export async function visitFriendForSteal(friend: any, totalActions: any, myGid:
 
     // 只执行偷菜
     if (status.stealable.length > 0) {
-        const precheck: { canOperate: boolean; canStealNum: number } = await checkCanOperateRemote(gid, 10004);
-        if (precheck.canOperate) {
-            const canStealNum: number = precheck.canStealNum > 0 ? precheck.canStealNum : status.stealable.length;
-            const targetLands: number[] = status.stealable.slice(0, canStealNum);
+        const targetLands: number[] = status.stealable;
 
-            let ok: number = 0;
-            const stolenPlants: string[] = [];
+        let ok: number = 0;
+        const stolenPlants: string[] = [];
 
-            // 尝试批量偷取
-            try {
-                await stealHarvest(gid, targetLands);
-                ok = targetLands.length;
-                targetLands.forEach((id: number) => {
-                    const info: any = status.stealableInfo.find((x: any) => x.landId === id);
+        // 尝试批量偷取
+        try {
+            await stealHarvest(gid, targetLands);
+            ok = targetLands.length;
+            targetLands.forEach((id: number) => {
+                const info: any = status.stealableInfo.find((x: any) => x.landId === id);
+                if (info) stolenPlants.push(info.name);
+            });
+        } catch {
+            // 批量失败，降级为单个
+            for (const landId of targetLands) {
+                try {
+                    await stealHarvest(gid, [landId]);
+                    ok++;
+                    const info: any = status.stealableInfo.find((x: any) => x.landId === landId);
                     if (info) stolenPlants.push(info.name);
-                });
-            } catch {
-                // 批量失败，降级为单个
-                for (const landId of targetLands) {
-                    try {
-                        await stealHarvest(gid, [landId]);
-                        ok++;
-                        const info: any = status.stealableInfo.find((x: any) => x.landId === landId);
-                        if (info) stolenPlants.push(info.name);
-                    } catch { /* ignore */ }
-                    await randomDelay(500, 800);
-                }
-            }
-
-            if (ok > 0) {
-                const plantNames: string = [...new Set(stolenPlants)].join('/');
-                actions.push(`偷${ok}${plantNames ? `(${plantNames})` : ''}`);
-                totalActions.steal += ok;
-                recordOperation('steal', ok);
+                } catch { /* ignore */ }
                 await randomDelay(500, 800);
             }
+        }
+
+        if (ok > 0) {
+            const plantNames: string = [...new Set(stolenPlants)].join('/');
+            actions.push(`偷${ok}${plantNames ? `(${plantNames})` : ''}`);
+            totalActions.steal += ok;
+            recordOperation('steal', ok);
+            await randomDelay(500, 800);
         }
     }
 
@@ -896,22 +1029,15 @@ export async function visitFriendForHelp(friend: any, totalActions: any, myGid: 
     const allExpIds: number[] = [10001, 10002, 10003, 10004, 10005, 10006];
     const allowByExp: boolean = (!stopWhenExpLimit) || (schedulerRef().canGetExpByCandidates(allExpIds) && schedulerRef().getCanGetHelpExp());
     if (allHelpLandIds.length > 0 && allowByExp) {
-        const precheck: { canOperate: boolean; canStealNum: number } = await checkCanOperateRemote(gid, 10001);
-        if (precheck.canOperate) {
-            const count: number = await runBatchWithFallback(
-                allHelpLandIds,
-                (ids: number[]) => helpFarming(gid, ids, stopWhenExpLimit),
-                (ids: number[]) => helpFarming(gid, ids, stopWhenExpLimit)
-            );
-            if (count > 0) {
-                const parts: string[] = [];
-                if (status.needWeed.length) parts.push(`草${status.needWeed.length}`);
-                if (status.needBug.length) parts.push(`虫${status.needBug.length}`);
-                if (status.needWater.length) parts.push(`水${status.needWater.length}`);
-                actions.push(`一键务农${count}(${parts.join('/')})`);
-                totalActions.farming += count;
-                recordOperation('helpFarming', count);
-            }
+        const outcome: FarmingOutcome = await runFarmingWithFallback(gid, allHelpLandIds, stopWhenExpLimit, getHelpSnapshotKey(lands));
+        if (outcome.landCount > 0) {
+            const parts: string[] = [];
+            if (status.needWeed.length) parts.push(`草${status.needWeed.length}`);
+            if (status.needBug.length) parts.push(`虫${status.needBug.length}`);
+            if (status.needWater.length) parts.push(`水${status.needWater.length}`);
+            actions.push(`一键务农${outcome.landCount}块/${outcome.operationCount}项(${parts.join('/')})`);
+            totalActions.farming += outcome.landCount;
+            recordOperation('helpFarming', outcome.operationCount);
         }
     }
 
@@ -930,5 +1056,6 @@ export async function visitFriendForHelp(friend: any, totalActions: any, myGid: 
 export function clearFriendsListCache(): void {
     friendsListCache = null;
     friendsListCacheTime = 0;
+    recentHelp.clear();
 }
 

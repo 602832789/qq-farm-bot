@@ -105,7 +105,7 @@ function analyzeTaskList(tasks: any[], category: string = 'main'): any[] {
     const claimable: any[] = [];
     for (const task of tasks) {
         const t: any = formatTask(task, category);
-        if (t.canClaim) {
+        if (t.id > 0 && t.canClaim) {
             claimable.push(t);
         }
     }
@@ -128,15 +128,49 @@ function getRewardSummary(items: any[]): string {
     return summary.join('/');
 }
 
-function buildDailyTasksForDebug(taskInfo: any): any[] {
-    const ti: any = taskInfo && typeof taskInfo === 'object' ? taskInfo : {};
-    const dailyList: any[] = Array.isArray(ti.daily_tasks) ? ti.daily_tasks : [];
-    if (dailyList.length > 0) return dailyList;
-    const merged: any[] = [
-        ...(Array.isArray(ti.tasks) ? ti.tasks : []),
-        ...(Array.isArray(ti.growth_tasks) ? ti.growth_tasks : []),
-    ];
-    return merged.filter((t: any) => toNum(t && t.task_type) === 2);
+interface NormalizedTaskInfo {
+    growthTasks: any[];
+    dailyTasks: any[];
+    otherTasks: any[];
+    actives: any[];
+}
+
+function normalizeTaskInfo(taskInfo: any): NormalizedTaskInfo {
+    const source: any = taskInfo && typeof taskInfo === 'object' ? taskInfo : {};
+    const growthTasks: any[] = [];
+    const dailyTasks: any[] = [];
+    const otherTasks: any[] = [];
+    const seenIds = new Set<number>();
+
+    const append = (task: any, target: any[]): void => {
+        if (!task || typeof task !== 'object') return;
+        const id: number = toNum(task.id);
+        if (id > 0) {
+            if (seenIds.has(id)) return;
+            seenIds.add(id);
+        }
+        target.push(task);
+    };
+
+    for (const task of (Array.isArray(source.tasks) ? source.tasks : [])) {
+        const taskType: number = toNum(task && task.task_type);
+        if (taskType === 1) append(task, growthTasks);
+        else if (taskType === 2) append(task, dailyTasks);
+        else append(task, otherTasks);
+    }
+    for (const task of (Array.isArray(source.growth_tasks) ? source.growth_tasks : [])) {
+        append(task, growthTasks);
+    }
+    for (const task of (Array.isArray(source.daily_tasks) ? source.daily_tasks : [])) {
+        append(task, dailyTasks);
+    }
+
+    return {
+        growthTasks,
+        dailyTasks,
+        otherTasks,
+        actives: Array.isArray(source.actives) ? source.actives : [],
+    };
 }
 
 async function checkAndClaimActives(actives: any[]): Promise<{ scanned: number; claimed: number; errors: number }> {
@@ -215,11 +249,11 @@ async function checkAndClaimTasks(): Promise<void> {
         if (!reply.task_info) { checking = false; return; }
 
         const taskInfo: any = reply.task_info;
-        const dailyAll: any[] = buildDailyTasksForDebug(taskInfo);
+        const normalized: NormalizedTaskInfo = normalizeTaskInfo(taskInfo);
 
-        const dailyClaimable: any[] = analyzeTaskList(dailyAll, 'daily');
-        const growthClaimable: any[] = analyzeTaskList(taskInfo.growth_tasks || [], 'growth');
-        const mainClaimable: any[] = analyzeTaskList(taskInfo.tasks || [], 'main');
+        const dailyClaimable: any[] = analyzeTaskList(normalized.dailyTasks, 'daily');
+        const growthClaimable: any[] = analyzeTaskList(normalized.growthTasks, 'growth');
+        const mainClaimable: any[] = analyzeTaskList(normalized.otherTasks, 'main');
         const claimable: any[] = [...dailyClaimable, ...growthClaimable, ...mainClaimable];
         if (claimable.length > 0) {
             log('任务', `发现 ${claimable.length} 个可领取任务`, {
@@ -241,7 +275,7 @@ async function checkAndClaimTasks(): Promise<void> {
                 });
             }
         }
-        await checkAndClaimActives(taskInfo.actives || []);
+        await checkAndClaimActives(normalized.actives);
         await checkAndClaimIllustratedRewards();
     } catch (e: any) {
         logWarn('任务', `检查任务失败: ${e.message}`, {
@@ -280,12 +314,13 @@ function onTaskInfoNotify(taskInfo: any): void {
     if (!taskInfo) return;
     if (!isAutomationOn('task')) return;
 
+    const normalized: NormalizedTaskInfo = normalizeTaskInfo(taskInfo);
     const claimable: any[] = [
-        ...analyzeTaskList(taskInfo.daily_tasks || [], 'daily'),
-        ...analyzeTaskList(taskInfo.growth_tasks || [], 'growth'),
-        ...analyzeTaskList(taskInfo.tasks || [], 'main'),
+        ...analyzeTaskList(normalized.dailyTasks, 'daily'),
+        ...analyzeTaskList(normalized.growthTasks, 'growth'),
+        ...analyzeTaskList(normalized.otherTasks, 'main'),
     ];
-    const actives: any[] = taskInfo.actives || [];
+    const actives: any[] = normalized.actives;
     const hasClaimable: boolean = claimable.length > 0;
     if (!hasClaimable && actives.length === 0) return;
     if (hasClaimable) log('任务', `有 ${claimable.length} 个任务可领取，准备自动领取...`, {
@@ -327,6 +362,7 @@ module.exports = {
     cleanupTaskSystem,
     claimTaskReward,
     doClaim, // 供手动领取使用
+    normalizeTaskInfo,
     getTaskClaimDailyState: () => ({
         key: 'task_claim',
         doneToday: taskClaimDoneDateKey === getDateKey(),
@@ -336,7 +372,7 @@ module.exports = {
         try {
             const reply: any = await getTaskInfo();
             const ti: any = reply && reply.task_info ? reply.task_info : {};
-            const dailyAll: any[] = buildDailyTasksForDebug(ti);
+            const dailyAll: any[] = normalizeTaskInfo(ti).dailyTasks;
             const completedDaily: any[] = dailyAll.filter((t: any) => {
                 const progress: number = toNum(t && t.progress);
                 const totalProgress: number = toNum(t && t.total_progress);
@@ -376,7 +412,7 @@ module.exports = {
         try {
             const reply: any = await getTaskInfo();
             const ti: any = reply && reply.task_info ? reply.task_info : {};
-            const growthList: any[] = Array.isArray(ti.growth_tasks) ? ti.growth_tasks : [];
+            const growthList: any[] = normalizeTaskInfo(ti).growthTasks;
             const tasks: any[] = growthList.map((t: any) => {
                 const progress: number = Math.max(0, toNum(t && t.progress));
                 const totalProgress: number = Math.max(0, toNum(t && t.total_progress));

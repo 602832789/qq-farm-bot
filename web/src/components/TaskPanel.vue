@@ -118,7 +118,7 @@ function formatTaskProgress(task: any) {
       >
         <div
           v-for="(task, idx) in growth.tasks"
-          :key="idx"
+          :key="task.id || idx"
           class="flex items-center justify-between rounded-lg px-2 py-1.5 text-sm transition hover:bg-black/5 dark:hover:bg-white/5"
         >
           <span style="color: var(--theme-text, #6b7280); opacity: 0.85">{{ task.desc || task.name }}</span>

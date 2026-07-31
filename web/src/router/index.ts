@@ -47,6 +47,7 @@ const router = createRouter({
         path: route.path,
         name: route.name,
         component: route.component,
+        meta: route.meta,
       })),
     },
     {

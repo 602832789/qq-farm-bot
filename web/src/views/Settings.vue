@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useIntervalFn } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
-import { computed, onMounted, ref, watch, watchEffect } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/api'
 import AccountModal from '@/components/AccountModal.vue'
@@ -11,7 +11,6 @@ import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 import BaseSwitch from '@/components/ui/BaseSwitch.vue'
 import { getPlatformClass, getPlatformLabel, useAccountStore } from '@/stores/account'
-import { useFarmStore } from '@/stores/farm'
 import { useSettingStore } from '@/stores/setting'
 import { useUserStore } from '@/stores/user'
 
@@ -19,7 +18,6 @@ const router = useRouter()
 const accountStore = useAccountStore()
 const userStore = useUserStore()
 const settingStore = useSettingStore()
-const farmStore = useFarmStore()
 
 const activeTab = ref<'account' | 'strategy' | 'automation' | 'user'>(
   (localStorage.getItem('settings-active-tab') as 'account' | 'strategy' | 'automation' | 'user') || 'account'
@@ -97,13 +95,8 @@ onMounted(async () => {
   if (!currentAccountId.value && accounts.value.length > 0 && accounts.value[0]) {
     accountStore.selectAccount(String(accounts.value[0].id))
   }
-  if (currentAccountId.value) {
-    await settingStore.fetchSettings(currentAccountId.value)
-    syncLocalStrategySettings()
-    syncLocalAutomationSettings()
-    syncLocalOfflineSettings()
-    await farmStore.fetchSeeds(currentAccountId.value)
-  }
+  if (currentAccountId.value)
+    await loadStrategyData(currentAccountId.value)
 })
 
 useIntervalFn(() => {
@@ -195,10 +188,24 @@ async function confirmClearStopped() {
 }
 
 // ==================== 策略设置 ====================
-const { settings, loading: settingsLoading } = storeToRefs(settingStore)
-const { seeds } = storeToRefs(farmStore)
+const { settings, loading: settingsLoading, loadedAccountId } = storeToRefs(settingStore)
 
+interface SeedOptionItem {
+  seedId: number
+  name: string
+  requiredLevel: number
+  price: number
+  locked?: boolean
+  soldOut?: boolean
+}
+
+const seedOptions = ref<SeedOptionItem[]>([])
 const strategySaving = ref(false)
+let strategyLoadRevision = 0
+let seedOptionsRequestRevision = 0
+let bagSeedsRequestRevision = 0
+let bagSortRequestRevision = 0
+let previewRequestRevision = 0
 
 const currentAccountName = computed(() => {
   const acc = accounts.value.find((a: any) => a.id === currentAccountId.value)
@@ -249,49 +256,201 @@ const bagSeedsLoading = ref(false)
 const bagSeedsError = ref<string | null>(null)
 const draggingBagSeedId = ref<number | null>(null)
 
-const sortedBagSeeds = computed(() => {
-  const priority = localStrategySettings.value.bagSeedPriority || []
-  const indexMap = new Map<number, number>()
-  priority.forEach((seedId, index) => indexMap.set(seedId, index))
+const visibleBagSeedIds = computed(() => bagSeeds.value.map(seed => seed.seedId))
 
-  return [...bagSeeds.value].sort((a, b) => {
-    const aIndex = indexMap.has(a.seedId) ? indexMap.get(a.seedId)! : Number.MAX_SAFE_INTEGER
-    const bIndex = indexMap.has(b.seedId) ? indexMap.get(b.seedId)! : Number.MAX_SAFE_INTEGER
-    if (aIndex !== bIndex)
-      return aIndex - bIndex
-    if (a.requiredLevel !== b.requiredLevel)
-      return b.requiredLevel - a.requiredLevel
-    return a.seedId - b.seedId
-  })
+function normalizeVisibleBagSeedOrder(priority: number[] = localStrategySettings.value.bagSeedPriority) {
+  const visibleIds = visibleBagSeedIds.value
+  const visibleSet = new Set(visibleIds)
+  const normalized: number[] = []
+  for (const seedId of priority || []) {
+    const id = Number(seedId)
+    if (visibleSet.has(id) && !normalized.includes(id))
+      normalized.push(id)
+  }
+  for (const seedId of visibleIds) {
+    if (!normalized.includes(seedId))
+      normalized.push(seedId)
+  }
+  return normalized
+}
+
+function mergeVisibleBagSeedOrder(visibleOrder: number[]) {
+  const visibleIds = visibleBagSeedIds.value
+  const visibleSet = new Set(visibleIds)
+  const normalizedVisible = normalizeVisibleBagSeedOrder(visibleOrder)
+  const existing = [...new Set((localStrategySettings.value.bagSeedPriority || [])
+    .map(Number)
+    .filter(id => Number.isFinite(id) && id > 0))]
+  const merged: number[] = []
+  let visibleIndex = 0
+
+  for (const seedId of existing) {
+    if (visibleSet.has(seedId)) {
+      const replacement = normalizedVisible[visibleIndex++]
+      if (replacement !== undefined && !merged.includes(replacement))
+        merged.push(replacement)
+    }
+    else if (!merged.includes(seedId)) {
+      // 暂时缺货的种子保留原有优先级位置，重新入库后仍按原顺序执行。
+      merged.push(seedId)
+    }
+  }
+  while (visibleIndex < normalizedVisible.length) {
+    const seedId = normalizedVisible[visibleIndex++]!
+    if (!merged.includes(seedId))
+      merged.push(seedId)
+  }
+  return merged
+}
+
+const sortedBagSeeds = computed(() => {
+  const itemMap = new Map(bagSeeds.value.map(seed => [seed.seedId, seed]))
+  return normalizeVisibleBagSeedOrder()
+    .map(seedId => itemMap.get(seedId))
+    .filter((seed): seed is BagSeedItem => !!seed)
 })
 
-async function fetchBagSeeds() {
-  if (!currentAccountId.value)
+async function fetchSeedOptions(accountId: string) {
+  if (!accountId)
     return
+  const requestRevision = ++seedOptionsRequestRevision
+  try {
+    const { data } = await api.get('/api/seeds', {
+      headers: { 'x-account-id': accountId },
+    })
+    if (requestRevision !== seedOptionsRequestRevision || accountId !== currentAccountId.value)
+      return
+    seedOptions.value = data?.ok ? (data.data || []) : []
+  }
+  catch {
+    if (requestRevision === seedOptionsRequestRevision && accountId === currentAccountId.value)
+      seedOptions.value = []
+  }
+}
+
+async function fetchBagSeeds(accountId = currentAccountId.value) {
+  if (!accountId)
+    return
+  const requestRevision = ++bagSeedsRequestRevision
   bagSeedsLoading.value = true
   bagSeedsError.value = null
   try {
     const res = await api.get('/api/bag/seeds', {
-      headers: { 'x-account-id': currentAccountId.value },
+      headers: { 'x-account-id': accountId },
     })
+    if (requestRevision !== bagSeedsRequestRevision || accountId !== currentAccountId.value)
+      return
     if (res.data.ok) {
-      bagSeeds.value = (res.data.data || []).filter((s: BagSeedItem) => s.plantSize === 1)
+      bagSeeds.value = (res.data.data || []).filter((seed: BagSeedItem) => seed.plantSize === 1 || seed.plantSize === 2)
     }
   }
   catch (e: any) {
-    bagSeedsError.value = e.message || '加载失败'
+    if (requestRevision === bagSeedsRequestRevision && accountId === currentAccountId.value)
+      bagSeedsError.value = e.message || '加载失败'
   }
   finally {
-    bagSeedsLoading.value = false
+    if (requestRevision === bagSeedsRequestRevision && accountId === currentAccountId.value)
+      bagSeedsLoading.value = false
   }
 }
 
-function resetBagSeedPriority() {
-  localStrategySettings.value.bagSeedPriority = []
+function materializeVisibleBagSeedOrder() {
+  return normalizeVisibleBagSeedOrder()
+}
+
+function saveVisibleBagSeedOrder(visibleOrder: number[]) {
+  bagSortRequestRevision++
+  localStrategySettings.value.bagSeedPriority = mergeVisibleBagSeedOrder(visibleOrder)
+}
+
+function compareBagSeedsByLevel(a: BagSeedItem, b: BagSeedItem) {
+  if (a.requiredLevel !== b.requiredLevel)
+    return b.requiredLevel - a.requiredLevel
+  return a.seedId - b.seedId
+}
+
+async function sortBagSeedsByFallbackStrategy(strategy: string, accountId = currentAccountId.value) {
+  if (!accountId || accountId !== currentAccountId.value)
+    return
+  const requestRevision = ++bagSortRequestRevision
+  const strategyAtRequest = strategy
+  const items = [...bagSeeds.value]
+  let ordered = [...items].sort(compareBagSeedsByLevel)
+
+  if (strategyAtRequest === 'preferred') {
+    const preferredSeedId = Number(localStrategySettings.value.preferredSeedId || 0)
+    ordered.sort((a, b) => {
+      const aPreferred = a.seedId === preferredSeedId ? 0 : 1
+      const bPreferred = b.seedId === preferredSeedId ? 0 : 1
+      return aPreferred - bPreferred || compareBagSeedsByLevel(a, b)
+    })
+  }
+  else if (strategyAtRequest !== 'level') {
+    const sortBy = analyticsSortByMap[strategyAtRequest]
+    if (sortBy) {
+      try {
+        const { data } = await api.get('/api/analytics', {
+          params: { sort: sortBy },
+          headers: { 'x-account-id': accountId },
+        })
+        if (requestRevision !== bagSortRequestRevision || accountId !== currentAccountId.value || localStrategySettings.value.bagSeedFallbackStrategy !== strategyAtRequest)
+          return
+        const rankMap = new Map<number, number>()
+        const rankings: any[] = data?.ok ? (data.data || []) : []
+        rankings.forEach((item, index) => rankMap.set(Number(item.seedId), index))
+        ordered.sort((a, b) => {
+          const aRank = rankMap.get(a.seedId) ?? Number.MAX_SAFE_INTEGER
+          const bRank = rankMap.get(b.seedId) ?? Number.MAX_SAFE_INTEGER
+          return aRank - bRank || compareBagSeedsByLevel(a, b)
+        })
+      }
+      catch {
+        // 排名请求失败时保留稳定的等级/ID顺序。
+      }
+    }
+  }
+
+  if (requestRevision !== bagSortRequestRevision || accountId !== currentAccountId.value || localStrategySettings.value.bagSeedFallbackStrategy !== strategyAtRequest)
+    return
+  saveVisibleBagSeedOrder(ordered.map(seed => seed.seedId))
+}
+
+async function ensureBagSeedsForUserSort(accountId: string) {
+  if (bagSeedsLoading.value || bagSeeds.value.length === 0)
+    await fetchBagSeeds(accountId)
+}
+
+async function handleBagFallbackStrategyChange(value: string | number) {
+  const accountId = currentAccountId.value
+  const strategy = String(value)
+  if (!accountId)
+    return
+  await ensureBagSeedsForUserSort(accountId)
+  if (accountId === currentAccountId.value && localStrategySettings.value.bagSeedFallbackStrategy === strategy)
+    await sortBagSeedsByFallbackStrategy(strategy, accountId)
+}
+
+async function handlePreferredSeedChange() {
+  const accountId = currentAccountId.value
+  if (!accountId || localStrategySettings.value.plantingStrategy !== 'bag_priority' || localStrategySettings.value.bagSeedFallbackStrategy !== 'preferred')
+    return
+  await ensureBagSeedsForUserSort(accountId)
+  if (accountId === currentAccountId.value && localStrategySettings.value.bagSeedFallbackStrategy === 'preferred')
+    await sortBagSeedsByFallbackStrategy('preferred', accountId)
+}
+
+async function resetBagSeedPriority() {
+  const accountId = currentAccountId.value
+  const strategy = localStrategySettings.value.bagSeedFallbackStrategy
+  if (!accountId)
+    return
+  await ensureBagSeedsForUserSort(accountId)
+  if (accountId === currentAccountId.value && localStrategySettings.value.bagSeedFallbackStrategy === strategy)
+    await sortBagSeedsByFallbackStrategy(strategy, accountId)
 }
 
 function moveBagSeed(seedId: number, direction: -1 | 1) {
-  const nextOrder = [...(localStrategySettings.value.bagSeedPriority || [])]
+  const nextOrder = materializeVisibleBagSeedOrder()
   const index = nextOrder.indexOf(seedId)
   const targetIndex = index + direction
   if (index < 0 || targetIndex < 0 || targetIndex >= nextOrder.length)
@@ -300,15 +459,20 @@ function moveBagSeed(seedId: number, direction: -1 | 1) {
   const temp = nextOrder[index]!
   nextOrder[index] = nextOrder[targetIndex]!
   nextOrder[targetIndex] = temp
-  localStrategySettings.value.bagSeedPriority = nextOrder
+  saveVisibleBagSeedOrder(nextOrder)
 }
 
 function startBagSeedDrag(seedId: number, event: DragEvent) {
+  materializeVisibleBagSeedOrder()
   draggingBagSeedId.value = seedId
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = 'move'
     event.dataTransfer.setData('text/plain', String(seedId))
   }
+}
+
+function endBagSeedDrag() {
+  draggingBagSeedId.value = null
 }
 
 function dragOverBagSeed(_seedId: number, event: DragEvent) {
@@ -323,49 +487,37 @@ function dropBagSeed(seedId: number, event: DragEvent) {
   event.preventDefault()
   const sourceSeedId = draggingBagSeedId.value ?? Number(event.dataTransfer?.getData('text/plain') || '')
   if (!sourceSeedId || sourceSeedId === seedId) {
-    draggingBagSeedId.value = null
+    endBagSeedDrag()
     return
   }
 
-  const nextOrder = [...(localStrategySettings.value.bagSeedPriority || [])]
+  const nextOrder = materializeVisibleBagSeedOrder()
   const sourceIndex = nextOrder.indexOf(sourceSeedId)
   const targetIndex = nextOrder.indexOf(seedId)
-
-  if (sourceIndex < 0 && targetIndex < 0) {
-    nextOrder.push(sourceSeedId)
-  }
-  else if (sourceIndex < 0) {
-    nextOrder.splice(targetIndex, 0, sourceSeedId)
-  }
-  else if (targetIndex < 0) {
-    // 目标不在列表中，不做处理
-  }
-  else {
-    const temp = nextOrder[sourceIndex]
-    nextOrder.splice(sourceIndex, 1)
-    const newTargetIndex = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex
-    nextOrder.splice(newTargetIndex, 0, temp!)
+  if (sourceIndex < 0 || targetIndex < 0) {
+    endBagSeedDrag()
+    return
   }
 
-  localStrategySettings.value.bagSeedPriority = nextOrder
-  draggingBagSeedId.value = null
+  const [source] = nextOrder.splice(sourceIndex, 1)
+  const newTargetIndex = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex
+  nextOrder.splice(newTargetIndex, 0, source!)
+  saveVisibleBagSeedOrder(nextOrder)
+  endBagSeedDrag()
 }
 
-watchEffect(() => {
-  if (localStrategySettings.value.plantingStrategy === 'bag_priority' && currentAccountId.value) {
-    fetchBagSeeds()
-  }
-})
+watch(() => [localStrategySettings.value.plantingStrategy, currentAccountId.value] as const, ([strategy, accountId], previous) => {
+  if (strategy === 'bag_priority' && accountId && (previous?.[0] !== strategy || previous?.[1] !== accountId))
+    fetchBagSeeds(accountId)
+}, { immediate: true })
 
 const preferredSeedOptions = computed(() => {
   const options: { label: string; value: number; disabled?: boolean }[] = [{ label: '自动选择', value: 0, disabled: false }]
-  if (seeds.value) {
-    options.push(...seeds.value.map(seed => ({
-      label: `${seed.requiredLevel}级 ${seed.name} (${seed.price}金)`,
-      value: seed.seedId,
-      disabled: seed.locked || seed.soldOut,
-    })))
-  }
+  options.push(...seedOptions.value.map(seed => ({
+    label: `${seed.requiredLevel}级 ${seed.name} (${seed.price}金)`,
+    value: seed.seedId,
+    disabled: seed.locked || seed.soldOut,
+  })))
   return options
 })
 
@@ -378,65 +530,63 @@ const analyticsSortByMap: Record<string, string> = {
 
 const strategyPreviewLabel = ref<string | null>(null)
 
-watchEffect(async () => {
-  let strategy = localStrategySettings.value.plantingStrategy
+watch(() => [
+  localStrategySettings.value.plantingStrategy,
+  localStrategySettings.value.bagSeedFallbackStrategy,
+  localStrategySettings.value.preferredSeedId,
+  seedOptions.value,
+  currentAccountId.value,
+] as const, async ([plantingStrategy, fallbackStrategy, preferredSeedId, currentSeeds, accountId]) => {
+  const requestRevision = ++previewRequestRevision
+  let strategy = plantingStrategy
   if (strategy === 'preferred') {
     strategyPreviewLabel.value = null
     return
   }
   if (strategy === 'bag_priority') {
-    strategy = localStrategySettings.value.bagSeedFallbackStrategy || 'level'
+    strategy = fallbackStrategy || 'level'
     if (strategy === 'preferred') {
-      const preferredId = localStrategySettings.value.preferredSeedId
-      if (preferredId > 0 && seeds.value) {
-        const seed = seeds.value.find(s => s.seedId === preferredId)
-        if (seed) {
-          strategyPreviewLabel.value = `${seed.requiredLevel}级 ${seed.name}`
-        }
-        else {
-          strategyPreviewLabel.value = '未选择优先种子'
-        }
-      }
-      else {
-        strategyPreviewLabel.value = '未选择优先种子'
-      }
+      const seed = preferredSeedId > 0 ? currentSeeds.find(item => item.seedId === preferredSeedId) : undefined
+      strategyPreviewLabel.value = seed ? `${seed.requiredLevel}级 ${seed.name}` : '未选择优先种子'
       return
     }
   }
-  if (!seeds.value || seeds.value.length === 0) {
+  if (currentSeeds.length === 0) {
     strategyPreviewLabel.value = null
     return
   }
-  const available = seeds.value.filter(s => !s.locked && !s.soldOut)
+  const available = currentSeeds.filter(seed => !seed.locked && !seed.soldOut)
   if (available.length === 0) {
     strategyPreviewLabel.value = '暂无可用种子'
     return
   }
   if (strategy === 'level') {
-    const best = [...available].sort((a, b) => b.requiredLevel - a.requiredLevel)[0]
+    const best = [...available].sort((a, b) => b.requiredLevel - a.requiredLevel || a.seedId - b.seedId)[0]
     strategyPreviewLabel.value = best ? `${best.requiredLevel}级 ${best.name}` : null
     return
   }
   const sortBy = analyticsSortByMap[strategy]
-  if (sortBy) {
-    try {
-      const res = await api.get(`/api/analytics?sort=${sortBy}`)
-      const rankings: any[] = res.data.ok ? (res.data.data || []) : []
-      const availableIds = new Set(available.map(s => s.seedId))
-      const match = rankings.find(r => availableIds.has(Number(r.seedId)))
-      if (match) {
-        const seed = available.find(s => s.seedId === Number(match.seedId))
-        strategyPreviewLabel.value = seed ? `${seed.requiredLevel}级 ${seed.name}` : null
-      }
-      else {
-        strategyPreviewLabel.value = '暂无匹配种子'
-      }
-    }
-    catch {
-      strategyPreviewLabel.value = null
-    }
+  if (!sortBy)
+    return
+
+  try {
+    const { data } = await api.get('/api/analytics', {
+      params: { sort: sortBy },
+      headers: accountId ? { 'x-account-id': accountId } : undefined,
+    })
+    if (requestRevision !== previewRequestRevision || accountId !== currentAccountId.value)
+      return
+    const rankings: any[] = data?.ok ? (data.data || []) : []
+    const availableIds = new Set(available.map(seed => seed.seedId))
+    const match = rankings.find(item => availableIds.has(Number(item.seedId)))
+    const seed = match ? available.find(item => item.seedId === Number(match.seedId)) : undefined
+    strategyPreviewLabel.value = seed ? `${seed.requiredLevel}级 ${seed.name}` : '暂无匹配种子'
   }
-})
+  catch {
+    if (requestRevision === previewRequestRevision && accountId === currentAccountId.value)
+      strategyPreviewLabel.value = null
+  }
+}, { immediate: true })
 
 function syncLocalStrategySettings() {
   if (settings.value) {
@@ -454,43 +604,60 @@ function syncLocalStrategySettings() {
   }
 }
 
-async function loadStrategyData() {
-  if (currentAccountId.value) {
-    await settingStore.fetchSettings(currentAccountId.value)
-    syncLocalStrategySettings()
-    await farmStore.fetchSeeds(currentAccountId.value)
-  }
+async function loadStrategyData(accountId = currentAccountId.value) {
+  if (!accountId)
+    return
+  const requestRevision = ++strategyLoadRevision
+  const loaded = await settingStore.fetchSettings(accountId)
+  if (!loaded || requestRevision !== strategyLoadRevision || accountId !== currentAccountId.value)
+    return
+  syncLocalStrategySettings()
+  syncLocalAutomationSettings()
+  syncLocalOfflineSettings()
+  await fetchSeedOptions(accountId)
 }
 
 async function saveStrategySettings() {
-  if (!currentAccountId.value)
+  const accountId = currentAccountId.value
+  if (!accountId)
     return
   strategySaving.value = true
   try {
-    const fullSettings = {
-      ...settings.value,
-      ...localStrategySettings.value,
-      automation: localAutomationSettings.value.automation,
+    const payload = JSON.parse(JSON.stringify(localStrategySettings.value))
+    if (payload.plantingStrategy === 'bag_priority') {
+      bagSortRequestRevision++
+      payload.bagSeedPriority = mergeVisibleBagSeedOrder(normalizeVisibleBagSeedOrder(payload.bagSeedPriority))
     }
-    const res = await settingStore.saveSettings(currentAccountId.value, fullSettings)
+    const res = await settingStore.saveSettings(accountId, payload)
+    if (accountId !== currentAccountId.value)
+      return
     if (res.ok) {
+      syncLocalStrategySettings()
       showAlert('策略设置已保存', 'primary')
     }
     else {
-      showAlert(`保存失败: ${res.error}`, 'danger')
+      const message = res.unconfirmed && res.saved
+        ? `策略已保存，但运行进程尚未确认应用：${res.error || '请稍后重试或重启账号'}`
+        : `保存失败: ${res.error}`
+      showAlert(message, res.unconfirmed && res.saved ? 'primary' : 'danger')
     }
   }
   finally {
-    strategySaving.value = false
+    if (accountId === currentAccountId.value)
+      strategySaving.value = false
   }
 }
 
-watch(currentAccountId, async () => {
-  if (currentAccountId.value) {
-    await loadStrategyData()
-    syncLocalAutomationSettings()
-    syncLocalOfflineSettings()
-  }
+watch(currentAccountId, (accountId) => {
+  strategySaving.value = false
+  automationSaving.value = false
+  draggingBagSeedId.value = null
+  bagSeeds.value = []
+  bagSeedsError.value = null
+  seedOptions.value = []
+  strategyPreviewLabel.value = null
+  if (accountId)
+    loadStrategyData(accountId)
 })
 
 // ==================== 自动控制 ====================
@@ -619,41 +786,37 @@ function syncLocalAutomationSettings() {
 }
 
 async function saveAutomationSettings() {
-  if (!currentAccountId.value)
+  const accountId = currentAccountId.value
+  if (!accountId)
     return
   automationSaving.value = true
   try {
-    const fullSettings = {
-      ...settings.value,
-      automation: localAutomationSettings.value.automation,
-      fertilizerBuyOrganicCount: localAutomationSettings.value.fertilizerBuyOrganicCount,
-      fertilizerBuyOrganicThresholdHours: localAutomationSettings.value.fertilizerBuyOrganicThresholdHours,
-      fertilizerBuyNormalCount: localAutomationSettings.value.fertilizerBuyNormalCount,
-      fertilizerBuyNormalThresholdHours: localAutomationSettings.value.fertilizerBuyNormalThresholdHours,
-      fertilizerBuyCheckIntervalMinutes: localAutomationSettings.value.fertilizerBuyCheckIntervalMinutes,
-    }
-    const res = await settingStore.saveSettings(currentAccountId.value, fullSettings)
+    const payload = JSON.parse(JSON.stringify(localAutomationSettings.value))
+    payload.automation.fertilizer_land_types = normalizeFertilizerLandTypes(payload.automation.fertilizer_land_types)
+    const res = await settingStore.saveSettings(accountId, payload)
+    if (accountId !== currentAccountId.value)
+      return
     if (res.ok) {
+      syncLocalAutomationSettings()
       showAlert('自动控制设置已保存', 'primary')
 
       // 如果启用了自动购买化肥，立即检测并购买
-      if (localAutomationSettings.value.automation.fertilizer_buy_organic || localAutomationSettings.value.automation.fertilizer_buy_normal) {
+      if (payload.automation.fertilizer_buy_organic || payload.automation.fertilizer_buy_normal) {
         try {
           const buyRes = await api.post('/api/fertilizer/check-and-buy', {
-            buyOrganic: localAutomationSettings.value.automation.fertilizer_buy_organic,
-            buyNormal: localAutomationSettings.value.automation.fertilizer_buy_normal,
-            organicCount: localAutomationSettings.value.fertilizerBuyOrganicCount,
-            organicThresholdHours: localAutomationSettings.value.fertilizerBuyOrganicThresholdHours,
-            normalCount: localAutomationSettings.value.fertilizerBuyNormalCount,
-            normalThresholdHours: localAutomationSettings.value.fertilizerBuyNormalThresholdHours,
+            buyOrganic: payload.automation.fertilizer_buy_organic,
+            buyNormal: payload.automation.fertilizer_buy_normal,
+            organicCount: payload.fertilizerBuyOrganicCount,
+            organicThresholdHours: payload.fertilizerBuyOrganicThresholdHours,
+            normalCount: payload.fertilizerBuyNormalCount,
+            normalThresholdHours: payload.fertilizerBuyNormalThresholdHours,
           }, {
-            headers: { 'x-account-id': currentAccountId.value },
+            headers: { 'x-account-id': accountId },
           })
-          if (buyRes.data?.ok) {
+          if (accountId === currentAccountId.value && buyRes.data?.ok) {
             const totalBought = (buyRes.data.organicBought || 0) + (buyRes.data.normalBought || 0)
-            if (totalBought > 0) {
+            if (totalBought > 0)
               showAlert(`已自动购买 ${totalBought} 个化肥`, 'primary')
-            }
           }
         }
         catch (e) {
@@ -662,11 +825,15 @@ async function saveAutomationSettings() {
       }
     }
     else {
-      showAlert(`保存失败: ${res.error}`, 'danger')
+      const message = res.unconfirmed && res.saved
+        ? `自动控制已保存，但运行进程尚未确认应用：${res.error || '请稍后重试或重启账号'}`
+        : `保存失败: ${res.error}`
+      showAlert(message, res.unconfirmed && res.saved ? 'primary' : 'danger')
     }
   }
   finally {
-    automationSaving.value = false
+    if (accountId === currentAccountId.value)
+      automationSaving.value = false
   }
 }
 
@@ -1061,9 +1228,9 @@ async function handleTestOffline() {
             <p>加载中...</p>
           </div>
 
-          <div v-else-if="!currentAccountId" class="py-8 text-center text-gray-500">
+          <div v-else-if="!currentAccountId || loadedAccountId !== currentAccountId" class="py-8 text-center text-gray-500">
             <div class="mx-auto mb-2 text-3xl text-gray-400">⚙️</div>
-            <p>请先选择账号</p>
+            <p>{{ currentAccountId ? '账号设置加载失败，请切换账号或刷新页面重试' : '请先选择账号' }}</p>
           </div>
 
           <div v-else class="space-y-4">
@@ -1084,6 +1251,7 @@ async function handleTestOffline() {
                 v-model="localStrategySettings.preferredSeedId"
                 label="优先种植种子"
                 :options="preferredSeedOptions"
+                @change="handlePreferredSeedChange"
               />
               <div v-else class="flex flex-col gap-1.5">
                 <label class="text-sm text-gray-700 font-medium dark:text-gray-300">
@@ -1103,6 +1271,7 @@ async function handleTestOffline() {
                 v-model="localStrategySettings.bagSeedFallbackStrategy"
                 label="第二优先策略"
                 :options="BAG_FALLBACK_STRATEGY_OPTIONS"
+                @change="handleBagFallbackStrategyChange"
               />
               <div class="border border-amber-200 rounded-lg bg-amber-50/70 p-3 space-y-3 dark:border-amber-800/50 dark:bg-amber-900/20">
                 <div class="flex flex-wrap items-start justify-between gap-3">
@@ -1111,7 +1280,7 @@ async function handleTestOffline() {
                       背包种子优先顺序
                     </div>
                     <p class="mt-1 text-xs text-amber-700/90 dark:text-amber-300/90">
-                      先按下方顺序消耗背包中的 1x1 种子；背包种子不足时，再按"第二优先策略"补种。
+                      先按下方顺序消耗背包中的 1x1 / 2x2 种子；背包种子不足时，再按“第二优先策略”补种。切换第二优先策略或重置时会据此重新排序。
                     </p>
                   </div>
                   <button
@@ -1128,27 +1297,34 @@ async function handleTestOffline() {
                   {{ bagSeedsError }}
                 </div>
                 <div v-else-if="bagSeeds.length === 0" class="py-4 text-center text-sm text-amber-700 dark:text-amber-300">
-                  背包中暂无 1x1 种子
+                  背包中暂无 1x1 / 2x2 种子
                 </div>
-                <div v-else class="grid gap-2 lg:grid-cols-3 sm:grid-cols-2">
+                <div v-else class="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                   <div
                     v-for="(seed, index) in sortedBagSeeds"
                     :key="seed.seedId"
-                    class="cartoon-card flex items-center gap-2 border border-amber-200 rounded-xl bg-white p-2 dark:border-amber-700/50 dark:bg-gray-800"
+                    class="cartoon-card min-h-18 flex items-center gap-2 border border-amber-200 rounded-xl bg-white px-3 py-2.5 dark:border-amber-700/50 dark:bg-gray-800"
+                    :class="{ 'opacity-60 ring-2 ring-amber-400': draggingBagSeedId === seed.seedId }"
                     draggable="true"
                     @dragstart="startBagSeedDrag(seed.seedId, $event)"
+                    @dragend="endBagSeedDrag"
                     @dragover.prevent="dragOverBagSeed(seed.seedId, $event)"
                     @drop="dropBagSeed(seed.seedId, $event)"
                   >
-                    <div class="h-8 w-8 flex shrink-0 items-center justify-center rounded bg-amber-100 text-xs text-amber-700 font-bold dark:bg-amber-900/50 dark:text-amber-300">
+                    <div class="h-9 w-9 flex shrink-0 items-center justify-center rounded-lg bg-amber-100 text-xs text-amber-700 font-bold dark:bg-amber-900/50 dark:text-amber-300">
                       {{ index + 1 }}
                     </div>
                     <div class="min-w-0 flex-1">
-                      <div class="truncate text-sm text-gray-800 font-medium dark:text-gray-200">
-                        {{ seed.name }}
+                      <div class="flex items-center gap-1.5">
+                        <div class="truncate text-sm text-gray-800 font-semibold dark:text-gray-200">
+                          {{ seed.name }}
+                        </div>
+                        <span class="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-700 font-semibold dark:bg-amber-900/50 dark:text-amber-300">
+                          {{ seed.plantSize }}x{{ seed.plantSize }}
+                        </span>
                       </div>
-                      <div class="text-xs text-gray-500 dark:text-gray-400">
-                        数量: {{ seed.count }} | 等级: {{ seed.requiredLevel }}
+                      <div class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                        库存 {{ seed.count }} · {{ seed.requiredLevel }} 级 · ID {{ seed.seedId }}
                       </div>
                     </div>
                     <div class="flex shrink-0 flex-col gap-1">
@@ -1292,9 +1468,9 @@ async function handleTestOffline() {
             <p>加载中...</p>
           </div>
 
-          <div v-else-if="!currentAccountId" class="py-8 text-center text-gray-500">
+          <div v-else-if="!currentAccountId || loadedAccountId !== currentAccountId" class="py-8 text-center text-gray-500">
             <div class="mx-auto mb-2 text-3xl text-gray-400">⚙️</div>
-            <p>请先选择账号</p>
+            <p>{{ currentAccountId ? '账号设置加载失败，请切换账号或刷新页面重试' : '请先选择账号' }}</p>
           </div>
 
           <div v-else class="space-y-4">

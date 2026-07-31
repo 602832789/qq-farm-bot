@@ -15,6 +15,10 @@ interface DailyGift {
   completedCount?: number
   totalCount?: number
   tasks?: any[]
+  mode?: 'check_only'
+  checkedToday?: boolean
+  checkStatus?: 'unchecked' | 'entry_available' | 'entry_unavailable' | 'check_failed'
+  canShare?: boolean | null
 }
 
 interface DailyGiftsResponse {

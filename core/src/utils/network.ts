@@ -9,7 +9,8 @@ const { recordOperation } = require('../services/stats');
 const { types } = require('./proto');
 const { toLong, toNum, syncServerTime, log, logWarn } = require('./utils');
 const cryptoWasm = require('./crypto-wasm');
-const { startAntiDataLoop, stopAntiDataLoop } = require('../services/ace');
+const { createGatewayToken } = require('./gateway-token');
+const { startAceRuntime, stopAceRuntime } = require('../services/ace');
 
 // 延迟加载 warehouse 模块避免循环依赖
 let warehouseModule: any = null;
@@ -24,19 +25,63 @@ function getWarehouseModule(): any {
 const networkEvents = new EventEmitter();
 
 // ============ 内部状态 ============
+type ConnectionPhase = 'connecting' | 'login' | 'online';
+
+interface ConnectionContext {
+    id: number;
+    socket: WebSocket;
+    phase: ConnectionPhase;
+    intentionalClose: boolean;
+    finalized: boolean;
+}
+
+interface SendMsgOptions {
+    timeoutMs?: number;
+    expectedErrorCodes?: readonly number[];
+}
+
+interface PendingRequest {
+    callback: (err: Error | null, body?: Buffer, meta?: any) => void;
+    expectedErrorCodes: Set<number>;
+}
+
+class GatewayError extends Error {
+    code: number;
+    serviceName: string;
+    methodName: string;
+    errorMessage: string;
+    clientSeq: number;
+
+    constructor(meta: any) {
+        const code = toNum(meta && meta.error_code);
+        const serviceName = String((meta && meta.service_name) || '');
+        const methodName = String((meta && meta.method_name) || '');
+        const errorMessage = String((meta && meta.error_message) || '');
+        super(`${serviceName}.${methodName} 错误: code=${code} ${errorMessage}`.trim());
+        this.name = 'GatewayError';
+        this.code = code;
+        this.serviceName = serviceName;
+        this.methodName = methodName;
+        this.errorMessage = errorMessage;
+        this.clientSeq = toNum(meta && meta.client_seq);
+    }
+}
+
 let ws: WebSocket | null = null;
+let currentConnection: ConnectionContext | null = null;
+let nextConnectionId = 1;
 let clientSeq: number = 1;
 let serverSeq: number = 0;
-const pendingCallbacks = new Map<number, (err: Error | null, body?: Buffer, meta?: any) => void>();
+const pendingCallbacks = new Map<number, PendingRequest>();
 let wsErrorState = { code: 0, at: 0, message: '' };
 const networkScheduler = createScheduler('network');
 
 function rejectAllPendingRequests(reason = '请求被中断'): number {
     const entries = Array.from(pendingCallbacks.entries());
     pendingCallbacks.clear();
-    for (const [, callback] of entries) {
+    for (const [, pending] of entries) {
         try {
-            callback(new Error(reason));
+            pending.callback(new Error(reason));
         } catch {
             // ignore callback failure
         }
@@ -53,6 +98,7 @@ const userState = {
     exp: 0,
     coupon: 0,
     goldBean: 0,
+    openId: '',
 };
 
 function getUserState() { return userState; }
@@ -117,25 +163,33 @@ async function encodeMsg(serviceName: string, methodName: string, bodyBytes: Buf
             server_seq: toLong(serverSeq),
         },
         body: finalBody,
+        token: createGatewayToken(),
     });
     return types.GateMessage.encode(msg).finish();
 }
 
-async function sendMsg(serviceName: string, methodName: string, bodyBytes: Buffer, callback?: (err: Error | null, body?: Buffer, meta?: any) => void): Promise<boolean> {
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
+function isCurrentConnection(context: ConnectionContext): boolean {
+    return currentConnection === context && ws === context.socket && !context.finalized;
+}
+
+async function sendMsg(context: ConnectionContext, serviceName: string, methodName: string, bodyBytes: Buffer, pending?: PendingRequest): Promise<boolean> {
+    if (!isCurrentConnection(context) || context.socket.readyState !== WebSocket.OPEN) {
         log('系统', '[WS] 连接未打开');
         return false;
     }
     const seq = clientSeq;
     clientSeq += 1;
     const encoded = await encodeMsg(serviceName, methodName, bodyBytes, seq);
-    if (callback) pendingCallbacks.set(seq, callback);
+    if (!isCurrentConnection(context) || context.socket.readyState !== WebSocket.OPEN) {
+        return false;
+    }
+    if (pending) pendingCallbacks.set(seq, pending);
     try {
-        ws.send(encoded);
+        context.socket.send(encoded);
     } catch (err: any) {
-        if (callback) {
+        if (pending) {
             pendingCallbacks.delete(seq);
-            callback(err);
+            pending.callback(err);
         }
         return false;
     }
@@ -143,10 +197,20 @@ async function sendMsg(serviceName: string, methodName: string, bodyBytes: Buffe
 }
 
 /** Promise 版发送 */
-function sendMsgAsync(serviceName: string, methodName: string, bodyBytes: Buffer, timeout = 20000): Promise<{ body: Buffer; meta: any }> {
+function sendMsgAsync(serviceName: string, methodName: string, bodyBytes: Buffer, timeoutOrOptions: number | SendMsgOptions = 20000): Promise<{ body: Buffer; meta: any }> {
+    const options: SendMsgOptions = typeof timeoutOrOptions === 'number'
+        ? { timeoutMs: timeoutOrOptions }
+        : (timeoutOrOptions || {});
+    const timeoutMs = Math.max(1, Number(options.timeoutMs) || 20000);
+    const expectedErrorCodes = new Set((options.expectedErrorCodes || []).map(Number).filter(Number.isFinite));
     return new Promise((resolve, reject) => {
-        if (!ws || ws.readyState !== WebSocket.OPEN) {
+        const context = currentConnection;
+        if (!context || !isCurrentConnection(context) || context.socket.readyState !== WebSocket.OPEN) {
             reject(new Error(`连接未打开: ${methodName}`));
+            return;
+        }
+        if (context.phase !== 'online') {
+            reject(new Error(`账号尚未登录: ${methodName}`));
             return;
         }
 
@@ -157,22 +221,29 @@ function sendMsgAsync(serviceName: string, methodName: string, bodyBytes: Buffer
 
         const seq = clientSeq;
         const timeoutKey = `request_timeout_${seq}`;
-        networkScheduler.setTimeoutTask(timeoutKey, timeout, () => {
+        networkScheduler.setTimeoutTask(timeoutKey, timeoutMs, () => {
             pendingCallbacks.delete(seq);
             const pending = pendingCallbacks.size;
             reject(new Error(`请求超时: ${methodName} (seq=${seq}, pending=${pending})`));
         });
 
-        const sent = sendMsg(serviceName, methodName, bodyBytes, (err, body, meta) => {
+        sendMsg(context, serviceName, methodName, bodyBytes, {
+            expectedErrorCodes,
+            callback: (err, body, meta) => {
+                networkScheduler.clear(timeoutKey);
+                if (err) reject(err);
+                else resolve({ body: body!, meta });
+            },
+        }).then((sent) => {
+            if (sent) return;
             networkScheduler.clear(timeoutKey);
-            if (err) reject(err);
-            else resolve({ body: body!, meta });
-        });
-
-        if (!sent) {
-            networkScheduler.clear(timeoutKey);
+            pendingCallbacks.delete(seq);
             reject(new Error(`发送失败: ${methodName}`));
-        }
+        }).catch((e: any) => {
+            networkScheduler.clear(timeoutKey);
+            pendingCallbacks.delete(seq);
+            reject(e);
+        });
     });
 }
 
@@ -202,19 +273,20 @@ function handleMessage(data: Buffer): void {
             const errorCode = toNum(meta.error_code);
             const clientSeqVal = toNum(meta.client_seq);
 
-            const cb = pendingCallbacks.get(clientSeqVal);
-            if (cb) {
-                pendingCallbacks.delete(clientSeqVal);
-                if (errorCode !== 0) {
-                    cb(new Error(`${meta.service_name}.${meta.method_name} 错误: code=${errorCode} ${meta.error_message || ''}`));
-                } else {
-                    cb(null, msg.body, meta);
-                }
-                return;
+            const pending = pendingCallbacks.get(clientSeqVal);
+            const expectedError = !!pending && pending.expectedErrorCodes.has(errorCode);
+            if (errorCode !== 0 && !expectedError) {
+                logWarn('错误', `${meta.service_name}.${meta.method_name} code=${errorCode} ${meta.error_message || ''}`);
             }
 
-            if (errorCode !== 0) {
-                logWarn('错误', `${meta.service_name}.${meta.method_name} code=${errorCode} ${meta.error_message || ''}`);
+            if (pending) {
+                pendingCallbacks.delete(clientSeqVal);
+                if (errorCode !== 0) {
+                    pending.callback(new GatewayError(meta));
+                } else {
+                    pending.callback(null, msg.body, meta);
+                }
+                return;
             }
         }
     } catch (err: any) {
@@ -453,24 +525,6 @@ function handleNotify(msg: any): void {
             return;
         }
 
-        // 赛季变更通知
-        if (type.includes('SeasonChangeNotify')) {
-            try {
-                const notify = types.SeasonChangeNotify.decode(eventBody);
-                networkEvents.emit('seasonChanged', notify);
-            } catch {}
-            return;
-        }
-
-        // 战令变更通知
-        if (type.includes('BattlePassChangeNotify')) {
-            try {
-                const notify = types.BattlePassChangeNotify.decode(eventBody);
-                networkEvents.emit('battlePassChanged', notify);
-            } catch {}
-            return;
-        }
-
         // 皮肤变更通知
         if (type.includes('SkinChangeNotify')) {
             try {
@@ -485,27 +539,28 @@ function handleNotify(msg: any): void {
 }
 
 // ============ 登录 ============
-async function sendLogin(onLoginSuccess?: () => void): Promise<void> {
+async function sendLogin(context: ConnectionContext, onLoginSuccess?: () => void): Promise<void> {
     const di = CONFIG.deviceInfo || {};
     const body = types.LoginRequest.encode(types.LoginRequest.create({
         sharer_id: toLong(0),
         sharer_open_id: '',
         device_info: {
             client_version: di.clientVersion || CONFIG.clientVersion,
-            sys_software: di.sysSoftware || 'iOS 26.2.1',
-            network: di.network || 'wifi',
-            memory: di.memory || '7672',
-            device_id: di.deviceId || 'iPhone X<iPhone18,3>',
+            sys_software: di.sysSoftware || 'Windows',
+            screen_width: 0,
         },
         share_cfg_id: toLong(0),
-        scene_id: '1256',
+        scene_id: '1234567',
         report_data: {
-            callback: '', cd_extend_info: '', click_id: '', clue_token: '',
-            minigame_channel: 'other', minigame_platid: 2, req_id: '', trackid: '',
+            minigame_channel: 'other-qq',
+            minigame_platid: 2,
         },
     })).finish();
 
-    await sendMsg('gamepb.userpb.UserService', 'Login', body, (err, bodyBytes, _meta) => {
+    await sendMsg(context, 'gamepb.userpb.UserService', 'Login', body, {
+        expectedErrorCodes: new Set(),
+        callback: async (err, bodyBytes, _meta) => {
+        if (!isCurrentConnection(context)) return;
         if (err) {
             log('登录', `失败: ${err.message}`);
             if (err.message.includes('code=')) {
@@ -514,48 +569,70 @@ async function sendLogin(onLoginSuccess?: () => void): Promise<void> {
             }
             return;
         }
+
+        let reply: any;
         try {
-            const reply = types.LoginReply.decode(bodyBytes!);
-            if (reply.basic) {
-                clearWsErrorState();
-                userState.gid = toNum(reply.basic.gid);
-                userState.name = reply.basic.name || '未知';
-                userState.level = toNum(reply.basic.level);
-                userState.gold = toNum(reply.basic.gold);
-                userState.exp = toNum(reply.basic.exp);
-
-                updateStatusFromLogin({
-                    name: userState.name,
-                    level: userState.level,
-                    gold: userState.gold,
-                    exp: userState.exp,
-                });
-
-                log('系统', `登录成功: ${userState.name} (Lv${userState.level})`);
-
-                console.warn('');
-                console.warn('========== 登录成功 ==========');
-                console.warn(`  GID:    ${userState.gid}`);
-                console.warn(`  昵称:   ${userState.name}`);
-                console.warn(`  等级:   ${userState.level}`);
-                console.warn(`  金币:   ${userState.gold}`);
-                if (reply.time_now_millis) {
-                    syncServerTime(toNum(reply.time_now_millis));
-                    console.warn(`  时间:   ${new Date(toNum(reply.time_now_millis)).toLocaleString()}`);
-                }
-                console.warn('===============================');
-                console.warn('');
-
-                fetchGoldBeanFromBag();
-                fetchUserSettings();
-                startAntiDataLoop();
-            }
-
-            startHeartbeat();
-            if (onLoginSuccess) onLoginSuccess();
+            reply = types.LoginReply.decode(bodyBytes!);
         } catch (e: any) {
             log('登录', `解码失败: ${e.message}`);
+            return;
         }
+        if (!reply.basic) {
+            log('登录', '失败: 登录响应缺少账号信息');
+            return;
+        }
+
+        clearWsErrorState();
+        userState.gid = toNum(reply.basic.gid);
+        userState.name = reply.basic.name || '未知';
+        userState.level = toNum(reply.basic.level);
+        userState.gold = toNum(reply.basic.gold);
+        userState.exp = toNum(reply.basic.exp);
+        userState.openId = String(reply.basic.open_id || '').trim();
+
+        updateStatusFromLogin({
+            name: userState.name,
+            level: userState.level,
+            gold: userState.gold,
+            exp: userState.exp,
+        });
+
+        log('系统', `登录成功: ${userState.name} (Lv${userState.level})`);
+
+        console.warn('');
+        console.warn('========== 登录成功 ==========');
+        console.warn(`  GID:    ${userState.gid}`);
+        console.warn(`  昵称:   ${userState.name}`);
+        console.warn(`  等级:   ${userState.level}`);
+        console.warn(`  金币:   ${userState.gold}`);
+        if (reply.time_now_millis) {
+            syncServerTime(toNum(reply.time_now_millis));
+            console.warn(`  时间:   ${new Date(toNum(reply.time_now_millis)).toLocaleString()}`);
+        }
+        console.warn('===============================');
+        console.warn('');
+
+        try {
+            if (userState.openId) {
+                await cryptoWasm.bindUser(userState.openId);
+            }
+            if (!isCurrentConnection(context)) return;
+            networkScheduler.clear('login_timeout');
+            context.phase = 'online';
+            startAceRuntime(sendMsgAsync);
+            fetchGoldBeanFromBag();
+            fetchUserSettings();
+            startHeartbeat(context);
+            if (onLoginSuccess) onLoginSuccess();
+        } catch (e: any) {
+            logWarn('登录', `登录初始化失败: ${e.message}`);
+            finalizeConnection(context, {
+                source: 'login_init_failed',
+                reason: e.message,
+            });
+            try { (context.socket as any).terminate(); } catch {}
+        }
+        },
     });
 }
 
@@ -565,22 +642,25 @@ let heartbeatMissCount = 0;
 const HEARTBEAT_TIMEOUT = 30000;
 const MAX_HEARTBEAT_MISS = 1;
 
-function startHeartbeat(): void {
+function startHeartbeat(context: ConnectionContext): void {
     networkScheduler.clear('heartbeat_interval');
     lastHeartbeatResponse = Date.now();
     heartbeatMissCount = 0;
 
     networkScheduler.setIntervalTask('heartbeat_interval', CONFIG.heartbeatInterval, () => {
-        if (!userState.gid) return;
+        if (!isCurrentConnection(context) || context.phase !== 'online' || !userState.gid) return;
 
         const timeSinceLastResponse = Date.now() - lastHeartbeatResponse;
         if (timeSinceLastResponse > HEARTBEAT_TIMEOUT) {
             heartbeatMissCount++;
             logWarn('心跳', `连接可能已断开 (${Math.round(timeSinceLastResponse / 1000)}s 无响应, pending=${pendingCallbacks.size})`);
             if (heartbeatMissCount >= MAX_HEARTBEAT_MISS) {
-                log('心跳', '心跳超时，立即重连...');
-                rejectAllPendingRequests('连接超时，已清理');
-                reconnect(null);
+                log('心跳', '心跳超时，账号将停止运行...');
+                finalizeConnection(context, {
+                    source: 'heartbeat_timeout',
+                    reason: `${Math.round(timeSinceLastResponse / 1000)}s 无响应`,
+                });
+                try { (context.socket as any).terminate(); } catch {}
                 return;
             }
         }
@@ -590,6 +670,7 @@ function startHeartbeat(): void {
             client_version: CONFIG.clientVersion,
         })).finish();
         sendMsgAsync('gamepb.userpb.UserService', 'Heartbeat', body).then(({ body: replyBody }) => {
+            if (!isCurrentConnection(context)) return;
             lastHeartbeatResponse = Date.now();
             heartbeatMissCount = 0;
             try {
@@ -600,81 +681,135 @@ function startHeartbeat(): void {
     });
 }
 
+interface DisconnectDetails {
+    source: string;
+    code?: number;
+    reason?: string;
+}
+
+function clearNetworkRuntime(reason: string): void {
+    rejectAllPendingRequests(`请求已中断: ${reason}`);
+    networkScheduler.clearAll();
+    stopAceRuntime(true);
+    userState.gid = 0;
+    userState.openId = '';
+}
+
+function finalizeConnection(context: ConnectionContext, details: DisconnectDetails): void {
+    if (context.finalized) return;
+    context.finalized = true;
+    const wasCurrent = currentConnection === context;
+    const wasLoginReady = context.phase === 'online';
+    if (wasCurrent) {
+        currentConnection = null;
+        ws = null;
+        clearNetworkRuntime(details.reason || details.source);
+    }
+    if (!wasCurrent || context.intentionalClose) return;
+    networkEvents.emit('disconnected', {
+        connectionId: context.id,
+        source: details.source,
+        code: Number(details.code) || 0,
+        reason: details.reason || '',
+        phase: context.phase,
+        wasLoginReady,
+        at: Date.now(),
+    });
+}
+
 // ============ WebSocket 连接 ============
-let savedLoginCallback: (() => void) | null = null;
-let savedCode: string | null = null;
-
 function connect(code: string | null, onLoginSuccess?: () => void): void {
-    savedLoginCallback = onLoginSuccess || null;
-    if (code) savedCode = code;
-    const url = `${CONFIG.serverUrl}?platform=${CONFIG.platform}&os=${CONFIG.os}&ver=${CONFIG.clientVersion}&code=${savedCode}&openID=`;
+    const authCode = String(code || '').trim();
+    if (!authCode) throw new Error('连接缺少一次性 Code');
+    if (currentConnection && !currentConnection.finalized) throw new Error('WebSocket 连接已存在');
 
+    clientSeq = 1;
+    serverSeq = 0;
+    const url = new URL(CONFIG.serverUrl);
+    url.search = new URLSearchParams({
+        platform: CONFIG.platform,
+        os: CONFIG.os,
+        ver: CONFIG.clientVersion,
+        code: authCode,
+    }).toString();
     const di = CONFIG.deviceInfo || {};
-    ws = new WebSocket(url, {
+    const socket = new WebSocket(url.toString(), {
         headers: {
             'User-Agent': di.userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) NetType/WIFI MiniProgramEnv/Windows WindowsWechat/WMPF WindowsWechat(0x63090a13)',
             'Origin': 'https://gate-obt.nqf.qq.com',
         },
     });
+    const context: ConnectionContext = {
+        id: nextConnectionId++,
+        socket,
+        phase: 'connecting',
+        intentionalClose: false,
+        finalized: false,
+    };
+    currentConnection = context;
+    ws = socket;
+    socket.binaryType = 'arraybuffer';
 
-    ws.binaryType = 'arraybuffer';
-
-    (ws as any).on('open', () => {
-        sendLogin(onLoginSuccess);
+    (socket as any).on('open', () => {
+        if (!isCurrentConnection(context)) return;
+        context.phase = 'login';
+        networkScheduler.setTimeoutTask('login_timeout', 20000, () => {
+            if (!isCurrentConnection(context) || context.phase !== 'login') return;
+            logWarn('登录', '登录响应超时，账号将停止运行...');
+            finalizeConnection(context, { source: 'login_timeout', reason: '登录响应超时' });
+            try { (socket as any).terminate(); } catch {}
+        });
+        sendLogin(context, onLoginSuccess).catch((e: any) => {
+            if (!isCurrentConnection(context)) return;
+            finalizeConnection(context, { source: 'login_send_failed', reason: e.message });
+            try { (socket as any).terminate(); } catch {}
+        });
     });
 
-    (ws as any).on('message', (data: any, _isBinary: any) => {
+    (socket as any).on('message', (data: any, _isBinary: any) => {
+        if (!isCurrentConnection(context)) return;
         const buf = Buffer.isBuffer(data) ? data : Buffer.from(data as any);
         handleMessage(buf);
     });
 
-    (ws as any).on('close', (code: any, _reason: any) => {
-        console.warn(`[WS] 连接关闭 (code=${code})`);
-        cleanup();
-        if (savedLoginCallback) {
-            networkScheduler.setTimeoutTask('auto_reconnect', 2000, () => {
-                log('系统', '[WS] 尝试自动重连...');
-                reconnect(null);
-            });
-        }
+    (socket as any).on('close', (closeCode: any, closeReason: any) => {
+        const reason = Buffer.isBuffer(closeReason) ? closeReason.toString('utf8') : String(closeReason || '');
+        console.warn(`[WS] 连接关闭 (code=${closeCode})`);
+        finalizeConnection(context, { source: 'ws_close', code: Number(closeCode) || 0, reason });
     });
 
-    (ws as any).on('error', (err: any) => {
+    (socket as any).on('error', (err: any) => {
+        if (!isCurrentConnection(context)) return;
         const message = err && err.message ? String(err.message) : '';
         logWarn('系统', `[WS] 错误: ${message}`);
         const match = message.match(/Unexpected server response:\s*(\d+)/i);
         if (match) {
-            const code = Number.parseInt(match[1], 10) || 0;
-            if (code) {
-                setWsErrorState(code, message);
-                networkEvents.emit('ws_error', { code, message });
+            const errorCode = Number.parseInt(match[1], 10) || 0;
+            if (errorCode) {
+                setWsErrorState(errorCode, message);
+                networkEvents.emit('ws_error', { code: errorCode, message });
             }
         }
     });
 }
 
 function cleanup(reason = '网络清理'): void {
-    rejectAllPendingRequests(`请求已中断: ${reason}`);
-    networkScheduler.clearAll();
-    stopAntiDataLoop();
-}
-
-function reconnect(newCode: string | null): void {
-    cleanup('主动重连');
-    if (ws) {
-        (ws as any).removeAllListeners();
-        ws.close();
-        ws = null;
+    const context = currentConnection;
+    if (!context) {
+        clearNetworkRuntime(reason);
+        return;
     }
-    userState.gid = 0;
-    connect(newCode || savedCode, savedLoginCallback || undefined);
+    context.intentionalClose = true;
+    finalizeConnection(context, { source: 'intentional_close', reason });
+    try { context.socket.close(); } catch {}
 }
 
 function getWs(): WebSocket | null { return ws; }
 
 module.exports = {
-    connect, reconnect, cleanup, getWs,
+    connect, cleanup, getWs,
     sendMsgAsync,
+    GatewayError,
     getUserState,
     getWsErrorState,
     networkEvents,

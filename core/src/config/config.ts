@@ -39,7 +39,7 @@ interface RuntimeConfig extends SystemConfig {
 // ============ 设备预设 ============
 
 // clientVersion 从 CONFIG.clientVersion 动态获取，不写死在预设中
-const DEFAULT_CLIENT_VERSION = '1.12.0.4_20260609';
+const DEFAULT_CLIENT_VERSION = '1.13.0.4_20260723';
 
 const DEVICE_PRESETS: DevicePreset[] = [
     {
@@ -49,7 +49,7 @@ const DEVICE_PRESETS: DevicePreset[] = [
         deviceInfo: {
             os: 'Windows',
             clientVersion: '',
-            sysSoftware: 'Windows 10',
+            sysSoftware: 'Windows',
             network: 'wifi',
             memory: '16384',
             deviceId: 'DESKTOP-PC<WPC>',

@@ -2,53 +2,69 @@ syntax = "proto3";
 
 package gamepb.seasonpb;
 
-import "corepb.proto";
-
-// ============ 赛季信息 ============
-message SeasonInfo {
-    int64 season_id = 1;            // 赛季ID
-    string name = 2;                // 赛季名称
-    int64 status = 3;               // 赛季状态
-    int64 is_opening_shown = 4;     // 是否已展示赛季开场 (服务端为int64)
-    int64 start_time = 5;           // 赛季开始时间
-    int64 end_time = 6;             // 赛季结束时间
-    int64 field_7 = 7;              // unknown
-    bytes battle_pass = 10;         // 战令数据 (嵌套结构)
+// SeasonService.GetSeasonInfo 抓包中已确认的只读字段。
+message SeasonItem {
+    int64 item_id = 1;
+    int64 count = 2;
 }
 
-// ============ 请求/回复 ============
+message SeasonRewardNode {
+    int64 node_id = 1;
+    repeated SeasonItem rewards = 2;
+    bool is_key_level = 4;
+}
 
-// --- 获取赛季信息 ---
+message SeasonActivity {
+    int64 activity_id = 1;
+    int64 type = 2;
+    bytes name = 3;
+    int64 begin_time = 4;
+    int64 end_time = 5;
+}
+
+message SeasonPass {
+    int64 activity_id = 1;
+    int64 current_level = 2;
+    int64 current_progress = 4;
+    int64 progress_target = 5;
+    int64 node_count = 6;
+    repeated SeasonRewardNode nodes = 8;
+    int64 claimed_through_level = 9;
+    int64 field_11 = 11;
+    int64 field_13 = 13;
+    repeated SeasonItem field_14 = 14;
+    bytes title = 16;
+    bytes rules_json = 17;
+    int64 field_18 = 18;
+}
+
+message SeasonInfo {
+    int64 season_id = 1;
+    bytes name = 2;
+    int64 status = 3;
+    int64 field_4 = 4;
+    int64 begin_time = 5;
+    int64 end_time = 6;
+    int64 server_time = 7;
+    repeated SeasonActivity activities = 8;
+    SeasonPass pass = 10;
+}
+
 message GetSeasonInfoRequest {}
 
 message GetSeasonInfoReply {
     SeasonInfo season_info = 1;
 }
 
-// --- 领取战令奖励 ---
-message ClaimBattlePassRewardsRequest {
-    repeated int64 level_ids = 1;   // 要领取的等级ID列表
-}
+message ClaimBattlePassRewardsRequest {}
 
 message ClaimBattlePassRewardsReply {
-    bytes item = 1;                // 奖励物品 (服务端格式不一致)
-    bytes season_info = 2;         // 赛季信息 (服务端格式不一致)
-    bytes battle_pass = 3;         // 战令数据
+    repeated SeasonItem rewards = 1;
+    repeated int64 field_2 = 2 [packed = true];
+    SeasonPass pass = 3;
+    bool field_4 = 4;
 }
 
-// --- 标记赛季开场已展示 ---
-message MarkSeasonOpeningShownRequest {}
-
-message MarkSeasonOpeningShownReply {}
-
-// ============ 服务器推送 ============
-
-// 赛季变更通知
-message SeasonChangeNotify {
-    SeasonInfo season_info = 1;
-}
-
-// 战令变更通知
 message BattlePassChangeNotify {
-    SeasonInfo season_info = 1;
+    SeasonPass pass = 1;
 }

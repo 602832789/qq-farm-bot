@@ -301,7 +301,7 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
         }
     });
 
-    // API: 设置页统一保存（单次写入+单次广播）
+    // API: 设置页统一保存（单次写入；运行中账号等待 worker revision ACK）
     app.post('/api/settings/save', async (req: Request, res: Response) => {
         const id = getAccId(ctx, req);
         if (!id) {
@@ -315,7 +315,18 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
 
         try {
             const data = await ctx.provider.saveSettings(id, req.body || {});
-            res.json({ ok: true, data: data || {} });
+            const unconfirmed = data && data.status === 'unconfirmed';
+            res.status(unconfirmed ? 202 : 200).json({
+                ok: !unconfirmed,
+                saved: !!(data && data.saved),
+                stopped: !!(data && data.status === 'stopped'),
+                confirmed: !!(data && data.confirmed),
+                unconfirmed: !!unconfirmed,
+                status: data?.status,
+                code: unconfirmed ? data.confirmationError?.code : undefined,
+                error: unconfirmed ? (data.confirmationError?.message || '配置已保存，但 worker 尚未确认应用') : undefined,
+                data: data || {},
+            });
         } catch (e: any) {
             res.status(500).json({ ok: false, error: e.message });
         }
