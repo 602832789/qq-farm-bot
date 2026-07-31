@@ -13,6 +13,7 @@ coverage/
 .turbo/
 
 core/data/
+core/docs/
 logs/
 log/
 tmp/

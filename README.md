@@ -1,19 +1,41 @@
-# QQ Farm Bot Private
+# QQ Farm Bot
 
-> 私有维护仓库。此仓库用于 QQ 农场多账号挂机工具的重构版源码维护，不包含运行时账号数据、用户数据和日志。
+> 支持多账号管理的 QQ 农场自动化工具。
 
 ## 简介
 
-这是一个基于 Node.js 的 QQ 农场自动化工具，提供多账号管理、Web 控制面板、实时日志、数据统计、好友管理、活动、商城、图鉴和后台管理等功能。
+这是一个基于 Node.js 的 QQ 农场自动化工具，支持多账号管理，并提供 Web 控制面板、实时日志、数据统计、好友管理、活动、商城、图鉴和后台管理等功能。
 
-当前仓库定位为 `2.3.x` 重构维护版，重点是整理前后端结构、降低维护成本，并保留已有核心功能。
+## 本次更新（2026-07-31）
 
-维护信息：
+### 心许千灯星垂野活动支持
 
-- 仓库：`cwser/qq-farm-bot-private`
-- 维护分支：`main`
-- 作者 QQ：`1352674939`
-- 完整更新日志参考：[QQ 农场更新日志](https://github.com/cwser/qq-farm-bot-private/blob/main/UPDATE_README.md)
+- 新增“心许千灯星垂野”活动页面，支持查看活动进度、星砂余额和奖励状态。
+- 支持“观星礼录”星宿奖励领取与“星砂兑换商店”奖励批量兑换。
+- 支持领取“千星游记”阶段奖励和“节令小札”节令奖励。
+- 新增“千星游记”和“观星礼录”自动领取选项，每 5 分钟检查一次可领取奖励。
+- 补充活动作物、种子、装扮等奖励配置及活动专属图片资源。
+
+### WASM协议更新
+
+- TSDK/WASM 升级至官方 `v3.8.6.1785240280`，同步适配新版运行时、数据段解密和完整性校验。
+- 更新默认 WASM 文件及 SHA-256 校验，确保网关 Token、ACE 心跳和多账号运行正常。
+- 新增 TSDK/WASM 更新检查工具，可自动比较版本、导入导出、数据段和关键运行参数。
+- 补充标准更新、验证与回退流程，降低后续官方协议升级的适配风险。
+
+### 土地展示
+
+- 重做农场土地布局，并补充普通、黑土地、红土地、金土地等土地皮肤资源。
+- 四格作物以一张 2×2 主土地卡片展示，不再重复显示从属土地。
+- 完善四格作物主从土地识别；即使从属土地缺少主土地 ID，也能根据主土地数据正确合并。
+- 修复部分土地皮肤、图鉴排序和土地状态显示异常。
+
+### 2×2 作物种植
+
+- 修复活动四格作物“星语铃花”的占地配置，背包中增加 2×2 标识。
+- 优化四格作物土地预留：优先选择已清空土地更多的区域，并在进度相同时保持原预留，减少预留位置反复变化。
+- 收获后土地状态不明确时不再自动铲除，避免误铲仍在生长或进入下一季的四格作物。
+- 补充土地展示、活动作物配置和 2×2 种植预留测试。
 
 ## 当前状态
 
@@ -57,8 +79,8 @@
 ## 快速启动
 
 ```powershell
-git clone https://github.com/cwser/qq-farm-bot-private.git
-cd qq-farm-bot-private
+git clone https://github.com/xxxscarlxrd404/qq-farm-bot.git
+cd qq-farm-bot
 
 corepack enable
 pnpm install
@@ -81,8 +103,8 @@ pnpm dev:core
 ## Docker 部署
 
 ```bash
-git clone https://github.com/cwser/qq-farm-bot-private.git
-cd qq-farm-bot-private
+git clone https://github.com/cwser/qq-farm-bot.git
+cd qq-farm-bot
 
 docker compose up -d --build
 docker compose logs -f
@@ -158,7 +180,7 @@ chmod +x ./qq-farm-bot
 ## 项目结构
 
 ```text
-qq-farm-bot-private/
+qq-farm-bot/
 ├── core/                  # 后端（Node.js 机器人引擎）
 │   ├── src/
 │   │   ├── config/        # 配置管理
