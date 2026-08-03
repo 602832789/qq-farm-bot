@@ -1,4 +1,4 @@
-export {};
+﻿export {};
 interface DeviceInfo {
     os: string;
     clientVersion: string;
@@ -38,8 +38,8 @@ interface RuntimeConfig extends SystemConfig {
 
 // ============ 设备预设 ============
 
-// clientVersion 从 CONFIG.clientVersion 动态获取，不写死在预设中
-const DEFAULT_CLIENT_VERSION = '1.13.0.4_20260723';
+// clientVersion 由 CONFIG.clientVersion 动态获取，不写死在预设中
+const DEFAULT_CLIENT_VERSION = '1.13.0.5_20260723';
 
 const DEVICE_PRESETS: DevicePreset[] = [
     {
@@ -183,7 +183,7 @@ function updateRuntimeConfig(newConfig: Partial<SystemConfig>): void {
     }
     if (newConfig.deviceInfo) {
         CONFIG.deviceInfo = normalizeDeviceInfo(newConfig.deviceInfo);
-        // 同步 os 和 clientVersion 到顶层
+        // 同步 os 与 clientVersion 到顶层
         CONFIG.os = CONFIG.deviceInfo.os;
         CONFIG.clientVersion = CONFIG.deviceInfo.clientVersion;
     }

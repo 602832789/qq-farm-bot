@@ -23,6 +23,8 @@ const EXCHANGE_SHOP_OPERATE_TYPE = 1;
 const QUERY_SHOP_OPERATE_TYPE = 7;
 const LIGHT_CONSTELLATION_OPERATE_TYPE = 21;
 const MAX_SIGNED_INT64 = 9223372036854775807n;
+const SECONDS_PER_DAY = 86400;
+const BEIJING_UTC_OFFSET_SECONDS = 8 * 60 * 60;
 
 type Int64Like = Long | number | string | null | undefined;
 type SettledEntry = PromiseSettledResult<any>;
@@ -80,6 +82,13 @@ function compareInt64(left: Int64Like, right: Int64Like): number {
     const leftValue = BigInt(int64String(left));
     const rightValue = BigInt(int64String(right));
     return leftValue < rightValue ? -1 : leftValue > rightValue ? 1 : 0;
+}
+
+function constellationDayFromBeijingMidnight(startTimeSec: number, serverTimeSec: number): number | null {
+    if (startTimeSec <= 0 || serverTimeSec < startTimeSec) return null;
+    const startDateIndex = Math.floor((startTimeSec + BEIJING_UTC_OFFSET_SECONDS) / SECONDS_PER_DAY);
+    const serverDateIndex = Math.floor((serverTimeSec + BEIJING_UTC_OFFSET_SECONDS) / SECONDS_PER_DAY);
+    return serverDateIndex - startDateIndex + 1;
 }
 
 function bytesToText(value: Uint8Array | Buffer | string | null | undefined): string {
@@ -324,7 +333,7 @@ function constellationDto(activity: any, serverTimeValue: Int64Like, data?: any,
 
     const start = int64Number(startTime);
     const server = int64Number(serverTime);
-    const calculatedDay = start > 0 && server >= start ? Math.floor((server - start) / 86400) + 1 : null;
+    const calculatedDay = constellationDayFromBeijingMidnight(start, server);
     const currentDay = calculatedDay == null ? null : Math.max(1, Math.min(28, calculatedDay));
     const nodes = Array.isArray(data?.nodes) ? data.nodes : [];
     const dynamicNodes = new Map<string, any>(nodes.map((node: any) => [int64String(node?.node_id), node]));
@@ -899,9 +908,7 @@ async function lightConstellation() {
         const serverTime = int64String(seasonReply?.season_info?.server_time);
         const startTime = int64Number(activity.begin_time);
         const serverTimeNumber = int64Number(serverTime);
-        const currentDay = startTime > 0 && serverTimeNumber >= startTime
-            ? Math.floor((serverTimeNumber - startTime) / 86400) + 1
-            : 0;
+        const currentDay = constellationDayFromBeijingMidnight(startTime, serverTimeNumber) ?? 0;
         const activityEndTime = int64Number(activity.end_time);
         const activityActive = serverTimeNumber > 0
             && startTime > 0

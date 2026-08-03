@@ -341,7 +341,7 @@ async function fetchBagSeeds(accountId = currentAccountId.value) {
     if (requestRevision !== bagSeedsRequestRevision || accountId !== currentAccountId.value)
       return
     if (res.data.ok) {
-      bagSeeds.value = (res.data.data || []).filter((seed: BagSeedItem) => seed.plantSize === 1 || seed.plantSize === 2)
+      bagSeeds.value = (res.data.data || []).filter((seed: BagSeedItem) => seed.plantSize >= 1)
     }
   }
   catch (e: any) {
