@@ -3,7 +3,6 @@ dist
 .git
 .gitignore
 *.md
-!UPDATE_README.md
 .idea
 .vscode
 *.log
