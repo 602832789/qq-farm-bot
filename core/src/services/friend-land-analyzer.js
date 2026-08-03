@@ -547,6 +547,7 @@ async function getFriendLandsDetail(gid) {
         seedImage,
         plantImage,
         phase,
+        imagePhase: toNum(currentPhase.image_phase),
         phaseName,
         currentSeason,
         totalSeason: totalSeasons,

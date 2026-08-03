@@ -8,6 +8,7 @@ export interface Land {
   plantName?: string
   phaseName?: string
   phase?: number
+  imagePhase?: number
   seedImage?: string
   plantImage?: string
   status: string

@@ -294,6 +294,8 @@ async function drawFarmCanvas() {
     .sort((a, b) => getCanvasPosition(a).y - getCanvasPosition(b).y)
   const textures = await Promise.all(visibleLands.map(land => loadCanvasImage(getLandTextureUrl(land)).catch(() => null)))
   visibleLands.forEach((land, index) => {
+    if (selectedLandId.value === Number(land?.id))
+      return
     const texture = textures[index]
     if (!texture)
       return
@@ -324,6 +326,10 @@ watch(lands, () => {
   drawFarmCanvas()
   nextTick(updateFarmStageSize)
 }, { deep: true, flush: 'post' })
+
+watch(selectedLandId, () => {
+  drawFarmCanvas()
+})
 
 watch(currentAccountId, (newId, oldId) => {
   if (oldId !== undefined && newId !== oldId) {
@@ -561,6 +567,17 @@ onUnmounted(() => {
   transform: translate(-50%, -50%);
 }
 
+/* 通用种子贴图的内容锚点在图片中央，单格种子应落在土地几何中心。 */
+.iso-farm-stage :deep(.land-card-image-seed-single) {
+  top: 50%;
+}
+
+/* SpriteFrame 已裁掉透明画布；保持它在原 150px 画布中的官方视觉尺寸。 */
+.iso-farm-stage :deep(.land-card-image-seed img) {
+  width: 23%;
+  max-width: none;
+}
+
 .iso-farm-stage :deep(.land-isometric-size-2 .land-card-image) {
   left: 50%;
   /* 2x2 作物通常是高图，客户端按根部/花盆底部落在四格土地中心，而不是按图片中心。 */
@@ -571,6 +588,17 @@ onUnmounted(() => {
   height: 54%;
   align-items: flex-end;
   transform: translateX(-50%);
+}
+
+.iso-farm-stage :deep(.land-isometric-size-2 .land-card-image-seed) {
+  top: 50%;
+  bottom: auto;
+  align-items: center;
+  transform: translate(-50%, -50%);
+}
+
+.iso-farm-stage :deep(.land-isometric-size-2 .land-card-image-seed img) {
+  width: 13%;
 }
 
 .iso-farm-stage :deep(.land-card-name),
@@ -587,6 +615,24 @@ onUnmounted(() => {
 .iso-farm-stage :deep(.land-ground-single),
 .iso-farm-stage :deep(.land-ground-merged) {
   display: none;
+}
+
+.iso-farm-stage :deep(.land-card-selected .land-ground-single),
+.iso-farm-stage :deep(.land-card-selected .land-ground-merged) {
+  display: block;
+  left: 50%;
+  top: 50%;
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  object-fit: fill;
+  opacity: 1;
+  transform: translate(-50%, -50%);
+  filter: saturate(1.08) brightness(1.06) drop-shadow(0 10px 7px rgb(62 46 27 / 0.35));
+}
+
+.iso-farm-stage :deep(.land-card-selected .land-ground-layer) {
+  inset: 0;
 }
 
 .iso-farm-stage :deep(.land-isometric-size-2 .land-ground-merged) {

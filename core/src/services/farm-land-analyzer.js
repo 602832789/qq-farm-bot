@@ -538,7 +538,7 @@ async function getLandsDetail() {
       details.push({
         id: landId, unlocked: true, status,
         plantName: displayName, seedId, seedImage, plantImage,
-        phase, phaseName, currentSeason, totalSeason,
+        phase, imagePhase: toNum(currentPhase.image_phase), phaseName, currentSeason, totalSeason,
         matureInSec, totalGrowTime, phaseStartTime, phaseEndTime,
         needWater, needWeed, needBug,
         stealable: !!plant.stealable,

@@ -28,17 +28,11 @@ const land = computed(() => props.land)
 const now = ref(Date.now())
 const cardElement = ref<HTMLElement | null>(null)
 const bubbleElement = ref<HTMLElement | null>(null)
-const cardHovered = ref(false)
-const bubbleHovered = ref(false)
 const floatingBubbleStyle = ref<Record<string, string>>({})
 const floatingBubbleBelow = ref(false)
 let timer: ReturnType<typeof setInterval> | null = null
-let hoverCloseTimer: ReturnType<typeof setTimeout> | null = null
 
-const floatingBubbleVisible = computed(() =>
-  props.selected
-  || (!props.selectionActive && (cardHovered.value || bubbleHovered.value)),
-)
+const floatingBubbleVisible = computed(() => props.selected)
 
 async function updateFloatingBubblePosition() {
   if (!props.isometric || !floatingBubbleVisible.value)
@@ -67,24 +61,7 @@ async function updateFloatingBubblePosition() {
   }
 }
 
-function keepBubbleOpen() {
-  if (hoverCloseTimer)
-    clearTimeout(hoverCloseTimer)
-  bubbleHovered.value = true
-}
-
-function scheduleBubbleClose() {
-  if (hoverCloseTimer)
-    clearTimeout(hoverCloseTimer)
-  hoverCloseTimer = setTimeout(() => {
-    cardHovered.value = false
-    bubbleHovered.value = false
-  }, 80)
-}
-
 function handleBubbleAction(type: 'fertilize' | 'remove') {
-  cardHovered.value = false
-  bubbleHovered.value = false
   if (type === 'fertilize')
     emit('fertilize', land.value)
   else
@@ -102,8 +79,6 @@ onMounted(() => {
 onUnmounted(() => {
   if (timer)
     clearInterval(timer)
-  if (hoverCloseTimer)
-    clearTimeout(hoverCloseTimer)
   window.removeEventListener('resize', updateFloatingBubblePosition)
   window.removeEventListener('scroll', updateFloatingBubblePosition, true)
 })
@@ -325,16 +300,22 @@ function getIsometricBubbleClass(targetLand: any) {
       },
     ]"
     :style="getFarmGridStyle(land)"
-    role="button"
-    :aria-label="`土地 #${land.id} ${land.plantName || ''}`"
-    :aria-pressed="selected"
-    tabindex="0"
-    @click="$emit('select', land)"
-    @mouseenter="cardHovered = true"
-    @mouseleave="scheduleBubbleClose"
-    @keydown.enter.prevent="$emit('select', land)"
-    @keydown.space.prevent="$emit('select', land)"
+    :role="isometric ? undefined : 'button'"
+    :aria-label="isometric ? undefined : `土地 #${land.id} ${land.plantName || ''}`"
+    :aria-pressed="isometric ? undefined : selected"
+    :tabindex="isometric ? undefined : 0"
+    @click="!isometric && $emit('select', land)"
+    @keydown.enter.prevent="!isometric && $emit('select', land)"
+    @keydown.space.prevent="!isometric && $emit('select', land)"
   >
+    <button
+      v-if="isometric"
+      type="button"
+      class="land-hit-area absolute"
+      :aria-label="`土地 #${land.id} ${land.plantName || ''}`"
+      :aria-pressed="selected"
+      @click.stop="$emit('select', land)"
+    />
     <div
       class="land-ground-layer pointer-events-none absolute inset-0"
       aria-hidden="true"
@@ -367,7 +348,13 @@ function getIsometricBubbleClass(targetLand: any) {
 
     <div
       class="land-card-image mb-0.5 mt-3 flex shrink-0 items-center justify-center"
-      :class="Number(land.plantSize) > 1 ? 'h-16 w-16' : 'h-9 w-9'"
+      :class="[
+        Number(land.plantSize) > 1 ? 'h-16 w-16' : 'h-9 w-9',
+        {
+          'land-card-image-seed': Number(land.imagePhase) === 1,
+          'land-card-image-seed-single': Number(land.imagePhase) === 1 && Number(land.plantSize) <= 1,
+        },
+      ]"
     >
       <img
         v-if="cropImageUrl"
@@ -451,8 +438,6 @@ function getIsometricBubbleClass(targetLand: any) {
         role="dialog"
         :aria-label="`土地 #${land.id} 详情`"
         @click.stop
-        @mouseenter="keepBubbleOpen"
-        @mouseleave="scheduleBubbleClose"
       >
         <div class="flex items-start justify-between gap-3">
           <div class="min-w-0">
@@ -557,18 +542,33 @@ function getIsometricBubbleClass(targetLand: any) {
 
 .land-isometric.land-card-selected {
   box-shadow: none;
+  transform: translate(-50%, -8px) scale(1.02);
 }
 
-.land-isometric.land-card-selected .land-ground-single,
-.land-isometric.land-card-selected .land-ground-merged {
-  filter: saturate(1.15) brightness(1.05) drop-shadow(0 0 8px rgb(59 130 246 / 0.8));
+.land-isometric.land-card-selected .land-card-image {
+  z-index: 1;
+  filter: saturate(1.08) brightness(1.06) drop-shadow(0 7px 5px rgb(56 42 25 / 0.28));
 }
 
 .land-isometric {
   position: absolute;
+  pointer-events: none;
   padding: 2px;
   transform: translateX(-50%);
   transform-origin: 50% 50%;
+}
+
+.land-hit-area {
+  z-index: 2;
+  left: 2%;
+  top: 8%;
+  width: 96%;
+  height: 80%;
+  cursor: pointer;
+  pointer-events: auto;
+  border: 0;
+  background: transparent;
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
 }
 
 .land-bubble {
@@ -606,6 +606,7 @@ function getIsometricBubbleClass(targetLand: any) {
   z-index: 1000 !important;
   right: auto;
   display: block;
+  pointer-events: auto;
   transform: none;
 }
 
@@ -688,17 +689,6 @@ function getIsometricBubbleClass(targetLand: any) {
 .land-isometric.land-bubble-below.land-grid-column-1 .land-bubble,
 .land-isometric.land-bubble-below.land-grid-column-4 .land-bubble {
   transform: none;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .land-card:hover .land-bubble,
-  .land-card:focus-within .land-bubble {
-    display: block;
-  }
-
-  .land-card:hover {
-    z-index: 101 !important;
-  }
 }
 
 .bubble-action {

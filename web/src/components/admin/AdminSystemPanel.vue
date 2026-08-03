@@ -230,7 +230,7 @@ function handleLogoFileChange(event: Event) {
             v-model="localSystemConfig.clientVersion"
             label="客户端版本"
             type="text"
-            placeholder="1.12.3.20_20260709"
+            placeholder="1.13.0.5_20260723"
             class="col-span-2"
           />
           <div class="flex flex-col gap-1.5">

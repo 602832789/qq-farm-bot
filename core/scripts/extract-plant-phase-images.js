@@ -198,6 +198,27 @@ function getCommonSeedResource(config) {
   return null;
 }
 
+function findSpriteFrameRect(entries, resource) {
+  const marker = `/plant/import/${resource.uuid.slice(0, 2)}/${resource.uuid}@`;
+  const candidates = entries
+    .filter(entry => entry.url.includes(marker) && entry.url.endsWith('.json'))
+    .sort((left, right) => right.lastTime - left.lastTime);
+  for (const entry of candidates) {
+    try {
+      const data = JSON.parse(fs.readFileSync(entry.localPath, 'utf8'));
+      const pending = [data];
+      while (pending.length) {
+        const value = pending.pop();
+        if (value && typeof value === 'object') {
+          if (value.name === 'zhongzi' && value.rect) return value.rect;
+          pending.push(...Object.values(value));
+        }
+      }
+    } catch {}
+  }
+  return null;
+}
+
 function downloadAstc(resource, configUrl, targetDir) {
   if (!resource.nativeHash) return null;
   const bundleBase = configUrl.replace(/config\.[^/]+\.json$/, '');
@@ -456,7 +477,17 @@ function main() {
       || (args.downloadMissing ? downloadAstc(commonSeedResource, latestConfig.url, downloadDir) : null);
     if (cached) {
       const relative = path.join('common', 'seed.png');
-      decodeResource(astcenc, cached.localPath, path.join(args.output, relative));
+      const decoded = path.join(downloadDir, 'common-seed-full.png');
+      const spriteRect = findSpriteFrameRect(entries, commonSeedResource);
+      if (!spriteRect) throw new Error('未找到 model/v4/zhongzi 的官方 SpriteFrame 裁剪信息');
+      decodeResource(astcenc, cached.localPath, decoded);
+      extractAtlasRegion(decoded, {
+        x: Number(spriteRect.x),
+        y: Number(spriteRect.y),
+        width: Number(spriteRect.width),
+        height: Number(spriteRect.height),
+        rotate: false,
+      }, path.join(args.output, relative));
       manifest.__common = { seed: `/game-config/plant_images/${relative.split(path.sep).join('/')}` };
       exported += 1;
       console.log(`已导出：${commonSeedResource.resourcePath} -> ${relative}`);
