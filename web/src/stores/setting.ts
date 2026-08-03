@@ -15,6 +15,10 @@ export interface AutomationConfig {
   fertilizer_gift?: boolean
   fertilizer_buy_organic?: boolean
   fertilizer_buy_normal?: boolean
+  mystery_shop_auto_buy?: boolean
+  mystery_shop_allow_gold?: boolean
+  mystery_shop_allow_coupon?: boolean
+  mystery_shop_allow_gold_bean?: boolean
   fertilizer?: string
   fertilizer_multi_season?: boolean
   fertilizer_land_types?: string[]

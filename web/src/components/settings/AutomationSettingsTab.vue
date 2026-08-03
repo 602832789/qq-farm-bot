@@ -3,6 +3,7 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 import BaseSwitch from '@/components/ui/BaseSwitch.vue'
+import { ref } from 'vue'
 
 interface AutomationSettings {
   automation: {
@@ -23,6 +24,10 @@ interface AutomationSettings {
     fertilizer_gift: boolean
     fertilizer_buy_organic: boolean
     fertilizer_buy_normal: boolean
+    mystery_shop_auto_buy: boolean
+    mystery_shop_allow_gold: boolean
+    mystery_shop_allow_coupon: boolean
+    mystery_shop_allow_gold_bean: boolean
     fertilizer: string
     skip_own_weed_bug: boolean
     fertilizer_multi_season: boolean
@@ -72,6 +77,8 @@ const autoCodeRefresh = defineModel<AutoCodeRefreshConfig>('autoCodeRefresh', { 
 function isFastMatureFertilizerMode(mode: string) {
   return mode === 'smart' || mode === 'smart_only' || mode === 'smart_normal'
 }
+
+const mysteryShopSettingsVisible = ref(false)
 </script>
 
 <template>
@@ -108,9 +115,68 @@ function isFastMatureFertilizerMode(mode: string) {
         <BaseSwitch v-model="settings.automation.fertilizer_gift" label="自动填充化肥" />
         <BaseSwitch v-model="settings.automation.fertilizer_buy_organic" label="自动购买有机化肥" />
         <BaseSwitch v-model="settings.automation.fertilizer_buy_normal" label="自动购买无机化肥" />
+        <div class="w-fit max-w-full inline-flex items-center gap-1.5">
+          <BaseSwitch v-model="settings.automation.mystery_shop_auto_buy" label="自动购买神秘商人商品" />
+          <button
+            class="h-7 w-7 inline-grid shrink-0 place-items-center rounded-md text-gray-400 transition hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+            type="button"
+            title="设置允许使用的货币"
+            aria-label="设置神秘商人自动购买"
+            @click="mysteryShopSettingsVisible = true"
+          >
+            <span class="i-carbon-settings text-base" />
+          </button>
+        </div>
         <BaseSwitch v-model="settings.automation.skip_own_weed_bug" label="不除自己草虫" />
         <BaseSwitch v-model="settings.automation.golden_bug_clear" label="自动清除黄金虫" />
       </div>
+
+      <Transition name="fade">
+        <div v-if="mysteryShopSettingsVisible" class="fixed inset-0 z-50 grid place-items-center bg-gray-950/45 p-4 backdrop-blur-[2px]" @click.self="mysteryShopSettingsVisible = false">
+          <div class="w-full max-w-lg overflow-hidden border border-gray-200 rounded-2xl bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-800">
+            <div class="flex items-start justify-between border-b border-gray-100 px-6 py-5 dark:border-gray-700">
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="h-8 w-8 inline-grid place-items-center rounded-lg bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-300">
+                    <span class="i-carbon-store text-lg" />
+                  </span>
+                  <h3 class="text-lg text-gray-900 font-semibold dark:text-gray-100">神秘商人自动购买</h3>
+                </div>
+                <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">选择自动购买时可以使用的货币。</p>
+              </div>
+              <button class="h-8 w-8 inline-grid shrink-0 place-items-center rounded-lg text-gray-400 transition hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200" type="button" aria-label="关闭" @click="mysteryShopSettingsVisible = false">
+                <span class="i-carbon-close text-xl" />
+              </button>
+            </div>
+            <div class="space-y-2 px-6 py-5">
+              <div class="flex items-center justify-between gap-4 border border-gray-200 rounded-xl px-4 py-3 dark:border-gray-700">
+                <div class="flex min-w-0 items-center gap-3">
+                  <span class="h-9 w-9 inline-grid shrink-0 place-items-center rounded-full bg-yellow-50 text-yellow-600 dark:bg-yellow-900/25 dark:text-yellow-300"><span class="i-carbon-currency-dollar text-lg" /></span>
+                  <div><div class="text-sm text-gray-800 font-medium dark:text-gray-100">金币</div><div class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">允许使用金币自动购买</div></div>
+                </div>
+                <BaseSwitch v-model="settings.automation.mystery_shop_allow_gold" />
+              </div>
+              <div class="flex items-center justify-between gap-4 border border-gray-200 rounded-xl px-4 py-3 dark:border-gray-700">
+                <div class="flex min-w-0 items-center gap-3">
+                  <span class="h-9 w-9 inline-grid shrink-0 place-items-center rounded-full bg-blue-50 text-blue-600 dark:bg-blue-900/25 dark:text-blue-300"><span class="i-carbon-ticket text-lg" /></span>
+                  <div><div class="text-sm text-gray-800 font-medium dark:text-gray-100">点券</div><div class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">允许使用点券自动购买</div></div>
+                </div>
+                <BaseSwitch v-model="settings.automation.mystery_shop_allow_coupon" />
+              </div>
+              <div class="flex items-center justify-between gap-4 border border-gray-200 rounded-xl px-4 py-3 dark:border-gray-700">
+                <div class="flex min-w-0 items-center gap-3">
+                  <span class="h-9 w-9 inline-grid shrink-0 place-items-center rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-900/25 dark:text-emerald-300"><span class="i-carbon-crop-health text-lg" /></span>
+                  <div><div class="text-sm text-gray-800 font-medium dark:text-gray-100">金豆豆</div><div class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">允许使用金豆豆自动购买</div></div>
+                </div>
+                <BaseSwitch v-model="settings.automation.mystery_shop_allow_gold_bean" />
+              </div>
+            </div>
+            <div class="flex justify-end border-t border-gray-100 bg-gray-50/70 px-6 py-4 dark:border-gray-700 dark:bg-gray-900/20">
+              <BaseButton class="min-w-24" size="sm" @click="mysteryShopSettingsVisible = false">完成</BaseButton>
+            </div>
+          </div>
+        </div>
+      </Transition>
 
       <div class="border border-gray-200 rounded bg-gray-50/70 p-3 dark:border-gray-700 dark:bg-gray-900/20">
         <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">

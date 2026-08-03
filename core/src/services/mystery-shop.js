@@ -1,7 +1,8 @@
 const { getItemById, getItemImageById } = require('../config/gameConfig');
 const { sendMsgAsync } = require('../utils/network');
 const { types } = require('../utils/proto');
-const { toNum } = require('../utils/utils');
+const { toNum, log, logWarn } = require('../utils/utils');
+const { getAutomation } = require('../models/store');
 
 const SERVICE = 'gamepb.mysteryshoppb.MysteryShopService';
 const CURRENCY_NAMES = {
@@ -71,9 +72,49 @@ async function abandonMysteryShop() {
   return { abandoned: true };
 }
 
+function isCurrencyAllowed(currencyId, automation = getAutomation() || {}) {
+  const keyByCurrency = {
+    1001: 'mystery_shop_allow_gold',
+    1002: 'mystery_shop_allow_coupon',
+    1005: 'mystery_shop_allow_gold_bean',
+  };
+  const key = keyByCurrency[toNum(currencyId)];
+  return !!key && automation[key] === true;
+}
+
+async function checkAndAutoBuyMysteryShop() {
+  const automation = getAutomation() || {};
+  if (automation.mystery_shop_auto_buy !== true) return { skipped: true, reason: 'disabled' };
+
+  try {
+    const offer = await getActiveMysteryShop();
+    if (!offer.active) return { skipped: true, reason: 'inactive' };
+    if (!isCurrencyAllowed(offer.currencyId, automation)) {
+      log('商城', `神秘商人自动购买已跳过：未允许使用${offer.currencyName}`, {
+        module: 'shop', event: '神秘商人自动购买', result: 'skip', currencyId: offer.currencyId
+      });
+      return { skipped: true, reason: 'currency_not_allowed', offer };
+    }
+
+    const result = await buyMysteryShopGoods(offer.npcId);
+    log('商城', `神秘商人自动购买成功：${offer.itemName} x${offer.itemCount}，花费 ${offer.price} ${offer.currencyName}`, {
+      module: 'shop', event: '神秘商人自动购买', result: 'success', itemId: offer.itemId,
+      count: offer.itemCount, currencyId: offer.currencyId, price: offer.price
+    });
+    return { ...result, offer };
+  } catch (err) {
+    logWarn('商城', `神秘商人自动购买检查失败: ${err.message}`, {
+      module: 'shop', event: '神秘商人自动购买', result: 'error', error: err.message
+    });
+    return { skipped: true, reason: 'error', error: err.message };
+  }
+}
+
 module.exports = {
   getActiveMysteryShop,
   buyMysteryShopGoods,
   abandonMysteryShop,
+  checkAndAutoBuyMysteryShop,
+  isCurrencyAllowed,
   normalizeNPC,
 };

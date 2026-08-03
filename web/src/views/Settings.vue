@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import api from '@/api'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import AccountSettingsTab from '@/components/settings/AccountSettingsTab.vue'
@@ -14,10 +15,14 @@ import { useUserSettings } from '@/composables/settings/useUserSettings'
 import { useSettingStore } from '@/stores/setting'
 
 const settingStore = useSettingStore()
+const route = useRoute()
 
 type SettingsTabKey = 'account' | 'strategy' | 'automation' | 'default-plan' | 'user'
 
 function getInitialSettingsTab(): SettingsTabKey {
+  const requested = String(route.query.tab || '')
+  if (requested === 'account' || requested === 'strategy' || requested === 'automation' || requested === 'default-plan' || requested === 'user')
+    return requested
   const saved = localStorage.getItem('settings-active-tab')
   return saved === 'strategy' || saved === 'automation' || saved === 'default-plan' || saved === 'user'
     ? saved

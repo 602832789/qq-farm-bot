@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import api from '@/api'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import DecorationGoodsCard from '@/components/shop/DecorationGoodsCard.vue'
 import MallGoodsCard from '@/components/shop/MallGoodsCard.vue'
@@ -24,6 +25,7 @@ const shopStore = useShopStore()
 const statusStore = useStatusStore()
 const toast = useToastStore()
 const route = useRoute()
+const router = useRouter()
 
 const { currentAccountId, currentAccount } = storeToRefs(accountStore)
 const { status } = storeToRefs(statusStore)
@@ -50,6 +52,7 @@ const tab = ref<'seed' | 'pet' | 'decoration' | 'mall' | 'mystery'>('seed')
 const ascending = ref(true)
 const FERTILIZER_MALL_GOODS_IDS = new Set([1002, 1003])
 const SHOP_TABS = new Set(['seed', 'pet', 'decoration', 'mall', 'mystery'])
+const mysteryAutoBuyEnabled = ref(false)
 
 const showConfirm = ref(false)
 const confirmTitle = ref('确认购买')
@@ -176,6 +179,30 @@ async function refreshAll() {
   if (!currentAccountId.value)
     return
   await shopStore.refreshAll(currentAccountId.value)
+}
+
+async function refreshMysteryAutoBuyStatus() {
+  if (!currentAccountId.value) {
+    mysteryAutoBuyEnabled.value = false
+    return
+  }
+  const requestedAccountId = String(currentAccountId.value)
+  try {
+    const { data } = await api.get('/api/settings', {
+      headers: { 'x-account-id': requestedAccountId },
+    })
+    if (String(currentAccountId.value || '') !== requestedAccountId)
+      return
+    mysteryAutoBuyEnabled.value = data?.data?.automation?.mystery_shop_auto_buy === true
+  }
+  catch {
+    if (String(currentAccountId.value || '') === requestedAccountId)
+      mysteryAutoBuyEnabled.value = false
+  }
+}
+
+function openMysteryAutoBuySettings() {
+  router.push({ path: '/settings', query: { tab: 'automation' } })
 }
 
 function syncTabFromRouteQuery() {
@@ -323,6 +350,7 @@ function confirmBuyMallGoods(item: any) {
 watch(currentAccountId, () => {
   shopStore.clearShopData()
   refreshAll()
+  refreshMysteryAutoBuyStatus()
 })
 
 watch(
@@ -333,6 +361,7 @@ watch(
 onMounted(() => {
   syncTabFromRouteQuery()
   refreshAll()
+  refreshMysteryAutoBuyStatus()
 })
 </script>
 
@@ -445,6 +474,17 @@ onMounted(() => {
       </div>
 
       <div v-else class="space-y-4">
+        <div class="flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-900/30">
+          <div class="flex min-w-0 items-center gap-2 text-sm">
+            <span :class="mysteryAutoBuyEnabled ? 'i-carbon-checkmark-filled text-green-500' : 'i-carbon-pause-filled text-gray-400'" />
+            <span class="text-gray-700 dark:text-gray-200">
+              神秘商人自动购买{{ mysteryAutoBuyEnabled ? '已开启' : '未开启' }}
+            </span>
+          </div>
+          <button class="shrink-0 text-sm text-blue-600 font-medium hover:underline dark:text-blue-400" type="button" @click="openMysteryAutoBuySettings">
+            前往设置
+          </button>
+        </div>
         <div v-if="mysteryError" class="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
           {{ mysteryError }}
         </div>

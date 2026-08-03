@@ -344,6 +344,29 @@ function startStarActivityClaimTimer() {
     }, { preventOverlap: true });
 }
 
+// 神秘商人的网页提示每 3 小时刷新一次；后台 Worker 使用相同周期，且登录后先检查一次。
+function stopMysteryShopAutoBuyTimer() {
+    workerScheduler.clear('mystery_shop_auto_buy_initial');
+    workerScheduler.clear('mystery_shop_auto_buy_interval');
+    workerScheduler.clear('mystery_shop_auto_buy_after_save');
+}
+
+function runMysteryShopAutoBuy() {
+    if (!loginReady || getAutomation().mystery_shop_auto_buy !== true) return Promise.resolve();
+    const { checkAndAutoBuyMysteryShop } = require('../services/mystery-shop');
+    return checkAndAutoBuyMysteryShop();
+}
+
+function startMysteryShopAutoBuyTimer() {
+    stopMysteryShopAutoBuyTimer();
+    workerScheduler.setTimeoutTask('mystery_shop_auto_buy_initial', 10000, () => {
+        runMysteryShopAutoBuy().catch(() => null);
+    });
+    workerScheduler.setIntervalTask('mystery_shop_auto_buy_interval', 3 * 60 * 60 * 1000, () => {
+        runMysteryShopAutoBuy().catch(() => null);
+    }, { preventOverlap: true });
+}
+
 // ==================== 间隔计算 ====================
 
 function normalizeIntervalRangeSec(minVal, maxVal, defaultVal) {
@@ -581,6 +604,18 @@ function applyRuntimeConfig(config, syncStatusAfter = false) {
                 });
             }
 
+            const mysteryShopConfigChanged = [
+                'mystery_shop_auto_buy',
+                'mystery_shop_allow_gold',
+                'mystery_shop_allow_coupon',
+                'mystery_shop_allow_gold_bean'
+            ].some(key => prevAuto?.[key] !== newAuto?.[key]);
+            if (newAuto?.mystery_shop_auto_buy && mysteryShopConfigChanged) {
+                workerScheduler.setTimeoutTask('mystery_shop_auto_buy_after_save', 2000, () => {
+                    runMysteryShopAutoBuy().catch(() => null);
+                });
+            }
+
             // 每日任务从关变开 → 立即执行一次
             const prevDailyEnabled = isDailyRoutineEnabled(prevAuto);
             const newDailyEnabled = isDailyRoutineEnabled(newAuto);
@@ -799,6 +834,7 @@ async function startBot(config) {
         // 启动每日定时器
         startDailyRoutineTimer();
         startStarActivityClaimTimer();
+        startMysteryShopAutoBuyTimer();
 
         syncStatus();
     };
@@ -818,6 +854,7 @@ async function stopBot() {
     friendSyncPaused = false;
 
     stopUnifiedScheduler();
+    stopMysteryShopAutoBuyTimer();
 
     networkEvents.off('kickout', onKickout);
     networkEvents.off('reconnect_failed', onReconnectFailed);
