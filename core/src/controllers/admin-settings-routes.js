@@ -140,6 +140,9 @@ function buildSettingsPayload(store, accountId, currentUser) {
       accountId && typeof store.getBagSeedPriority === "function"
         ? store.getBagSeedPriority(accountId)
         : [],
+    bagSeedKnownIds: Array.isArray(accountConfig.bagSeedKnownIds)
+      ? accountConfig.bagSeedKnownIds
+      : [],
     bagSeedFallbackStrategy:
       accountId && typeof store.getBagSeedFallbackStrategy === "function"
         ? store.getBagSeedFallbackStrategy(accountId)

@@ -230,6 +230,7 @@ function createDataProvider(deps) {
                 goldenBugRoundLimit: s.goldenBugRoundLimit,
                 autoAcceptFriendMinLevel: s.autoAcceptFriendMinLevel,
                 bagSeedPriority: s.bagSeedPriority,
+                bagSeedKnownIds: s.bagSeedKnownIds,
                 bagSeedFallbackStrategy: s.bagSeedFallbackStrategy,
             };
             store.applyConfigSnapshot(patch, { accountId: id });

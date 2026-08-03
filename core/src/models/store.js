@@ -274,6 +274,7 @@ const DEFAULT_ACCOUNT_CONFIG = {
     fertilizerBuyNormalThresholdHours: 10,
     fertilizerBuyCheckIntervalMinutes: 60,
     bagSeedPriority: [],
+    bagSeedKnownIds: [],
     bagSeedFallbackStrategy: 'level',
     autoAcceptFriendMinLevel: 0,
     goldenBugKeepCount: 0,
@@ -476,6 +477,7 @@ function cloneAccountConfig(config = DEFAULT_ACCOUNT_CONFIG) {
         goldenBugKeepCount: Math.max(0, Math.min(9999, Number(config.goldenBugKeepCount) || 0)),
         goldenBugRoundLimit: Math.max(1, Math.min(100, Number(config.goldenBugRoundLimit) || 24)),
         bagSeedPriority: normalizeBagSeedPriority(config.bagSeedPriority),
+        bagSeedKnownIds: normalizeBagSeedPriority(config.bagSeedKnownIds),
         bagSeedFallbackStrategy: normalizeBagSeedFallbackStrategy(config.bagSeedFallbackStrategy)
     };
 }
@@ -662,6 +664,9 @@ function normalizeAccountConfig(raw, fallbackConfig = accountFallbackConfig) {
     // 背包种子优先级
     if (input.bagSeedPriority !== undefined && input.bagSeedPriority !== null) {
         cfg.bagSeedPriority = normalizeBagSeedPriority(input.bagSeedPriority);
+    }
+    if (input.bagSeedKnownIds !== undefined && input.bagSeedKnownIds !== null) {
+        cfg.bagSeedKnownIds = normalizeBagSeedPriority(input.bagSeedKnownIds);
     }
 
     // 背包种子回退策略
@@ -1150,6 +1155,9 @@ function applyConfigSnapshot(patch = {}, opts = {}) {
     }
     if (patch.bagSeedPriority !== undefined && patch.bagSeedPriority !== null) {
         cfg.bagSeedPriority = normalizeBagSeedPriority(patch.bagSeedPriority);
+    }
+    if (patch.bagSeedKnownIds !== undefined && patch.bagSeedKnownIds !== null) {
+        cfg.bagSeedKnownIds = normalizeBagSeedPriority(patch.bagSeedKnownIds);
     }
     if (patch.bagSeedFallbackStrategy !== undefined && patch.bagSeedFallbackStrategy !== null) {
         cfg.bagSeedFallbackStrategy = normalizeBagSeedFallbackStrategy(patch.bagSeedFallbackStrategy);

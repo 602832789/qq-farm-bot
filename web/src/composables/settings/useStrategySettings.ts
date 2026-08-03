@@ -1,6 +1,6 @@
 import type { Ref } from 'vue'
 import { storeToRefs } from 'pinia'
-import { computed, ref, watchEffect } from 'vue'
+import { computed, onScopeDispose, ref, watchEffect } from 'vue'
 import api from '@/api'
 import { useFarmStore } from '@/stores/farm'
 import { useSettingStore } from '@/stores/setting'
@@ -47,6 +47,7 @@ export function useStrategySettings({
     preferredSeedId: 0,
     prioritize2x2Crops: false,
     bagSeedPriority: [] as number[],
+    bagSeedKnownIds: [] as number[],
     bagSeedFallbackStrategy: 'level',
     stealDelaySeconds: 0,
     plantOrderRandom: false,
@@ -117,8 +118,24 @@ export function useStrategySettings({
         return
       if (res.data.ok) {
         bagSeeds.value = res.data.data || []
-        if (!localStrategySettings.value.bagSeedPriority || localStrategySettings.value.bagSeedPriority.length === 0)
-          localStrategySettings.value.bagSeedPriority = bagSeeds.value.map(seed => Number(seed.seedId)).filter(seedId => seedId > 0)
+        const currentIds = bagSeeds.value.map(seed => Number(seed.seedId)).filter(seedId => seedId > 0)
+        const priority = localStrategySettings.value.bagSeedPriority || []
+        const knownIds = localStrategySettings.value.bagSeedKnownIds || []
+
+        if (knownIds.length === 0) {
+          // Migration: remember the current inventory without restoring seeds that
+          // the user deliberately removed from an existing priority list.
+          if (priority.length === 0)
+            localStrategySettings.value.bagSeedPriority = [...currentIds]
+          localStrategySettings.value.bagSeedKnownIds = [...new Set([...priority, ...currentIds])]
+        }
+        else {
+          const knownSet = new Set(knownIds.map(Number))
+          const newIds = currentIds.filter(seedId => !knownSet.has(seedId))
+          if (newIds.length > 0)
+            localStrategySettings.value.bagSeedPriority = [...priority, ...newIds]
+          localStrategySettings.value.bagSeedKnownIds = [...new Set([...knownIds, ...currentIds])]
+        }
       }
     }
     catch (e: any) {
@@ -203,6 +220,12 @@ export function useStrategySettings({
       fetchBagSeeds()
     }
   })
+
+  const bagSeedsRefreshTimer = window.setInterval(() => {
+    if (localStrategySettings.value.plantingStrategy === 'bag_priority' && currentAccountId.value && !bagSeedsLoading.value)
+      void fetchBagSeeds()
+  }, 15_000)
+  onScopeDispose(() => window.clearInterval(bagSeedsRefreshTimer))
 
   const preferredSeedOptions = computed(() => {
     const options: { label: string, value: number, disabled?: boolean }[] = [{ label: '自动选择', value: 0, disabled: false }]
@@ -292,6 +315,7 @@ export function useStrategySettings({
         preferredSeedId: settings.value.preferredSeedId,
         prioritize2x2Crops: settings.value.prioritize2x2Crops === true,
         bagSeedPriority: settings.value.bagSeedPriority ?? [],
+        bagSeedKnownIds: settings.value.bagSeedKnownIds ?? [],
         bagSeedFallbackStrategy: settings.value.bagSeedFallbackStrategy ?? 'level',
         stealDelaySeconds: settings.value.stealDelaySeconds ?? 0,
         plantOrderRandom: !!settings.value.plantOrderRandom,
