@@ -200,6 +200,24 @@ function buildDailyTasksForDebug(taskInfoRaw) {
   return allTasks.filter((t) => toNum(t && t.task_type) === 3);
 }
 
+function summarizeDailyTaskProgress(dailyTasksRaw) {
+  const dailyTasks = Array.isArray(dailyTasksRaw) ? dailyTasksRaw : [];
+  const completedCount = dailyTasks.filter((task) => {
+    const progress = toNum(task && task.progress);
+    const total = toNum(task && task.total_progress);
+    return total > 0 && progress >= total;
+  }).length;
+  const visibleTarget = Math.min(3, dailyTasks.length);
+
+  return {
+    doneToday: visibleTarget > 0 && completedCount >= visibleTarget,
+    completedCount,
+    // Keep the usual 3-task target when data is temporarily unavailable, but
+    // never infer completion from an empty task list.
+    totalCount: visibleTarget || 3,
+  };
+}
+
 /**
  * 构建成长任务列表。
  * 新版服务端可能把任务统一放在 tasks 中，仅通过 task_type=1 区分。
@@ -449,6 +467,7 @@ module.exports = {
   claimTaskReward,
   doClaim,
   buildGrowthTasks,
+  summarizeDailyTaskProgress,
 
   getTaskClaimDailyState: () => ({
     key: 'task_claim',
@@ -464,12 +483,7 @@ module.exports = {
       const reply = await getTaskInfo();
       const taskInfo = (reply && reply.task_info) ? reply.task_info : {};
       const dailyTasks = buildDailyTasksForDebug(taskInfo);
-
-      const completed = dailyTasks.filter((t) => {
-        const progress = toNum(t && t.progress);
-        const total = toNum(t && t.total_progress);
-        return total > 0 && progress >= total;
-      });
+      const progressSummary = summarizeDailyTaskProgress(dailyTasks);
 
       const unlocked = dailyTasks.filter((t) => {
         const isUnlocked = !!(t && t.is_unlocked);
@@ -482,12 +496,12 @@ module.exports = {
 
       return {
         key: 'task_claim',
-        doneToday: completed.length >= Math.min(3, dailyTasks.length),
+        doneToday: progressSummary.doneToday,
         lastClaimAt: taskClaimLastAt,
         claimableCount: claimable.length,
         pendingCount: unlocked.length,
-        completedCount: completed.length,
-        totalCount: 3,
+        completedCount: progressSummary.completedCount,
+        totalCount: progressSummary.totalCount,
       };
     } catch (_) {
       return {

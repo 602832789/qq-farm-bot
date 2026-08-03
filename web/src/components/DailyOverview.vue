@@ -63,9 +63,11 @@ function formatGiftProgress(gift: any) {
   if (!gift)
     return ''
   const total = Number(gift.totalCount || 0)
-  const current = Number(gift.completedCount || 0)
+  const reportedCurrent = Number(gift.completedCount || 0)
   if (!total)
     return ''
+  // A completed status and an incomplete fraction must never be shown together.
+  const current = gift.doneToday ? Math.max(reportedCurrent, total) : reportedCurrent
   return `进度：${current}/${total}`
 }
 </script>
