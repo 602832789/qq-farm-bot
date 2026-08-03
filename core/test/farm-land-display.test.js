@@ -3,8 +3,45 @@ const assert = require('node:assert/strict');
 
 const {
   buildLandMap,
-  getDisplayLandContext
+  getDisplayLandContext,
+  getCurrentPhase
 } = require('../src/services/farm-land-analyzer');
+
+test('real pea suffix resolves phase_id 20 to the fifth configured stage', () => {
+  const current = getCurrentPhase([
+    { phase: 2, phase_id: 20, begin_time: 1785758321 },
+    { phase: 6, phase_id: 19, begin_time: 1785764081 }
+  ], false, '', 1020008);
+  assert.equal(current.server_phase, 2);
+  assert.equal(current.phase_record_id, 20);
+  assert.equal(current.phase_index, 4);
+  assert.equal(current.image_phase, 5);
+  assert.equal(current.phaseName, '初熟');
+});
+
+test('real star bell suffix uses the first remaining record as current', () => {
+  const current = getCurrentPhase([
+    { phase: 2, phase_id: 8, begin_time: 1785752268 },
+    { phase: 2, phase_id: 12, begin_time: 1785760908 },
+    { phase: 2, phase_id: 10, begin_time: 1785769548 },
+    { phase: 6, phase_id: 19, begin_time: 1785778188 }
+  ], false, '', 1029003);
+  assert.equal(current.server_phase, 2);
+  assert.equal(current.phase_record_id, 8);
+  assert.equal(current.phase_index, 2);
+  assert.equal(current.image_phase, 3);
+  assert.equal(current.phaseName, '小叶子');
+});
+
+test('a mature suffix with one remaining record resolves the final configured stage', () => {
+  const current = getCurrentPhase([
+    { phase: 6, phase_id: 19, begin_time: 1785764081 }
+  ], false, '', 1020008);
+  assert.equal(current.server_phase, 6);
+  assert.equal(current.phase_index, 5);
+  assert.equal(current.image_phase, 6);
+  assert.equal(current.phaseName, '成熟');
+});
 
 test('2x2 plant display context merges slave lands into the master land', () => {
   const plant = { id: 1001, phases: [{ phase: 1, begin_time: 1 }] };

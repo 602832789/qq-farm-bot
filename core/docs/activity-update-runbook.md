@@ -218,6 +218,52 @@ comm -13 /tmp/plant-old.txt /tmp/plant-new.txt
 4. 人工确认内容和透明通道。
 5. 用稳定 ID 命名后导入仓库。
 
+项目已内置植物阶段图片提取工具。需要更新全部普通植物阶段资源时，在仓库根目录运行：
+
+```bash
+npm run extract:plant-phases -- \
+  --install-tool \
+  --download-missing \
+  --all
+```
+
+`size: 2` 的作物均使用 Spine 资源。导出器会额外扫描本机 `mainscene` 缓存，
+用 `ffmpeg` 从 atlas 中还原 `zhongzi`、`grow_02`～`grow_05` 和 `kuwei` 静态帧。
+
+只更新指定植物时使用其官方资产名：
+
+```bash
+npm run extract:plant-phases -- \
+  --install-tool \
+  --download-missing \
+  --assets Crop_1037,Crop_9003
+```
+
+参数说明：
+
+- `--install-tool`：首次运行时下载 ARM 官方 macOS 通用版 `astcenc` 到被 Git 忽略的
+  `core/data/tools/`，后续复用。
+- `--download-missing`：本地QQ账号缓存缺少某阶段时，从QQ官方CDN下载到系统临时目录；
+  不回写或修改QQ缓存。
+- `--all`：根据 `Plant.json` 推导普通植物资产名，导出能够定位的全部阶段。
+- `--assets`：仅更新逗号分隔的指定资产，适合新活动植物的增量验证。
+
+工具会跨本机多个QQ账号的 `gamecaches` 查找资源，按最新 `plant/config.*.json` 解析
+Cocos压缩UUID和阶段路径，将ASTC转换成透明PNG，并合并更新：
+
+```text
+core/src/gameConfig/plant_images/
+├── Crop_1037/
+│   ├── 1.png
+│   ├── 2.png
+│   └── ...
+└── manifest.json
+```
+
+QQ源目录始终只读。提交前应抽查种子、发芽、开花、成熟阶段的透明通道、锚点和尺寸，
+并运行后端测试与前端生产构建。特殊Spine植物若没有阶段静态纹理，会被跳过并由前端
+回退到现有种子图片，不能用推测图片补齐。
+
 种子图片命名：
 
 ```text

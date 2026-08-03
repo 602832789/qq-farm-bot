@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
+import api from '@/api'
 import AccountModal from '@/components/AccountModal.vue'
+import AccountCareerModal from '@/components/AccountCareerModal.vue'
 import RemarkModal from '@/components/RemarkModal.vue'
 import type { Account } from '@/stores/account'
 import { getPlatformClass, getPlatformLabel, useAccountStore } from '@/stores/account'
@@ -15,6 +17,11 @@ const { currentStatusReady, status } = storeToRefs(statusStore)
 const showAccountDropdown = ref(false)
 const showAccountModal = ref(false)
 const showRemarkModal = ref(false)
+const showCareerModal = ref(false)
+const careerLoading = ref(false)
+const careerError = ref('')
+const careerItems = ref<any[]>([])
+const careerProfile = ref<Record<string, any>>({})
 const accountToEdit = ref<any>(null)
 const failedAvatars = ref(new Set<string>())
 
@@ -124,6 +131,38 @@ function avatarInitial(acc?: Account | null) {
   return accountDisplayName(acc).replace(/[()（）\s]/g, '').slice(0, 1) || '账'
 }
 
+async function loadCareer() {
+  const accountId = cleanText(currentAccount.value?.id)
+  if (!accountId)
+    return
+  careerLoading.value = true
+  careerError.value = ''
+  try {
+    const { data } = await api.get('/api/career', {
+      headers: { 'x-account-id': accountId },
+    })
+    if (!data?.ok)
+      throw new Error(data?.error || '生涯记录读取失败')
+    careerProfile.value = data.data || {}
+    careerItems.value = data.data?.items || []
+  }
+  catch (error: any) {
+    careerError.value = error?.response?.data?.error || error?.message || '生涯记录读取失败'
+  }
+  finally {
+    careerLoading.value = false
+  }
+}
+
+function openCareer(event: MouseEvent) {
+  event.stopPropagation()
+  if (!currentAccount.value)
+    return
+  closeDropdown()
+  showCareerModal.value = true
+  loadCareer()
+}
+
 const displayName = computed(() => accountDisplayName(currentAccount.value))
 const currentAvatarSrc = computed(() => avatarSource(currentAccount.value))
 const currentSubtitle = computed(() => accountSubtitle(currentAccount.value))
@@ -199,7 +238,7 @@ async function handleAccountSaved() {
       class="max-w-[min(76vw,280px)] flex items-center gap-3 rounded-xl px-3 py-2 text-left transition hover:bg-gray-100/70 dark:hover:bg-gray-700/50"
       @click="toggleDropdown"
     >
-      <div class="h-9 w-9 flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-100 ring-1 ring-gray-200 dark:bg-gray-700 dark:ring-gray-600">
+      <div class="h-9 w-9 flex shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-gray-100 ring-1 ring-gray-200 transition hover:ring-2 hover:ring-[var(--theme-primary)] dark:bg-gray-700 dark:ring-gray-600" title="查看角色生涯" @click="openCareer">
         <img
           v-if="shouldShowAvatar(currentAccount)"
           :src="currentAvatarSrc"
@@ -329,6 +368,17 @@ async function handleAccountSaved() {
         :account="accountToEdit"
         @close="showRemarkModal = false"
         @saved="handleAccountSaved"
+      />
+
+      <AccountCareerModal
+        :show="showCareerModal"
+        :account="currentAccount"
+        :profile="careerProfile"
+        :items="careerItems"
+        :loading="careerLoading"
+        :error="careerError"
+        @close="showCareerModal = false"
+        @refresh="loadCareer"
       />
     </Teleport>
   </div>

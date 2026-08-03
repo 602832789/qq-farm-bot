@@ -1,5 +1,5 @@
 const { PlantPhase, PHASE_NAMES } = require('../config/config');
-const { getPlantName, getPlantExp, getPlantById, getPlantGrowTime, getSeedImageBySeedId, getMutantEffectsByIds } = require('../config/gameConfig');
+const { getPlantName, getPlantExp, getPlantById, getPlantGrowTime, getPlantGrowPhases, getSeedImageBySeedId, getPlantImageByPhase, getMutantEffectsByIds } = require('../config/gameConfig');
 const { toNum, toTimeSec, getServerTimeSec, logWarn } = require('../utils/utils');
 const { getAllLands } = require('./farm-api');
 
@@ -25,13 +25,13 @@ function isTransientNetworkError(err) {
 }
 
 /**
- * 获取作物当前所处阶段
- * 从 phases 数组最后往前找第一个 begin_time <= 当前服务器时间的阶段
+ * 获取作物当前所处阶段。
+ * 官方响应 phases 是“当前阶段 + 后续阶段”的剩余时间表，第一条就是当前阶段。
  * @param {Array} phases - 阶段列表
  * @param {boolean} debug - 是否输出调试信息
  * @param {string} label - 调试标签
  */
-function getCurrentPhase(phases, debug, label) {
+function getCurrentPhase(phases, debug, label, plantId = 0) {
   if (!phases || phases.length === 0) return null;
   const serverTime = getServerTimeSec();
 
@@ -40,28 +40,58 @@ function getCurrentPhase(phases, debug, label) {
     for (let i = 0; i < phases.length; i++) {
       const p = phases[i];
       const beginTime = toTimeSec(p.begin_time);
-      const phaseName = PHASE_NAMES[p.phase] || `阶段${  p.phase}`;
+      const phaseName = getPlantGrowPhases(plantId)[toNum(p.phase) - 1]?.name
+        || PHASE_NAMES[toNum(p.phase)]
+        || `阶段${  p.phase}`;
       const diff = beginTime > 0 ? beginTime - serverTime : 0;
       const diffLabel = diff > 0 ? `(未来 ${diff}s)` : diff < 0 ? `(已过 ${-diff}s)` : '';
       console.warn(`    ${label}   [${i}] ${phaseName}(${p.phase}) begin=${beginTime} ${diffLabel} dry=${toTimeSec(p.dry_time)} weed=${toTimeSec(p.weeds_time)} insect=${toTimeSec(p.insect_time)}`);
     }
   }
 
-  // 从后往前找最后一个已开始的阶段
-  for (let i = phases.length - 1; i >= 0; i--) {
-    const beginTime = toTimeSec(phases[i].begin_time);
-    if (beginTime > 0 && beginTime <= serverTime) {
-      if (debug) {
-        console.warn(`    ${label}   → 当前阶段: ${PHASE_NAMES[phases[i].phase] || phases[i].phase}`);
-      }
-      return phases[i];
-    }
-  }
-  // 所有阶段都在未来，使用第一个
+  const converted = convertServerPhaseToClient(phases, phases[0], plantId);
   if (debug) {
-    console.warn(`    ${label}   → 所有阶段都在未来，使用第一个: ${PHASE_NAMES[phases[0].phase] || phases[0].phase}`);
+    console.warn(`    ${label}   → 当前阶段: ${converted.phaseName || PHASE_NAMES[converted.phase] || converted.phase}`);
   }
-  return phases[0];
+  return converted;
+}
+
+/**
+ * phases 是从当前阶段开始的配置后缀，因此当前配置下标等于：
+ * grow_phases 总数 - 服务端剩余 phases 数。响应 phase 只表示生长中/成熟/枯死
+ * 等粗状态，phase_id 是详细阶段类型，二者都不能直接作为配置数组下标。
+ */
+function convertServerPhaseToClient(phases, serverPhaseInfo, plantId) {
+  if (!serverPhaseInfo) return null;
+  const serverPhase = toNum(serverPhaseInfo.phase);
+  const phaseRecordId = toNum(serverPhaseInfo.phase_id);
+  const growPhases = getPlantGrowPhases(plantId);
+  const remainingCount = Array.isArray(phases) ? phases.length : 0;
+  const phaseIndex = growPhases.length > 0 && remainingCount > 0
+    ? Math.max(0, growPhases.length - remainingCount)
+    : -1;
+  const configuredPhase = phaseIndex >= 0 ? growPhases[phaseIndex] : null;
+  const imagePhase = serverPhase === PlantPhase.DEAD ? PlantPhase.DEAD : phaseIndex + 1;
+  if (!configuredPhase && serverPhase !== PlantPhase.DEAD) return {
+    ...serverPhaseInfo,
+    phase_index: phaseIndex,
+    image_phase: 0,
+    server_phase: serverPhase,
+    phase_record_id: phaseRecordId,
+    phase: PlantPhase.UNKNOWN,
+    phaseName: '未知阶段'
+  };
+  return {
+    ...serverPhaseInfo,
+    phase_index: phaseIndex,
+    image_phase: imagePhase,
+    server_phase: serverPhase,
+    phase_record_id: phaseRecordId,
+    phase: serverPhase,
+    phaseName: serverPhase === PlantPhase.DEAD
+      ? PHASE_NAMES[PlantPhase.DEAD]
+      : configuredPhase && configuredPhase.name || PHASE_NAMES[serverPhase]
+  };
 }
 
 // ─── 土地映射 ───
@@ -209,7 +239,7 @@ function analyzeLands(lands, debug = false) {
 
     const plantName = plant.name || '未知作物';
     const debugLabel = `土地#${landId}(${plantName})`;
-    const currentPhase = getCurrentPhase(plant.phases, debug, debugLabel);
+    const currentPhase = getCurrentPhase(plant.phases, debug, debugLabel, plant.id);
 
     if (!currentPhase) {
       result.empty.push(landId);
@@ -270,7 +300,7 @@ function getLandLifecycleState(land) {
   const plant = land.plant;
   if (!plant || !Array.isArray(plant.phases) || plant.phases.length === 0) return 'empty';
 
-  const currentPhase = getCurrentPhase(plant.phases, false, '');
+  const currentPhase = getCurrentPhase(plant.phases, false, '', plant.id);
   if (!currentPhase) return 'empty';
 
   const phase = toNum(currentPhase.phase);
@@ -320,7 +350,7 @@ async function resolveRemovableHarvestedLands(harvestedLandIds, harvestResult) {
   const removable = [...classified.removable];
   const growing = [...classified.growing];
   let unknown = [...classified.unknown];
-  let fallbackRemoved = 0;
+  const fallbackRemoved = 0;
 
   // 对于未知状态的地块，重新拉取全农场数据
   if (unknown.length > 0) {
@@ -437,7 +467,7 @@ async function getLandsDetail() {
         continue;
       }
 
-      const currentPhase = getCurrentPhase(plant.phases, false, '');
+      const currentPhase = getCurrentPhase(plant.phases, false, '', plant.id);
       if (!currentPhase) {
         details.push({
           id: landId, unlocked: true, status: 'empty',
@@ -450,7 +480,7 @@ async function getLandsDetail() {
         continue;
       }
 
-      const phase = currentPhase.phase;
+      const phase = toNum(currentPhase.phase);
       const plantId = toNum(plant.id);
       const displayName = getPlantName(plantId) || plant.name || '未知';
       const plantInfo = getPlantById(plantId);
@@ -464,18 +494,28 @@ async function getLandsDetail() {
         toNum(plantInfo && plantInfo.size) || 1,
         occupiedPlantSize
       );
+      const plantImage = getPlantImageByPhase(plantId, toNum(currentPhase.image_phase));
       const totalSeason = Math.max(1, toNum(plantInfo && plantInfo.seasons) || 1);
       const rawSeason = toNum(plant.season);
       const currentSeason = rawSeason > 0 ? Math.min(rawSeason, totalSeason) : 1;
-      const phaseName = PHASE_NAMES[phase] || '';
+      const phaseName = currentPhase.phaseName || PHASE_NAMES[phase] || '';
 
       // 计算剩余成熟时间
       const maturePhaseData = Array.isArray(plant.phases)
-        ? plant.phases.find(p => p && toNum(p.phase) === PlantPhase.MATURE)
+        ? plant.phases
+          .filter(p => p && toTimeSec(p.begin_time) > 0)
+          .sort((left, right) => toTimeSec(right.begin_time) - toTimeSec(left.begin_time))[0]
         : null;
       const matureTime = maturePhaseData ? toTimeSec(maturePhaseData.begin_time) : 0;
       const matureInSec = matureTime > serverTime ? matureTime - serverTime : 0;
       const totalGrowTime = getPlantGrowTime(plantId);
+      const phaseStartTime = toTimeSec(currentPhase.begin_time);
+      const nextPhaseData = Array.isArray(plant.phases)
+        ? plant.phases
+          .filter(item => item && toTimeSec(item.begin_time) > phaseStartTime)
+          .sort((left, right) => toTimeSec(left.begin_time) - toTimeSec(right.begin_time))[0]
+        : null;
+      const phaseEndTime = nextPhaseData ? toTimeSec(nextPhaseData.begin_time) : 0;
 
       // 确定状态
       let status = 'growing';
@@ -497,9 +537,9 @@ async function getLandsDetail() {
 
       details.push({
         id: landId, unlocked: true, status,
-        plantName: displayName, seedId, seedImage,
-        phaseName, currentSeason, totalSeason,
-        matureInSec, totalGrowTime,
+        plantName: displayName, seedId, seedImage, plantImage,
+        phase, phaseName, currentSeason, totalSeason,
+        matureInSec, totalGrowTime, phaseStartTime, phaseEndTime,
         needWater, needWeed, needBug,
         stealable: !!plant.stealable,
         level, maxLevel, landsLevel, landSize, landType, landTypeName,
@@ -517,6 +557,7 @@ async function getLandsDetail() {
 
 module.exports = {
   getCurrentPhase,
+  convertServerPhaseToClient,
   buildLandMap,
   getDisplayLandContext,
   isOccupiedSlaveLand,

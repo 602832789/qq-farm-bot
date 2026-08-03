@@ -4,6 +4,7 @@ const {
   getPlantById,
   getPlantGrowTime,
   getSeedImageBySeedId,
+  getPlantImageByPhase,
   getMutantEffectsByIds,
 } = require('../config/gameConfig');
 const {
@@ -71,7 +72,8 @@ function analyzeFriendLands(lands, myGid, friendName = '', options = {}) {
     const currentPhase = getCurrentPhase(
       plant.phases,
       false,
-      `[${friendName}]土地#${landId}`
+      `[${friendName}]土地#${landId}`,
+      plant.id
     );
     if (!currentPhase) continue;
 
@@ -476,7 +478,7 @@ async function getFriendLandsDetail(gid) {
         continue;
       }
 
-      const currentPhase = getCurrentPhase(targetPlant.phases, false, '');
+      const currentPhase = getCurrentPhase(targetPlant.phases, false, '', targetPlant.id);
       if (!currentPhase) {
         detailLands.push({
           id: landId,
@@ -499,19 +501,29 @@ async function getFriendLandsDetail(gid) {
       const plantInfo = getPlantById(plantId);
       const seedId = toNum(plantInfo && plantInfo.seed_id);
       const seedImage = seedId > 0 ? getSeedImageBySeedId(seedId) : '';
+      const plantImage = getPlantImageByPhase(plantId, toNum(currentPhase.image_phase));
       const plantSize = Math.max(1, toNum(plantInfo && plantInfo.size) || 1);
       const totalSeasons = Math.max(1, toNum(plantInfo && plantInfo.seasons) || 1);
       const currentSeasonRaw = toNum(targetPlant.season);
       const currentSeason =
         currentSeasonRaw > 0 ? Math.min(currentSeasonRaw, totalSeasons) : 1;
-      const phaseName = PHASE_NAMES[phase] || '';
+      const phaseName = currentPhase.phaseName || PHASE_NAMES[phase] || '';
 
       // Compute maturity time
       const maturePhase = Array.isArray(targetPlant.phases)
-        ? targetPlant.phases.find(p => p && toNum(p.phase) === PlantPhase.MATURE)
+        ? targetPlant.phases
+          .filter(p => p && toTimeSec(p.begin_time) > 0)
+          .sort((left, right) => toTimeSec(right.begin_time) - toTimeSec(left.begin_time))[0]
         : null;
       const matureTimeSec = maturePhase ? toTimeSec(maturePhase.begin_time) : 0;
       const matureInSec = matureTimeSec > serverTimeSec ? matureTimeSec - serverTimeSec : 0;
+      const phaseStartTime = toTimeSec(currentPhase.begin_time);
+      const nextPhaseData = Array.isArray(targetPlant.phases)
+        ? targetPlant.phases
+          .filter(item => item && toTimeSec(item.begin_time) > phaseStartTime)
+          .sort((left, right) => toTimeSec(left.begin_time) - toTimeSec(right.begin_time))[0]
+        : null;
+      const phaseEndTime = nextPhaseData ? toTimeSec(nextPhaseData.begin_time) : 0;
       const totalGrowTime = getPlantGrowTime(plantId);
 
       // Determine status
@@ -533,11 +545,15 @@ async function getFriendLandsDetail(gid) {
         plantName,
         seedId,
         seedImage,
+        plantImage,
+        phase,
         phaseName,
         currentSeason,
         totalSeason: totalSeasons,
         level: landLevel,
         matureInSec,
+        phaseStartTime,
+        phaseEndTime,
         totalGrowTime,
         needWater: toNum(targetPlant.dry_num) > 0,
         needWeed: targetPlant.weed_owners && targetPlant.weed_owners.length > 0,

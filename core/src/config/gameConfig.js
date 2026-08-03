@@ -18,6 +18,9 @@ const itemInfoMap = new Map();       // itemId → itemInfo
 const seedItemMap = new Map();       // seedItemId → itemInfo
 const seedImageMap = new Map();      // seedId/itemId → imageUrl
 const seedAssetImageMap = new Map(); // assetName → imageUrl
+const plantPhaseImageMap = new Map();// assetName → { phase: imageUrl }
+let plantPhaseManifestPath = '';
+let plantPhaseManifestMtimeMs = -1;
 const skinDetailImageMap = new Map();// itemId → skinDetailImageUrl
 const staticItemImageMap = new Map([
     [1023, '/activity/star-festival/star-token.png'],
@@ -72,6 +75,7 @@ function loadConfigs() {
                 const plant = {
                     id: Number(entry.id),
                     name: entry.name,
+                    asset_name: entry.asset_name,
                     seed_id: Number(entry.seed_id),
                     fruit: { id: Number(entry.fruit_id), count: Number(entry.fruit_count) || 0 },
                     size: Math.max(1, Number(entry.size) || 1),
@@ -198,7 +202,12 @@ function loadConfigs() {
         console.warn('[配置] 加载 seed_images_named 失败:', err.message);
     }
 
-    // 5. 加载装扮道具图片映射
+    // 5. 加载从官方 plant Bundle 导出的阶段图片
+    plantPhaseManifestPath = path.join(basePath, 'plant_images', 'manifest.json');
+    plantPhaseManifestMtimeMs = -1;
+    loadPlantPhaseManifest(true);
+
+    // 6. 加载装扮道具图片映射
     try {
         const skinDetailPath = path.join(basePath, 'seed_images_named', 'skinDetail');
         skinDetailImageMap.clear();
@@ -305,6 +314,25 @@ function getPlantGrowTime(plantId) {
 }
 
 /**
+ * 解析官方 Plant.grow_phases。官方客户端把每项转换成内部 phase_id；
+ * 服务端响应的 phase 与该内部 ID 匹配，常规阶段按一基顺序排列。
+ */
+function getPlantGrowPhases(plantId) {
+    const plant = plantMap.get(Number(plantId) || 0);
+    if (!plant || !plant.grow_phases) return [];
+
+    return String(plant.grow_phases)
+        .split(';')
+        .filter(Boolean)
+        .map((value, index) => {
+            const separator = value.lastIndexOf(':');
+            const name = separator >= 0 ? value.slice(0, separator) : value;
+            const duration = separator >= 0 ? Number(value.slice(separator + 1)) || 0 : 0;
+            return { index, name, duration };
+        });
+}
+
+/**
  * 格式化生长时间
  * @param {number} seconds - 秒数
  * @returns {string} 格式化后的时间字符串
@@ -401,6 +429,57 @@ function getMappedSeedImage(id) {
 /** 根据种子ID获取图片 */
 function getSeedImageBySeedId(seedId) {
     return getMappedSeedImage(seedId);
+}
+
+/**
+ * 重新加载官方植物阶段图片清单。导出工具更新 manifest 后无需重启服务。
+ */
+function loadPlantPhaseManifest(force = false) {
+    if (!plantPhaseManifestPath) return;
+    try {
+        const stat = fs.statSync(plantPhaseManifestPath);
+        if (!force && stat.mtimeMs === plantPhaseManifestMtimeMs) return;
+        const manifest = JSON.parse(fs.readFileSync(plantPhaseManifestPath, 'utf8'));
+        const nextMap = new Map();
+        for (const [assetName, phases] of Object.entries(manifest)) {
+            nextMap.set(assetName, phases || {});
+        }
+        plantPhaseImageMap.clear();
+        for (const [assetName, phases] of nextMap) plantPhaseImageMap.set(assetName, phases);
+        plantPhaseManifestMtimeMs = stat.mtimeMs;
+        console.warn(`[配置] 已加载植物阶段图片映射 (${  plantPhaseImageMap.size  } 种)`);
+    } catch (err) {
+        if (force || err.code !== 'ENOENT') {
+            console.warn('[配置] 加载 plant_images 失败:', err.message);
+        }
+    }
+}
+
+/**
+ * 根据植物ID和当前阶段获取官方植物图片
+ * @returns {string} 可公开访问的阶段图片URL，未导出时为空字符串
+ */
+function getPlantImageByPhase(plantId, phase) {
+    loadPlantPhaseManifest();
+    // 客户端的种子阶段共用 plant Bundle 中 model/v4/zhongzi，不使用各作物的发芽图。
+    if (Number(phase) === 1) {
+        const commonImages = plantPhaseImageMap.get('__common');
+        return commonImages && commonImages.seed || '';
+    }
+    const plant = plantMap.get(Number(plantId) || 0);
+    if (!plant) return '';
+    const seedId = Number(plant.seed_id) || 0;
+    const itemInfo = itemInfoMap.get(seedId);
+    const assetName = String(
+        plant.asset_name
+        || (itemInfo && itemInfo.asset_name)
+        || (seedId > 20000 ? `Crop_${seedId - 20000}` : `Plant_${plant.id}`)
+    ).trim();
+    if (!assetName) return '';
+    const phases = plantPhaseImageMap.get(assetName);
+    if (!phases) return '';
+    const numericPhase = Number(phase) || 1;
+    return phases[String(numericPhase)] || '';
 }
 
 /** 根据物品ID获取图片 */
@@ -542,6 +621,7 @@ module.exports = {
     getPlantName,
     getPlantNameBySeedId,
     getPlantGrowTime,
+    getPlantGrowPhases,
     getPlantExp,
     formatGrowTime,
     getSeedHarvestInfo,
@@ -555,6 +635,7 @@ module.exports = {
     getFruitLayerBySeedId,
     getFruitLayerByFruitId,
     getSeedImageBySeedId,
+    getPlantImageByPhase,
     getSeedLevel,
     getMutantEffectById,
     getMutantEffectByIcon,

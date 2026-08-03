@@ -37,6 +37,7 @@ const { createAdminAccountAccess } = require("./admin-account-access");
 const { registerAdminAuthRoutes } = require("./admin-auth-routes");
 const { registerAdminBagRoutes } = require("./admin-bag-routes");
 const { registerAdminCardRoutes } = require("./admin-card-routes");
+const { registerAdminCareerRoutes } = require("./admin-career-routes");
 const { registerAdminCaptureRoutes } = require("./admin-capture-routes");
 const { registerAdminCurrentUserRoutes } = require("./admin-current-user-routes");
 const {
@@ -435,6 +436,13 @@ function startAdminServer(dataProvider) {
     app,
     provider,
     adminLogger,
+    getAccountIdFromRequest,
+    canAccessAccount,
+    sendProviderError,
+  });
+  registerAdminCareerRoutes({
+    app,
+    provider,
     getAccountIdFromRequest,
     canAccessAccount,
     sendProviderError,

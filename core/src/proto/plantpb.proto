@@ -99,9 +99,9 @@ message SocialItemResult {
 
 // ============ 生长阶段详情 ============
 message PlantPhaseInfo {
-    int32 phase = 1;               // PlantPhase 枚举值
+    int32 phase = 1;               // 粗状态：常见 2=生长中、6=成熟、7=枯死
     int64 begin_time = 2;          // 阶段开始时间
-    int64 phase_id = 3;            // 阶段ID
+    int64 phase_id = 3;            // 详细阶段类型（如 20=初熟、19=成熟）
     // fields 4,5 reserved
     int64 dry_time = 6;            // 变干时间 (>0 需要浇水)
     int64 weeds_time = 7;          // 长草时间 (>0 有杂草)

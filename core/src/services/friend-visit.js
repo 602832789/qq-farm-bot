@@ -544,7 +544,7 @@ async function visitFriendForSteal(friend, tally, myGid, accountId) {
   const hasStealSlot = lands.some(land => {
     const plant = land.plant;
     if (!plant || !plant.phases || plant.phases.length === 0) return false;
-    const phase = getCurrentPhase(plant.phases, false);
+    const phase = getCurrentPhase(plant.phases, false, '', plant.id);
     if (!phase || phase.phase !== PlantPhase.MATURE) return false;
     if (!plant.stealable) return false;
 

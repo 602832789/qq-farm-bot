@@ -5,6 +5,7 @@
     "dev:core": "pnpm -C core dev",
     "dev:web": "pnpm -C web dev",
     "dev": "pnpm build:web && pnpm dev:core",
+    "extract:plant-phases": "npm --prefix core run extract:plant-phases --",
     "lint": "pnpm lint:core && pnpm lint:web",
     "lint:core": "pnpm -C core lint",
     "lint:web": "pnpm -C web lint",

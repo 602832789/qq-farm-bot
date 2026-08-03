@@ -77,7 +77,7 @@ function getOrganicFertilizerTargetsFromLands(lands) {
     const plant = land.plant;
     if (!plant || !plant.phases || plant.phases.length === 0) continue;
 
-    const currentPhase = getCurrentPhase(plant.phases);
+    const currentPhase = getCurrentPhase(plant.phases, false, '', plant.id);
     if (!currentPhase) continue;
     if (currentPhase.phase === PlantPhase.DEAD) continue;
 
@@ -110,13 +110,15 @@ function getFastMatureLands(lands, thresholdSec = 3600) {
     const plant = land.plant;
     if (!plant || !plant.phases || plant.phases.length === 0) continue;
 
-    const currentPhase = getCurrentPhase(plant.phases);
+    const currentPhase = getCurrentPhase(plant.phases, false, '', plant.id);
     if (!currentPhase) continue;
     if (currentPhase.phase === PlantPhase.DEAD) continue;
     if (currentPhase.phase === PlantPhase.MATURE) continue;
 
     // 查找成熟阶段
-    const maturePhase = plant.phases.find(p => toNum(p.phase) === PlantPhase.MATURE);
+    const maturePhase = plant.phases
+      .filter(p => p && toTimeSec(p.begin_time) > 0)
+      .sort((left, right) => toTimeSec(right.begin_time) - toTimeSec(left.begin_time))[0];
     if (!maturePhase) continue;
 
     const matureTime = toTimeSec(maturePhase.begin_time);
@@ -154,7 +156,7 @@ function getFinalStageLands(lands, options = {}) {
     const plant = land.plant;
     if (!plant || !Array.isArray(plant.phases) || plant.phases.length === 0) continue;
 
-    const currentPhase = getCurrentPhase(plant.phases);
+    const currentPhase = getCurrentPhase(plant.phases, false, '', plant.id);
     if (!currentPhase) continue;
 
     const currentPhaseValue = toNum(currentPhase.phase);
