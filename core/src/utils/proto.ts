@@ -143,6 +143,7 @@ async function loadProto(): Promise<void> {
     types.CheckCanShareReply = root.lookupType('gamepb.sharepb.CheckCanShareReply');
     types.ReportShareRequest = root.lookupType('gamepb.sharepb.ReportShareRequest');
     types.ReportShareReply = root.lookupType('gamepb.sharepb.ReportShareReply');
+    types.ClaimShareRewardRequest = root.lookupType('gamepb.sharepb.ClaimShareRewardRequest');
     types.ClaimShareRewardReply = root.lookupType('gamepb.sharepb.ClaimShareRewardReply');
     types.GetIllustratedListV2Request = root.lookupType('gamepb.illustratedpb.GetIllustratedListV2Request');
     types.GetIllustratedListV2Reply = root.lookupType('gamepb.illustratedpb.GetIllustratedListV2Reply');

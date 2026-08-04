@@ -30,7 +30,7 @@ const theme = computed(() => activeTab.value === 'solar' ? 'day' : 'night')
 const endTime = computed(() => {
   if (activeTab.value === 'shop') return shop.value?.endTime
   if (activeTab.value === 'constellation') return constellation.value?.endTime || season.value?.endTime
-  if (activeTab.value === 'solar') return solarTerms.value?.terms.find(term => term.current)?.endTime || season.value?.endTime
+  if (activeTab.value === 'solar') return season.value?.endTime
   return season.value?.endTime
 })
 const remaining = computed(() => {

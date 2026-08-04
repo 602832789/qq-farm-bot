@@ -12,7 +12,6 @@ const { version } = require('../../../package.json');
 const { getRuntimeConfig } = require('../../config/config');
 const { getSchedulerRegistrySnapshot } = require('../../services/scheduler');
 const { createModuleLogger } = require('../../services/logger');
-const { MiniProgramLoginSession } = require('../../services/qrlogin');
 const store = require('../../models/store');
 const userStore = require('../../models/user-store');
 
@@ -248,7 +247,7 @@ function mountAuthRoutes(app: Application, ctx: AdminContext): void {
     });
 
     app.use('/api', (req: Request, res: Response, next: any) => {
-        if (req.path === '/login' || req.path === '/qr/create' || req.path === '/qr/check' || req.path === '/card-claim/status' || req.path === '/card-claim/claim' || req.path === '/game-version') return next();
+        if (req.path === '/login' || req.path === '/card-claim/status' || req.path === '/card-claim/claim' || req.path === '/game-version') return next();
         return authRequired(req, res, next);
     });
 
@@ -319,52 +318,6 @@ function mountAuthRoutes(app: Application, ctx: AdminContext): void {
                     accountLimit: user.accountLimit || userStore.DEFAULT_ACCOUNT_LIMIT || 2
                 }
             });
-        } catch (e: any) {
-            res.status(500).json({ ok: false, error: e.message });
-        }
-    });
-
-    // ============ QR Code Login APIs (无需账号选择) ============
-    // 这些接口不需要 authRequired 也能调用（用于登录流程）
-    app.post('/api/qr/create', async (_req: Request, res: Response) => {
-        try {
-            const result = await MiniProgramLoginSession.requestLoginCode();
-            res.json({ ok: true, data: result });
-        } catch (e: any) {
-            res.status(500).json({ ok: false, error: e.message });
-        }
-    });
-
-    app.post('/api/qr/check', async (req: Request, res: Response) => {
-        const { code } = req.body || {};
-        if (!code) {
-            return res.status(400).json({ ok: false, error: 'Missing code' });
-        }
-
-        try {
-            const result = await MiniProgramLoginSession.queryStatus(code);
-
-            if (result.status === 'OK') {
-                const ticket = result.ticket;
-                const uin = result.uin || '';
-                const nickname = result.nickname || ''; // 获取昵称
-                const appid = '1112386029'; // Farm appid
-
-                const authCode = await MiniProgramLoginSession.getAuthCode(ticket, appid);
-
-                let avatar = '';
-                if (uin) {
-                    avatar = `https://q1.qlogo.cn/g?b=qq&nk=${uin}&s=640`;
-                }
-
-                res.json({ ok: true, data: { status: 'OK', code: authCode, uin, avatar, nickname } });
-            } else if (result.status === 'Used') {
-                res.json({ ok: true, data: { status: 'Used' } });
-            } else if (result.status === 'Wait') {
-                res.json({ ok: true, data: { status: 'Wait' } });
-            } else {
-                res.json({ ok: true, data: { status: 'Error', error: result.msg } });
-            }
         } catch (e: any) {
             res.status(500).json({ ok: false, error: e.message });
         }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue'
+import { onBeforeUnmount, reactive, ref, watch } from 'vue'
 import api from '@/api'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
@@ -14,6 +14,14 @@ const emit = defineEmits(['close', 'saved'])
 
 const loading = ref(false)
 const errorMessage = ref('')
+const activeLoginTab = ref<'code' | 'wx_qr'>('code')
+const wxTaskId = ref('')
+const wxStatus = ref('')
+const wxError = ref('')
+const wxLoading = ref(false)
+const wxQrUrl = ref('')
+let wxPollTimer: ReturnType<typeof setTimeout> | undefined
+let wxQrObjectUrl = ''
 
 // 表单数据
 const form = reactive({
@@ -90,13 +98,102 @@ async function submitManual() {
   await addAccount(payload)
 }
 
+function stopWxPolling() {
+  if (wxPollTimer) {
+    clearTimeout(wxPollTimer)
+    wxPollTimer = undefined
+  }
+}
+
+function resetWxLogin() {
+  stopWxPolling()
+  if (wxQrObjectUrl) {
+    URL.revokeObjectURL(wxQrObjectUrl)
+    wxQrObjectUrl = ''
+  }
+  wxTaskId.value = ''
+  wxStatus.value = ''
+  wxError.value = ''
+  wxQrUrl.value = ''
+  wxLoading.value = false
+}
+
+async function getWxCodeAndAdd() {
+  const codeResult = await api.post(`/api/wx-login/tasks/${wxTaskId.value}/code`)
+  const code = String(codeResult.data?.data?.code || '').trim()
+  if (!code)
+    throw new Error('未获取到登录 Code')
+
+  // Deliberately use the same account API and payload as the manual form.
+  await addAccount({ name: form.name, code, platform: 'wx', loginType: 'manual' })
+}
+
+async function confirmWxLogin() {
+  wxStatus.value = '正在建立登录会话...'
+  await api.post(`/api/wx-login/tasks/${wxTaskId.value}/confirm`)
+  await getWxCodeAndAdd()
+}
+
+async function pollWxLogin() {
+  if (!wxTaskId.value)
+    return
+
+  try {
+    const response = await api.get(`/api/wx-login/tasks/${wxTaskId.value}/status`, { timeout: 40000 })
+    const status = response.data?.data?.status
+    if (status === 'waiting')
+      wxStatus.value = '等待微信扫码'
+    else if (status === 'scanned')
+      wxStatus.value = '已扫码，请在手机上确认'
+    else if (status === 'authorized') {
+      stopWxPolling()
+      await confirmWxLogin()
+      return
+    }
+    else if (['cancelled', 'expired', 'failed'].includes(status)) {
+      wxError.value = '二维码已失效，请重新获取'
+      return
+    }
+    wxPollTimer = setTimeout(pollWxLogin, 1200)
+  }
+  catch (error: any) {
+    wxError.value = error.response?.data?.error || error.message || '登录状态检查失败'
+  }
+}
+
+async function startWxLogin() {
+  resetWxLogin()
+  wxLoading.value = true
+  try {
+    const response = await api.post('/api/wx-login/tasks', { app_id: 'wx5306c5978fdb76e4' })
+    const task = response.data?.data
+    wxTaskId.value = task?.task_id || ''
+    if (!wxTaskId.value)
+      throw new Error('未创建登录任务')
+    const qrResponse = await api.get(task.qr_url, { responseType: 'blob' })
+    wxQrObjectUrl = URL.createObjectURL(qrResponse.data)
+    wxQrUrl.value = wxQrObjectUrl
+    wxStatus.value = '等待微信扫码'
+    void pollWxLogin()
+  }
+  catch (error: any) {
+    wxError.value = error.response?.data?.error || error.message || '二维码获取失败'
+  }
+  finally {
+    wxLoading.value = false
+  }
+}
+
 function close() {
+  resetWxLogin()
   emit('close')
 }
 
 watch(() => props.show, (newVal) => {
   if (newVal) {
     errorMessage.value = ''
+    activeLoginTab.value = 'code'
+    resetWxLogin()
     if (props.editData) {
       form.name = props.editData.name || ''
       form.code = props.editData.code || ''
@@ -109,6 +206,15 @@ watch(() => props.show, (newVal) => {
     }
   }
 })
+
+watch(activeLoginTab, (tab) => {
+  if (tab === 'wx_qr' && !wxTaskId.value)
+    void startWxLogin()
+  else if (tab !== 'wx_qr')
+    resetWxLogin()
+})
+
+onBeforeUnmount(resetWxLogin)
 </script>
 
 <template>
@@ -130,7 +236,32 @@ watch(() => props.show, (newVal) => {
           {{ errorMessage }}
         </div>
 
-        <div class="space-y-4">
+        <div v-if="!editData" class="mb-4 flex border-b" style="border-color: color-mix(in srgb, var(--theme-text) 10%, transparent)" role="tablist" aria-label="登录方式">
+          <button
+            type="button"
+            role="tab"
+            :aria-selected="activeLoginTab === 'code'"
+            class="border-b-2 px-3 py-2 text-sm transition-colors"
+            :class="activeLoginTab === 'code' ? 'font-medium' : 'border-transparent opacity-60'"
+            :style="activeLoginTab === 'code' ? { borderColor: 'var(--theme-primary)', color: 'var(--theme-primary)' } : { color: 'var(--theme-text)' }"
+            @click="activeLoginTab = 'code'"
+          >
+            输入code登录
+          </button>
+          <button
+            type="button"
+            role="tab"
+            :aria-selected="activeLoginTab === 'wx_qr'"
+            class="border-b-2 px-3 py-2 text-sm transition-colors"
+            :class="activeLoginTab === 'wx_qr' ? 'font-medium' : 'border-transparent opacity-60'"
+            :style="activeLoginTab === 'wx_qr' ? { borderColor: 'var(--theme-primary)', color: 'var(--theme-primary)' } : { color: 'var(--theme-text)' }"
+            @click="activeLoginTab = 'wx_qr'"
+          >
+            微信扫码登录
+          </button>
+        </div>
+
+        <div v-if="editData || activeLoginTab === 'code'" class="space-y-4">
           <BaseInput
             v-model="form.name"
             label="账号备注（可选）"
@@ -176,6 +307,28 @@ watch(() => props.show, (newVal) => {
             <BaseButton variant="primary" class="cartoon-btn" :loading="loading" @click="submitManual">
               {{ editData ? '保存' : '添加' }}
             </BaseButton>
+          </div>
+        </div>
+        <div v-else class="space-y-4" role="tabpanel" aria-label="微信扫码登录">
+          <BaseInput
+            v-model="form.name"
+            label="账号备注（可选）"
+            placeholder="留空使用默认账号"
+            class="farm-input"
+          />
+          <div class="flex min-h-64 flex-col items-center justify-center gap-3">
+            <div v-if="wxQrUrl" class="bg-white p-2">
+              <img :src="wxQrUrl" alt="微信登录二维码" class="h-52 w-52">
+            </div>
+            <div v-else class="flex h-52 w-52 items-center justify-center text-sm opacity-60">
+              {{ wxLoading ? '正在获取二维码...' : '二维码不可用' }}
+            </div>
+            <p class="text-sm" :style="{ color: 'var(--theme-text)' }">{{ wxStatus }}</p>
+            <p v-if="wxError" class="text-sm text-red-500">{{ wxError }}</p>
+          </div>
+          <div class="flex justify-end gap-2">
+            <BaseButton variant="outline" class="cartoon-btn" @click="startWxLogin">刷新二维码</BaseButton>
+            <BaseButton variant="outline" class="cartoon-btn" @click="close">取消</BaseButton>
           </div>
         </div>
       </div>

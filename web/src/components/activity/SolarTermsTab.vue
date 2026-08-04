@@ -6,9 +6,20 @@ import RewardItem from './RewardItem.vue'
 const props = defineProps<{ solar: SolarTermsDto | null, now: number, pending?: boolean }>()
 const emit = defineEmits<{ claim: [termId: string] }>()
 const selectedId = ref('')
+function activeTermId(solar: SolarTermsDto | null) {
+  if (!solar || !Number.isFinite(props.now))
+    return ''
+
+  return solar.terms.find((term) => (
+    Number.isFinite(term.startTime)
+    && Number.isFinite(term.endTime)
+    && term.startTime! <= props.now
+    && props.now <= term.endTime!
+  ))?.id || ''
+}
 watch(() => props.solar, (solar) => {
   if (!solar?.terms.some(term => term.id === selectedId.value))
-    selectedId.value = solar?.currentTermId || solar?.terms.find(term => term.current)?.id || solar?.terms[0]?.id || ''
+    selectedId.value = activeTermId(solar) || solar?.currentTermId || solar?.terms.find(term => term.current)?.id || solar?.terms[0]?.id || ''
 }, { immediate: true })
 const current = computed(() => props.solar?.terms.find(term => term.id === selectedId.value) ?? null)
 const description = computed(() => current.value?.description || props.solar?.description || '')

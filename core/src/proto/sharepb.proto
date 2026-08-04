@@ -13,7 +13,7 @@ message CheckCanShareReply {
     bool can_share = 1;
 }
 
-// --- 分享上报（仅保留抓包已确认的 wire 字段，当前不主动调用） ---
+// --- 分享上报（抓包确认：field_1=true，field_4=42） ---
 message ReportShareRequest {
     bool field_1 = 1;
     int32 field_4 = 4;
@@ -23,7 +23,11 @@ message ReportShareReply {
     bytes result = 1;
 }
 
-// --- 分享奖励（请求结构待完整领奖抓包确认） ---
+// --- 分享奖励（抓包确认：field_1=true） ---
+message ClaimShareRewardRequest {
+    bool field_1 = 1;
+}
+
 message ClaimShareRewardReply {
     repeated corepb.Item items = 1;
 }

@@ -15,9 +15,9 @@ interface DailyGift {
   completedCount?: number
   totalCount?: number
   tasks?: any[]
-  mode?: 'check_only'
+  mode?: 'check_only' | 'auto_claim'
   checkedToday?: boolean
-  checkStatus?: 'unchecked' | 'entry_available' | 'entry_unavailable' | 'check_failed'
+  checkStatus?: 'unchecked' | 'entry_available' | 'entry_unavailable' | 'already_claimed' | 'check_failed'
   canShare?: boolean | null
 }
 

@@ -21,6 +21,7 @@ const { mountFarmRoutes } = require('./farm-routes');
 const { mountFriendRoutes } = require('./friend-routes');
 const { mountAdminRoutes } = require('./admin-routes');
 const { mountActivityCenterRoutes } = require('./activity-center-routes');
+const { mountWxLoginRoutes } = require('./wx-login-routes');
 const {
     setupSocketIO,
     emitRealtimeStatus: _emitStatus,
@@ -73,6 +74,7 @@ function startAdminServer(dataProvider: any): void {
 
     // Mount route modules
     mountAuthRoutes(app, ctx);
+    mountWxLoginRoutes(app, ctx);
     mountFarmRoutes(app, ctx);
     mountFriendRoutes(app, ctx);
     mountAdminRoutes(app, ctx);

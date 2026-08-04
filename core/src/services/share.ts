@@ -1,6 +1,6 @@
 export {};
 /**
- * 分享状态（只读检查）
+ * 每日分享礼包
  */
 
 const { sendMsgAsync } = require('../utils/network');
@@ -10,10 +10,12 @@ const { log } = require('../utils/utils');
 const DAILY_KEY: string = 'daily_share';
 const CHECK_COOLDOWN_MS: number = 10 * 60 * 1000;
 
-type ShareCheckStatus = 'unchecked' | 'entry_available' | 'entry_unavailable' | 'check_failed';
+type ShareCheckStatus = 'unchecked' | 'entry_available' | 'entry_unavailable' | 'already_claimed' | 'check_failed';
 
 let checkedDateKey: string = '';
+let claimedDateKey: string = '';
 let lastCheckAt: number = 0;
+let lastClaimAt: number = 0;
 let checkStatus: ShareCheckStatus = 'unchecked';
 let canShare: boolean | null = null;
 
@@ -29,6 +31,10 @@ function isCheckedToday(): boolean {
     return checkedDateKey === getDateKey();
 }
 
+function isAlreadyClaimedError(error: any): boolean {
+    return Number(error?.code) === 1009001 || /\bcode=1009001\b/.test(String(error?.message || error || ''));
+}
+
 async function checkCanShare(): Promise<any> {
     const body: Uint8Array = types.CheckCanShareRequest.encode(types.CheckCanShareRequest.create({})).finish();
     const { body: replyBody } = await sendMsgAsync('gamepb.sharepb.ShareService', 'CheckCanShare', body);
@@ -41,8 +47,26 @@ async function getInviteInfo(): Promise<any> {
     return types.GetInviteInfoReply.decode(replyBody);
 }
 
+async function reportShare(): Promise<void> {
+    const body: Uint8Array = types.ReportShareRequest.encode(types.ReportShareRequest.create({
+        field_1: true,
+        field_4: 42,
+    })).finish();
+    const { body: replyBody } = await sendMsgAsync('gamepb.sharepb.ShareService', 'ReportShare', body);
+    types.ReportShareReply.decode(replyBody);
+}
+
+async function claimShareReward(): Promise<any> {
+    const body: Uint8Array = types.ClaimShareRewardRequest.encode(types.ClaimShareRewardRequest.create({
+        field_1: true,
+    })).finish();
+    const { body: replyBody } = await sendMsgAsync('gamepb.sharepb.ShareService', 'ClaimShareReward', body);
+    return types.ClaimShareRewardReply.decode(replyBody);
+}
+
 async function checkDailyShareStatus(force: boolean = false): Promise<boolean> {
     const now: number = Date.now();
+    if (claimedDateKey === getDateKey()) return false;
     if (!force && now - lastCheckAt < CHECK_COOLDOWN_MS) return false;
     lastCheckAt = now;
     try {
@@ -50,14 +74,42 @@ async function checkDailyShareStatus(force: boolean = false): Promise<boolean> {
         canShare = !!(reply && reply.can_share);
         checkStatus = canShare ? 'entry_available' : 'entry_unavailable';
         checkedDateKey = getDateKey();
-        log('分享', canShare ? '分享入口可用，奖励状态待人工确认' : '分享入口暂不可用，奖励状态待人工确认', {
+        if (!canShare) {
+            log('分享', '分享入口暂不可用', {
+                module: 'task',
+                event: DAILY_KEY,
+                result: 'checked',
+                canShare,
+            });
+            return true;
+        }
+
+        await reportShare();
+        const claimReply: any = await claimShareReward();
+        const items: any[] = Array.isArray(claimReply?.items) ? claimReply.items : [];
+        claimedDateKey = checkedDateKey;
+        lastClaimAt = Date.now();
+        log('分享', `分享礼包领取成功${items.length > 0 ? `，获得 ${items.length} 种物品` : ''}`, {
             module: 'task',
             event: DAILY_KEY,
-            result: 'checked',
+            result: 'ok',
             canShare,
+            items,
         });
         return true;
     } catch (e: any) {
+        if (isAlreadyClaimedError(e)) {
+            claimedDateKey = getDateKey();
+            checkedDateKey = claimedDateKey;
+            lastClaimAt = Date.now();
+            checkStatus = 'already_claimed';
+            log('分享', '分享礼包今日已领取', {
+                module: 'task',
+                event: DAILY_KEY,
+                result: 'already_claimed',
+            });
+            return true;
+        }
         canShare = null;
         checkStatus = 'check_failed';
         log('分享', `状态检查失败: ${e.message}`, {
@@ -74,12 +126,12 @@ module.exports = {
     getInviteInfo,
     getShareDailyState: () => ({
         key: DAILY_KEY,
-        mode: 'check_only',
+        mode: 'auto_claim',
         checkedToday: isCheckedToday(),
         checkStatus,
         canShare,
-        doneToday: false,
+        doneToday: claimedDateKey === getDateKey(),
         lastCheckAt,
-        lastClaimAt: 0,
+        lastClaimAt,
     }),
 };
