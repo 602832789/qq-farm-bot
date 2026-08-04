@@ -186,7 +186,7 @@ function analyzeTaskList(tasks, category = 'main') {
 }
 
 /**
- * 构建每日任务列表（回退：从 tasks + growth_tasks 中筛选 task_type=3 的）
+ * 构建每日任务列表（回退：从 tasks + growth_tasks 中筛选 task_type=2 的）
  */
 function buildDailyTasksForDebug(taskInfoRaw) {
   const info = taskInfoRaw && typeof taskInfoRaw === 'object' ? taskInfoRaw : {};
@@ -197,17 +197,20 @@ function buildDailyTasksForDebug(taskInfoRaw) {
     ...(Array.isArray(info.tasks) ? info.tasks : []),
     ...(Array.isArray(info.growth_tasks) ? info.growth_tasks : []),
   ];
-  return allTasks.filter((t) => toNum(t && t.task_type) === 3);
+  return allTasks.filter((t) => toNum(t && t.task_type) === 2);
 }
 
 function summarizeDailyTaskProgress(dailyTasksRaw) {
   const dailyTasks = Array.isArray(dailyTasksRaw) ? dailyTasksRaw : [];
-  const completedCount = dailyTasks.filter((task) => {
+  const visibleTasks = dailyTasks.slice(0, 3);
+  const completedCount = visibleTasks.filter((task) => {
     const progress = toNum(task && task.progress);
     const total = toNum(task && task.total_progress);
-    return total > 0 && progress >= total;
+    // The server can reset progress after a reward is claimed. In that state
+    // is_claimed is the authoritative completion signal.
+    return !!(task && task.is_claimed) || (total > 0 && progress >= total);
   }).length;
-  const visibleTarget = Math.min(3, dailyTasks.length);
+  const visibleTarget = visibleTasks.length;
 
   return {
     doneToday: visibleTarget > 0 && completedCount >= visibleTarget,
@@ -466,6 +469,7 @@ module.exports = {
   cleanupTaskSystem,
   claimTaskReward,
   doClaim,
+  buildDailyTasksForDebug,
   buildGrowthTasks,
   summarizeDailyTaskProgress,
 
