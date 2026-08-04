@@ -7,6 +7,7 @@ const {
   getItemById,
   getItemImageById,
   getPlantBySeedId,
+  getPlantGrowPhases,
 } = require('../src/config/gameConfig');
 
 const activityPlants = [
@@ -61,6 +62,16 @@ test('supplemental source mappings resolve names and official images', () => {
 
 test('star bell flower is configured as a 2x2 crop', () => {
   assert.equal(getPlantBySeedId(29003)?.size, 2);
+});
+
+test('activity supplements preserve growth phases from the base plant config', () => {
+  const baseBackedActivitySeeds = [
+    21353, 20264, 21404, 20108, 21050, 21251, 21380, 20129, 20375, 20329
+  ];
+  for (const seedId of baseBackedActivitySeeds) {
+    const plant = getPlantBySeedId(seedId);
+    assert.ok(getPlantGrowPhases(plant.id).length > 0, `${plant.name} growth phases`);
+  }
 });
 
 test('decoration fruits in the mutant illustrated have complete images', () => {

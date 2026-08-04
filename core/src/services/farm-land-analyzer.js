@@ -5,6 +5,7 @@ const { getAllLands } = require('./farm-api');
 
 const GOLDEN_BUG_ITEM_ID = 301101;
 const GOLDEN_BUG_SOCIAL_TYPE = 2;
+const MATURE_PHASE_RECORD_ID = 19;
 
 function hasGoldenBug(plant) {
   return !!(plant && Array.isArray(plant.social_items) && plant.social_items.some(item => (
@@ -71,8 +72,23 @@ function convertServerPhaseToClient(phases, serverPhaseInfo, plantId) {
     ? Math.max(0, growPhases.length - remainingCount)
     : -1;
   const configuredPhase = phaseIndex >= 0 ? growPhases[phaseIndex] : null;
+  const isFinalConfiguredPhase = growPhases.length > 0 && phaseIndex === growPhases.length - 1;
+  // 大多数作物成熟时 phase=6，但部分作物（例如最后阶段名为“盛开”的牵牛花）
+  // 仍可能返回粗状态 2，或把详细阶段 ID 19 放进 phase。成熟阶段同时可由
+  // phase_id=19 和 grow_phases 的最后一个剩余阶段确定，不能只依赖粗状态。
+  const isMature = serverPhase !== PlantPhase.DEAD && (
+    serverPhase === PlantPhase.MATURE ||
+    serverPhase === MATURE_PHASE_RECORD_ID ||
+    phaseRecordId === MATURE_PHASE_RECORD_ID ||
+    (isFinalConfiguredPhase && (
+      serverPhase === PlantPhase.GERMINATION ||
+      serverPhase > PlantPhase.DEAD
+    ))
+  );
+  const clientPhase = isMature ? PlantPhase.MATURE : serverPhase;
   const imagePhase = serverPhase === PlantPhase.DEAD ? PlantPhase.DEAD : phaseIndex + 1;
-  if (!configuredPhase && serverPhase !== PlantPhase.DEAD) return {
+  const isKnownClientPhase = clientPhase >= PlantPhase.SEED && clientPhase <= PlantPhase.MATURE;
+  if (!configuredPhase && serverPhase !== PlantPhase.DEAD && !isKnownClientPhase) return {
     ...serverPhaseInfo,
     phase_index: phaseIndex,
     image_phase: 0,
@@ -84,13 +100,13 @@ function convertServerPhaseToClient(phases, serverPhaseInfo, plantId) {
   return {
     ...serverPhaseInfo,
     phase_index: phaseIndex,
-    image_phase: imagePhase,
+    image_phase: configuredPhase ? imagePhase : clientPhase,
     server_phase: serverPhase,
     phase_record_id: phaseRecordId,
-    phase: serverPhase,
+    phase: clientPhase,
     phaseName: serverPhase === PlantPhase.DEAD
       ? PHASE_NAMES[PlantPhase.DEAD]
-      : configuredPhase && configuredPhase.name || PHASE_NAMES[serverPhase]
+      : configuredPhase && configuredPhase.name || PHASE_NAMES[clientPhase]
   };
 }
 

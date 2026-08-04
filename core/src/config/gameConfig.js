@@ -72,16 +72,22 @@ function loadConfigs() {
         if (fs.existsSync(eventPlantPath)) {
             const eventPlants = JSON.parse(fs.readFileSync(eventPlantPath, 'utf8'));
             for (const entry of eventPlants) {
+                const existing = plantMap.get(Number(entry.id));
                 const plant = {
+                    ...(existing || {}),
                     id: Number(entry.id),
                     name: entry.name,
                     asset_name: entry.asset_name,
                     seed_id: Number(entry.seed_id),
-                    fruit: { id: Number(entry.fruit_id), count: Number(entry.fruit_count) || 0 },
-                    size: Math.max(1, Number(entry.size) || 1),
-                    seasons: Number(entry.seasons) || 1,
-                    grow_phases: entry.grow_phases || '',
-                    exp: Number(entry.exp) || 0,
+                    fruit: {
+                        ...(existing && existing.fruit || {}),
+                        id: Number(entry.fruit_id),
+                        count: Number(entry.fruit_count) || Number(existing && existing.fruit && existing.fruit.count) || 0,
+                    },
+                    size: Math.max(1, Number(entry.size) || Number(existing && existing.size) || 1),
+                    seasons: Number(entry.seasons) || Number(existing && existing.seasons) || 1,
+                    grow_phases: entry.grow_phases || existing && existing.grow_phases || '',
+                    exp: Number(entry.exp) || Number(existing && existing.exp) || 0,
                 };
                 plantMap.set(plant.id, plant);
                 seedToPlant.set(plant.seed_id, plant);

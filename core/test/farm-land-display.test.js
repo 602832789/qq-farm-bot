@@ -1,10 +1,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { getAllPlants } = require('../src/config/gameConfig');
 
 const {
   buildLandMap,
   getDisplayLandContext,
-  getCurrentPhase
+  getCurrentPhase,
+  analyzeLands
 } = require('../src/services/farm-land-analyzer');
 
 test('real pea suffix resolves phase_id 20 to the fifth configured stage', () => {
@@ -41,6 +43,67 @@ test('a mature suffix with one remaining record resolves the final configured st
   assert.equal(current.phase_index, 5);
   assert.equal(current.image_phase, 6);
   assert.equal(current.phaseName, '成熟');
+});
+
+test('morning glory final 盛开 stage is normalized to harvestable maturity', () => {
+  const phases = [
+    { phase: 2, phase_id: 19, begin_time: 1 }
+  ];
+  const current = getCurrentPhase(phases, false, '', 1020147);
+
+  assert.equal(current.server_phase, 2);
+  assert.equal(current.phase, 6);
+  assert.equal(current.phase_index, 5);
+  assert.equal(current.phaseName, '盛开');
+
+  const analysis = analyzeLands([{
+    id: 9,
+    unlocked: true,
+    plant: { id: 1020147, name: '牵牛花', phases }
+  }]);
+  assert.deepEqual(analysis.harvestable, [9]);
+  assert.deepEqual(analysis.growing, []);
+});
+
+test('final configured stage remains harvestable when detailed phase id is encoded in phase', () => {
+  const current = getCurrentPhase([
+    { phase: 19, begin_time: 1 }
+  ], false, '', 1020147);
+
+  assert.equal(current.server_phase, 19);
+  assert.equal(current.phase, 6);
+  assert.equal(current.phaseName, '盛开');
+});
+
+test('a new activity plant without static growth config still uses protocol maturity', () => {
+  const phases = [{ phase: 6, phase_id: 19, begin_time: 1 }];
+  const current = getCurrentPhase(phases, false, '', 1060032);
+
+  assert.equal(current.phase, 6);
+  assert.equal(current.phaseName, '成熟');
+  assert.deepEqual(analyzeLands([{
+    id: 10,
+    unlocked: true,
+    plant: { id: 1060032, name: '金盏花', phases }
+  }]).harvestable, [10]);
+});
+
+test('every configured plant recognizes all observed mature protocol variants', () => {
+  const matureVariants = [
+    [{ phase: 6, phase_id: 19, begin_time: 1 }],
+    [{ phase: 2, phase_id: 19, begin_time: 1 }],
+    [{ phase: 19, begin_time: 1 }]
+  ];
+
+  for (const plant of getAllPlants()) {
+    for (const phases of matureVariants) {
+      assert.equal(
+        getCurrentPhase(phases, false, '', plant.id)?.phase,
+        6,
+        `${plant.name} (${plant.id}) mature variant ${JSON.stringify(phases[0])}`
+      );
+    }
+  }
 });
 
 test('2x2 plant display context merges slave lands into the master land', () => {
