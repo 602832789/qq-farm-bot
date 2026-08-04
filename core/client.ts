@@ -6,23 +6,6 @@ export {};
 const path = require('node:path');
 const fs = require('node:fs');
 
-function loadEnvFile(filePath: string): void {
-    if (!fs.existsSync(filePath)) return;
-    for (const rawLine of fs.readFileSync(filePath, 'utf8').split('\n')) {
-        const line = rawLine.trim();
-        const separator = line.indexOf('=');
-        if (!line || line.startsWith('#') || separator <= 0) continue;
-        const key = line.slice(0, separator).trim();
-        if (!key || process.env[key] !== undefined) continue;
-        const value = line.slice(separator + 1).trim();
-        process.env[key] = (value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))
-            ? value.slice(1, -1)
-            : value;
-    }
-}
-
-loadEnvFile(path.resolve(__dirname, '..', '.env'));
-
 // Detect if running compiled (dist/) or source (tsx)
 const distDir = path.join(__dirname, 'dist');
 const baseDir = fs.existsSync(distDir) ? './dist' : './src';

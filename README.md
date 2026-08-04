@@ -184,9 +184,15 @@ pnpm dev:core
 # 或手动部署
 git clone https://github.com/XyhTender/qq-farm-bot.git
 cd qq-farm-bot
-pnpm install
-pnpm build:web
-pnpm dev:core
+
+# 后台启动（自动安装依赖，无需 chmod +x）
+pnpm start
+
+# 查看日志
+tail -f app_dev.log
+
+# 停止
+pnpm stop
 ```
 
 启动后访问面板：

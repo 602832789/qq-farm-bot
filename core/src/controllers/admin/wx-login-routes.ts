@@ -6,6 +6,8 @@ import type { ScanStatus, WxLoginSession } from '../../services/wx-login/service
 
 export {};
 
+const { createAuthRequired } = require('./middleware');
+
 const TARGET_APP_ID = 'wx5306c5978fdb76e4';
 const TASK_TTL_MS = 110_000;
 type Status = ScanStatus | 'ready_for_code' | 'failed';
@@ -35,7 +37,9 @@ async function confirm(task: Task): Promise<void> {
 }
 async function consumeCode(task: Task): Promise<void> { if (task.status !== 'ready_for_code') throw new Error('Login code is not ready'); task.code = await wxLogin.issueCode(task.session, TARGET_APP_ID); }
 
-function mountWxLoginRoutes(app: Application, _ctx: AdminContext): void {
+function mountWxLoginRoutes(app: Application, ctx: AdminContext): void {
+    app.use('/api/wx-login', createAuthRequired(ctx));
+
     app.post('/api/wx-login/tasks', async (req, res) => { if (req.body?.app_id && req.body.app_id !== TARGET_APP_ID) return res.status(400).json({ ok: false, error: 'Unsupported app_id' }); try { const task = await createTask(owner(req)); res.json({ ok: true, data: { ...publicTask(task), qr_url: `/api/wx-login/tasks/${task.id}/qr` } }); } catch (error: any) { res.status(502).json({ ok: false, error: error.message }); } });
     app.get('/api/wx-login/tasks/:taskId/qr', (req, res) => { const task = findTask(req, res); if (task) res.type('jpeg').send(task.qr); });
     app.get('/api/wx-login/tasks/:taskId/status', async (req, res) => { const task = findTask(req, res); if (!task) return; try { if (!task.pending) task.pending = poll(task).finally(() => { task.pending = undefined; }); await task.pending; const data = publicTask(task); if (task.status === 'cancelled' || task.status === 'expired') destroy(task); res.json({ ok: true, data }); } catch (error: any) { task.status = 'failed'; destroy(task); res.status(502).json({ ok: false, error: error.message }); } });
