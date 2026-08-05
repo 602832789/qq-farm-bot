@@ -1,0 +1,60 @@
+export {};
+import type { Application, Request, Response } from 'express';
+import type { AdminContext } from './context';
+
+const { getAccId, checkAccountAccess } = require('./middleware');
+
+const ERROR_MESSAGES: Record<string, string> = {
+    INVALID_GOODS_ID: '商品信息无效，请刷新商城后重试',
+    INVALID_PURCHASE_COUNT: '购买数量必须是有效的正整数',
+    GOODS_NOT_FOUND: '商品已不在当前商城中，请刷新后重试',
+    GOODS_UNAVAILABLE: '商品当前不可购买',
+    PURCHASE_LIMIT_EXCEEDED: '购买数量超过剩余限购数量',
+    INSUFFICIENT_BALANCE: '货币余额不足，无法完成购买',
+};
+
+function friendlyError(error: any): { code: string; message: string } {
+    const raw = String(error?.message || error || '操作失败');
+    const code = String(error?.code || raw.match(/\bcode=(\d+)\b/)?.[1] || 'COMMERCE_OPERATION_FAILED');
+    if (ERROR_MESSAGES[code]) return { code, message: ERROR_MESSAGES[code] };
+    if (raw.includes('账号未运行') || raw.includes('账号已离线') || raw.includes('连接未打开') || raw.includes('账号尚未登录')) {
+        return { code: 'ACCOUNT_OFFLINE', message: '当前账号尚未运行，请启动账号后重试' };
+    }
+    if (raw.includes('请求超时') || raw === 'API Timeout') {
+        return { code: 'COMMERCE_TIMEOUT', message: '游戏服务响应超时，请稍后重试' };
+    }
+    return { code, message: raw || '操作失败，请刷新后重试' };
+}
+
+function mountCommerceRoutes(app: Application, ctx: AdminContext): void {
+    const withAccount = (handler: (accountId: string, req: Request) => Promise<any>) => {
+        return async (req: Request, res: Response) => {
+            const accountId = getAccId(ctx, req);
+            if (!accountId) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+            if (!checkAccountAccess(ctx, req as any, accountId)) {
+                return res.status(403).json({ ok: false, error: '无权访问此账号' });
+            }
+            try {
+                const data = await handler(accountId, req);
+                return res.json({ ok: true, data });
+            } catch (error: any) {
+                const result = friendlyError(error);
+                return res.json({ ok: false, error: result.message, errorCode: result.code });
+            }
+        };
+    };
+
+    app.get('/api/game-mall', withAccount((accountId: string, req: Request) => (
+        ctx.provider.getMallCatalog(accountId, req.query.slotType, req.query.subSlotType)
+    )));
+
+    app.post('/api/game-mall/purchase', withAccount((accountId: string, req: Request) => (
+        ctx.provider.purchaseMallProduct(accountId, req.body?.goodsId, req.body?.count)
+    )));
+
+    app.get('/api/mystery-shop', withAccount((accountId: string) => (
+        ctx.provider.getMysteryShop(accountId)
+    )));
+}
+
+module.exports = { mountCommerceRoutes };

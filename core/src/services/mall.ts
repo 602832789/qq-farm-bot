@@ -33,9 +33,10 @@ function getDateKey(): string {
     return `${y}-${m}-${d}`;
 }
 
-async function getMallListBySlotType(slotType: number = 1): Promise<any> {
+async function getMallListBySlotType(slotType: number = 1, subSlotType: number = 0): Promise<any> {
     const body: Uint8Array = types.GetMallListBySlotTypeRequest.encode(types.GetMallListBySlotTypeRequest.create({
         slot_type: Number(slotType) || 1,
+        sub_slot_type: Number(subSlotType) || 0,
     })).finish();
     const { body: replyBody } = await sendMsgAsync('gamepb.mallpb.MallService', 'GetMallListBySlotType', body);
     return types.GetMallListBySlotTypeResponse.decode(replyBody);
@@ -53,20 +54,22 @@ async function purchaseMallGoods(goodsId: number, count: number = 1): Promise<an
 async function getMallGoodsList(slotType: number = 1): Promise<any[]> {
     const mall: any = await getMallListBySlotType(slotType);
     const raw: any[] = Array.isArray(mall && mall.goods_list) ? mall.goods_list : [];
-    const goods: any[] = [];
-    for (const b of raw) {
+    return raw.flatMap((entry: any) => {
+        if (!Buffer.isBuffer(entry) && !(entry instanceof Uint8Array)) return entry ? [entry] : [];
         try {
-            goods.push(types.MallGoods.decode(b));
+            return [types.MallGoods.decode(entry)];
         } catch {
-            // ignore
+            return [];
         }
-    }
-    return goods;
+    });
 }
 
 function parseMallPriceValue(priceField: any): number {
     if (priceField == null) return 0;
     if (typeof priceField === 'number') return Math.max(0, Math.floor(priceField));
+    if (typeof priceField === 'object' && !Buffer.isBuffer(priceField) && !(priceField instanceof Uint8Array)) {
+        return Math.max(0, Math.floor(toNum(priceField.count)));
+    }
     const bytes: Buffer = Buffer.isBuffer(priceField) ? priceField : Buffer.from(priceField || []);
     if (!bytes.length) return 0;
     // 从 bytes 中读取 field=2 的 varint 作为价格
@@ -316,16 +319,7 @@ async function buyFreeGifts(force: boolean = false): Promise<number> {
     freeGiftLastCheckAt = now;
 
     try {
-        const mall: any = await getMallListBySlotType(1);
-        const raw: any[] = Array.isArray(mall && mall.goods_list) ? mall.goods_list : [];
-        const goods: any[] = [];
-        for (const b of raw) {
-            try {
-                goods.push(types.MallGoods.decode(b));
-            } catch {
-                // ignore
-            }
-        }
+        const goods: any[] = await getMallGoodsList(1);
         const free: any[] = goods.filter((g: any) => !!g && g.is_free === true && Number(g.goods_id || 0) > 0);
         if (!free.length) {
             freeGiftDoneDateKey = getDateKey();
@@ -492,6 +486,10 @@ async function checkAndBuyFertilizerBoth(options: any): Promise<any> {
 }
 
 module.exports = {
+    getMallListBySlotType,
+    getMallGoodsList,
+    purchaseMallGoods,
+    parseMallPriceValue,
     autoBuyOrganicFertilizer,
     autoBuyFertilizer,
     checkAndBuyFertilizerByThreshold,

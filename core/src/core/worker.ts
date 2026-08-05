@@ -789,6 +789,15 @@ async function handleApiCall(msg: any): Promise<void> {
             case 'claimSolarTerm':
                 result = await require('../services/activity-center').claimSolarTerm(String(args[0] || ''));
                 break;
+            case 'getMallCatalog':
+                result = await require('../services/commerce').getMallCatalog(args[0], args[1]);
+                break;
+            case 'purchaseMallProduct':
+                result = await require('../services/commerce').purchaseMallProduct(args[0], args[1]);
+                break;
+            case 'getMysteryShop':
+                result = await require('../services/commerce').getMysteryShop();
+                break;
             case 'getSchedulers':
                 result = getSchedulerRegistrySnapshot();
                 break;

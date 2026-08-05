@@ -134,6 +134,13 @@ function createDataProvider(options: DataProviderOptions) {
         ),
         lightConstellation: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'lightConstellation'),
         claimSolarTerm: (accountRef: string, termId: string) => callWorkerApi(resolveAccountRefId(accountRef), 'claimSolarTerm', termId),
+        getMallCatalog: (accountRef: string, slotType: unknown, subSlotType: unknown) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'getMallCatalog', slotType, subSlotType)
+        ),
+        purchaseMallProduct: (accountRef: string, goodsId: unknown, count: unknown) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'purchaseMallProduct', goodsId, count)
+        ),
+        getMysteryShop: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getMysteryShop'),
         getSeeds: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getSeeds'),
 
         setAutomation: async (accountRef: string, key: string, value: any) => {

@@ -28,6 +28,7 @@ async function loadProto(): Promise<void> {
         getResourcePath('proto', 'itempb.proto'),
         getResourcePath('proto', 'emailpb.proto'),
         getResourcePath('proto', 'mallpb.proto'),
+        getResourcePath('proto', 'mysteryshoppb.proto'),
         getResourcePath('proto', 'redpacketpb.proto'),
         getResourcePath('proto', 'qqvippb.proto'),
         getResourcePath('proto', 'sharepb.proto'),
@@ -135,6 +136,10 @@ async function loadProto(): Promise<void> {
     types.MallGoods = root.lookupType('gamepb.mallpb.MallGoods');
     types.PurchaseRequest = root.lookupType('gamepb.mallpb.PurchaseRequest');
     types.PurchaseResponse = root.lookupType('gamepb.mallpb.PurchaseResponse');
+    types.PurchaseLimit = root.lookupType('gamepb.mallpb.PurchaseLimit');
+    types.GetActiveNPCRequest = root.lookupType('gamepb.mysteryshoppb.GetActiveNPCRequest');
+    types.GetActiveNPCReply = root.lookupType('gamepb.mysteryshoppb.GetActiveNPCReply');
+    types.ActiveMysteryShopNPC = root.lookupType('gamepb.mysteryshoppb.ActiveNPC');
     types.GetDailyGiftStatusRequest = root.lookupType('gamepb.qqvippb.GetDailyGiftStatusRequest');
     types.GetDailyGiftStatusReply = root.lookupType('gamepb.qqvippb.GetDailyGiftStatusReply');
     types.ClaimDailyGiftRequest = root.lookupType('gamepb.qqvippb.ClaimDailyGiftRequest');

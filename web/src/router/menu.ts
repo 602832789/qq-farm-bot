@@ -34,6 +34,20 @@ export const menuRoutes: MenuItem[] = [
     meta: { fullBleed: true },
   },
   {
+    path: 'game-mall',
+    name: 'game-mall',
+    label: '游戏商城',
+    icon: '🛒',
+    component: () => import('@/views/GameMall.vue'),
+  },
+  {
+    path: 'mystery-shop',
+    name: 'mystery-shop',
+    label: '神秘商人',
+    icon: '🔮',
+    component: () => import('@/views/MysteryShop.vue'),
+  },
+  {
     path: 'friends',
     name: 'friends',
     label: '好友',

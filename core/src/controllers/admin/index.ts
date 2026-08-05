@@ -21,6 +21,7 @@ const { mountFarmRoutes } = require('./farm-routes');
 const { mountFriendRoutes } = require('./friend-routes');
 const { mountAdminRoutes } = require('./admin-routes');
 const { mountActivityCenterRoutes } = require('./activity-center-routes');
+const { mountCommerceRoutes } = require('./commerce-routes');
 const { mountWxLoginRoutes } = require('./wx-login-routes');
 const {
     setupSocketIO,
@@ -80,6 +81,7 @@ function startAdminServer(dataProvider: any): void {
     mountAdminRoutes(app, ctx);
     mountAccountRoutes(app, ctx);
     mountActivityCenterRoutes(app, ctx);
+    mountCommerceRoutes(app, ctx);
 
     // SPA fallback
     app.get('*', (req: any, res: any) => {
