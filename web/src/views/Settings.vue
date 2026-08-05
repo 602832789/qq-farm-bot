@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { useIntervalFn } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -102,10 +101,6 @@ onMounted(async () => {
     await loadStrategyData(currentAccountId.value)
 })
 
-useIntervalFn(() => {
-  accountStore.fetchAccounts()
-}, 3000)
-
 function openSettings(account: any) {
   accountStore.selectAccount(account.id)
   router.push('/settings')
@@ -203,10 +198,15 @@ interface SeedOptionItem {
 }
 
 const seedOptions = ref<SeedOptionItem[]>([])
+const seedOptionsRevision = ref(0)
 const strategySaving = ref(false)
 let strategyLoadRevision = 0
 let seedOptionsRequestRevision = 0
 let bagSeedsRequestRevision = 0
+let seedOptionsRequestAccountId = ''
+let seedOptionsLoadedAccountId = ''
+let bagSeedsRequestAccountId = ''
+let bagSeedsLoadedAccountId = ''
 let bagSortRequestRevision = 0
 let previewRequestRevision = 0
 
@@ -319,9 +319,15 @@ function isAccountConnected(accountId: string) {
 }
 
 async function fetchSeedOptions(accountId: string) {
-  if (!accountId || !isAccountConnected(accountId))
+  if (
+    !accountId
+    || !isAccountConnected(accountId)
+    || seedOptionsRequestAccountId === accountId
+    || seedOptionsLoadedAccountId === accountId
+  )
     return
   const requestRevision = ++seedOptionsRequestRevision
+  seedOptionsRequestAccountId = accountId
   try {
     const { data } = await api.get('/api/seeds', {
       headers: { 'x-account-id': accountId },
@@ -330,17 +336,33 @@ async function fetchSeedOptions(accountId: string) {
     if (requestRevision !== seedOptionsRequestRevision || accountId !== currentAccountId.value)
       return
     seedOptions.value = data?.ok ? (data.data || []) : []
+    seedOptionsRevision.value++
+    if (accountId === currentAccountId.value)
+      seedOptionsLoadedAccountId = accountId
   }
   catch {
-    if (requestRevision === seedOptionsRequestRevision && accountId === currentAccountId.value)
+    if (requestRevision === seedOptionsRequestRevision && accountId === currentAccountId.value) {
       seedOptions.value = []
+      seedOptionsRevision.value++
+      seedOptionsLoadedAccountId = accountId
+    }
+  }
+  finally {
+    if (seedOptionsRequestAccountId === accountId)
+      seedOptionsRequestAccountId = ''
   }
 }
 
 async function fetchBagSeeds(accountId = currentAccountId.value) {
-  if (!accountId || !isAccountConnected(accountId))
+  if (
+    !accountId
+    || !isAccountConnected(accountId)
+    || bagSeedsRequestAccountId === accountId
+    || bagSeedsLoadedAccountId === accountId
+  )
     return
   const requestRevision = ++bagSeedsRequestRevision
+  bagSeedsRequestAccountId = accountId
   bagSeedsLoading.value = true
   bagSeedsError.value = null
   try {
@@ -353,14 +375,20 @@ async function fetchBagSeeds(accountId = currentAccountId.value) {
     if (res.data.ok) {
       bagSeeds.value = (res.data.data || []).filter((seed: BagSeedItem) => seed.plantSize >= 1)
     }
+    if (accountId === currentAccountId.value)
+      bagSeedsLoadedAccountId = accountId
   }
   catch (e: any) {
-    if (requestRevision === bagSeedsRequestRevision && accountId === currentAccountId.value)
+    if (requestRevision === bagSeedsRequestRevision && accountId === currentAccountId.value) {
       bagSeedsError.value = e.message || '加载失败'
+      bagSeedsLoadedAccountId = accountId
+    }
   }
   finally {
     if (requestRevision === bagSeedsRequestRevision && accountId === currentAccountId.value)
       bagSeedsLoading.value = false
+    if (bagSeedsRequestAccountId === accountId)
+      bagSeedsRequestAccountId = ''
   }
 }
 
@@ -549,9 +577,10 @@ watch(() => [
   localStrategySettings.value.plantingStrategy,
   localStrategySettings.value.bagSeedFallbackStrategy,
   localStrategySettings.value.preferredSeedId,
-  seedOptions.value,
+  seedOptionsRevision.value,
   currentAccountId.value,
-] as const, async ([plantingStrategy, fallbackStrategy, preferredSeedId, currentSeeds, accountId]) => {
+] as const, async ([plantingStrategy, fallbackStrategy, preferredSeedId, , accountId]) => {
+  const currentSeeds = seedOptions.value
   const requestRevision = ++previewRequestRevision
   let strategy = plantingStrategy
   if (strategy === 'preferred') {
@@ -671,6 +700,10 @@ watch(currentAccountId, (accountId) => {
   bagSeeds.value = []
   bagSeedsError.value = null
   seedOptions.value = []
+  seedOptionsRequestAccountId = ''
+  seedOptionsLoadedAccountId = ''
+  bagSeedsRequestAccountId = ''
+  bagSeedsLoadedAccountId = ''
   strategyPreviewLabel.value = null
   if (accountId)
     loadStrategyData(accountId)

@@ -98,10 +98,7 @@ onBeforeUnmount(() => {
 const platform = computed(() => getPlatformLabel(currentAccount.value?.platform))
 
 useIntervalFn(checkConnection, 30000)
-useIntervalFn(() => {
-  refreshStatusFallback()
-  accountStore.fetchAccounts()
-}, 10000)
+useIntervalFn(refreshStatusFallback, 10000)
 
 watch(() => currentAccount.value?.id || currentAccount.value?.uin || '', () => {
   const accountRef = currentAccount.value?.id || currentAccount.value?.uin
