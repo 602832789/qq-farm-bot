@@ -32,6 +32,7 @@ export const useStatusStore = defineStore('status', () => {
   const logs = ref<any[]>([])
   const accountLogs = ref<any[]>([])
   const dailyGifts = ref<DailyGiftsResponse | null>(null)
+  const diamondBalance = ref(0)
   const loading = ref(false)
   const error = ref('')
   const realtimeConnected = ref(false)
@@ -40,6 +41,7 @@ export const useStatusStore = defineStore('status', () => {
   const tokenRef = useStorage('admin_token', '')
 
   let socket: Socket | null = null
+  let diamondRequestSequence = 0
 
   function normalizeStatusPayload(input: any) {
     return (input && typeof input === 'object') ? { ...input } : {}
@@ -224,6 +226,26 @@ export const useStatusStore = defineStore('status', () => {
     }
   }
 
+  async function fetchDiamond(accountId: string) {
+    const id = String(accountId || '').trim()
+    if (!id)
+      return
+    const sequence = ++diamondRequestSequence
+    diamondBalance.value = 0
+
+    try {
+      const { data } = await api.get('/api/diamond', {
+        headers: { 'x-account-id': id },
+        skipErrorToast: true,
+      } as any)
+      if (data.ok && sequence === diamondRequestSequence)
+        diamondBalance.value = Math.max(0, Number(data.data?.diamond) || 0)
+    }
+    catch {
+      // Supplementary balance data should not disrupt the dashboard.
+    }
+  }
+
   async function fetchDailyGifts(accountId: string) {
     if (!accountId)
       return
@@ -261,11 +283,13 @@ export const useStatusStore = defineStore('status', () => {
     logs,
     accountLogs,
     dailyGifts,
+    diamondBalance,
     loading,
     error,
     realtimeConnected,
     realtimeLogsEnabled,
     fetchStatus,
+    fetchDiamond,
     fetchLogs,
     fetchAccountLogs,
     fetchDailyGifts,

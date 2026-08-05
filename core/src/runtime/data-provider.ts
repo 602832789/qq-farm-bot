@@ -120,6 +120,7 @@ function createDataProvider(options: DataProviderOptions) {
         doFriendOp: (accountRef: string, gid: number, opType: string) => callWorkerApi(resolveAccountRefId(accountRef), 'doFriendOp', gid, opType),
         getBag: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getBag'),
         getBagSeeds: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getBagSeeds'),
+        getDiamondBalance: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getDiamondBalance'),
         useItem: (accountRef: string, itemId: number, count: number) => callWorkerApi(resolveAccountRefId(accountRef), 'useItem', itemId, count),
         sellItems: (accountRef: string, items: any[]) => callWorkerApi(resolveAccountRefId(accountRef), 'sellItems', items),
         getDailyGifts: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getDailyGiftOverview'),

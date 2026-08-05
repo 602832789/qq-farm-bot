@@ -12,12 +12,14 @@ import BaseSelect from '@/components/ui/BaseSelect.vue'
 import BaseSwitch from '@/components/ui/BaseSwitch.vue'
 import { getPlatformClass, getPlatformLabel, useAccountStore } from '@/stores/account'
 import { useSettingStore } from '@/stores/setting'
+import { useStatusStore } from '@/stores/status'
 import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
 const accountStore = useAccountStore()
 const userStore = useUserStore()
 const settingStore = useSettingStore()
+const statusStore = useStatusStore()
 
 const activeTab = ref<'account' | 'strategy' | 'automation' | 'user'>(
   (localStorage.getItem('settings-active-tab') as 'account' | 'strategy' | 'automation' | 'user') || 'account'
@@ -54,6 +56,7 @@ function showAlert(message: string, type: 'primary' | 'danger' = 'primary') {
 
 // ==================== 账号管理 ====================
 const { accounts, loading: accountsLoading, currentAccountId } = storeToRefs(accountStore)
+const { status: runtimeStatus } = storeToRefs(statusStore)
 
 const showModal = ref(false)
 const showDeleteConfirm = ref(false)
@@ -310,14 +313,20 @@ const sortedBagSeeds = computed(() => {
     .filter((seed): seed is BagSeedItem => !!seed)
 })
 
+function isAccountConnected(accountId: string) {
+  return String(runtimeStatus.value?.accountId || '') === String(accountId)
+    && runtimeStatus.value?.connection?.connected === true
+}
+
 async function fetchSeedOptions(accountId: string) {
-  if (!accountId)
+  if (!accountId || !isAccountConnected(accountId))
     return
   const requestRevision = ++seedOptionsRequestRevision
   try {
     const { data } = await api.get('/api/seeds', {
       headers: { 'x-account-id': accountId },
-    })
+      skipErrorToast: true,
+    } as any)
     if (requestRevision !== seedOptionsRequestRevision || accountId !== currentAccountId.value)
       return
     seedOptions.value = data?.ok ? (data.data || []) : []
@@ -329,7 +338,7 @@ async function fetchSeedOptions(accountId: string) {
 }
 
 async function fetchBagSeeds(accountId = currentAccountId.value) {
-  if (!accountId)
+  if (!accountId || !isAccountConnected(accountId))
     return
   const requestRevision = ++bagSeedsRequestRevision
   bagSeedsLoading.value = true
@@ -337,7 +346,8 @@ async function fetchBagSeeds(accountId = currentAccountId.value) {
   try {
     const res = await api.get('/api/bag/seeds', {
       headers: { 'x-account-id': accountId },
-    })
+      skipErrorToast: true,
+    } as any)
     if (requestRevision !== bagSeedsRequestRevision || accountId !== currentAccountId.value)
       return
     if (res.data.ok) {
@@ -507,7 +517,12 @@ function dropBagSeed(seedId: number, event: DragEvent) {
 }
 
 watch(() => [localStrategySettings.value.plantingStrategy, currentAccountId.value] as const, ([strategy, accountId], previous) => {
-  if (strategy === 'bag_priority' && accountId && (previous?.[0] !== strategy || previous?.[1] !== accountId))
+  if (
+    strategy === 'bag_priority'
+    && accountId
+    && isAccountConnected(accountId)
+    && (previous?.[0] !== strategy || previous?.[1] !== accountId)
+  )
     fetchBagSeeds(accountId)
 }, { immediate: true })
 
@@ -614,7 +629,8 @@ async function loadStrategyData(accountId = currentAccountId.value) {
   syncLocalStrategySettings()
   syncLocalAutomationSettings()
   syncLocalOfflineSettings()
-  await fetchSeedOptions(accountId)
+  if (isAccountConnected(accountId))
+    await fetchSeedOptions(accountId)
 }
 
 async function saveStrategySettings() {
@@ -658,6 +674,18 @@ watch(currentAccountId, (accountId) => {
   strategyPreviewLabel.value = null
   if (accountId)
     loadStrategyData(accountId)
+})
+
+watch(() => [
+  runtimeStatus.value?.accountId,
+  runtimeStatus.value?.connection?.connected,
+  currentAccountId.value,
+] as const, ([statusAccountId, connected, accountId]) => {
+  if (!connected || !accountId || String(statusAccountId || '') !== String(accountId))
+    return
+  fetchSeedOptions(accountId)
+  if (localStrategySettings.value.plantingStrategy === 'bag_priority')
+    fetchBagSeeds(accountId)
 })
 
 // ==================== 自动控制 ====================

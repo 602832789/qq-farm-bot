@@ -273,6 +273,7 @@ async function loadProto(): Promise<void> {
     // 充值
     types.GetRechargeInfoRequest = root.lookupType('gamepb.paypb.GetRechargeInfoRequest');
     types.GetRechargeInfoReply = root.lookupType('gamepb.paypb.GetRechargeInfoReply');
+    types.RechargeInfo = root.lookupType('gamepb.paypb.RechargeInfo');
     types.RechargeInfoNotify = root.lookupType('gamepb.paypb.RechargeInfoNotify');
 
     // 充值奖励

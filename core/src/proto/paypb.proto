@@ -2,17 +2,23 @@ syntax = "proto3";
 
 package gamepb.paypb;
 
-// ============ 充值信息 ============
+service PayService {
+    rpc GetRechargeInfo(GetRechargeInfoRequest) returns (GetRechargeInfoReply);
+}
+
 message GetRechargeInfoRequest {
-    int64 platform = 1;     // 平台
-    int64 version = 2;      // 版本
+    string source = 1; // Observed value: "MallUI".
+}
+
+message RechargeInfo {
+    int64 balance = 1; // Observed value: 1.
+    int64 field_3 = 3; // Observed value: 10; semantics unknown.
 }
 
 message GetRechargeInfoReply {
-    // 服务器返回的充值信息 (可能为空)
+    repeated RechargeInfo recharge_infos = 1;
 }
 
-// ============ 通知 ============
 message RechargeInfoNotify {
-    int64 status = 1;       // 充值状态
+    int64 status = 1;
 }

@@ -47,6 +47,22 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
         }
     });
 
+    app.get('/api/diamond', async (req: Request, res: Response) => {
+        const id = getAccId(ctx, req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+
+        if (!checkAccountAccess(ctx, req as any, id)) {
+            return res.status(403).json({ ok: false, error: 'No access to this account' });
+        }
+
+        try {
+            const diamond = await ctx.provider.getDiamondBalance(id);
+            res.json({ ok: true, data: { diamond: Math.max(0, Number(diamond) || 0) } });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    });
+
     app.post('/api/automation', async (req: Request, res: Response) => {
         const id = getAccId(ctx, req);
         if (!id) {
