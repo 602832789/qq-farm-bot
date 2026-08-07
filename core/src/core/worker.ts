@@ -798,6 +798,9 @@ async function handleApiCall(msg: any): Promise<void> {
             case 'getMysteryShop':
                 result = await require('../services/commerce').getMysteryShop();
                 break;
+            case 'purchaseMysteryOffer':
+                result = await require('../services/commerce').purchaseMysteryOffer(args[0]);
+                break;
             case 'getSchedulers':
                 result = getSchedulerRegistrySnapshot();
                 break;

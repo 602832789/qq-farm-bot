@@ -8,7 +8,7 @@ import { useCommerceStore } from '@/stores/commerce'
 const accountStore = useAccountStore()
 const commerceStore = useCommerceStore()
 const { currentAccountId } = storeToRefs(accountStore)
-const { mystery, mysteryLoading, error } = storeToRefs(commerceStore)
+const { mystery, mysteryLoading, mysteryPurchasing, error, notice } = storeToRefs(commerceStore)
 const clock = ref(Date.now())
 let timer: number | undefined
 
@@ -27,8 +27,21 @@ const discountLabel = computed(() => {
   return percent > 0 ? `${(percent / 10).toFixed(percent % 10 ? 1 : 0)}折` : ''
 })
 
+const canPurchase = computed(() => {
+  const npc = mystery.value?.npc
+  return !!npc && npc.stock > 0 && (npc.price.balance === null || npc.price.balance >= npc.price.count)
+})
+
 function load() {
   commerceStore.fetchMystery(String(currentAccountId.value || ''))
+}
+
+function purchase() {
+  const npc = mystery.value?.npc
+  if (!npc || !canPurchase.value || mysteryPurchasing.value) return
+  const total = npc.price.count.toLocaleString()
+  if (!window.confirm(`确认花费 ${total} ${npc.price.name}购买 ${npc.reward.name} x${npc.reward.count}？`)) return
+  commerceStore.purchaseMystery(String(currentAccountId.value || ''), npc.id)
 }
 
 watch(currentAccountId, load)
@@ -53,6 +66,10 @@ onUnmounted(() => {
         <div class="i-carbon-renew" :class="{ 'animate-spin': mysteryLoading }" />
       </button>
     </header>
+
+    <div v-if="error || notice" class="mystery-message" :class="{ success: !!notice && !error }">
+      {{ error || notice }}
+    </div>
 
     <div v-if="!currentAccountId" class="mystery-state">
       <div class="i-carbon-user-avatar" />
@@ -100,6 +117,11 @@ onUnmounted(() => {
             <strong>{{ mystery.npc.price.count.toLocaleString() }}</strong>
             <span>余额 {{ mystery.npc.price.balance === null ? '--' : mystery.npc.price.balance.toLocaleString() }}</span>
           </div>
+          <button class="purchase-button" type="button" :disabled="!canPurchase || mysteryPurchasing" @click="purchase">
+            <div v-if="mysteryPurchasing" class="i-carbon-circle-dash animate-spin" />
+            <div v-else class="i-carbon-shopping-cart-plus" />
+            {{ mysteryPurchasing ? '购买中' : canPurchase ? '购买这批商品' : '暂不可购买' }}
+          </button>
         </div>
       </article>
     </main>
@@ -108,4 +130,5 @@ onUnmounted(() => {
 
 <style scoped>
 .mystery-page{min-height:100%;color:#302b26}.mystery-header{display:flex;align-items:center;justify-content:space-between;padding:8px 2px 20px;border-bottom:1px solid rgba(116,91,59,.18)}.mystery-header p{margin:0 0 3px;color:#8c623c;font-size:12px}.mystery-header h1{margin:0;font-size:28px;letter-spacing:0}.mystery-header span{display:block;margin-top:5px;color:#74685d;font-size:12px}.mystery-header button{display:grid;width:40px;height:40px;place-items:center;border:1px solid #d9d0c4;border-radius:6px;background:white;color:#51483f;font-size:18px;cursor:pointer}.merchant-scene{padding:26px 0}.merchant-identity{display:flex;align-items:center;gap:14px;margin-bottom:22px}.merchant-mark{display:grid;width:58px;height:58px;place-items:center;border-radius:50%;background:#392e25;color:#f0c56a;font-size:28px}.merchant-identity span{color:#8c7c6d;font-size:11px}.merchant-identity h2{margin:2px 0;font-size:18px;letter-spacing:0}.merchant-identity p{margin:0;color:#8c7c6d;font-size:12px}.mystery-offer{display:grid;grid-template-columns:minmax(240px,42%) 1fr;min-height:430px;overflow:hidden;border:1px solid rgba(101,75,49,.24);border-radius:8px;background:#fffdf8;box-shadow:0 8px 28px rgba(64,43,24,.1)}.offer-visual{position:relative;display:grid;place-items:center;background:linear-gradient(145deg,#2f2823,#534332)}.offer-visual:before{position:absolute;inset:12%;border:1px solid rgba(245,203,111,.2);border-radius:50%;content:''}.offer-visual>span{position:absolute;top:16px;right:16px;padding:5px 10px;border-radius:4px;background:#c75036;color:white;font-size:13px;font-weight:800}.offer-content{display:flex;flex-direction:column;justify-content:center;padding:clamp(26px,6vw,64px)}.offer-content small{color:#9a8979}.offer-content h2{margin:8px 0 4px;font-size:clamp(24px,4vw,38px);letter-spacing:0}.offer-content>p{margin:0;color:#6e6257}.offer-content dl{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:28px 0}.offer-content dl>div{padding:12px 0;border-block:1px solid #ece3d7}.offer-content dt{color:#8b7e71;font-size:11px}.offer-content dd{margin:5px 0 0;font-size:16px;font-weight:800}.offer-content dd.original{text-decoration:line-through;color:#9e9185}.offer-price{display:flex;align-items:center;gap:10px}.offer-price strong{color:#9a6217;font-size:28px}.offer-price span{margin-left:auto;color:#807366;font-size:12px}.mystery-state{display:flex;min-height:430px;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#80756a;text-align:center}.mystery-state>div{font-size:38px}.mystery-state button{height:36px;padding:0 16px;border:0;border-radius:6px;background:#3f342b;color:white;cursor:pointer}@media(max-width:720px){.mystery-offer{grid-template-columns:1fr}.offer-visual{min-height:260px}.offer-content{padding:26px}.mystery-header h1{font-size:24px}}
+.mystery-message{margin-top:14px;padding:10px 12px;border-left:3px solid #b94736;background:#fff1ee;color:#873328;font-size:13px}.mystery-message.success{border-color:#438c5b;background:#edf8f0;color:#28643c}.purchase-button{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;height:42px;margin-top:22px;border:0;border-radius:6px;background:#3f342b;color:white;font-weight:700;cursor:pointer}.purchase-button:disabled{background:#aaa096;color:#f0ece8;cursor:not-allowed}
 </style>

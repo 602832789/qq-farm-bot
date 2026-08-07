@@ -141,6 +141,9 @@ function createDataProvider(options: DataProviderOptions) {
             callWorkerApi(resolveAccountRefId(accountRef), 'purchaseMallProduct', goodsId, count)
         ),
         getMysteryShop: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getMysteryShop'),
+        purchaseMysteryOffer: (accountRef: string, npcId: unknown) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'purchaseMysteryOffer', npcId)
+        ),
         getSeeds: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getSeeds'),
 
         setAutomation: async (accountRef: string, key: string, value: any) => {

@@ -140,6 +140,7 @@ async function loadProto(): Promise<void> {
     types.GetActiveNPCRequest = root.lookupType('gamepb.mysteryshoppb.GetActiveNPCRequest');
     types.GetActiveNPCReply = root.lookupType('gamepb.mysteryshoppb.GetActiveNPCReply');
     types.ActiveMysteryShopNPC = root.lookupType('gamepb.mysteryshoppb.ActiveNPC');
+    types.MysteryShopBuyRequest = root.lookupType('gamepb.mysteryshoppb.BuyRequest');
     types.GetDailyGiftStatusRequest = root.lookupType('gamepb.qqvippb.GetDailyGiftStatusRequest');
     types.GetDailyGiftStatusReply = root.lookupType('gamepb.qqvippb.GetDailyGiftStatusReply');
     types.ClaimDailyGiftRequest = root.lookupType('gamepb.qqvippb.ClaimDailyGiftRequest');
