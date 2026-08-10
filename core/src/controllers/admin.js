@@ -38,7 +38,8 @@ const { registerAdminAuthRoutes } = require("./admin-auth-routes");
 const { registerAdminBagRoutes } = require("./admin-bag-routes");
 const { registerAdminCardRoutes } = require("./admin-card-routes");
 const { registerAdminCareerRoutes } = require("./admin-career-routes");
-const { registerAdminCaptureRoutes } = require("./admin-capture-routes");
+const { registerAdminCaptureRoutes, setEmbeddedCapture } = require("./admin-capture-routes");
+const { createCaptureCore } = require("../capture/index");
 const { registerAdminCurrentUserRoutes } = require("./admin-current-user-routes");
 const {
   registerAdminFarmOperationRoutes,
@@ -295,6 +296,34 @@ function getSocketHandshakeToken(socket) {
   return authToken || headerToken;
 }
 
+/**
+ * 启动嵌入本进程的抓包服务核心（默认模式）。
+ * 需要 CA 生成与 proto 加载，均在后台上完成（core.ready）。
+ */
+function startEmbeddedCaptureService() {
+  try {
+    const captureConfig = store.getCaptureConfig();
+    if (captureConfig.embedded === false) {
+      adminLogger.info("抓包服务未嵌入本进程（embedded=false，使用独立服务）");
+      return null;
+    }
+    const captureLog = (level, message, extra) => {
+      const fn = adminLogger[level] || adminLogger.info;
+      fn.call(adminLogger, message, extra);
+    };
+    const core = createCaptureCore({ log: captureLog });
+    setEmbeddedCapture(core);
+    core.ready.catch((error) => {
+      adminLogger.warn("抓包服务嵌入初始化失败", { error: error.message });
+    });
+    adminLogger.info("抓包服务已嵌入本进程：面板开启“允许使用抓包登录”后可直接使用，无需单独启动服务");
+    return core;
+  } catch (error) {
+    adminLogger.warn("抓包服务嵌入启动失败", { error: error.message });
+    return null;
+  }
+}
+
 function startAdminServer(dataProvider) {
   if (app) return;
   provider = dataProvider;
@@ -500,6 +529,8 @@ function startAdminServer(dataProvider) {
     getRuntimeConfig,
     updateRuntimeConfig,
   });
+  // 抓包服务嵌入本进程：无需独立进程/端口（手机只需连 MITM 代理端口）
+  startEmbeddedCaptureService();
   registerAdminCaptureRoutes({
     app,
     store,

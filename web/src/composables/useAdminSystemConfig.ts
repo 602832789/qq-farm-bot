@@ -20,6 +20,7 @@ export interface WxConfig {
 
 export interface CaptureConfig {
   enabled: boolean
+  embedded: boolean
   apiBase: string
   apiToken: string
   tokenConfigured: boolean
@@ -58,6 +59,7 @@ const defaultWxConfig: WxConfig = {
 
 const defaultCaptureConfig: CaptureConfig = {
   enabled: false,
+  embedded: true,
   apiBase: 'http://127.0.0.1:8450',
   apiToken: '',
   tokenConfigured: false,

@@ -437,21 +437,26 @@ function handleLogoFileChange(event: Event) {
               v-model="localCaptureConfig.enabled"
               label="允许使用抓包登录添加账号"
             />
+            <div v-if="localCaptureConfig.embedded" class="mt-1 text-xs opacity-70" style="color: var(--theme-text);">
+              抓包服务已嵌入本进程，开启后 iPhone 设置 Wi-Fi 代理即可使用，无需单独启动服务
+            </div>
           </div>
-          <BaseInput
-            v-model="localCaptureConfig.apiBase"
-            label="抓包服务地址"
-            type="text"
-            placeholder="http://127.0.0.1:8450"
-            class="col-span-2"
-          />
-          <BaseInput
-            v-model="localCaptureConfig.apiToken"
-            label="API Token"
-            type="password"
-            :placeholder="localCaptureConfig.tokenConfigured ? '已配置，留空保持不变' : '请输入抓包服务 API Token'"
-            class="col-span-2"
-          />
+          <template v-if="!localCaptureConfig.embedded">
+            <BaseInput
+              v-model="localCaptureConfig.apiBase"
+              label="抓包服务地址"
+              type="text"
+              placeholder="http://127.0.0.1:8450"
+              class="col-span-2"
+            />
+            <BaseInput
+              v-model="localCaptureConfig.apiToken"
+              label="API Token"
+              type="password"
+              :placeholder="localCaptureConfig.tokenConfigured ? '已配置，留空保持不变' : '请输入抓包服务 API Token'"
+              class="col-span-2"
+            />
+          </template>
           <div class="col-span-2">
             <BaseSwitch
               v-model="localCaptureConfig.autoImportQqGids"

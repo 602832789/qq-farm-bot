@@ -66,7 +66,41 @@ function resolveCaptureConfig(store, override = {}) {
   };
 }
 
+// 进程内嵌入的抓包服务核心（admin.js 启动时注入）。
+// 存在时 captureRequest 直接进程内调用，不再依赖独立 HTTP 服务/端口。
+let embeddedCaptureCore = null;
+
+/**
+ * 注入进程内抓包服务核心（嵌入模式）。
+ * 传入后，抓包登录流程直接调用进程内 handler，apiBase/apiToken 配置不再生效。
+ * @param {object|null} core - createCaptureCore() 的返回值
+ */
+function setEmbeddedCapture(core) {
+  embeddedCaptureCore = core || null;
+}
+
+function isEmbeddedMode() {
+  return !!embeddedCaptureCore;
+}
+
 async function captureRequest(config, path, options = {}) {
+  // 嵌入模式：进程内直接调用（不经过 HTTP，apiToken 无意义）
+  if (embeddedCaptureCore) {
+    const result = await embeddedCaptureCore.handleApiRequest(
+      options.method || "GET",
+      path,
+      options.body,
+      { sessionId: options.sessionId },
+    );
+    const data = result?.body || {};
+    if (result?.status >= 400 || data?.ok === false) {
+      const error = new Error(data?.error || `抓包服务请求失败（${result?.status || 500}）`);
+      error.captureStatus = result?.status;
+      throw error;
+    }
+    return data;
+  }
+
   if (!config.apiToken) throw new Error("抓包服务 API Token 未配置");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.timeout || CAPTURE_REQUEST_TIMEOUT_MS);
@@ -212,6 +246,7 @@ function serializeFlow(flow) {
     },
     publicInfo: {
       host: String(flow.publicInfo?.host || ""),
+      addresses: Array.isArray(flow.publicInfo?.addresses) ? flow.publicInfo.addresses : [],
       mitmPort: Number(flow.publicInfo?.mitmPort) || 0,
       mitmProxyAutoStopSec: autoStopSec,
       remainingSec: autoStopSec ? Math.max(0, autoStopSec - elapsedSec) : 0,
@@ -446,6 +481,7 @@ function registerAdminCaptureRoutes({
         ok: true,
         data: {
           enabled: config.enabled === true,
+          embedded: isEmbeddedMode(),
           apiBase: config.apiBase,
           apiToken: "",
           tokenConfigured: !!config.apiToken,
@@ -481,7 +517,8 @@ function registerAdminCaptureRoutes({
       const apiBase = normalizeApiBase(input.apiBase || store.DEFAULT_CAPTURE_CONFIG.apiBase);
       const current = store.getCaptureConfig();
       const apiToken = String(input.apiToken || current.apiToken || "").trim();
-      if (input.enabled === true && !apiToken) {
+      // 嵌入模式无需 API Token；独立模式启用前必须填写
+      if (input.enabled === true && !isEmbeddedMode() && !apiToken) {
         return res.status(400).json({ ok: false, error: "启用前请填写 API Token" });
       }
       const data = store.setCaptureConfig({ ...input, apiBase, apiToken });
@@ -512,7 +549,8 @@ function registerAdminCaptureRoutes({
     res.json({
       ok: true,
       data: {
-        enabled: config.enabled === true && !!config.apiBase && !!config.apiToken,
+        enabled: config.enabled === true
+          && (isEmbeddedMode() || (!!config.apiBase && !!config.apiToken)),
       },
     });
   });
@@ -614,6 +652,15 @@ function registerAdminCaptureRoutes({
       const certPath = String(flow.publicInfo?.certUrl || "/cert/mitmproxy-ca-cert.cer");
       if (!certPath.startsWith("/") || certPath.startsWith("//")) {
         throw new Error("抓包服务证书地址无效");
+      }
+      // 嵌入模式：直接取进程内 CA 证书
+      if (embeddedCaptureCore && typeof embeddedCaptureCore.getCaCertDer === "function") {
+        const der = embeddedCaptureCore.getCaCertDer();
+        res.setHeader("Cache-Control", "no-store");
+        res.setHeader("Content-Type", "application/x-x509-ca-cert");
+        res.setHeader("Content-Disposition", 'inline; filename="mitmproxy-ca-cert.cer"');
+        res.send(der);
+        return;
       }
       const response = await fetch(`${config.apiBase}${certPath}`, { timeout: CAPTURE_REQUEST_TIMEOUT_MS });
       if (!response.ok) throw new Error(`证书下载失败（HTTP ${response.status}）`);
@@ -787,8 +834,10 @@ module.exports = {
   getCaptureBypassHosts,
   isCertificateTokenValid,
   isCompleteQqFriendSource,
+  isEmbeddedMode,
   mergeKnownFriendGids,
   normalizeApiBase,
   registerAdminCaptureRoutes,
   scheduleCapturedAccountStart,
+  setEmbeddedCapture,
 };
