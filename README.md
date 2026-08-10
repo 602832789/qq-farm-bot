@@ -6,6 +6,18 @@
 
 这是一个基于 Node.js 的 QQ 农场自动化工具，支持多账号管理，并提供 Web 控制面板、实时日志、数据统计、好友管理、活动、商城、图鉴和后台管理等功能。
 
+## 本次更新（2026-08-07）
+
+### iPhone 抓包登录服务
+
+- 内置纯 Node.js 的抓包服务，**默认嵌入 bot 进程**（随面板启动，无需单独进程/端口），
+  iPhone 设置 Wi-Fi 代理后打开 QQ 农场小程序即可自动获取登录 Code 并添加账号。
+- 支持多 IP 公布与局域网 / Tailscale 组网：自动识别 Tailscale（100.64.0.0/10）
+  与局域网地址，面板按网络环境选择对应代理地址。
+- 抓取 Code 的同时解析好友 GID（FriendService GetAll/SyncAll），QQ 平台好友
+  列表后台自动同步。
+- 使用说明见 [抓包登录服务手册](core/docs/capture-service.md)。
+
 ## 本次更新（2026-08-03）
 
 ### 土地展示重做
@@ -121,7 +133,7 @@ pnpm dev:core
 ## Docker 部署
 
 ```bash
-git clone https://github.com/cwser/qq-farm-bot.git
+git clone https://github.com/xxxscarlxrd404/qq-farm-bot.git
 cd qq-farm-bot
 
 docker compose up -d --build
