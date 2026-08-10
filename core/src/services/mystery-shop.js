@@ -11,6 +11,10 @@ const CURRENCY_NAMES = {
   1005: '金豆豆',
 };
 
+// 商人可能在登录完成后才出现，不能只依赖登录时的一次检查。
+// 十分钟一次的只读查询可确保限时商品进入自动购买流程，同时避免过于频繁地请求。
+const AUTO_BUY_CHECK_INTERVAL_MS = 10 * 60 * 1000;
+
 function normalizeNPC(reply) {
   const npc = reply?.npc;
   const itemId = toNum(npc?.item_id);
@@ -111,6 +115,7 @@ async function checkAndAutoBuyMysteryShop() {
 }
 
 module.exports = {
+  AUTO_BUY_CHECK_INTERVAL_MS,
   getActiveMysteryShop,
   buyMysteryShopGoods,
   abandonMysteryShop,

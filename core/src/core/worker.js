@@ -344,7 +344,7 @@ function startStarActivityClaimTimer() {
     }, { preventOverlap: true });
 }
 
-// 神秘商人的网页提示每 3 小时刷新一次；后台 Worker 使用相同周期，且登录后先检查一次。
+// 神秘商人可能在登录后的任意时间出现；登录后先检查，并持续短周期探测。
 function stopMysteryShopAutoBuyTimer() {
     workerScheduler.clear('mystery_shop_auto_buy_initial');
     workerScheduler.clear('mystery_shop_auto_buy_interval');
@@ -358,11 +358,12 @@ function runMysteryShopAutoBuy() {
 }
 
 function startMysteryShopAutoBuyTimer() {
+    const { AUTO_BUY_CHECK_INTERVAL_MS } = require('../services/mystery-shop');
     stopMysteryShopAutoBuyTimer();
     workerScheduler.setTimeoutTask('mystery_shop_auto_buy_initial', 10000, () => {
         runMysteryShopAutoBuy().catch(() => null);
     });
-    workerScheduler.setIntervalTask('mystery_shop_auto_buy_interval', 3 * 60 * 60 * 1000, () => {
+    workerScheduler.setIntervalTask('mystery_shop_auto_buy_interval', AUTO_BUY_CHECK_INTERVAL_MS, () => {
         runMysteryShopAutoBuy().catch(() => null);
     }, { preventOverlap: true });
 }
