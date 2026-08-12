@@ -65,8 +65,16 @@ const confirmModal = ref({
   loading: false,
   action: '' as 'sell' | 'use' | 'batchSell',
   item: null as any,
+  useCount: 1,
   selectedItems: [] as any[],
 })
+
+const maxUseCount = computed(() => Math.max(1, Number(confirmModal.value.item?.count || 1)))
+
+function setUseCount(value: unknown) {
+  const count = Math.trunc(Number(value) || 1)
+  confirmModal.value.useCount = Math.max(1, Math.min(count, maxUseCount.value))
+}
 
 const batchMode = ref(false)
 const selectedForBatch = ref<Set<number>>(new Set())
@@ -127,6 +135,7 @@ function handleSellClick(item: any) {
     loading: false,
     action: 'sell',
     item,
+    useCount: 1,
     selectedItems: [],
   }
 }
@@ -134,18 +143,19 @@ function handleSellClick(item: any) {
 function handleUseClick(item: any) {
   confirmModal.value = {
     show: true,
-    title: '确认使用',
-    message: `确定要使用全部 ${item.name || `物品${item.id}`} 吗?\n数量：${item.count || 0}`,
+    title: `使用${item.name || `物品${item.id}`}`,
+    message: `当前拥有 ${item.count || 0} 个，请选择本次使用数量。`,
     type: 'primary',
     loading: false,
     action: 'use',
     item,
+    useCount: 1,
     selectedItems: [],
   }
 }
 
 async function handleConfirm() {
-  const { action, item, selectedItems } = confirmModal.value
+  const { action, item, selectedItems, useCount } = confirmModal.value
   if (!currentAccountId.value)
     return
 
@@ -209,9 +219,10 @@ async function handleConfirm() {
       }
     }
     else if (action === 'use' && item) {
-      const res = await bagStore.useItem(currentAccountId.value, Number(item.id), Number(item.count || 1))
+      const count = Math.max(1, Math.min(Math.trunc(Number(useCount) || 1), Number(item.count || 1)))
+      const res = await bagStore.useItem(currentAccountId.value, Number(item.id), count)
       if (res.ok) {
-        toastStore.success(`已使用 ${item.name || `物品${item.id}`}`)
+        toastStore.success(`已使用 ${item.name || `物品${item.id}`} x${count}`)
         await loadBag()
       }
       else {
@@ -300,6 +311,7 @@ function handleBatchSellClick() {
     loading: false,
     action: 'batchSell',
     item: null,
+    useCount: 1,
     selectedItems: itemsToSell,
   }
 }
@@ -454,7 +466,7 @@ useIntervalFn(loadBag, 60000)
               <button
                 v-if="canUse(item)"
                 class="cartoon-btn rounded-lg bg-green-500 px-1.5 py-0.5 text-[10px] text-white opacity-70 transition dark:bg-green-600 hover:opacity-100"
-                title="使用全部"
+                title="选择使用数量"
                 @click.stop="handleUseClick(item)"
               >
                 用
@@ -527,7 +539,30 @@ useIntervalFn(loadBag, 60000)
       :confirm-text="confirmModal.action === 'sell' ? '确认出售' : confirmModal.action === 'batchSell' ? '确认出售' : '确认使用'"
       @confirm="handleConfirm"
       @cancel="handleCancel"
-    />
+    >
+      <div v-if="confirmModal.action === 'use' && confirmModal.item" class="use-quantity">
+        <span>使用数量</span>
+        <div class="use-stepper">
+          <button type="button" aria-label="减少数量" :disabled="confirmModal.loading || confirmModal.useCount <= 1" @click="setUseCount(confirmModal.useCount - 1)">
+            <div class="i-carbon-subtract" />
+          </button>
+          <input
+            :value="confirmModal.useCount"
+            type="number"
+            inputmode="numeric"
+            min="1"
+            :max="maxUseCount"
+            :disabled="confirmModal.loading"
+            aria-label="使用数量"
+            @input="setUseCount(($event.target as HTMLInputElement).value)"
+          >
+          <button type="button" aria-label="增加数量" :disabled="confirmModal.loading || confirmModal.useCount >= maxUseCount" @click="setUseCount(confirmModal.useCount + 1)">
+            <div class="i-carbon-add" />
+          </button>
+          <button type="button" class="use-all" :disabled="confirmModal.loading || confirmModal.useCount >= maxUseCount" @click="setUseCount(maxUseCount)">全部</button>
+        </div>
+      </div>
+    </ConfirmModal>
   </div>
 </template>
 
@@ -543,4 +578,6 @@ useIntervalFn(loadBag, 60000)
   color: #9ca3af;
   text-transform: uppercase;
 }
+
+.use-quantity{margin:-1rem 0 1.5rem;padding:14px;border:1px solid #dccda9;border-radius:8px;background:#fffdf7}.use-quantity>span{display:block;margin-bottom:8px;color:#715f48;font-size:12px;font-weight:700}.use-stepper{display:grid;grid-template-columns:40px minmax(60px,1fr) 40px 54px;gap:7px}.use-stepper button,.use-stepper input{height:40px;border:1px solid #c9b98f;border-radius:6px}.use-stepper button{display:grid;place-items:center;color:#4e402e;background:#f5ead0;cursor:pointer}.use-stepper button:disabled{opacity:.45;cursor:not-allowed}.use-stepper input{min-width:0;padding:0 6px;color:#3d2b1f;background:white;font-weight:800;text-align:center}.use-stepper .use-all{color:white;background:#537c49;font-size:12px;font-weight:700}
 </style>

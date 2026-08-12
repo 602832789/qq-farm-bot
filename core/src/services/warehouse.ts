@@ -3,9 +3,6 @@ export {};
  * 仓库系统 - 自动出售果实
  * 协议说明：BagReply 使用 item_bag（ItemBag），item_bag.items 才是背包物品列表
  */
-import type protobuf from 'protobufjs';
-
-const protobufModule = require('protobufjs');
 const { getFruitName, getPlantByFruitId, getPlantBySeedId, getItemById, getItemImageById, getSeedImageBySeedId, parseSells } = require('../config/gameConfig');
 const { isAutomationOn } = require('../models/store');
 const { sendMsgAsync, networkEvents, getUserState } = require('../utils/network');
@@ -69,30 +66,35 @@ async function sellItems(items: any[]): Promise<any> {
 }
 
 async function useItem(itemId: number, count: number = 1, landIds: number[] = []): Promise<any> {
-    const body: Uint8Array = types.UseRequest.encode(types.UseRequest.create({
-        item_id: toLong(itemId),
-        count: toLong(count),
-        land_ids: (landIds || []).map((id: number) => toLong(id)),
-    })).finish();
-    try {
-        const { body: replyBody } = await sendMsgAsync('gamepb.itempb.ItemService', 'Use', body);
-        return types.UseReply.decode(replyBody);
-    } catch (e: any) {
-        const msg: string = String((e && e.message) || '');
-        const isParamError: boolean = msg.includes('code=1000020') || msg.includes('请求参数错误');
-        if (!isParamError) throw e;
-
-        // 兼容另一种 UseRequest 编码: { item: { id, count } }
-        const writer: protobuf.Writer = protobufModule.Writer.create();
-        const itemWriter: protobuf.Writer = writer.uint32(10).fork(); // field 1: item
-        itemWriter.uint32(8).int64(toLong(itemId));  // item.id
-        itemWriter.uint32(16).int64(toLong(count));  // item.count
-        itemWriter.ldelim();
-        const fallbackBody: Uint8Array = writer.finish();
-
-        const { body: fallbackReplyBody } = await sendMsgAsync('gamepb.itempb.ItemService', 'Use', fallbackBody);
-        return types.UseReply.decode(fallbackReplyBody);
+    if (landIds.length > 0) throw new Error('新版物品使用协议不再接受 landIds');
+    const bagReply: any = await getBag();
+    const candidates: any[] = getBagItems(bagReply).filter((item: any) => toNum(item && item.id) === itemId);
+    const available: number = candidates.reduce((sum: number, item: any) => sum + Math.max(0, toNum(item && item.count)), 0);
+    if (available < count) throw new Error(`物品数量不足: 需要 ${count}，当前 ${available}`);
+    const item: any = candidates.find((entry: any) => toNum(entry && entry.count) >= count);
+    if (!item && candidates.length > 1) {
+        let remaining: number = count;
+        const items: any[] = [];
+        for (const candidate of candidates) {
+            const useCount: number = Math.min(remaining, Math.max(0, toNum(candidate && candidate.count)));
+            if (useCount <= 0) continue;
+            items.push({ itemId, count: useCount, uid: toNum(candidate.uid) });
+            remaining -= useCount;
+            if (remaining === 0) break;
+        }
+        return batchUseItems(items);
     }
+    if (!item) throw new Error(`背包中未找到物品 ${itemId}`);
+
+    const body: Uint8Array = types.UseRequest.encode(types.UseRequest.create({
+        item: {
+            id: toLong(itemId),
+            count: toLong(count),
+            uid: toLong(toNum(item.uid)),
+        },
+    })).finish();
+    const { body: replyBody } = await sendMsgAsync('gamepb.itempb.ItemService', 'Use', body);
+    return types.UseReply.decode(replyBody);
 }
 
 async function batchUseItems(items: any[]): Promise<any> {

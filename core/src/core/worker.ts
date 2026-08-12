@@ -789,6 +789,21 @@ async function handleApiCall(msg: any): Promise<void> {
             case 'claimSolarTerm':
                 result = await require('../services/activity-center').claimSolarTerm(String(args[0] || ''));
                 break;
+            case 'getCurrentQingMeiActivity':
+                result = await require('../services/activity-center').getCurrentQingMeiActivity();
+                break;
+            case 'claimQingMeiDailySeed':
+                result = await require('../services/activity-center').claimQingMeiDailySeed();
+                break;
+            case 'startQingMeiBrew':
+                result = await require('../services/activity-center').startQingMeiBrew(args[0]);
+                break;
+            case 'continueQingMeiBrew':
+                result = await require('../services/activity-center').continueQingMeiBrew();
+                break;
+            case 'settleQingMeiBrew':
+                result = await require('../services/activity-center').settleQingMeiBrew();
+                break;
             case 'getMallCatalog':
                 result = await require('../services/commerce').getMallCatalog(args[0], args[1]);
                 break;
@@ -841,6 +856,7 @@ async function getDailyGiftOverview(): Promise<any> {
             doneToday: !!growthTask.doneToday,
             completedCount: Number(growthTask.completedCount || 0),
             totalCount: Number(growthTask.totalCount || 0),
+            currentTask: growthTask.currentTask || null,
             tasks: Array.isArray(growthTask.tasks) ? growthTask.tasks : [],
         },
         gifts: [
