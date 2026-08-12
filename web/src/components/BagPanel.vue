@@ -95,7 +95,15 @@ function getPriceClass(item: any) {
 
 function canSell(item: any) {
   const itemType = Number(item?.itemType || 0)
-  return itemType === 17 || itemType === 6
+  return (itemType === 17 || itemType === 6) && item?.sellable === true
+}
+
+function getSellStatusText(item: any) {
+  if (canSell(item))
+    return '可出售'
+  if (item?.sellStatus === 'conditional')
+    return '条件出售'
+  return '不可出售'
 }
 
 function canBatchSell(item: any) {
@@ -524,6 +532,11 @@ useIntervalFn(loadBag, 60000)
               <span v-if="item.level > 0"> · Lv{{ item.level }}</span>
               <span v-if="item.price > 0" :class="getPriceClass(item)"> · {{ item.price }}{{ item.priceUnit || '金' }}</span>
             </span>
+            <span
+              v-if="getItemCategory(item) === 'fruit'"
+              :class="canSell(item) ? 'text-green-500 dark:text-green-400' : 'text-gray-400 dark:text-gray-500'"
+              :title="item.sellCondition || ''"
+            >{{ getSellStatusText(item) }}</span>
           </div>
 
           <div class="mt-auto font-medium" :class="item.hoursText ? 'text-blue-500' : 'text-gray-600 dark:text-gray-300'">

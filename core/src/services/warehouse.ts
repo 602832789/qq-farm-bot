@@ -3,7 +3,7 @@ export {};
  * 仓库系统 - 自动出售果实
  * 协议说明：BagReply 使用 item_bag（ItemBag），item_bag.items 才是背包物品列表
  */
-const { getFruitName, getPlantByFruitId, getPlantBySeedId, getItemById, getItemImageById, getSeedImageBySeedId, parseSells } = require('../config/gameConfig');
+const { getFruitName, getPlantByFruitId, getPlantBySeedId, getItemById, getItemImageById, getSeedImageBySeedId, getEffectiveSellInfo } = require('../config/gameConfig');
 const { isAutomationOn } = require('../models/store');
 const { sendMsgAsync, networkEvents, getUserState } = require('../utils/network');
 const { types } = require('../utils/proto');
@@ -59,7 +59,19 @@ function toSellItem(item: any): any {
 }
 
 async function sellItems(items: any[]): Promise<any> {
-    const payload: any[] = items.map(toSellItem);
+    const requested: any[] = Array.isArray(items) ? items : [];
+    if (requested.length === 0) throw new Error('没有可出售的物品');
+    for (const item of requested) {
+        const id: number = toNum(item && item.id);
+        const count: number = toNum(item && item.count);
+        const sellInfo: any = getEffectiveSellInfo(id);
+        if (id <= 0 || count <= 0) throw new Error('出售物品参数无效');
+        if (!sellInfo.sellable) {
+            const info: any = getItemById(id);
+            throw new Error(`${info?.name || `物品${id}`}当前不可出售`);
+        }
+    }
+    const payload: any[] = requested.map(toSellItem);
     const body: Uint8Array = types.SellRequest.encode(types.SellRequest.create({ items: payload })).finish();
     const { body: replyBody } = await sendMsgAsync('gamepb.itempb.ItemService', 'Sell', body);
     return types.SellReply.decode(replyBody);
@@ -382,7 +394,8 @@ async function getBagDetail(): Promise<any> {
         }
         if (!name) name = `物品${id}`;
         const interactionType: string = info && info.interaction_type ? String(info.interaction_type) : '';
-        const sellsList = parseSells(info && info.sells);
+        const sellInfo: any = getEffectiveSellInfo(info);
+        const sellsList: any[] = sellInfo.sells;
         const priceId: number = sellsList.length > 0 ? sellsList[0].currencyId : 0;
         const priceUnit: string = priceId === 1005 ? '金豆豆' : priceId === 1002 ? '点券' : '金';
 
@@ -397,6 +410,9 @@ async function getBagDetail(): Promise<any> {
                 image: getItemImageById(id),
                 category,
                 itemType: info ? (Number(info.type) || 0) : 0,
+                sellable: sellInfo.sellable,
+                sellStatus: sellInfo.status,
+                sellCondition: sellInfo.condition,
                 priceId,
                 price: sellsList.length > 0 ? sellsList[0].price : 0,
                 priceUnit,
@@ -457,7 +473,7 @@ async function sellAllFruits(): Promise<void> {
         for (const item of items) {
             const id: number = toNum(item.id);
             const count: number = toNum(item.count);
-            if (isFruitItemId(id) && count > 0) {
+            if (isFruitItemId(id) && count > 0 && getEffectiveSellInfo(id).sellable) {
                 toSell.push(item);
                 names.push(`${getFruitName(id)}x${count}`);
             }
