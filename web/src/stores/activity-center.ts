@@ -215,6 +215,12 @@ export interface QingMeiQuoteDto {
   doubled: boolean
 }
 
+export interface QingMeiIngredientDto extends ActivityItemDto {
+  uid: string
+  key: string
+  mutantTypes: string[]
+}
+
 export interface QingMeiActivityDto {
   activityId: string
   name: string
@@ -223,6 +229,7 @@ export interface QingMeiActivityDto {
   endTime: number | null
   rules: ActivityRulesDto
   ingredient: ActivityItemDto
+  ingredients: QingMeiIngredientDto[]
   balance: string | null
   balanceKnown: boolean
   baseGold: string
@@ -651,6 +658,16 @@ function normalizeQingMei(value: unknown): QingMeiActivityDto | null {
     endTime: toMilliseconds(first(raw.endTime, raw.end_time)),
     rules: normalizeRules(raw.rules),
     ingredient: normalizeItem(raw.ingredient),
+    ingredients: records(raw.ingredients).map((entry) => {
+      const uid = text(entry.uid)
+      const mutantTypes = Array.isArray(entry.mutantTypes) ? entry.mutantTypes.map(String) : []
+      return {
+        ...normalizeItem(entry),
+        uid,
+        key: text(entry.key, `${uid}:${mutantTypes.join(',')}`),
+        mutantTypes,
+      }
+    }),
     balance: raw.balance === null || raw.balance === undefined ? null : text(raw.balance),
     balanceKnown: bool(raw.balanceKnown),
     baseGold: text(raw.baseGold),
@@ -984,8 +1001,8 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     return mutate('claimQingMeiSeed', '/qingmei/daily-seed/claim', accountId)
   }
 
-  function startQingMeiBrew(accountId: string, count: number) {
-    return mutate('startQingMeiBrew', '/qingmei/brew/start', accountId, { count })
+  function startQingMeiBrew(accountId: string, ingredients: Array<{ uid: string, count: number }>) {
+    return mutate('startQingMeiBrew', '/qingmei/brew/start', accountId, { ingredients })
   }
 
   function continueQingMeiBrew(accountId: string) {

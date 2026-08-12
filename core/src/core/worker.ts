@@ -728,7 +728,8 @@ async function handleApiCall(msg: any): Promise<void> {
                 const { useItem: _useItem } = require('../services/warehouse');
                 const itemId = Number(args[0]) || 0;
                 const count = Math.max(1, Number(args[1]) || 1);
-                result = await _useItem(itemId, count, []);
+                const uid = Number(args[2]) || 0;
+                result = await _useItem(itemId, count, [], uid);
                 break;
             }
             case 'sellItems': {

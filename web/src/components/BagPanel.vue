@@ -17,7 +17,7 @@ const { currentAccountId, currentAccount } = storeToRefs(accountStore)
 const { items, loading: bagLoading, originalItems } = storeToRefs(bagStore)
 const { status, loading: statusLoading, error: statusError, realtimeConnected } = storeToRefs(statusStore)
 
-const imageErrors = ref<Record<string | number, boolean>>({})
+const imageErrors = ref<Record<string, boolean>>({})
 
 const CATEGORY_OPTIONS = [
   { label: '全部', value: 'all' },
@@ -77,7 +77,7 @@ function setUseCount(value: unknown) {
 }
 
 const batchMode = ref(false)
-const selectedForBatch = ref<Set<number>>(new Set())
+const selectedForBatch = ref<Set<string>>(new Set())
 const batchSellResult = ref<{ gold: number, goldBean: number } | null>(null)
 
 const selectedSellableCount = computed(() => {
@@ -107,14 +107,19 @@ function canUse(item: any) {
   return itemType === 11
 }
 
+function itemKey(item: any) {
+  return String(item?.key || item?.groupKey || item?.id || '')
+}
+
 function handleSellClick(item: any) {
   if (batchMode.value) {
-    const isSelected = selectedForBatch.value.has(Number(item.id))
+    const key = itemKey(item)
+    const isSelected = selectedForBatch.value.has(key)
     if (isSelected) {
-      selectedForBatch.value.delete(Number(item.id))
+      selectedForBatch.value.delete(key)
     }
     else {
-      selectedForBatch.value.add(Number(item.id))
+      selectedForBatch.value.add(key)
     }
     return
   }
@@ -163,7 +168,7 @@ async function handleConfirm() {
   try {
     if (action === 'sell' && item) {
       const sellItems = originalItems.value
-        .filter((it: any) => Number(it.id) === Number(item.id))
+        .filter((it: any) => itemKey(it) === itemKey(item))
         .map((it: any) => ({ id: it.id, count: it.count, uid: it.uid || 0 }))
 
       if (sellItems.length === 0) {
@@ -181,9 +186,7 @@ async function handleConfirm() {
       }
     }
     else if (action === 'batchSell' && selectedItems) {
-      const itemsToSell = originalItems.value
-        .filter((it: any) => selectedItems.some((si: any) => Number(si.id) === Number(it.id)))
-        .map((it: any) => ({ id: it.id, count: it.count, uid: it.uid || 0 }))
+      const itemsToSell = selectedItems.map((it: any) => ({ id: it.id, count: it.count, uid: it.uid || 0 }))
 
       if (itemsToSell.length === 0) {
         toastStore.error('未找到可出售的物品')
@@ -195,10 +198,10 @@ async function handleConfirm() {
         let totalGold = 0
         let totalGoldBean = 0
         for (const si of selectedItems) {
-          const fi = filteredItems.value.find((f: any) => Number(f.id) === Number(si.id))
+          const fi = filteredItems.value.find((f: any) => itemKey(f) === itemKey(si))
           if (fi) {
             const price = Number(fi.price) || 0
-            const count = Number(fi.count) || 0
+            const count = Number(si.count) || 0
             const priceId = Number(fi.priceId) || 0
             if (priceId === 1005) {
               totalGoldBean += price * count
@@ -220,7 +223,7 @@ async function handleConfirm() {
     }
     else if (action === 'use' && item) {
       const count = Math.max(1, Math.min(Math.trunc(Number(useCount) || 1), Number(item.count || 1)))
-      const res = await bagStore.useItem(currentAccountId.value, Number(item.id), count)
+      const res = await bagStore.useItem(currentAccountId.value, Number(item.id), count, Number(item.uid) || 0)
       if (res.ok) {
         toastStore.success(`已使用 ${item.name || `物品${item.id}`} x${count}`)
         await loadBag()
@@ -255,7 +258,7 @@ function selectAllSellable() {
   selectedForBatch.value.clear()
   for (const item of filteredItems.value) {
     if (canBatchSell(item)) {
-      selectedForBatch.value.add(Number(item.id))
+      selectedForBatch.value.add(itemKey(item))
     }
   }
 }
@@ -273,16 +276,15 @@ function handleBatchSellClick() {
   }
 
   const itemsToSell = originalItems.value
-    .filter((it: any) => selectedList.includes(Number(it.id)))
-    .map((it: any) => ({ id: it.id, count: it.count, uid: it.uid || 0 }))
+    .filter((it: any) => selectedList.includes(itemKey(it)))
 
   let totalGold = 0
   let totalGoldBean = 0
   for (const it of itemsToSell) {
-    const item = filteredItems.value.find((f: any) => Number(f.id) === Number(it.id))
+    const item = filteredItems.value.find((f: any) => itemKey(f) === itemKey(it))
     if (item) {
       const price = Number(item.price) || 0
-      const count = Number(item.count) || 0
+      const count = Number(it.count) || 0
       const priceId = Number(item.priceId) || 0
       if (priceId === 1005) {
         totalGoldBean += price * count
@@ -441,11 +443,11 @@ useIntervalFn(loadBag, 60000)
       <div class="grid grid-cols-2 gap-4 lg:grid-cols-5 md:grid-cols-4 sm:grid-cols-3 xl:grid-cols-6">
         <div
           v-for="item in filteredItems"
-          :key="item.id"
+          :key="itemKey(item)"
           class="farm-card group relative flex flex-col items-center rounded-xl p-3 transition"
           :class="{
-            'ring-2 ring-orange-500 dark:ring-orange-400': batchMode && selectedForBatch.has(Number(item.id)),
-            'opacity-50': batchMode && canBatchSell(item) && !selectedForBatch.has(Number(item.id)),
+            'ring-2 ring-orange-500 dark:ring-orange-400': batchMode && selectedForBatch.has(itemKey(item)),
+            'opacity-50': batchMode && canBatchSell(item) && !selectedForBatch.has(itemKey(item)),
           }"
           @click="batchMode && canBatchSell(item) && handleSellClick(item)"
         >
@@ -475,11 +477,11 @@ useIntervalFn(loadBag, 60000)
             <div
               v-else-if="canBatchSell(item)"
               class="h-5 w-5 flex items-center justify-center border-2 rounded-lg transition"
-              :class="selectedForBatch.has(Number(item.id))
+              :class="selectedForBatch.has(itemKey(item))
                 ? 'border-orange-500 bg-orange-500 text-white'
                 : 'border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-700'"
             >
-              <span v-if="selectedForBatch.has(Number(item.id))" class="text-xs font-bold">✓</span>
+              <span v-if="selectedForBatch.has(itemKey(item))" class="text-xs font-bold">✓</span>
             </div>
           </div>
 
@@ -489,12 +491,12 @@ useIntervalFn(loadBag, 60000)
             style="background: color-mix(in srgb, var(--theme-bg, #fff) 90%, var(--theme-primary, #3b82f6))"
           >
             <img
-              v-if="item.image && !imageErrors[item.id]"
+              v-if="item.image && !imageErrors[itemKey(item)]"
               :src="item.image"
               :alt="item.name"
               class="max-h-full max-w-full object-contain"
               loading="lazy"
-              @error="imageErrors[item.id] = true"
+              @error="imageErrors[itemKey(item)] = true"
             >
             <div v-else class="text-2xl text-gray-400 font-bold uppercase">
               {{ (item.name || '物').slice(0, 1) }}
@@ -507,6 +509,7 @@ useIntervalFn(loadBag, 60000)
 
           <div class="mb-2 flex flex-col items-center gap-0.5 text-xs text-gray-400">
             <span v-if="item.uid">UID: {{ item.uid }}</span>
+            <span v-if="item.mutantTypes?.length">变异类型: {{ item.mutantTypes.join(' + ') }}</span>
             <span>
               <span
                 class="inline-block rounded-md px-1.5 py-0.5 text-[10px] font-bold"

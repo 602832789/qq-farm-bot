@@ -498,7 +498,24 @@ async function queryQingMeiReply(): Promise<any> {
     });
 }
 
-function qingMeiDto(reply: any, balance: string | null = null) {
+function qingMeiIngredients(bagReply: any): any[] {
+    return getBagItems(bagReply)
+        .filter((item: any) => int64Number(item?.id) === QINGMEI_ITEM_ID && BigInt(int64String(item?.count)) > 0n)
+        .map((item: any) => {
+            const mutantTypes = (Array.isArray(item?.mutant_types) ? item.mutant_types : (Array.isArray(item?.mutantTypes) ? item.mutantTypes : []))
+                .map(int64String)
+                .filter((value: string) => value !== '0');
+            const uid = int64String(item?.uid);
+            return {
+                ...itemDto(item),
+                uid,
+                mutantTypes,
+                key: `${uid}:${mutantTypes.join(',')}`,
+            };
+        });
+}
+
+function qingMeiDto(reply: any, ingredients: any[] | null = null) {
     const activity = reply?.data?.activity;
     const brew = reply?.data?.qingmei_brew || {};
     const quote = reply?.qingmei_quote || reply?.data?.qingmei_quote || null;
@@ -517,9 +534,10 @@ function qingMeiDto(reply: any, balance: string | null = null) {
         startTime: int64String(activity?.begin_time),
         endTime: int64String(activity?.end_time),
         rules,
-        ingredient: itemDto({ item_id: QINGMEI_ITEM_ID, count: balance || '0' }),
-        balance,
-        balanceKnown: balance !== null,
+        ingredient: itemDto({ item_id: QINGMEI_ITEM_ID, count: ingredients?.reduce((sum: bigint, item: any) => sum + BigInt(item.count), 0n).toString() || '0' }),
+        ingredients: ingredients || [],
+        balance: ingredients === null ? null : ingredients.reduce((sum: bigint, item: any) => sum + BigInt(item.count), 0n).toString(),
+        balanceKnown: ingredients !== null,
         baseGold: int64String(brew.base_gold),
         basePrice: int64String(brew.base_price),
         guaranteedPrice: int64String(brew.guaranteed_price),
@@ -542,7 +560,7 @@ function qingMeiDto(reply: any, balance: string | null = null) {
         },
         actions: {
             claimSeed: { enabled: !dailySeedClaimed, available: !dailySeedClaimed },
-            start: { enabled: balance === null || BigInt(balance) > 0n, available: balance === null || BigInt(balance) > 0n },
+            start: { enabled: ingredients === null || ingredients.length > 0, available: ingredients === null || ingredients.length > 0 },
             continue: { enabled: currentRound < maxRounds && !brew.finished && int64Number(brew.base_gold) > 0, available: currentRound < maxRounds && !brew.finished && int64Number(brew.base_gold) > 0 },
             settle: { enabled: quoteTotals.length > 0 || !!brew.finished, available: quoteTotals.length > 0 || !!brew.finished },
         },
@@ -551,11 +569,11 @@ function qingMeiDto(reply: any, balance: string | null = null) {
 
 async function getCurrentQingMeiActivity() {
     const reply = await queryQingMeiReply();
-    let balance: string | null = null;
+    let ingredients: any[] | null = null;
     try {
-        balance = readBagBalances(await getBag(), [String(QINGMEI_ITEM_ID)]).get(String(QINGMEI_ITEM_ID)) || '0';
+        ingredients = qingMeiIngredients(await getBag());
     } catch {}
-    return qingMeiDto(reply, balance);
+    return qingMeiDto(reply, ingredients);
 }
 
 function findSeasonActivity(seasonReply: any, typeCode: string): any | null {
@@ -873,21 +891,40 @@ async function claimQingMeiDailySeed() {
     });
 }
 
-async function startQingMeiBrew(countInput: unknown) {
-    const count = positiveDecimal(countInput, 'INVALID_QINGMEI_COUNT', 'count');
+async function startQingMeiBrew(input: unknown) {
     return serializeMutation(async () => {
         const bagReply = await getBag();
-        const candidates = getBagItems(bagReply).filter((item: any) => int64Number(item?.id) === QINGMEI_ITEM_ID);
-        const item = candidates.find((entry: any) => BigInt(int64String(entry?.count)) >= BigInt(count));
-        if (!item) throw businessError('INSUFFICIENT_QINGMEI', '青梅数量不足，或数量分散在多个背包条目中');
+        const candidates = qingMeiIngredients(bagReply);
+        let requested: any[];
+        if (Array.isArray(input)) {
+            requested = input;
+        } else {
+            const legacyCount = positiveDecimal(input, 'INVALID_QINGMEI_COUNT', 'count');
+            const candidate = candidates.find((item: any) => BigInt(item.count) >= BigInt(legacyCount));
+            requested = [{ uid: candidate?.uid, count: legacyCount }];
+        }
+        if (requested.length === 0) throw businessError('INVALID_QINGMEI_INGREDIENTS', '至少选择一组青梅');
+        const seenUids = new Set<string>();
+        const ingredients = requested.map((entry: any) => {
+            const uid = positiveDecimal(entry?.uid, 'INVALID_QINGMEI_UID', 'uid');
+            const count = positiveDecimal(entry?.count, 'INVALID_QINGMEI_COUNT', 'count');
+            if (seenUids.has(uid)) throw businessError('DUPLICATE_QINGMEI_UID', `青梅 UID ${uid} 重复`);
+            seenUids.add(uid);
+            const candidate = candidates.find((item: any) => item.uid === uid);
+            if (!candidate || BigInt(candidate.count) < BigInt(count)) {
+                throw businessError('INSUFFICIENT_QINGMEI', `青梅 UID ${uid} 数量不足`);
+            }
+            return { uid, count };
+        });
+        const totalCount = ingredients.reduce((sum: bigint, item: any) => sum + BigInt(item.count), 0n).toString();
         const reply = await operateQingMei(types.StartQingMeiBrewRequest, {
             activity_id: QINGMEI_BREW_ACTIVITY_ID,
             operate_type: START_QINGMEI_BREW_OPERATE_TYPE,
-            params: { ingredient: { uid: item.uid, count } },
+            params: { ingredients },
         });
         return {
             activity: qingMeiDto(reply),
-            message: `已投入 ${count} 个青梅开始酿造`,
+            message: `已投入 ${totalCount} 个青梅开始酿造`,
             snapshot: await getActivityCenterSnapshot(),
         };
     });

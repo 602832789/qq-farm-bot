@@ -153,7 +153,7 @@ message StartQingMeiBrewRequest {
         int64 uid = 1;
         int64 count = 2;
     }
-    message Params { Ingredient ingredient = 1; }
+    message Params { repeated Ingredient ingredients = 1; }
     int64 activity_id = 1;
     int64 operate_type = 2;
     Params params = 112;

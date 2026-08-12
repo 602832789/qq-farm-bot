@@ -65,10 +65,12 @@ async function sellItems(items: any[]): Promise<any> {
     return types.SellReply.decode(replyBody);
 }
 
-async function useItem(itemId: number, count: number = 1, landIds: number[] = []): Promise<any> {
+async function useItem(itemId: number, count: number = 1, landIds: number[] = [], uid: number = 0): Promise<any> {
     if (landIds.length > 0) throw new Error('新版物品使用协议不再接受 landIds');
     const bagReply: any = await getBag();
-    const candidates: any[] = getBagItems(bagReply).filter((item: any) => toNum(item && item.id) === itemId);
+    const candidates: any[] = getBagItems(bagReply).filter((item: any) => (
+        toNum(item && item.id) === itemId && (uid <= 0 || toNum(item && item.uid) === uid)
+    ));
     const available: number = candidates.reduce((sum: number, item: any) => sum + Math.max(0, toNum(item && item.count)), 0);
     if (available < count) throw new Error(`物品数量不足: 需要 ${count}，当前 ${available}`);
     const item: any = candidates.find((entry: any) => toNum(entry && entry.count) >= count);
@@ -117,6 +119,16 @@ function getBagItems(bagReply: any): any[] {
         return bagReply.item_bag.items;
     }
     return bagReply && bagReply.items ? bagReply.items : [];
+}
+
+function getMutantTypes(item: any): number[] {
+    const values: any[] = Array.isArray(item?.mutant_types)
+        ? item.mutant_types
+        : (Array.isArray(item?.mutantTypes) ? item.mutantTypes : []);
+    return values
+        .map((value: any) => toNum(value))
+        .filter((value: number) => value > 0)
+        .sort((left: number, right: number) => left - right);
 }
 
 function isFertilizerRelatedItemId(itemId: number): boolean {
@@ -316,22 +328,41 @@ async function getBagDetail(): Promise<any> {
     const bagReply: any = await getBag();
     const rawItems: any[] = getBagItems(bagReply);
 
+    // Balance/container entries have no UID and are not real bag stacks. Keep
+    // them separate so status widgets can consume them without displaying them.
+    const systemItems: any[] = (rawItems || [])
+        .filter((it: any) => toNum(it.id) > 0 && toNum(it.count) > 0 && toNum(it.uid) <= 0)
+        .map((it: any) => {
+            const id: number = toNum(it.id);
+            const count: number = toNum(it.count);
+            const info: any = getItemById(id) || null;
+            const interactionType: string = info && info.interaction_type ? String(info.interaction_type) : '';
+            const hoursText: string = interactionType === 'fertilizerbucket'
+                ? `${(Math.floor((count / 3600) * 10) / 10).toFixed(1)}小时`
+                : '';
+            return { id, count, name: info?.name || `物品${id}`, interactionType, hoursText };
+        });
+
     // 保留原始物品列表（用于出售等操作）
     const originalItems: any[] = [];
     for (const it of (rawItems || [])) {
         const id: number = toNum(it.id);
         const count: number = toNum(it.count);
         const uid: number = toNum(it.uid);
-        if (id <= 0 || count <= 0) continue;
-        originalItems.push({ id, count, uid });
+        if (id <= 0 || count <= 0 || uid <= 0) continue;
+        const mutantTypes: number[] = getMutantTypes(it);
+        originalItems.push({ id, count, uid, mutantTypes, groupKey: `uid:${uid}` });
     }
 
-    // 合并展示
-    const merged: Map<number, any> = new Map();
+    // UID is the authoritative identity of a concrete bag stack.
+    const merged: Map<string, any> = new Map();
     for (const it of (rawItems || [])) {
         const id: number = toNum(it.id);
         const count: number = toNum(it.count);
-        if (id <= 0 || count <= 0) continue;
+        const uid: number = toNum(it.uid);
+        if (id <= 0 || count <= 0 || uid <= 0) continue;
+        const mutantTypes: number[] = getMutantTypes(it);
+        const groupKey: string = `uid:${uid}`;
         const info: any = getItemById(id) || null;
         let name: string = info && info.name ? String(info.name) : '';
         let category: string = 'item';
@@ -355,10 +386,13 @@ async function getBagDetail(): Promise<any> {
         const priceId: number = sellsList.length > 0 ? sellsList[0].currencyId : 0;
         const priceUnit: string = priceId === 1005 ? '金豆豆' : priceId === 1002 ? '点券' : '金';
 
-        if (!merged.has(id)) {
-            merged.set(id, {
+        if (!merged.has(groupKey)) {
+            merged.set(groupKey, {
+                key: groupKey,
                 id,
                 count: 0,
+                uid,
+                mutantTypes,
                 name,
                 image: getItemImageById(id),
                 category,
@@ -371,7 +405,7 @@ async function getBagDetail(): Promise<any> {
                 hoursText: '',
             });
         }
-        const row: any = merged.get(id);
+        const row: any = merged.get(groupKey);
         row.count += count;
     }
 
@@ -401,7 +435,7 @@ async function getBagDetail(): Promise<any> {
         if (cb !== ca) return cb - ca;
         return Number(a.id || 0) - Number(b.id || 0);
     });
-    return { totalKinds: items.length, items, originalItems };
+    return { totalKinds: items.length, items, originalItems, systemItems };
 }
 
 // ============ 出售逻辑 ============

@@ -18,6 +18,7 @@ const protoFiles = fs.readdirSync(protoDir)
 
 const selected = new Set([
     'gamepb.activitypb.ActivityService.Operate',
+    'gamepb.itempb.ItemService.Bag',
     'gamepb.itempb.ItemService.Use',
     'gamepb.itempb.ItemService.BatchUse',
     'gamepb.taskpb.TaskService.TaskInfo',
@@ -76,6 +77,7 @@ function rawFields(buffer, depth = 0) {
 function knownType(root, service, method, messageType) {
     const request = messageType === 1;
     const names = {
+        'gamepb.itempb.ItemService.Bag': request ? 'gamepb.itempb.BagRequest' : 'gamepb.itempb.BagReply',
         'gamepb.itempb.ItemService.Use': request ? 'gamepb.itempb.UseRequest' : 'gamepb.itempb.UseReply',
         'gamepb.itempb.ItemService.BatchUse': request ? 'gamepb.itempb.BatchUseRequest' : 'gamepb.itempb.BatchUseReply',
         'gamepb.taskpb.TaskService.TaskInfo': request ? 'gamepb.taskpb.TaskInfoRequest' : 'gamepb.taskpb.TaskInfoReply',

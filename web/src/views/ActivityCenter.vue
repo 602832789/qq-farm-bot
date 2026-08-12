@@ -74,7 +74,7 @@ function claimPass() { activityStore.claimPass(accountId()) }
 function lightConstellation() { activityStore.lightConstellation(accountId()) }
 function claimSolar(termId: string) { activityStore.claimSolarTerm(accountId(), termId) }
 function claimQingMeiSeed() { activityStore.claimQingMeiDailySeed(accountId()) }
-function startQingMei(count: number) { activityStore.startQingMeiBrew(accountId(), count) }
+function startQingMei(ingredients: Array<{ uid: string, count: number }>) { activityStore.startQingMeiBrew(accountId(), ingredients) }
 function continueQingMei() { activityStore.continueQingMeiBrew(accountId()) }
 function settleQingMei() { activityStore.settleQingMeiBrew(accountId()) }
 function selectShopGoods(goods: ShopGoodsDto) { selectedShopGoods.value = goods }

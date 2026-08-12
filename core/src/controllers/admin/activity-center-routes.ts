@@ -129,7 +129,7 @@ function mountActivityCenterRoutes(app: Application, ctx: AdminContext): void {
     )));
 
     app.post('/api/activity-center/qingmei/brew/start', withAccount((accountId: string, req: Request) => (
-        ctx.provider.startQingMeiBrew(accountId, req.body?.count)
+        ctx.provider.startQingMeiBrew(accountId, req.body?.ingredients ?? req.body?.count)
     )));
 
     app.post('/api/activity-center/qingmei/brew/continue', withAccount((accountId: string) => (
