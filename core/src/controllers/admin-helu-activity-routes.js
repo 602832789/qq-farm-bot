@@ -219,8 +219,8 @@ function registerAdminHeluActivityRoutes({
       let activity = result.activity || null;
       if (!activity) {
         try {
-          activity = await provider.getHeluActivity(accountId);
-        } catch (_) {
+          activity = await provider.getStarActivity(accountId);
+        } catch {
           activity = null;
         }
       }
@@ -234,8 +234,8 @@ function registerAdminHeluActivityRoutes({
       if (isQingmeiClaimAlreadyHandledError(err)) {
         let activity = null;
         try {
-          activity = await provider.getHeluActivity(accountId);
-        } catch (_) {
+          activity = await provider.getStarActivity(accountId);
+        } catch {
           activity = null;
         }
         res.json({
@@ -271,8 +271,8 @@ function registerAdminHeluActivityRoutes({
       if (isQingmeiWineBusinessError(err)) {
         let activity = null;
         try {
-          activity = await provider.getHeluActivity(accountId);
-        } catch (_) {
+          activity = await provider.getStarActivity(accountId);
+        } catch {
           activity = null;
         }
         res.json({

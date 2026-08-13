@@ -77,9 +77,9 @@ const STAR_SAND_ITEM_ID = 1023;
 const STAR_RECORD_CLAIM_CMD = 21;
 const STAR_SHOP_OPEN_CMD = 7;
 const STAR_SHOP_EXCHANGE_CMD = 1;
-const QINGMEI_ACTIVITY_ID = 2026080100;
-const QINGMEI_SEED_CLAIM_ACTIVITY_ID = 2026080101;
-const QINGMEI_WINE_ACTIVITY_ID = 2026080102;
+const QINGMEI_ACTIVITY_ID = 2026081200;
+const QINGMEI_SEED_CLAIM_ACTIVITY_ID = 2026081201;
+const QINGMEI_WINE_ACTIVITY_ID = 2026081202;
 const QINGMEI_SEED_CLAIM_CMD = 4;
 const QINGMEI_WINE_PREVIEW_CMD = 14;
 const QINGMEI_WINE_BREW_CMD = 15;
@@ -1097,11 +1097,12 @@ function normalizeQingmeiActivity(reply) {
   const wine = activities.find(item => toNum(item?.id) === QINGMEI_WINE_ACTIVITY_ID) || {};
   const status = toNum(claim?.status);
   const claimedToday = isQingmeiClaimedToday();
+  const hasServerClaimStatus = claim?.status !== undefined && claim?.status !== null;
   const materialInfo = getItemById(QINGMEI_FRUIT_ITEM_ID);
 
   return {
     uid: reply?.__activityUid || QINGMEI_ACTIVITY_UID,
-    title: '青梅酿万金',
+    title: '青酿换万金',
     activityId: toNum(root?.id) || QINGMEI_ACTIVITY_ID,
     claimActivityId: toNum(claim?.id) || QINGMEI_SEED_CLAIM_ACTIVITY_ID,
     claimCommand: QINGMEI_SEED_CLAIM_CMD,
@@ -1113,8 +1114,11 @@ function normalizeQingmeiActivity(reply) {
     startTime: toNum(root?.start_time ?? root?.startTime ?? claim?.start_time ?? claim?.startTime),
     endTime: toNum(root?.end_time ?? root?.endTime ?? claim?.end_time ?? claim?.endTime),
     status,
-    claimed: claimedToday || status === 3,
-    claimable: !claimedToday && status !== 3 && claim?.enabled !== false,
+    claimed: claimedToday || (hasServerClaimStatus && status === 3),
+    // 领取节点通常不下发每日领取状态；未知时允许用户点击，由 Operate
+    // 的“已领取”响应校准本进程当天状态。
+    claimable: !claimedToday && (!hasServerClaimStatus || status !== 3) && claim?.enabled !== false,
+    claimStatusKnown: claimedToday || hasServerClaimStatus,
     reward: {
       itemId: QINGMEI_SEED_ITEM_ID,
       itemCount: QINGMEI_SEED_REWARD_COUNT,
@@ -1141,7 +1145,7 @@ async function getQingmeiActivity() {
     const materialInfo = getItemById(QINGMEI_FRUIT_ITEM_ID);
     return {
       uid: QINGMEI_ACTIVITY_UID,
-      title: '青梅酿万金',
+      title: '青酿换万金',
       activityId: QINGMEI_ACTIVITY_ID,
       claimActivityId: QINGMEI_SEED_CLAIM_ACTIVITY_ID,
       claimCommand: QINGMEI_SEED_CLAIM_CMD,
@@ -1328,7 +1332,7 @@ async function brewAndSellQingmeiWine(options = {}) {
     brew: finalBrew,
     share: shareResult,
     sell,
-    activity: await getHeluActivity().catch(() => null),
+    activity: await getStarActivity().catch(() => null),
   };
 }
 
@@ -1630,6 +1634,7 @@ async function getStarActivity() {
       starSandBalance: 0,
       passport: null,
       solarTerms: null,
+      qingmei: await getQingmeiActivity(),
       warning: 'runtime connection is not open',
     };
   }
@@ -1656,10 +1661,11 @@ async function getStarActivity() {
   }
 
   const currencyId = toNum(shopItems.find(item => item.currencyId > 0)?.currencyId) || STAR_SAND_ITEM_ID;
-  const [passport, solarTerms, starSandBalance] = await Promise.all([
+  const [passport, solarTerms, starSandBalance, qingmei] = await Promise.all([
     getSeasonPassport().catch(err => ({ title: '千星游记', warning: err?.message || String(err), claimableLevels: 0 })),
     getSolarTermsInfo().catch(err => ({ terms: [], claimableCount: 0, warning: err?.message || String(err) })),
     currencyId > 0 ? getBagItemCount(currencyId) : Promise.resolve(0),
+    getQingmeiActivity(),
   ]);
 
   return {
@@ -1680,6 +1686,7 @@ async function getStarActivity() {
     starSandBalance,
     passport,
     solarTerms,
+    qingmei,
     summary: {
       starCount: normalizeStarRecord(recordNode).totalCount,
       exchangeShopCount: shopItems.length,

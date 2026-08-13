@@ -261,7 +261,7 @@ function startDailyRoutineTimer() {
     });
 }
 
-// ==================== 星垂野活动自动领取 ====================
+// ==================== 活动自动控制 ====================
 
 async function runStarActivityAutoClaims() {
     if (!loginReady || friendSyncPaused || starActivityClaimRunning) return;
@@ -269,17 +269,20 @@ async function runStarActivityAutoClaims() {
     const automation = getAutomation() || {};
     const claimPassport = automation.star_passport_claim === true;
     const claimRecords = automation.star_record_claim === true;
-    if (!claimPassport && !claimRecords) return;
+    const claimQingmeiSeedsEnabled = automation.qingmei_seed_claim === true;
+    const brewQingmeiWineEnabled = automation.qingmei_wine_brew === true;
+    if (!claimPassport && !claimRecords && !claimQingmeiSeedsEnabled && !brewQingmeiWineEnabled) return;
 
     starActivityClaimRunning = true;
     try {
         const {
             getStarActivity,
             claimSeasonPassportRewards,
-            claimStarRecordRewards
+            claimStarRecordRewards,
+            claimQingmeiSeeds,
+            brewAndSellQingmeiWine
         } = require('../services/activity');
         const activity = await getStarActivity();
-
         if (claimPassport && Number(activity?.passport?.claimableLevels || 0) > 0) {
             try {
                 const result = await claimSeasonPassportRewards();
@@ -314,6 +317,69 @@ async function runStarActivityAutoClaims() {
                     result: 'error'
                 });
             }
+        }
+
+        // 青梅领取节点不稳定地下发每日 status，不能依赖页面用的 claimable
+        // 字段决定是否调用；服务端“已领取”响应会在 service 内标记当天状态。
+        if (claimQingmeiSeedsEnabled && activity?.qingmei?.claimed !== true) {
+            try {
+                const result = await claimQingmeiSeeds();
+                const alreadyClaimed = result?.alreadyClaimed === true;
+                log('活动', alreadyClaimed
+                    ? '自动校验青梅种子：今日已领取'
+                    : `自动领取青梅种子完成：${  Number(result?.claimedCount || 0)  } 个`, {
+                    module: 'activity',
+                    event: '青梅种子自动领取',
+                    result: alreadyClaimed ? 'none' : 'success',
+                    alreadyClaimed,
+                    claimedCount: Number(result?.claimedCount || 0)
+                });
+            } catch (err) {
+                log('活动', `自动领取青梅种子失败: ${  err.message}`, {
+                    module: 'activity',
+                    event: '青梅种子自动领取',
+                    result: 'error'
+                });
+            }
+        }
+        else if (claimQingmeiSeedsEnabled) {
+            log('活动', '自动领取青梅种子跳过：今日已领取', {
+                module: 'activity',
+                event: '青梅种子自动领取',
+                result: 'none',
+                alreadyClaimed: true
+            });
+        }
+
+        if (brewQingmeiWineEnabled && Number(activity?.qingmei?.material?.itemCount || 0) > 0) {
+            try {
+                const result = await brewAndSellQingmeiWine({ share: true });
+                const sellMultiple = Math.max(1, Number(result?.sell?.multiple || (result?.share?.shared ? 2 : 1)) || 1);
+                log('活动', `自动酿造并售卖青梅酿完成：${  sellMultiple  } 倍，金币 ${  Number(result?.sell?.gold || 0)  }`, {
+                    module: 'activity',
+                    event: '青梅酿自动酿造',
+                    result: 'success',
+                    consumedCount: Number(result?.consumedCount || 0),
+                    gold: Number(result?.sell?.gold || 0),
+                    multiple: sellMultiple,
+                    shared: result?.share?.shared === true
+                });
+            } catch (err) {
+                log('活动', `自动酿造青梅酿失败: ${  err.message}`, {
+                    module: 'activity',
+                    event: '青梅酿自动酿造',
+                    result: 'error',
+                    stage: err?.stage || ''
+                });
+            }
+        }
+        else if (brewQingmeiWineEnabled) {
+            log('活动', '自动酿造青梅酿跳过：背包中没有普通青梅', {
+                module: 'activity',
+                event: '青梅酿自动酿造',
+                result: 'none',
+                materialCount: 0
+            });
         }
     } catch (err) {
         if (!isTransientNetworkError(err)) {
@@ -598,6 +664,10 @@ function applyRuntimeConfig(config, syncStatusAfter = false) {
                 !prevAuto?.star_passport_claim && newAuto?.star_passport_claim
             ) || (
                 !prevAuto?.star_record_claim && newAuto?.star_record_claim
+            ) || (
+                !prevAuto?.qingmei_seed_claim && newAuto?.qingmei_seed_claim
+            ) || (
+                !prevAuto?.qingmei_wine_brew && newAuto?.qingmei_wine_brew
             );
             if (starClaimBecameEnabled) {
                 workerScheduler.setTimeoutTask('star_activity_claim_after_save', 2000, () => {

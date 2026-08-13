@@ -83,6 +83,7 @@ export interface HeluSolarTerm {
   status: number
   statusLabel: string
   claimable: boolean
+  claimStatusKnown?: boolean
   startTime: number
   endTime: number
   rewards: HeluDrawReward[]
@@ -132,6 +133,7 @@ export interface StarActivityData {
   starSandBalance: number
   passport?: HeluSeasonPassport | null
   solarTerms?: HeluSolarTerms | null
+  qingmei?: QingmeiActivity | null
   warning?: string
 }
 
@@ -416,7 +418,6 @@ export const useActivityStore = defineStore('activity', () => {
       })
       if (isCurrentAccount(requestedId) && data.ok && data.activity) {
         heluActivity.value = data.activity
-        // 新活动中心不展示青梅活动；保留接口兼容旧调用。
       }
       return data
     }

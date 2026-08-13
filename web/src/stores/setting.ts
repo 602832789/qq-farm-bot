@@ -11,6 +11,8 @@ export interface AutomationConfig {
   task?: boolean
   star_passport_claim?: boolean
   star_record_claim?: boolean
+  qingmei_seed_claim?: boolean
+  qingmei_wine_brew?: boolean
   sell?: boolean
   fertilizer_gift?: boolean
   fertilizer_buy_organic?: boolean
