@@ -354,14 +354,16 @@ async function runStarActivityAutoClaims() {
         if (brewQingmeiWineEnabled && Number(activity?.qingmei?.material?.itemCount || 0) > 0) {
             try {
                 const result = await brewAndSellQingmeiWine({ share: true });
-                const sellMultiple = Math.max(1, Number(result?.sell?.multiple || (result?.share?.shared ? 2 : 1)) || 1);
-                log('活动', `自动酿造并售卖青梅酿完成：${  sellMultiple  } 倍，金币 ${  Number(result?.sell?.gold || 0)  }`, {
+                const sellOption = Math.max(1, Number(result?.sell?.multiple || (result?.share?.shared ? 2 : 1)) || 1);
+                const incomeMultiple = sellOption === 2 ? 1.5 : 1;
+                log('活动', `自动酿造并售卖青梅酿完成：${  incomeMultiple  } 倍收入，金币 ${  Number(result?.sell?.gold || 0)  }`, {
                     module: 'activity',
                     event: '青梅酿自动酿造',
                     result: 'success',
                     consumedCount: Number(result?.consumedCount || 0),
                     gold: Number(result?.sell?.gold || 0),
-                    multiple: sellMultiple,
+                    incomeMultiple,
+                    protocolMultiple: sellOption,
                     shared: result?.share?.shared === true
                 });
             } catch (err) {
