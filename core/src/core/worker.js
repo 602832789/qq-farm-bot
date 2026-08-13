@@ -342,26 +342,25 @@ async function runStarActivityAutoClaims() {
                 });
             }
         }
-        else if (claimQingmeiSeedsEnabled) {
-            log('活动', '自动领取青梅种子跳过：今日已领取', {
-                module: 'activity',
-                event: '青梅种子自动领取',
-                result: 'none',
-                alreadyClaimed: true
-            });
-        }
-
         if (brewQingmeiWineEnabled && Number(activity?.qingmei?.material?.itemCount || 0) > 0) {
             try {
                 const result = await brewAndSellQingmeiWine({ share: true });
                 const sellOption = Math.max(1, Number(result?.sell?.multiple || (result?.share?.shared ? 2 : 1)) || 1);
                 const incomeMultiple = sellOption === 2 ? 1.5 : 1;
-                log('活动', `自动酿造并售卖青梅酿完成：${  incomeMultiple  } 倍收入，金币 ${  Number(result?.sell?.gold || 0)  }`, {
+                const previewPrice = Number(result?.preview?.price || 0);
+                const finalPrice = Number(result?.brew?.price || 0);
+                const brewMultiple = previewPrice > 0 && finalPrice > 0
+                    ? Number((finalPrice / previewPrice).toFixed(2))
+                    : 1;
+                log('活动', `自动酿造并售卖青梅酿完成：酿造 ${  brewMultiple  } 倍，分享收入 ${  incomeMultiple  } 倍，金币 ${  Number(result?.sell?.gold || 0)  }`, {
                     module: 'activity',
                     event: '青梅酿自动酿造',
                     result: 'success',
                     consumedCount: Number(result?.consumedCount || 0),
                     gold: Number(result?.sell?.gold || 0),
+                    brewMultiple,
+                    previewPrice,
+                    finalPrice,
                     incomeMultiple,
                     protocolMultiple: sellOption,
                     shared: result?.share?.shared === true
@@ -374,14 +373,6 @@ async function runStarActivityAutoClaims() {
                     stage: err?.stage || ''
                 });
             }
-        }
-        else if (brewQingmeiWineEnabled) {
-            log('活动', '自动酿造青梅酿跳过：背包中没有普通青梅', {
-                module: 'activity',
-                event: '青梅酿自动酿造',
-                result: 'none',
-                materialCount: 0
-            });
         }
     } catch (err) {
         if (!isTransientNetworkError(err)) {
