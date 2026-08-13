@@ -56,6 +56,28 @@ function getCaptureBypassHosts(req) {
   return hosts.slice(0, 8);
 }
 
+// 嵌入 Docker 时网卡自动探测只能看到容器 IP；此时使用浏览器访问面板的地址。
+function getCaptureAdvertiseHost(req) {
+  const values = [
+    req?.headers?.["x-forwarded-host"],
+    req?.headers?.host,
+    req?.headers?.origin,
+    req?.headers?.referer,
+    req?.hostname,
+  ];
+  for (const value of values) {
+    const raw = String(value || "").split(",")[0].trim();
+    if (!raw) continue;
+    try {
+      const host = new URL(/^https?:\/\//i.test(raw) ? raw : `http://${raw}`).hostname
+        .replace(/^\[|\]$/g, "")
+        .toLowerCase();
+      if (host && host !== "localhost" && host !== "127.0.0.1" && host !== "::1") return host;
+    } catch {}
+  }
+  return "";
+}
+
 function resolveCaptureConfig(store, override = {}) {
   const saved = store.getCaptureConfig();
   return {
@@ -615,7 +637,11 @@ function registerAdminCaptureRoutes({
         const started = await captureRequest(config, "/api/capture/start", {
           method: "POST",
           sessionId: remoteSessionId,
-          body: { mode: platform, bypassHosts: getCaptureBypassHosts(req) },
+          body: {
+            mode: platform,
+            bypassHosts: getCaptureBypassHosts(req),
+            advertiseHost: isEmbeddedMode() ? getCaptureAdvertiseHost(req) : "",
+          },
           timeout: 30_000,
         });
         addCapturedValues(flow, started);
@@ -832,6 +858,7 @@ module.exports = {
   collectQqFriendGids,
   findDuplicateCapturedAccount,
   getCaptureBypassHosts,
+  getCaptureAdvertiseHost,
   isCertificateTokenValid,
   isCompleteQqFriendSource,
   isEmbeddedMode,

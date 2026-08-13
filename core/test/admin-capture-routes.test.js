@@ -5,6 +5,7 @@ const {
   addCapturedValues,
   collectQqFriendGids,
   findDuplicateCapturedAccount,
+  getCaptureAdvertiseHost,
   getCaptureBypassHosts,
   isCertificateTokenValid,
   isCompleteQqFriendSource,
@@ -36,6 +37,20 @@ test('capture start bypasses the current admin host', () => {
     },
   });
   assert.deepEqual(hosts, ['farm.example.com', '10.0.0.5']);
+});
+
+test('embedded capture advertises the address used to access the panel', () => {
+  assert.equal(getCaptureAdvertiseHost({
+    hostname: '172.29.4.2',
+    headers: { host: '192.168.3.75:3007' },
+  }), '192.168.3.75');
+  assert.equal(getCaptureAdvertiseHost({
+    headers: {
+      host: '172.29.4.2:3007',
+      'x-forwarded-host': 'farm.example.com',
+    },
+  }), 'farm.example.com');
+  assert.equal(getCaptureAdvertiseHost({ headers: { host: 'localhost:3007' } }), '');
 });
 
 test('editing an account merges captured friend gids without keeping its own gid', () => {

@@ -80,6 +80,15 @@ function createCaptureApi({ config, ca, sessionStore, proxyManager, log = () => 
 
         const bypassHosts = Array.isArray(body.bypassHosts) ? body.bypassHosts : [];
         const advertise = resolveAdvertiseAddresses(config);
+        const requestedHost = String(body.advertiseHost || '').trim().toLowerCase();
+        if (requestedHost && requestedHost.length <= 253 && !/[\s/?#@]/.test(requestedHost)) {
+          const existing = advertise.addresses.find(item => item.address === requestedHost);
+          advertise.host = requestedHost;
+          advertise.addresses = [
+            existing || { address: requestedHost, kind: 'panel' },
+            ...advertise.addresses.filter(item => item.address !== requestedHost),
+          ];
+        }
 
         const started = await proxyManager.startForSession(session, { bypassHosts });
         sessionStore.setProxyInfo(session, {
