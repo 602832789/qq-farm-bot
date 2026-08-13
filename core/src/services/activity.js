@@ -81,6 +81,7 @@ const QINGMEI_ACTIVITY_ID = 2026081200;
 const QINGMEI_SEED_CLAIM_ACTIVITY_ID = 2026081201;
 const QINGMEI_WINE_ACTIVITY_ID = 2026081202;
 const QINGMEI_SEED_CLAIM_CMD = 4;
+const QINGMEI_SEED_CLAIM_TYPE = 3;
 const QINGMEI_WINE_PREVIEW_CMD = 14;
 const QINGMEI_WINE_BREW_CMD = 15;
 const QINGMEI_WINE_SELL_CMD = 16;
@@ -1178,7 +1179,7 @@ async function claimQingmeiSeeds() {
   let reply = null;
   try {
     reply = await operateActivityReply(QINGMEI_SEED_CLAIM_ACTIVITY_ID, QINGMEI_SEED_CLAIM_CMD, {
-      qingmeiClaim: { type: 2 },
+      qingmeiClaim: { type: QINGMEI_SEED_CLAIM_TYPE },
     });
   } catch (err) {
     if (isAlreadyClaimedError(err)) {
