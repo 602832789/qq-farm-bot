@@ -1,5 +1,5 @@
 const { PlantPhase, PHASE_NAMES } = require('../config/config');
-const { getPlantName, getPlantExp, getPlantById, getPlantGrowTime, getPlantGrowPhases, getSeedImageBySeedId, getPlantImageByPhase, getMutantEffectsByIds } = require('../config/gameConfig');
+const { getPlantName, getPlantExp, getPlantById, getPlantGrowTime, getPlantGrowPhases, getSeedImageBySeedId, getMutantDisplayPlantId, getMutantPlantImageByPhase, getMutantEffectsByIds } = require('../config/gameConfig');
 const { toNum, toTimeSec, getServerTimeSec, logWarn } = require('../utils/utils');
 const { getAllLands } = require('./farm-api');
 
@@ -498,7 +498,9 @@ async function getLandsDetail() {
 
       const phase = toNum(currentPhase.phase);
       const plantId = toNum(plant.id);
-      const displayName = getPlantName(plantId) || plant.name || '未知';
+      const mutantConfigIds = plant.mutant_config_ids || [];
+      const displayPlantId = getMutantDisplayPlantId(plantId, mutantConfigIds);
+      const displayName = getPlantName(displayPlantId) || getPlantName(plantId) || plant.name || '未知';
       const plantInfo = getPlantById(plantId);
       const seedId = toNum(plantInfo && plantInfo.seed_id);
       const seedImage = seedId > 0 ? getSeedImageBySeedId(seedId) : '';
@@ -510,7 +512,7 @@ async function getLandsDetail() {
         toNum(plantInfo && plantInfo.size) || 1,
         occupiedPlantSize
       );
-      const plantImage = getPlantImageByPhase(plantId, toNum(currentPhase.image_phase));
+      const plantImage = getMutantPlantImageByPhase(plantId, mutantConfigIds, toNum(currentPhase.image_phase));
       const totalSeason = Math.max(1, toNum(plantInfo && plantInfo.seasons) || 1);
       const rawSeason = toNum(plant.season);
       const currentSeason = rawSeason > 0 ? Math.min(rawSeason, totalSeason) : 1;
@@ -548,12 +550,11 @@ async function getLandsDetail() {
         (toTimeSec(currentPhase.insect_time) > 0 && toTimeSec(currentPhase.insect_time) <= serverTime);
 
       // 变异效果
-      const mutantConfigIds = plant.mutant_config_ids || [];
       const mutantEffects = getMutantEffectsByIds(mutantConfigIds);
 
       details.push({
         id: landId, unlocked: true, status,
-        plantName: displayName, seedId, seedImage, plantImage,
+        plantName: displayName, plantId, displayPlantId, seedId, seedImage, plantImage,
         phase, imagePhase: toNum(currentPhase.image_phase), phaseName, currentSeason, totalSeason,
         matureInSec, totalGrowTime, phaseStartTime, phaseEndTime,
         needWater, needWeed, needBug,

@@ -4,7 +4,8 @@ const {
   getPlantById,
   getPlantGrowTime,
   getSeedImageBySeedId,
-  getPlantImageByPhase,
+  getMutantDisplayPlantId,
+  getMutantPlantImageByPhase,
   getMutantEffectsByIds,
 } = require('../config/gameConfig');
 const {
@@ -497,11 +498,13 @@ async function getFriendLandsDetail(gid) {
 
       const phase = currentPhase.phase;
       const plantId = toNum(targetPlant.id);
-      const plantName = getPlantName(plantId) || targetPlant.name || '未知';
+      const mutantConfigIds = targetPlant.mutant_config_ids || [];
+      const displayPlantId = getMutantDisplayPlantId(plantId, mutantConfigIds);
+      const plantName = getPlantName(displayPlantId) || getPlantName(plantId) || targetPlant.name || '未知';
       const plantInfo = getPlantById(plantId);
       const seedId = toNum(plantInfo && plantInfo.seed_id);
       const seedImage = seedId > 0 ? getSeedImageBySeedId(seedId) : '';
-      const plantImage = getPlantImageByPhase(plantId, toNum(currentPhase.image_phase));
+      const plantImage = getMutantPlantImageByPhase(plantId, mutantConfigIds, toNum(currentPhase.image_phase));
       const plantSize = Math.max(1, toNum(plantInfo && plantInfo.size) || 1);
       const totalSeasons = Math.max(1, toNum(plantInfo && plantInfo.seasons) || 1);
       const currentSeasonRaw = toNum(targetPlant.season);
@@ -535,7 +538,6 @@ async function getFriendLandsDetail(gid) {
       }
 
       // Mutant effects
-      const mutantConfigIds = targetPlant.mutant_config_ids || [];
       const mutantEffects = getMutantEffectsByIds(mutantConfigIds);
 
       detailLands.push({
@@ -543,6 +545,8 @@ async function getFriendLandsDetail(gid) {
         unlocked: true,
         status,
         plantName,
+        plantId,
+        displayPlantId,
         seedId,
         seedImage,
         plantImage,

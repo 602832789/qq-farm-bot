@@ -560,7 +560,7 @@ onUnmounted(() => {
 .iso-farm-stage :deep(.land-card-image) {
   position: absolute;
   left: 50%;
-  top: 41%;
+  top: 35%;
   width: 42%;
   height: 68%;
   margin: 0;

@@ -144,10 +144,28 @@ const mutantEffects = computed(() => {
         icon,
         image: icon ? `/game-config/seed_images_named/mutant/${icon}.png` : '',
         tag: String(effect?.tag || '').trim(),
+        description: String(effect?.description || effect?.desc || effect?.tips || '').trim(),
       }
     })
     .filter((effect: any) => effect.icon)
 })
+
+const hasGoldenMutation = computed(() => mutantEffects.value.some((effect: any) =>
+  effect.id === 5 || effect.icon.toLowerCase() === 'golden',
+))
+
+function hasMutation(id: number, icon: string) {
+  return mutantEffects.value.some((effect: any) =>
+    effect.id === id || effect.icon.toLowerCase() === icon,
+  )
+}
+
+const hasFrozenMutation = computed(() => hasMutation(1, 'frozen'))
+const hasLoveMutation = computed(() => hasMutation(2, 'love'))
+const hasDarkMutation = computed(() => hasMutation(3, 'dark'))
+const hasMoistMutation = computed(() => hasMutation(4, 'moist'))
+const darkSmokeImageUrl = '/game-config/effect_images/mutant/dark-smoke.png'
+const darkParticleImageUrl = '/game-config/effect_images/mutant/dark-particle.png'
 
 // seedImage 是背包物品图标，不能用于地块；plantImage 包含客户端通用种子贴图
 // model/v4/zhongzi，以及各作物从 Crop_*_2 开始的生长阶段贴图。
@@ -353,13 +371,35 @@ function getIsometricBubbleClass(targetLand: any) {
         {
           'land-card-image-seed': Number(land.imagePhase) === 1,
           'land-card-image-seed-single': Number(land.imagePhase) === 1 && Number(land.plantSize) <= 1,
+          'land-card-image-golden': hasGoldenMutation && Boolean(cropImageUrl),
+          'land-card-image-frozen': hasFrozenMutation && Boolean(cropImageUrl),
+          'land-card-image-love': hasLoveMutation && Boolean(cropImageUrl),
+          'land-card-image-dark': hasDarkMutation && Boolean(cropImageUrl),
+          'land-card-image-moist': hasMoistMutation && Boolean(cropImageUrl),
         },
       ]"
     >
+      <div v-if="hasGoldenMutation && cropImageUrl" class="golden-mutation-aura" aria-hidden="true" />
+      <div v-if="hasGoldenMutation && cropImageUrl" class="golden-mutation-sparkles" aria-hidden="true">
+        <i v-for="index in 6" :key="index" />
+      </div>
+      <div v-if="hasFrozenMutation && cropImageUrl" class="frozen-mutation-layer" aria-hidden="true">
+        <i v-for="index in 6" :key="index">✦</i>
+      </div>
+      <div v-if="hasLoveMutation && cropImageUrl" class="love-mutation-layer" aria-hidden="true">
+        <i v-for="index in 5" :key="index">♥</i>
+      </div>
+      <div v-if="hasDarkMutation && cropImageUrl" class="dark-mutation-layer" aria-hidden="true">
+        <img v-for="index in 4" :key="`smoke-${index}`" :src="darkSmokeImageUrl" alt="" class="dark-mutation-smoke">
+        <img v-for="index in 5" :key="`particle-${index}`" :src="darkParticleImageUrl" alt="" class="dark-mutation-particle">
+      </div>
+      <div v-if="hasMoistMutation && cropImageUrl" class="moist-mutation-layer" aria-hidden="true">
+        <i v-for="index in 4" :key="index" />
+      </div>
       <img
         v-if="cropImageUrl"
         :src="getSafeImageUrl(cropImageUrl)"
-        class="max-h-full max-w-full object-contain"
+        class="land-crop-image max-h-full max-w-full object-contain"
         loading="lazy"
         referrerpolicy="no-referrer"
       >
@@ -500,11 +540,15 @@ function getIsometricBubbleClass(targetLand: any) {
               v-for="effect in mutantEffects"
               :key="`bubble-${land.id}-${effect.id}-${effect.icon}`"
               class="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 text-[11px] text-pink-700 shadow-sm dark:bg-gray-900 dark:text-pink-200"
-              :title="effect.tag && effect.tag !== '无' ? `${effect.name} · ${effect.tag}` : effect.name"
             >
               <img :src="effect.image" :alt="effect.name" class="h-4 w-4 object-contain">
               <span class="font-medium">{{ effect.name }}</span>
               <span v-if="effect.tag && effect.tag !== '无'" class="text-[10px] text-pink-400">· {{ effect.tag }}</span>
+            </div>
+          </div>
+          <div class="mt-2 rounded-md bg-white/85 px-2 py-1.5 text-[11px] text-pink-700 shadow-sm space-y-1 dark:bg-gray-900/85 dark:text-pink-200">
+            <div v-for="effect in mutantEffects" :key="`description-${effect.id}-${effect.icon}`">
+              {{ effect.description || effect.name }}
             </div>
           </div>
         </div>
@@ -529,6 +573,460 @@ function getIsometricBubbleClass(targetLand: any) {
 </template>
 
 <style scoped>
+.land-card-image-golden {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: 42%;
+}
+
+.land-card-image-golden .land-crop-image {
+  position: relative;
+  z-index: 2;
+  animation: golden-crop-glow 2.4s ease-in-out infinite;
+}
+
+.golden-mutation-aura {
+  position: absolute;
+  z-index: 0;
+  inset: -6%;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(
+    circle,
+    rgb(255 248 184 / 0.78) 0 24%,
+    rgb(250 204 21 / 0.38) 43%,
+    rgb(245 158 11 / 0.12) 62%,
+    transparent 74%
+  );
+  filter: blur(2px);
+  animation: golden-aura-pulse 2.4s ease-in-out infinite;
+}
+
+.golden-mutation-sparkles {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  overflow: hidden;
+  border-radius: 44%;
+  pointer-events: none;
+  animation: golden-sparkle-orbit 9s linear infinite;
+}
+
+.golden-mutation-sparkles i {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #fff8a6;
+  box-shadow: 0 0 4px 1px rgb(250 204 21 / 0.9);
+  animation: golden-sparkle-blink 1.8s ease-in-out infinite;
+}
+
+.golden-mutation-sparkles i:nth-child(1) {
+  left: 12%;
+  top: 24%;
+}
+.golden-mutation-sparkles i:nth-child(2) {
+  right: 10%;
+  top: 18%;
+  animation-delay: -0.6s;
+}
+.golden-mutation-sparkles i:nth-child(3) {
+  right: 2%;
+  top: 57%;
+  animation-delay: -1.2s;
+}
+.golden-mutation-sparkles i:nth-child(4) {
+  bottom: 8%;
+  left: 62%;
+  animation-delay: -0.3s;
+}
+.golden-mutation-sparkles i:nth-child(5) {
+  bottom: 14%;
+  left: 9%;
+  animation-delay: -0.9s;
+}
+.golden-mutation-sparkles i:nth-child(6) {
+  left: 42%;
+  top: 2%;
+  animation-delay: -1.5s;
+}
+
+.land-card-image-frozen,
+.land-card-image-love,
+.land-card-image-dark,
+.land-card-image-moist {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: 42%;
+}
+
+.land-card-image-frozen .land-crop-image {
+  position: relative;
+  z-index: 2;
+  animation: frozen-crop-glow 2.8s ease-in-out infinite;
+}
+
+.frozen-mutation-layer,
+.love-mutation-layer,
+.dark-mutation-layer,
+.moist-mutation-layer {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  overflow: hidden;
+  border-radius: 42%;
+  pointer-events: none;
+}
+
+.frozen-mutation-layer {
+  background: transparent;
+}
+
+.frozen-mutation-layer i {
+  position: absolute;
+  color: #e0f2fe;
+  font-size: 7px;
+  text-shadow: 0 0 4px #38bdf8;
+  animation: frozen-crystal-twinkle 1.9s ease-in-out infinite;
+}
+
+.frozen-mutation-layer i:nth-child(1) {
+  left: 4%;
+  top: 22%;
+}
+.frozen-mutation-layer i:nth-child(2) {
+  right: 5%;
+  top: 12%;
+  animation-delay: -0.5s;
+}
+.frozen-mutation-layer i:nth-child(3) {
+  right: -1%;
+  top: 56%;
+  animation-delay: -1s;
+}
+.frozen-mutation-layer i:nth-child(4) {
+  bottom: 3%;
+  left: 66%;
+  animation-delay: -1.5s;
+}
+.frozen-mutation-layer i:nth-child(5) {
+  bottom: 8%;
+  left: 5%;
+  animation-delay: -0.8s;
+}
+.frozen-mutation-layer i:nth-child(6) {
+  left: 45%;
+  top: -5%;
+  animation-delay: -1.3s;
+}
+
+.land-card-image-love .land-crop-image,
+.land-card-image-dark .land-crop-image {
+  position: relative;
+  z-index: 2;
+}
+
+.land-card-image-love .land-crop-image {
+  filter: saturate(1.22) brightness(1.05) drop-shadow(0 0 5px rgb(244 63 94 / 0.82));
+}
+
+.love-mutation-layer {
+  background: radial-gradient(circle, rgb(251 113 133 / 0.2) 10%, transparent 68%);
+  box-shadow: inset 0 0 7px rgb(244 114 182 / 0.34);
+}
+
+.love-mutation-layer i {
+  position: absolute;
+  bottom: -2px;
+  color: #ff2f6d;
+  font-size: 10px;
+  font-style: normal;
+  line-height: 1;
+  text-shadow:
+    0 0 2px #fff,
+    0 0 5px rgb(244 63 94 / 0.95);
+  animation: love-heart-rise 2.2s ease-in infinite;
+}
+
+.love-mutation-layer i:nth-child(1) {
+  left: 8%;
+}
+.love-mutation-layer i:nth-child(2) {
+  left: 28%;
+  animation-delay: -0.7s;
+}
+.love-mutation-layer i:nth-child(3) {
+  left: 48%;
+  animation-delay: -1.4s;
+}
+.love-mutation-layer i:nth-child(4) {
+  left: 68%;
+  animation-delay: -2.1s;
+}
+.love-mutation-layer i:nth-child(5) {
+  left: 86%;
+  animation-delay: -2.5s;
+}
+
+.land-card-image-dark .land-crop-image {
+  animation: dark-crop-pulse 3.2s ease-in-out infinite;
+}
+
+.dark-mutation-smoke,
+.dark-mutation-particle {
+  position: absolute;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.dark-mutation-smoke {
+  width: 58%;
+  opacity: 0;
+  filter: sepia(1) saturate(2.2) hue-rotate(225deg) brightness(0.48);
+  mix-blend-mode: multiply;
+  animation: dark-smoke-drift 3.6s ease-in-out infinite;
+}
+
+.dark-mutation-smoke:nth-child(1) {
+  bottom: 4%;
+  left: -4%;
+}
+.dark-mutation-smoke:nth-child(2) {
+  right: -7%;
+  bottom: 8%;
+  animation-delay: -0.9s;
+}
+.dark-mutation-smoke:nth-child(3) {
+  top: 12%;
+  left: 5%;
+  animation-delay: -1.8s;
+}
+.dark-mutation-smoke:nth-child(4) {
+  top: 4%;
+  right: 2%;
+  animation-delay: -2.7s;
+}
+
+.dark-mutation-particle {
+  width: 13%;
+  opacity: 0;
+  filter: sepia(1) saturate(3) hue-rotate(220deg) brightness(0.7);
+  animation: dark-particle-flicker 2.4s ease-in-out infinite;
+}
+
+.dark-mutation-particle:nth-child(5) {
+  left: 10%;
+  top: 24%;
+}
+.dark-mutation-particle:nth-child(6) {
+  right: 8%;
+  top: 18%;
+  animation-delay: -0.5s;
+}
+.dark-mutation-particle:nth-child(7) {
+  bottom: 10%;
+  left: 28%;
+  animation-delay: -1s;
+}
+.dark-mutation-particle:nth-child(8) {
+  right: 22%;
+  bottom: 8%;
+  animation-delay: -1.5s;
+}
+.dark-mutation-particle:nth-child(9) {
+  left: 46%;
+  top: 4%;
+  animation-delay: -2s;
+}
+
+.moist-mutation-layer i {
+  position: absolute;
+  top: -5px;
+  width: 3px;
+  height: 5px;
+  border-radius: 50% 50% 55% 55%;
+  background: rgb(56 189 248 / 0.9);
+  box-shadow: 0 0 1px rgb(255 255 255 / 0.85);
+  animation: moist-drop-fall 1.6s linear infinite;
+}
+
+.moist-mutation-layer i:nth-child(1) {
+  left: 15%;
+}
+.moist-mutation-layer i:nth-child(2) {
+  left: 39%;
+  animation-delay: -0.8s;
+}
+.moist-mutation-layer i:nth-child(3) {
+  left: 63%;
+  animation-delay: -0.4s;
+}
+.moist-mutation-layer i:nth-child(4) {
+  left: 84%;
+  animation-delay: -1.2s;
+}
+
+@keyframes golden-crop-glow {
+  0%,
+  100% {
+    filter: sepia(1) saturate(3.6) hue-rotate(345deg) brightness(1.08) contrast(1.08)
+      drop-shadow(0 0 3px rgb(250 204 21 / 0.72));
+  }
+  50% {
+    filter: sepia(1) saturate(4.8) hue-rotate(350deg) brightness(1.2) contrast(1.12)
+      drop-shadow(0 0 8px rgb(245 158 11 / 0.98));
+  }
+}
+
+@keyframes golden-aura-pulse {
+  0%,
+  100% {
+    opacity: 0.62;
+    transform: scale(0.88);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes golden-sparkle-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes golden-sparkle-blink {
+  0%,
+  100% {
+    opacity: 0.2;
+    transform: scale(0.55);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.25);
+  }
+}
+
+@keyframes frozen-crop-glow {
+  0%,
+  100% {
+    filter: saturate(0.72) hue-rotate(72deg) brightness(1.13) contrast(1.04)
+      drop-shadow(0 0 3px rgb(125 211 252 / 0.78));
+  }
+  50% {
+    filter: saturate(0.62) hue-rotate(82deg) brightness(1.24) contrast(1.08) drop-shadow(0 0 6px rgb(56 189 248 / 0.94));
+  }
+}
+
+@keyframes frozen-crystal-twinkle {
+  0%,
+  100% {
+    opacity: 0.24;
+    transform: scale(0.65) rotate(0);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2) rotate(45deg);
+  }
+}
+
+@keyframes love-heart-rise {
+  0% {
+    opacity: 0;
+    transform: translateY(2px) scale(0.7) rotate(-8deg);
+  }
+  28% {
+    opacity: 0.95;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-21px) scale(1.15) rotate(10deg);
+  }
+}
+
+@keyframes dark-crop-pulse {
+  0%,
+  100% {
+    filter: saturate(0.78) brightness(0.82) contrast(1.06) hue-rotate(8deg) drop-shadow(0 0 2px rgb(76 29 149 / 0.42));
+  }
+  50% {
+    filter: saturate(0.84) brightness(0.88) contrast(1.08) hue-rotate(13deg) drop-shadow(0 0 3px rgb(109 40 217 / 0.52));
+  }
+}
+
+@keyframes dark-smoke-drift {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translateY(3px) scale(0.72) rotate(-8deg);
+  }
+  35% {
+    opacity: 0.24;
+  }
+  65% {
+    opacity: 0.14;
+    transform: translateY(-5px) scale(1.04) rotate(6deg);
+  }
+}
+
+@keyframes dark-particle-flicker {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translateY(3px) scale(0.55);
+  }
+  45% {
+    opacity: 0.55;
+    transform: translateY(-2px) scale(0.9);
+  }
+  70% {
+    opacity: 0.18;
+    transform: translateY(-6px) scale(0.7);
+  }
+}
+
+@keyframes moist-drop-fall {
+  0% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+  15% {
+    opacity: 0.9;
+  }
+  80% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(36px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .land-card-image-golden .land-crop-image,
+  .golden-mutation-aura,
+  .golden-mutation-sparkles,
+  .golden-mutation-sparkles i,
+  .land-card-image-frozen .land-crop-image,
+  .land-card-image-dark .land-crop-image,
+  .frozen-mutation-layer i,
+  .love-mutation-layer i,
+  .dark-mutation-smoke,
+  .dark-mutation-particle,
+  .moist-mutation-layer i {
+    animation: none;
+  }
+
+  .land-card-image-golden .land-crop-image {
+    filter: sepia(1) saturate(4.2) hue-rotate(348deg) brightness(1.14) contrast(1.1)
+      drop-shadow(0 0 5px rgb(250 204 21 / 0.8));
+  }
+}
+
 .land-ground-layer {
   z-index: 0;
 }

@@ -491,6 +491,49 @@ function getPlantImageByPhase(plantId, phase) {
     return phases[String(numericPhase)] || '';
 }
 
+/**
+ * 根据当前变异组合解析客户端应展示的植物 ID。
+ * mutant_effect_plant 格式示例：5:1120112:1;5_6:1129001:1。
+ * 多效果组合优先于单效果，避免黄金+活动变异退化成普通黄金作物。
+ */
+function getMutantDisplayPlantId(plantId, mutantIds) {
+    const numericPlantId = Number(plantId) || 0;
+    if (!Array.isArray(mutantIds) || mutantIds.length === 0) return numericPlantId;
+    const activeIds = new Set(mutantIds.map(id => Number(id) || 0).filter(id => id > 0));
+    let currentPlantId = numericPlantId;
+    const visited = new Set([currentPlantId]);
+
+    // 部分组合通过两段映射完成，例如普通作物 -> 黄金作物 -> 黄金活动变异作物。
+    for (let depth = 0; depth < 4; depth += 1) {
+        const plant = plantMap.get(currentPlantId);
+        const mapping = String(plant && plant.mutant_effect_plant || '').trim();
+        if (!mapping) break;
+        let bestMatch = null;
+        for (const entry of mapping.split(';')) {
+            const [effectKey, targetIdText] = entry.split(':');
+            const effectIds = String(effectKey || '')
+                .split('_')
+                .map(id => Number(id) || 0)
+                .filter(id => id > 0);
+            const targetId = Number(targetIdText) || 0;
+            if (!targetId || effectIds.length === 0 || !effectIds.every(id => activeIds.has(id))) continue;
+            if (!bestMatch || effectIds.length > bestMatch.effectCount) {
+                bestMatch = { effectCount: effectIds.length, targetId };
+            }
+        }
+        if (!bestMatch || visited.has(bestMatch.targetId)) break;
+        currentPlantId = bestMatch.targetId;
+        visited.add(currentPlantId);
+    }
+    return currentPlantId;
+}
+
+/** 获取变异作物阶段图，缺少专属导出图时回退到原作物。 */
+function getMutantPlantImageByPhase(plantId, mutantIds, phase) {
+    const displayPlantId = getMutantDisplayPlantId(plantId, mutantIds);
+    return getPlantImageByPhase(displayPlantId, phase) || getPlantImageByPhase(plantId, phase);
+}
+
 /** 根据物品ID获取图片 */
 function getItemImageById(itemId) {
     const numericId = Number(itemId) || 0;
@@ -645,6 +688,8 @@ module.exports = {
     getFruitLayerByFruitId,
     getSeedImageBySeedId,
     getPlantImageByPhase,
+    getMutantDisplayPlantId,
+    getMutantPlantImageByPhase,
     getSeedLevel,
     getMutantEffectById,
     getMutantEffectByIcon,
