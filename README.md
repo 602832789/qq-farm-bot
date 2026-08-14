@@ -6,6 +6,12 @@
 
 这是一个基于 Node.js 的 QQ 农场自动化工具，支持多账号管理，并提供 Web 控制面板、实时日志、数据统计、好友管理、活动、商城、图鉴和后台管理等功能。
 
+## Yyb-go支持，请自行完成部署
+群友开发版：
+已完美适配本版本
+项目地址：https://github.com/991069003/yyb-go
+windows版本：https://github.com/991069003/yyb-go/blob/50c7abc5aece4b38bd2cd8a6cbd6e1cc76356ca6/windows-amd64-yyb-go.zip
+
 ## 2026-08-14
 
 ### 土地变异效果展示
