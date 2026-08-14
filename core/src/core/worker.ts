@@ -4,13 +4,13 @@ export {};
  */
 const { parentPort, workerData } = require('node:worker_threads');
 
-const { CONFIG } = require('../config/config');
+const { CONFIG, updateRuntimeConfig } = require('../config/config');
 const { getLevelExpProgress, loadConfigs } = require('../config/gameConfig');
 const { getAutomation, getPreferredSeed, getConfigSnapshot, applyConfigSnapshot, getFertilizerBuyType, getFertilizerBuyCount } = require('../models/store');
 const { checkAndClaimEmails } = require('../services/email');
 const { getEmailDailyState } = require('../services/email');
 const { checkFarm, startFarmCheckLoop, stopFarmCheckLoop, refreshFarmCheckLoop, getLandsDetail, getAvailableSeeds, runFarmOperation, runFertilizerByConfig } = require('../services/farm');
-const { checkFriends, startFriendCheckLoop, stopFriendCheckLoop, refreshFriendCheckLoop, runBadOnceOnStartup, isHelpExpLimitReached, getFriendsList, getFriendLandsDetail, doFriendOperation } = require('../services/friend');
+const { checkFriends, startFriendCheckLoop, stopFriendCheckLoop, refreshFriendCheckLoop, runBadOnceOnStartup, isHelpExpLimitReached, getFriendsList, getFriendLandsDetail, doFriendOperation, syncFriendsByOpenIds } = require('../services/friend');
 const { getInteractRecords } = require('../services/interact');
 const { processInviteCodes } = require('../services/invite');
 const { autoBuyOrganicFertilizer, autoBuyFertilizer, checkAndBuyFertilizerBoth, buyFreeGifts, getFreeGiftDailyState } = require('../services/mall');
@@ -25,7 +25,7 @@ const { cleanupTaskSystem, checkAndClaimTasks, getTaskClaimDailyState, getTaskDa
 const { sellAllFruits, getBag, getBagItems, openFertilizerGiftPacksSilently } = require('../services/warehouse');
 const { connect, cleanup, getWs, getUserState, networkEvents } = require('../utils/network');
 const { loadProto } = require('../utils/proto');
-const { setLogHook, log, toNum } = require('../utils/utils');
+const { setLogHook, log, toNum, getSystemDateKey, formatSystemDateTime24 } = require('../utils/utils');
 
 // Extend CONFIG with help/steal interval properties used by this worker
 interface WorkerRuntimeConfig {
@@ -71,27 +71,12 @@ function exitWorker(code: number = 0): void {
     process.exit(code);
 }
 
-function pad2(n: number): string {
-    return String(n).padStart(2, '0');
-}
-
-function formatLocalDateTime24(date: Date = new Date()): string {
-    const d = date instanceof Date ? date : new Date();
-    const y = d.getFullYear();
-    const m = pad2(d.getMonth() + 1);
-    const day = pad2(d.getDate());
-    const hh = pad2(d.getHours());
-    const mm = pad2(d.getMinutes());
-    const ss = pad2(d.getSeconds());
-    return `${y}-${m}-${day} ${hh}:${mm}:${ss}`;
-}
-
 // 捕获日志发送给主进程
 setLogHook((tag: string, msg: string, isWarn: boolean, meta: any) => {
     sendToMaster({
         type: 'log',
         data: {
-            time: formatLocalDateTime24(new Date()),
+            time: formatSystemDateTime24(),
             tag,
             msg,
             isWarn,
@@ -134,14 +119,6 @@ function isDailyRoutineEnabled(_auto: any): boolean {
     return true;
 }
 
-function getLocalDateKey(): string {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
-    const d = String(now.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-}
-
 async function runDailyRoutines(force: boolean = false): Promise<void> {
     if (!loginReady) return;
     try {
@@ -162,12 +139,12 @@ function stopDailyRoutineTimer(): void {
 
 function startDailyRoutineTimer(): void {
     stopDailyRoutineTimer();
-    lastDailyRunDate = getLocalDateKey();
+    lastDailyRunDate = getSystemDateKey();
     // 新账号登录后按当前设置强制执行一次领取
     runDailyRoutines(true).catch(() => null);
     workerScheduler.setIntervalTask('daily_routine_interval', 30 * 1000, () => {
         if (!loginReady) return;
-        const today = getLocalDateKey();
+        const today = getSystemDateKey();
         if (today === lastDailyRunDate) return;
         lastDailyRunDate = today;
         runDailyRoutines(true).catch(() => null);
@@ -376,6 +353,9 @@ function applyRuntimeConfig(snapshot: any, syncNow: boolean = false): number {
 
     const prevAuto = getAutomation();
     const accountId = process.env.FARM_ACCOUNT_ID || '';
+    if (snapshot && snapshot.systemTimeZone !== undefined) {
+        updateRuntimeConfig({ timeZone: snapshot.systemTimeZone });
+    }
     applyConfigSnapshot(snapshot || {}, { persist: false, accountId });
     if (rev > appliedConfigRevision) appliedConfigRevision = rev;
 
@@ -465,8 +445,9 @@ async function startBot(config: any): Promise<void> {
     shutdownStarted = false;
     runtimeGeneration += 1;
 
-    const { code, platform } = config;
+    const { code, platform, systemTimeZone } = config;
 
+    if (systemTimeZone !== undefined) updateRuntimeConfig({ timeZone: systemTimeZone });
     CONFIG.platform = platform || 'qq';
     // 注意：间隔配置由 applyIntervalsToRuntime 统一处理，不要在这里覆盖
 
@@ -699,6 +680,9 @@ async function handleApiCall(msg: any): Promise<void> {
             case 'getFriends':
                 result = await getFriendsList(args[0] === true);
                 break;
+            case 'syncFriendOpenIds':
+                result = await syncFriendsByOpenIds(args[0]);
+                break;
             case 'clearFriendsCache':
                 require('../services/friend').clearFriendsListCache();
                 result = { ok: true };
@@ -850,7 +834,7 @@ async function getDailyGiftOverview(): Promise<any> {
     const month = getMonthCardDailyState ? getMonthCardDailyState() : { doneToday: false, lastClaimAt: 0 };
 
     return {
-        date: new Date().toISOString().slice(0, 10),
+        date: getSystemDateKey(),
         growth: {
             key: 'growth_task',
             label: '成长任务',

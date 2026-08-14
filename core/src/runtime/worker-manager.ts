@@ -117,14 +117,16 @@ function createWorkerManager(options: WorkerManagerOptions) {
             wsError: null,
         };
 
+        const initialConfigSnapshot = buildConfigSnapshotForAccount(account.id);
         child.send({
             type: 'start',
             config: {
                 code: account.code,
                 platform: account.platform,
+                systemTimeZone: initialConfigSnapshot.systemTimeZone,
             },
         });
-        child.send({ type: 'config_sync', config: buildConfigSnapshotForAccount(account.id) });
+        child.send({ type: 'config_sync', config: initialConfigSnapshot });
 
         child.on('message', (msg: any) => {
             handleWorkerMessage(account.id, child, msg);

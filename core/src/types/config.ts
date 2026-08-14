@@ -104,6 +104,7 @@ export interface SystemConfig {
   clientVersion: string;
   platform: string;
   os: string;
+  timeZone: string;
   deviceInfo: DeviceInfo;
 }
 

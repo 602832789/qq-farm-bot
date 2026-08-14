@@ -55,7 +55,11 @@ function loadServiceWithMocks(sendMsgAsync, log) {
                 ClaimQQVipRewardsReply: claimReply,
             },
         });
-        setMock(utilsPath, { log, toNum: value => Number(value) });
+        setMock(utilsPath, {
+            log,
+            toNum: value => Number(value),
+            getSystemDateKey: () => '2026-08-15',
+        });
         return require(servicePath);
     } finally {
         for (const modulePath of paths) {

@@ -7,7 +7,7 @@ import type { AdminContext } from './context';
  * card-claim, user management.
  */
 
-const { updateRuntimeConfig, getRuntimeConfig, getDefaultSystemConfig, getDevicePresets } = require('../../config/config');
+const { updateRuntimeConfig, getRuntimeConfig, getDefaultSystemConfig, getDevicePresets, getTimeZoneOptions } = require('../../config/config');
 const store = require('../../models/store');
 const userStore = require('../../models/user-store');
 
@@ -88,6 +88,7 @@ function mountAdminRoutes(app: Application, ctx: AdminContext): void {
                     saved: savedConfig,
                     default: defaultConfig,
                     current: currentRuntime,
+                    timeZones: getTimeZoneOptions(),
                 },
             });
         } catch (e: any) {
@@ -98,10 +99,11 @@ function mountAdminRoutes(app: Application, ctx: AdminContext): void {
     // 保存系统配置
     app.post('/api/admin/system-config', authRequired, adminRequired, (req: Request, res: Response) => {
         try {
-            const { serverUrl, clientVersion, platform, os, deviceInfo } = req.body || {};
-            const newConfig = { serverUrl, clientVersion, platform, os, deviceInfo };
+            const { serverUrl, clientVersion, platform, os, timeZone, deviceInfo } = req.body || {};
+            const newConfig = { serverUrl, clientVersion, platform, os, timeZone, deviceInfo };
             const saved = store.setSystemConfig(newConfig);
             updateRuntimeConfig(saved);
+            ctx.provider.broadcastConfig();
             const current = getRuntimeConfig();
             res.json({ ok: true, data: { saved, current } });
         } catch (e: any) {
@@ -115,6 +117,7 @@ function mountAdminRoutes(app: Application, ctx: AdminContext): void {
             const defaultConfig = getDefaultSystemConfig();
             store.setSystemConfig(defaultConfig);
             updateRuntimeConfig(defaultConfig);
+            ctx.provider.broadcastConfig();
             const current = getRuntimeConfig();
             res.json({ ok: true, data: { saved: defaultConfig, current } });
         } catch (e: any) {

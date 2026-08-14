@@ -5,7 +5,7 @@ export {};
 
 const { sendMsgAsync, sendMsgNoReply } = require('../utils/network');
 const { types } = require('../utils/proto');
-const { log } = require('../utils/utils');
+const { log, getSystemDateKey } = require('../utils/utils');
 
 const DAILY_KEY: string = 'daily_share';
 const CHECK_COOLDOWN_MS: number = 10 * 60 * 1000;
@@ -19,16 +19,8 @@ let lastClaimAt: number = 0;
 let checkStatus: ShareCheckStatus = 'unchecked';
 let canShare: boolean | null = null;
 
-function getDateKey(): string {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
-    const d = String(now.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-}
-
 function isCheckedToday(): boolean {
-    return checkedDateKey === getDateKey();
+    return checkedDateKey === getSystemDateKey();
 }
 
 function isAlreadyClaimedError(error: any): boolean {
@@ -74,14 +66,14 @@ async function reportActivityShare(source: number, scene: number): Promise<void>
 
 async function checkDailyShareStatus(force: boolean = false): Promise<boolean> {
     const now: number = Date.now();
-    if (claimedDateKey === getDateKey()) return false;
+    if (claimedDateKey === getSystemDateKey()) return false;
     if (!force && now - lastCheckAt < CHECK_COOLDOWN_MS) return false;
     lastCheckAt = now;
     try {
         const reply: any = await checkCanShare();
         canShare = !!(reply && reply.can_share);
         checkStatus = canShare ? 'entry_available' : 'entry_unavailable';
-        checkedDateKey = getDateKey();
+        checkedDateKey = getSystemDateKey();
         if (!canShare) {
             log('分享', '分享入口暂不可用', {
                 module: 'task',
@@ -107,7 +99,7 @@ async function checkDailyShareStatus(force: boolean = false): Promise<boolean> {
         return true;
     } catch (e: any) {
         if (isAlreadyClaimedError(e)) {
-            claimedDateKey = getDateKey();
+            claimedDateKey = getSystemDateKey();
             checkedDateKey = claimedDateKey;
             lastClaimAt = Date.now();
             checkStatus = 'already_claimed';
@@ -139,7 +131,7 @@ module.exports = {
         checkedToday: isCheckedToday(),
         checkStatus,
         canShare,
-        doneToday: claimedDateKey === getDateKey(),
+        doneToday: claimedDateKey === getSystemDateKey(),
         lastCheckAt,
         lastClaimAt,
     }),

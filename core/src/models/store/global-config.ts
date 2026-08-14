@@ -3,7 +3,7 @@ import type { AccountConfig, OfflineReminder, UIConfig, SystemConfig, Announceme
 
 const fs = require('node:fs');
 const { readTextFile, writeJsonFileAtomic } = require('../../services/json-db');
-const { DEFAULT_CLIENT_VERSION } = require('../../config/config');
+const { DEFAULT_CLIENT_VERSION, DEFAULT_TIME_ZONE, normalizeTimeZone } = require('../../config/config');
 
 const sharedState = require('./shared-state');
 
@@ -243,6 +243,7 @@ function setSystemConfig(config: Partial<SystemConfig> | undefined): SystemConfi
         clientVersion: deviceInfo.clientVersion,
         platform: String(config.platform || 'qq').trim(),
         os: deviceInfo.os,
+        timeZone: normalizeTimeZone(config.timeZone || DEFAULT_TIME_ZONE),
         deviceInfo,
     };
     saveGlobalConfig();

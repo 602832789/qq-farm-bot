@@ -25,3 +25,11 @@ export {
     syncKnownFriendGidsFromRecentVisitors,
     removeKnownFriendGid,
 } from './gid-manager';
+
+export {
+    parseFriendOpenIds,
+} from './open-id-validation';
+
+export {
+    syncFriendsByOpenIds,
+} from './open-id-sync';
