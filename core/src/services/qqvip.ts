@@ -5,7 +5,8 @@ export {};
 
 const { sendMsgAsync } = require('../utils/network');
 const { types } = require('../utils/proto');
-const { log, toNum, getSystemDateKey } = require('../utils/utils');
+const utils = require('../utils/utils');
+const { log, toNum } = utils;
 
 const DAILY_KEY: string = 'vip_daily_gift';
 const CHECK_COOLDOWN_MS: number = 10 * 60 * 1000;
@@ -17,12 +18,23 @@ let lastResult: string = '';
 let lastHasGift: boolean | null = null;
 let lastCanClaim: boolean | null = null;
 
+function getDateKey(): string {
+    if (typeof utils.getSystemDateKey === 'function') {
+        return utils.getSystemDateKey();
+    }
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+}
+
 function markDoneToday(): void {
-    doneDateKey = getSystemDateKey();
+    doneDateKey = getDateKey();
 }
 
 function isDoneToday(): boolean {
-    return doneDateKey === getSystemDateKey();
+    return doneDateKey === getDateKey();
 }
 
 function getRewardSummary(items: any[]): string {
