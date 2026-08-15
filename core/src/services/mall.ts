@@ -6,7 +6,7 @@ const { Buffer } = require('node:buffer');
 
 const { sendMsgAsync, getUserState } = require('../utils/network');
 const { types } = require('../utils/proto');
-const { toNum, log, sleep } = require('../utils/utils');
+const { toNum, log, sleep, getSystemDateKey } = require('../utils/utils');
 
 const ORGANIC_FERTILIZER_MALL_GOODS_ID: number = 1002;
 const INORGANIC_FERTILIZER_MALL_GOODS_ID: number = 1003;
@@ -24,14 +24,6 @@ let buyPausedNoGoldDateKey: string = '';
 let freeGiftDoneDateKey: string = '';
 let freeGiftLastAt: number = 0;
 let freeGiftLastCheckAt: number = 0;
-
-function getDateKey(): string {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
-    const d = String(now.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-}
 
 async function getMallListBySlotType(slotType: number = 1, subSlotType: number = 0): Promise<any> {
     const body: Uint8Array = types.GetMallListBySlotTypeRequest.encode(types.GetMallListBySlotTypeRequest.create({
@@ -127,7 +119,7 @@ async function autoBuyOrganicFertilizerViaMall(): Promise<number> {
 
     for (let i = 0; i < MAX_ROUNDS; i++) {
         if (singlePrice > 0 && ticket > 0 && ticket < singlePrice) {
-            buyPausedNoGoldDateKey = getDateKey();
+            buyPausedNoGoldDateKey = getSystemDateKey();
             break;
         }
         try {
@@ -151,7 +143,7 @@ async function autoBuyOrganicFertilizerViaMall(): Promise<number> {
                     perRound = 1;
                     continue;
                 }
-                buyPausedNoGoldDateKey = getDateKey();
+                buyPausedNoGoldDateKey = getSystemDateKey();
             }
             break;
         }
@@ -215,7 +207,7 @@ async function autoBuyFertilizerViaMall(type: string = 'organic', targetCount: n
     for (let i = 0; i < MAX_ROUNDS; i++) {
         if (targetCount > 0 && totalBought >= remainingToBuy) break;
         if (singlePrice > 0 && ticket > 0 && ticket < singlePrice) {
-            buyPausedNoGoldDateKey = getDateKey();
+            buyPausedNoGoldDateKey = getSystemDateKey();
             break;
         }
         const buyCount: number = targetCount > 0 ? Math.min(perRound, remainingToBuy - totalBought) : perRound;
@@ -241,7 +233,7 @@ async function autoBuyFertilizerViaMall(type: string = 'organic', targetCount: n
                     perRound = 1;
                     continue;
                 }
-                buyPausedNoGoldDateKey = getDateKey();
+                buyPausedNoGoldDateKey = getSystemDateKey();
             }
             break;
         }
@@ -268,7 +260,7 @@ async function autoBuyOrganicFertilizer(force: boolean = false): Promise<number>
     try {
         const totalBought: number = await autoBuyOrganicFertilizerViaMall();
         if (totalBought > 0) {
-            buyDoneDateKey = getDateKey();
+            buyDoneDateKey = getSystemDateKey();
             buyLastSuccessAt = Date.now();
             log('商城', `自动购买有机化肥 x${totalBought}`, {
                 module: 'warehouse',
@@ -291,7 +283,7 @@ async function autoBuyFertilizer(force: boolean = false, type: string = 'organic
     try {
         const totalBought: number = await autoBuyFertilizerViaMall(type, targetCount);
         if (totalBought > 0) {
-            buyDoneDateKey = getDateKey();
+            buyDoneDateKey = getSystemDateKey();
             buyLastSuccessAt = Date.now();
             const typeName: string = type === 'normal' ? '无机化肥' : '有机化肥';
             log('商城', `自动购买${typeName} x${totalBought}`, {
@@ -309,7 +301,7 @@ async function autoBuyFertilizer(force: boolean = false, type: string = 'organic
 }
 
 function isDoneTodayByKey(key: string): boolean {
-    return String(key || '') === getDateKey();
+    return String(key || '') === getSystemDateKey();
 }
 
 async function buyFreeGifts(force: boolean = false): Promise<number> {
@@ -322,7 +314,7 @@ async function buyFreeGifts(force: boolean = false): Promise<number> {
         const goods: any[] = await getMallGoodsList(1);
         const free: any[] = goods.filter((g: any) => !!g && g.is_free === true && Number(g.goods_id || 0) > 0);
         if (!free.length) {
-            freeGiftDoneDateKey = getDateKey();
+            freeGiftDoneDateKey = getSystemDateKey();
             log('商城', '今日暂无可领取免费礼包', {
                 module: 'task',
                 event: FREE_GIFTS_DAILY_KEY,
@@ -340,7 +332,7 @@ async function buyFreeGifts(force: boolean = false): Promise<number> {
                 // 单个失败跳过
             }
         }
-        freeGiftDoneDateKey = getDateKey();
+        freeGiftDoneDateKey = getSystemDateKey();
         if (bought > 0) {
             freeGiftLastAt = Date.now();
             log('商城', `自动购买免费礼包 x${bought}`, {
@@ -497,13 +489,13 @@ module.exports = {
     buyFreeGifts,
     getFertilizerBuyDailyState: () => ({
         key: 'fertilizer_buy',
-        doneToday: buyDoneDateKey === getDateKey(),
-        pausedNoGoldToday: buyPausedNoGoldDateKey === getDateKey(),
+        doneToday: buyDoneDateKey === getSystemDateKey(),
+        pausedNoGoldToday: buyPausedNoGoldDateKey === getSystemDateKey(),
         lastSuccessAt: buyLastSuccessAt,
     }),
     getFreeGiftDailyState: () => ({
         key: FREE_GIFTS_DAILY_KEY,
-        doneToday: freeGiftDoneDateKey === getDateKey(),
+        doneToday: freeGiftDoneDateKey === getSystemDateKey(),
         lastCheckAt: freeGiftLastCheckAt,
         lastClaimAt: freeGiftLastAt,
     }),

@@ -117,14 +117,16 @@ function createWorkerManager(options: WorkerManagerOptions) {
             wsError: null,
         };
 
+        const initialConfigSnapshot = buildConfigSnapshotForAccount(account.id);
         child.send({
             type: 'start',
             config: {
                 code: account.code,
                 platform: account.platform,
+                systemTimeZone: initialConfigSnapshot.systemTimeZone,
             },
         });
-        child.send({ type: 'config_sync', config: buildConfigSnapshotForAccount(account.id) });
+        child.send({ type: 'config_sync', config: initialConfigSnapshot });
 
         child.on('message', (msg: any) => {
             handleWorkerMessage(account.id, child, msg);
@@ -401,6 +403,32 @@ function createWorkerManager(options: WorkerManagerOptions) {
                 if (worker_process && worker_process.process) {
                     worker_process.process.send({ type: 'config_sync', config: buildConfigSnapshotForAccount(accountId) });
                 }
+            }
+        } else if (msg.type === 'known_friend_gids_sync') {
+            const { setKnownFriendGids } = require('../models/store');
+            const gids: number[] = Array.isArray(msg.gids)
+                ? msg.gids.map(Number).filter((gid: number) => Number.isFinite(gid) && gid > 0)
+                : [];
+            const saved: number[] = setKnownFriendGids(accountId, gids);
+            worker.process.send({
+                type: 'config_sync',
+                config: buildConfigSnapshotForAccount(accountId),
+            });
+            log('好友', `已同步并持久化 ${saved.length} 个好友 GID`, {
+                accountId: String(accountId),
+                accountName: worker.name,
+                friendCount: saved.length,
+            });
+        } else if (msg.type === 'known_friend_gid_remove') {
+            const { getKnownFriendGids, setKnownFriendGids } = require('../models/store');
+            const gid: number = Number(msg.gid) || 0;
+            if (gid > 0) {
+                const current: number[] = getKnownFriendGids(accountId);
+                setKnownFriendGids(accountId, current.filter((item: number) => Number(item) !== gid));
+                worker.process.send({
+                    type: 'config_sync',
+                    config: buildConfigSnapshotForAccount(accountId),
+                });
             }
         }
     }

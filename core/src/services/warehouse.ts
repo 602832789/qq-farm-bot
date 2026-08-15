@@ -7,7 +7,7 @@ const { getFruitName, getPlantByFruitId, getPlantBySeedId, getItemById, getItemI
 const { isAutomationOn } = require('../models/store');
 const { sendMsgAsync, networkEvents, getUserState } = require('../utils/network');
 const { types } = require('../utils/proto');
-const { toLong, toNum, log, logWarn, sleep } = require('../utils/utils');
+const { toLong, toNum, log, logWarn, sleep, getSystemDateKey } = require('../utils/utils');
 const { updateStatusGold } = require('./status');
 
 const SELL_BATCH_SIZE: number = 15;
@@ -28,14 +28,6 @@ const ORGANIC_FERTILIZER_ITEM_HOURS: Map<number, number> = new Map([
 ]);
 let fertilizerGiftDoneDateKey: string = '';
 let fertilizerGiftLastOpenAt: number = 0;
-
-function getDateKey(): string {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
-    const d = String(now.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-}
 
 // ============ API ============
 
@@ -258,7 +250,7 @@ async function autoOpenFertilizerGiftPacks(): Promise<number> {
         }
 
         if (opened > 0) {
-            fertilizerGiftDoneDateKey = getDateKey();
+            fertilizerGiftDoneDateKey = getSystemDateKey();
             fertilizerGiftLastOpenAt = Date.now();
             log('仓库', `自动使用化肥类道具 x${opened}${details.length ? ` [${details.join('，')}]` : ''}`, {
                 module: 'warehouse',
@@ -614,7 +606,7 @@ module.exports = {
     openFertilizerGiftPacksSilently,
     getFertilizerGiftDailyState: () => ({
         key: 'fertilizer_gift_open',
-        doneToday: fertilizerGiftDoneDateKey === getDateKey(),
+        doneToday: fertilizerGiftDoneDateKey === getSystemDateKey(),
         lastOpenAt: fertilizerGiftLastOpenAt,
     }),
     sellAllFruits,

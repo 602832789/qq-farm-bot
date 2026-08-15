@@ -4,6 +4,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import api from '@/api'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
+import BaseSelect from '@/components/ui/BaseSelect.vue'
 import BaseSwitch from '@/components/ui/BaseSwitch.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import { useToastStore } from '@/stores/toast'
@@ -675,6 +676,7 @@ const localSystemConfig = ref({
   clientVersion: '',
   platform: 'qq',
   os: 'Windows',
+  timeZone: 'Asia/Shanghai',
   deviceInfo: {
     os: 'Windows',
     clientVersion: '',
@@ -691,6 +693,7 @@ const defaultSystemConfig = ref({
   clientVersion: '',
   platform: 'qq',
   os: 'Windows',
+  timeZone: 'Asia/Shanghai',
   deviceInfo: {
     os: 'Windows',
     clientVersion: '',
@@ -704,6 +707,9 @@ const defaultSystemConfig = ref({
 
 const devicePresets = ref<any[]>([])
 const selectedPresetId = ref('')
+const timeZoneOptions = ref([
+  { label: '北京时间 / 上海（UTC+8）', value: 'Asia/Shanghai' },
+])
 
 const platformOptions = [
   { label: 'QQ', value: 'qq' },
@@ -751,6 +757,12 @@ async function loadSystemConfig() {
   try {
     const { data } = await api.get('/api/admin/system-config')
     if (data?.ok) {
+      if (Array.isArray(data.data.timeZones) && data.data.timeZones.length > 0) {
+        timeZoneOptions.value = data.data.timeZones.map((option: any) => ({
+          label: String(option.label || option.value || ''),
+          value: String(option.value || 'Asia/Shanghai'),
+        }))
+      }
       if (data.data.default) {
         const def = data.data.default
         defaultSystemConfig.value = {
@@ -758,6 +770,7 @@ async function loadSystemConfig() {
           clientVersion: def.clientVersion || '',
           platform: def.platform || 'qq',
           os: def.os || 'Windows',
+          timeZone: def.timeZone || 'Asia/Shanghai',
           deviceInfo: def.deviceInfo ? { ...def.deviceInfo } : { ...defaultSystemConfig.value.deviceInfo },
         }
       }
@@ -768,6 +781,7 @@ async function loadSystemConfig() {
           clientVersion: saved.clientVersion || '',
           platform: saved.platform || 'qq',
           os: saved.os || 'Windows',
+          timeZone: saved.timeZone || 'Asia/Shanghai',
           deviceInfo: saved.deviceInfo ? { ...saved.deviceInfo } : { ...localSystemConfig.value.deviceInfo },
         }
       } else {
@@ -778,6 +792,7 @@ async function loadSystemConfig() {
           clientVersion: def.clientVersion || '',
           platform: def.platform || 'qq',
           os: def.os || 'Windows',
+          timeZone: def.timeZone || 'Asia/Shanghai',
           deviceInfo: { ...def.deviceInfo },
         }
       }
@@ -825,6 +840,7 @@ async function handleResetSystemConfig() {
         clientVersion: saved.clientVersion || '',
         platform: saved.platform || 'qq',
         os: saved.os || 'Windows',
+        timeZone: saved.timeZone || 'Asia/Shanghai',
         deviceInfo: saved.deviceInfo ? { ...saved.deviceInfo } : { ...localSystemConfig.value.deviceInfo },
       }
       showAlert('系统配置已重置为默认值', 'primary')
@@ -1566,6 +1582,16 @@ onMounted(() => {
                   placeholder="wss://..."
                   class="col-span-2"
                 />
+                <div class="col-span-2">
+                  <BaseSelect
+                    v-model="localSystemConfig.timeZone"
+                    label="系统时区"
+                    :options="timeZoneOptions"
+                  />
+                  <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                    每日礼包、好友额度、任务统计、安静时段和日志时间均以此时区为准；推荐使用北京时间 / 上海。
+                  </p>
+                </div>
                 <div class="flex flex-col gap-1.5">
                   <label class="text-sm text-gray-700 font-medium dark:text-gray-300">平台</label>
                   <div class="flex gap-2">

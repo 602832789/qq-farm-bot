@@ -1,17 +1,14 @@
 export {};
 const path = require('node:path');
 const fs = require('node:fs');
+const { getSystemDateKey } = require('../utils/utils');
 function getStatsFilePath(accountId: string): string {
     const dataDir: string = process.env.FARM_DATA_DIR || path.join(__dirname, '../../data');
     return path.join(dataDir, 'stats', `${accountId}.json`);
 }
 
 function getTodayKey(): string {
-    const now: Date = new Date();
-    const y: number = now.getFullYear();
-    const m: string = String(now.getMonth() + 1).padStart(2, '0');
-    const d: string = String(now.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
+    return getSystemDateKey();
 }
 
 function loadPersistedStats(accountId: string): any {
