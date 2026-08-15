@@ -8,7 +8,6 @@ import type { AdminContext } from './context';
  */
 
 const store = require('../../models/store');
-const { parseFriendOpenIds } = require('../../services/friend/open-id-validation');
 
 const {
     getAccId,
@@ -37,29 +36,6 @@ function mountFriendRoutes(app: Application, ctx: AdminContext): void {
             res.json({ ok: true, data });
         } catch (e: any) {
             handleApiError(res, e);
-        }
-    });
-
-    // 可选：使用外部客户端提供的 QQ 好友 OpenID 立即执行官方 SyncAll。
-    // OpenID 仅在本次请求和 worker 调用期间驻留内存，不写入配置或日志。
-    app.post('/api/friends/sync-open-ids', async (req: Request, res: Response) => {
-        const id = getAccId(ctx, req);
-        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
-        if (!checkAccountAccess(ctx, req as any, id)) {
-            return res.status(403).json({ ok: false, error: '无权访问此账号' });
-        }
-
-        const parsed = parseFriendOpenIds((req.body || {}).openIds);
-        if (parsed.ok === false) return res.status(400).json({ ok: false, error: parsed.error });
-        if (!ctx.provider.isAccountRunning(id)) {
-            return res.status(409).json({ ok: false, error: '账号未运行' });
-        }
-
-        try {
-            const data = await ctx.provider.syncFriendOpenIds(id, parsed.openIds);
-            return res.json({ ok: true, data });
-        } catch (e: any) {
-            return handleApiError(res, e);
         }
     });
 

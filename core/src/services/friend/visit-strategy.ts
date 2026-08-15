@@ -127,38 +127,6 @@ function getFriendsListCacheTtlMs(): number {
     return Math.max(10 * 1000, sec * 1000);
 }
 
-function buildFriendsListForPanel(friends: any[]): any[] {
-    const state: any = getUserState();
-    return (Array.isArray(friends) ? friends : [])
-        .filter((friend: any) => toNum(friend && friend.gid) !== state.gid
-            && friend.name !== '小小农夫'
-            && friend.remark !== '小小农夫')
-        .map((friend: any) => ({
-            gid: toNum(friend.gid),
-            name: friend.remark || friend.name || `GID:${toNum(friend.gid)}`,
-            avatarUrl: String(friend.avatar_url || '').trim(),
-            level: toNum(friend.level),
-            gold: toNum(friend.gold),
-            plant: friend.plant ? {
-                stealNum: toNum(friend.plant.steal_plant_num),
-                dryNum: toNum(friend.plant.dry_num),
-                weedNum: toNum(friend.plant.weed_num),
-                insectNum: toNum(friend.plant.insect_num),
-            } : null,
-        }))
-        .sort((left: any, right: any) => {
-            const byName: number = String(left.name || '').localeCompare(String(right.name || ''), 'zh-CN');
-            return byName !== 0 ? byName : Number(left.gid || 0) - Number(right.gid || 0);
-        });
-}
-
-export function replaceFriendsListCache(friends: any[]): any[] {
-    const result: any[] = buildFriendsListForPanel(friends);
-    friendsListCache = result;
-    friendsListCacheTime = Date.now();
-    return result;
-}
-
 // ============ 错误处理 ============
 
 function isEnterFarmBannedError(error: any): boolean {
@@ -392,7 +360,34 @@ export async function getFriendsList(forceSync: boolean = false): Promise<any[]>
         });
         const reply: any = await getAllFriends(forceSync);
         const friends: any[] = reply.game_friends || [];
-        const result: any[] = replaceFriendsListCache(friends);
+        const state: any = getUserState();
+        const result: any[] = friends
+            .filter((f: any) => toNum(f.gid) !== state.gid && f.name !== '小小农夫' && f.remark !== '小小农夫')
+            .map((f: any) => ({
+                gid: toNum(f.gid),
+                name: f.remark || f.name || `GID:${toNum(f.gid)}`,
+                avatarUrl: String(f.avatar_url || '').trim(),
+                level: toNum(f.level),
+                gold: toNum(f.gold),
+                plant: f.plant ? {
+                    stealNum: toNum(f.plant.steal_plant_num),
+                    dryNum: toNum(f.plant.dry_num),
+                    weedNum: toNum(f.plant.weed_num),
+                    insectNum: toNum(f.plant.insect_num),
+                } : null,
+            }))
+            .sort((a: any, b: any) => {
+                // 固定顺序：先按名称，再按 GID，避免刷新时顺序抖动
+                const an: string = String(a.name || '');
+                const bn: string = String(b.name || '');
+                const byName: number = an.localeCompare(bn, 'zh-CN');
+                if (byName !== 0) return byName;
+                return Number(a.gid || 0) - Number(b.gid || 0);
+            });
+
+        // 更新缓存
+        friendsListCache = result;
+        friendsListCacheTime = now;
 
         log('好友', `获取好友列表成功，共 ${result.length} 位好友`, {
             module: 'friend',
