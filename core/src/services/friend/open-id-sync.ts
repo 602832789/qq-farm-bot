@@ -13,11 +13,14 @@ const {
     extractReplyFriends,
     syncKnownFriendGidsFromFriends,
 } = require('./gid-manager');
-const { clearFriendsListCache } = require('./visit-strategy');
+const { replaceFriendsListCache } = require('./visit-strategy');
 
 export async function syncFriendsByOpenIds(value: unknown): Promise<{
     receivedCount: number;
     friendCount: number;
+    cacheUpdated: boolean;
+    cachedCount: number;
+    knownFriendGidCount: number;
 }> {
     const parsed = parseFriendOpenIds(value);
     if (parsed.ok === false) throw new Error(parsed.error);
@@ -36,12 +39,15 @@ export async function syncFriendsByOpenIds(value: unknown): Promise<{
         body,
     );
     const friends: any[] = dedupeFriendsByGid(extractReplyFriends(ReplyType.decode(replyBody)));
-    syncKnownFriendGidsFromFriends(friends);
-    clearFriendsListCache();
+    const knownFriendGids: number[] = syncKnownFriendGidsFromFriends(friends);
+    const cachedFriends: any[] = replaceFriendsListCache(friends);
 
     return {
         receivedCount: parsed.openIds.length,
         friendCount: friends.length,
+        cacheUpdated: true,
+        cachedCount: cachedFriends.length,
+        knownFriendGidCount: knownFriendGids.length,
     };
 }
 

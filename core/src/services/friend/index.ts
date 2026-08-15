@@ -18,6 +18,7 @@ export {
     getFriendLandsDetail,
     doFriendOperation,
     clearFriendsListCache,
+    replaceFriendsListCache,
 } from './visit-strategy';
 
 export {
