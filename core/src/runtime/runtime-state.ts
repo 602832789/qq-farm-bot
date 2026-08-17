@@ -1,22 +1,9 @@
 export {};
 const { EventEmitter } = require('node:events');
+const { getRuntimeConfig } = require('../config/config');
 const { createModuleLogger } = require('../services/logger');
 const { getTodayKey, loadPersistedStats } = require('../services/stats');
-
-function pad2(n: number): string {
-    return String(n).padStart(2, '0');
-}
-
-function formatLocalDateTime24(date: Date = new Date()): string {
-    const d = date instanceof Date ? date : new Date();
-    const y = d.getFullYear();
-    const m = pad2(d.getMonth() + 1);
-    const day = pad2(d.getDate());
-    const hh = pad2(d.getHours());
-    const mm = pad2(d.getMinutes());
-    const ss = pad2(d.getSeconds());
-    return `${y}-${m}-${day} ${hh}:${mm}:${ss}`;
-}
+const { formatSystemDateTime24 } = require('../utils/utils');
 
 interface RuntimeStateOptions {
     store: any;
@@ -74,12 +61,13 @@ function createRuntimeState(options: RuntimeStateOptions) {
         const { ui: _ui, ...accountConfig } = store.getConfigSnapshot(accountId);
         return {
             ...accountConfig,
+            systemTimeZone: getRuntimeConfig().timeZone,
             __revision: configRevision,
         };
     }
 
     function log(tag: string, msg: string, extra: Record<string, any> = {}): void {
-        const time = formatLocalDateTime24(new Date());
+        const time = formatSystemDateTime24();
         const level = tag === '错误' ? 'error' : 'info';
         runtimeLogger[level](msg, { tag, ...extra });
         const moduleName = (tag === '系统' || tag === '错误') ? 'system' : '';
@@ -99,7 +87,7 @@ function createRuntimeState(options: RuntimeStateOptions) {
 
     function addAccountLog(action: string, msg: string, accountId = '', accountName = '', extra: Record<string, any> = {}): void {
         const entry: AccountLogEntry = {
-            time: formatLocalDateTime24(new Date()),
+            time: formatSystemDateTime24(),
             action,
             msg,
             accountId: accountId ? String(accountId) : '',

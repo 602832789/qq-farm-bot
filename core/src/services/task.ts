@@ -6,7 +6,7 @@ export {};
 const { isAutomationOn } = require('../models/store');
 const { sendMsgAsync, networkEvents } = require('../utils/network');
 const { types } = require('../utils/proto');
-const { toLong, toNum, log, logWarn, sleep } = require('../utils/utils');
+const { toLong, toNum, log, logWarn, sleep, getSystemDateKey } = require('../utils/utils');
 const { createScheduler } = require('./scheduler');
 const { recordOperation } = require('./stats');
 
@@ -14,18 +14,6 @@ let checking: boolean = false;
 let taskClaimDoneDateKey: string = '';
 let taskClaimLastAt: number = 0;
 const taskScheduler: any = createScheduler('task');
-
-function getDateKey(): string {
-    const { getServerTimeSec } = require('../utils/utils');
-    const nowSec: number = getServerTimeSec();
-    const nowMs: number = nowSec > 0 ? nowSec * 1000 : Date.now();
-    const bjOffset: number = 8 * 3600 * 1000;
-    const bjDate = new Date(nowMs + bjOffset);
-    const y: number = bjDate.getUTCFullYear();
-    const m: string = String(bjDate.getUTCMonth() + 1).padStart(2, '0');
-    const d: string = String(bjDate.getUTCDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-}
 
 // ============ 任务 API ============
 
@@ -229,7 +217,7 @@ async function checkAndClaimIllustratedRewards(): Promise<boolean> {
             scope: 'illustrated',
             count: items.length,
         });
-        taskClaimDoneDateKey = getDateKey();
+        taskClaimDoneDateKey = getSystemDateKey();
         taskClaimLastAt = Date.now();
         recordOperation('taskClaim', 1);
         return true;
@@ -298,7 +286,7 @@ async function doClaim(task: any): Promise<boolean> {
         log('任务', `领取(${categoryName}): ${task.desc}${multipleStr} → ${rewardStr}`, {
             module: 'task', event: '领取任务', result: 'ok', taskId: task.id, shared: useShare
         });
-        taskClaimDoneDateKey = getDateKey();
+        taskClaimDoneDateKey = getSystemDateKey();
         taskClaimLastAt = Date.now();
         recordOperation('taskClaim', 1);
         await sleep(300);
@@ -369,7 +357,7 @@ module.exports = {
     normalizeTaskInfo,
     getTaskClaimDailyState: () => ({
         key: 'task_claim',
-        doneToday: taskClaimDoneDateKey === getDateKey(),
+        doneToday: taskClaimDoneDateKey === getSystemDateKey(),
         lastClaimAt: taskClaimLastAt,
     }),
     getTaskDailyStateLikeApp: async () => {

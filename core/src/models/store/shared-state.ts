@@ -3,7 +3,7 @@ import type { AccountConfig, PlantingStrategy, BagSeedFallbackStrategy, Fertiliz
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { DEFAULT_CLIENT_VERSION } = require('../../config/config');
+const { DEFAULT_CLIENT_VERSION, DEFAULT_TIME_ZONE, normalizeTimeZone } = require('../../config/config');
 const { getDataFile, ensureDataDir } = require('../../config/runtime-paths');
 const { readTextFile, readJsonFile, writeJsonFileAtomic } = require('../../services/json-db');
 
@@ -434,6 +434,7 @@ function loadGlobalConfig(): void {
                     clientVersion: deviceClientVersion,
                     platform: String(data.systemConfig.platform || 'qq').trim(),
                     os: deviceOs,
+                    timeZone: normalizeTimeZone(data.systemConfig.timeZone || DEFAULT_TIME_ZONE),
                     deviceInfo: {
                         os: deviceOs,
                         clientVersion: deviceClientVersion,
@@ -445,7 +446,8 @@ function loadGlobalConfig(): void {
                     },
                 };
                 systemConfigMigrated = savedTopVersion !== deviceClientVersion
-                    || savedDeviceVersion !== deviceClientVersion;
+                    || savedDeviceVersion !== deviceClientVersion
+                    || data.systemConfig.timeZone !== normalizedSystemConfig.timeZone;
                 globalConfig.systemConfig = normalizedSystemConfig;
             }
         }

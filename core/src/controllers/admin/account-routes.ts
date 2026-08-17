@@ -9,7 +9,7 @@ import type { AdminContext } from './context';
 const store = require('../../models/store');
 const { addOrUpdateAccount, deleteAccount } = store;
 const { findAccountByRef } = require('../../services/account-resolver');
-const { updateRuntimeConfig, getRuntimeConfig, getDefaultSystemConfig, getDevicePresets } = require('../../config/config');
+const { updateRuntimeConfig, getRuntimeConfig, getDefaultSystemConfig, getDevicePresets, getTimeZoneOptions } = require('../../config/config');
 
 const {
     getAccId,
@@ -390,6 +390,7 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
                     saved: store.getSystemConfig(),
                     default: getDefaultSystemConfig(),
                     current: getRuntimeConfig(),
+                    timeZones: getTimeZoneOptions(),
                 },
             });
         } catch (e: any) {
@@ -399,9 +400,12 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
 
     app.post('/api/settings/system-config', (req: Request, res: Response) => {
         try {
-            const { serverUrl, clientVersion, platform, os, deviceInfo } = req.body || {};
-            const saved = store.setSystemConfig({ serverUrl, clientVersion, platform, os, deviceInfo });
+            const { serverUrl, clientVersion, platform, os, timeZone, deviceInfo } = req.body || {};
+            const saved = store.setSystemConfig({ serverUrl, clientVersion, platform, os, timeZone, deviceInfo });
             updateRuntimeConfig(saved);
+            if (ctx.provider && typeof ctx.provider.broadcastConfig === 'function') {
+                ctx.provider.broadcastConfig('');
+            }
             res.json({ ok: true, data: { saved, current: getRuntimeConfig() } });
         } catch (e: any) {
             res.status(500).json({ ok: false, error: e.message });
@@ -413,6 +417,9 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
             const saved = getDefaultSystemConfig();
             store.setSystemConfig(saved);
             updateRuntimeConfig(saved);
+            if (ctx.provider && typeof ctx.provider.broadcastConfig === 'function') {
+                ctx.provider.broadcastConfig('');
+            }
             res.json({ ok: true, data: { saved, current: getRuntimeConfig() } });
         } catch (e: any) {
             res.status(500).json({ ok: false, error: e.message });

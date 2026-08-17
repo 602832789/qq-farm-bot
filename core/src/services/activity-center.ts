@@ -12,6 +12,7 @@ const { getBag, getBagItems } = require('./warehouse');
 const { getActivityWindows } = require('./activity-windows');
 const { buildActivityGameplayBindings, resolveActivityGameplays } = require('./activity-gameplay-registry');
 const { reportActivityShare } = require('./share');
+const { getSystemDateKey } = require('../utils/utils');
 const {
     mergeConstellationStates,
     stateRecordKey,
@@ -474,15 +475,6 @@ async function querySolarTerms(): Promise<any> {
     return types.GetSolarTermsReply.decode(replyBody);
 }
 
-function beijingDateKey(): string {
-    return new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'Asia/Shanghai',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-    }).format(new Date());
-}
-
 async function operateQingMei(requestType: any, payload: any, expectedErrorCodes: number[] = []): Promise<any> {
     const body = Buffer.from(requestType.encode(requestType.create(payload)).finish());
     const { body: replyBody } = await sendMsgAsync(
@@ -529,7 +521,7 @@ function qingMeiDto(reply: any, ingredients: any[] | null = null) {
     const quotePrices = (Array.isArray(brew.quote_prices) ? brew.quote_prices : []).map(int64String);
     const quoteTotals = (Array.isArray(brew.quote_totals) ? brew.quote_totals : []).map(int64String);
     const rules = textContent(activity?.extra);
-    const dailySeedClaimed = qingMeiSeedClaimedDateKey === beijingDateKey() || !!dailySeed?.claimed;
+    const dailySeedClaimed = qingMeiSeedClaimedDateKey === getSystemDateKey() || !!dailySeed?.claimed;
     return {
         activityId: int64String(activity?.activity_id) === '0' ? QINGMEI_BREW_ACTIVITY_ID : int64String(activity?.activity_id),
         dailyActivityId: QINGMEI_DAILY_ACTIVITY_ID,
@@ -930,7 +922,7 @@ async function claimQingMeiDailySeed() {
             }
             alreadyClaimed = true;
         }
-        qingMeiSeedClaimedDateKey = beijingDateKey();
+        qingMeiSeedClaimedDateKey = getSystemDateKey();
         return {
             rewards: (Array.isArray(reply?.rewards) ? reply.rewards : []).map(itemDto),
             message: alreadyClaimed ? '今日青梅种子已经领取，无需重复领取' : '青梅种子领取成功',

@@ -6,19 +6,29 @@ import "corepb.proto";
 
 // ============ QQ会员服务 ============
 
-// --- 获取每日礼包状态 ---
-message GetDailyGiftStatusRequest {}
+// --- 刷新QQ会员信息 ---
+message RefreshVipInfoRequest {}
+message RefreshVipInfoReply {}
 
-message GetDailyGiftStatusReply {
-    bool can_claim = 1;     // 是否可以领取
-    bool has_gift = 2;      // 是否有礼包
+// --- 获取QQ会员礼包状态 ---
+message GetQQVipRewardsStatusRequest {}
+
+message QQVipRewardConfig {
+    repeated corepb.Item rewards = 2;
+    int32 vip_type = 5;     // 1: QQ会员，2: 超级会员
 }
 
-// --- 领取每日礼包 ---
-message ClaimDailyGiftRequest {}
+message GetQQVipRewardsStatusReply {
+    repeated QQVipRewardConfig reward_configs = 5;
+}
 
-message ClaimDailyGiftReply {
-    repeated corepb.Item items = 1;  // 奖励物品列表
+// --- 领取QQ会员礼包 ---
+message ClaimQQVipRewardsRequest {
+    repeated int32 vip_types = 1;
+}
+
+message ClaimQQVipRewardsReply {
+    repeated corepb.Item items = 3;  // 奖励物品列表
 }
 
 // --- VIP信息更新通知 ---
