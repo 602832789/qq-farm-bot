@@ -2,7 +2,7 @@ export {};
 import type { Application, Request, Response } from 'express';
 import type { AdminContext } from './context';
 
-const { getAccId, checkAccountAccess } = require('./middleware');
+const { getAccId } = require('./middleware');
 
 const ACTIVITY_ERROR_MESSAGES: Record<string, string> = {
     '1034014': '今日青梅种子已经领取，无需重复领取',
@@ -80,9 +80,6 @@ function mountActivityCenterRoutes(app: Application, ctx: AdminContext): void {
         return async (req: Request, res: Response) => {
             const accountId = getAccId(ctx, req);
             if (!accountId) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
-            if (!checkAccountAccess(ctx, req as any, accountId)) {
-                return res.status(403).json({ ok: false, error: '无权访问此账号' });
-            }
             try {
                 const data = await handler(accountId, req, res);
                 if (!res.headersSent) return res.json({ ok: true, data });

@@ -43,24 +43,11 @@ module.exports = {
     setUITheme: globalConfig.setUITheme,
     getOfflineReminder: globalConfig.getOfflineReminder,
     setOfflineReminder: globalConfig.setOfflineReminder,
-    deleteUserOfflineReminder: globalConfig.deleteUserOfflineReminder,
-    getAdminPasswordHash: globalConfig.getAdminPasswordHash,
-    setAdminPasswordHash: globalConfig.setAdminPasswordHash,
 
     // Accounts
     getAccounts: accounts.getAccounts,
     addOrUpdateAccount: accounts.addOrUpdateAccount,
     deleteAccount: accounts.deleteAccount,
-    getAccountsByUser: accounts.getAccountsByUser,
-    deleteAccountsByUser: accounts.deleteAccountsByUser,
-    deleteUserConfig: accounts.deleteUserConfig,
-
-    // Announcements
-    getAnnouncement: globalConfig.getAnnouncement,
-    setAnnouncement: globalConfig.setAnnouncement,
-    getAnnouncementReadRecord: globalConfig.getAnnouncementReadRecord,
-    markAnnouncementRead: globalConfig.markAnnouncementRead,
-    shouldShowAnnouncement: globalConfig.shouldShowAnnouncement,
 
     // System config
     getSystemConfig: globalConfig.getSystemConfig,

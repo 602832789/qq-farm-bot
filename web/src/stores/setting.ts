@@ -44,7 +44,6 @@ export interface FriendQuietHoursConfig {
 
 export interface OfflineConfig {
   channel: string
-  reloginUrlMode: string
   endpoint: string
   token: string
   title: string
@@ -125,7 +124,6 @@ function createDefaultSettings(): SettingsState {
     ui: {},
     offlineReminder: {
       channel: 'webhook',
-      reloginUrlMode: 'none',
       endpoint: '',
       token: '',
       title: '账号下线提醒',

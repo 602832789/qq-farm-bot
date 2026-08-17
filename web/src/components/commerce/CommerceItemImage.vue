@@ -23,5 +23,31 @@ watch(() => props.src, () => failed.value = false)
 </template>
 
 <style scoped>
-.item-image{display:grid;place-items:center;flex:none;overflow:hidden;background:rgba(255,255,255,.72);border:1px solid rgba(125,101,68,.14);border-radius:8px}.item-image img{width:88%;height:88%;object-fit:contain;image-rendering:auto}.item-image--sm{width:36px;height:36px}.item-image--md{width:64px;height:64px}.item-image--lg{width:clamp(112px,18vw,164px);height:clamp(112px,18vw,164px)}
+.item-image {
+  display: grid;
+  place-items: center;
+  flex: none;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(125, 101, 68, 0.14);
+  border-radius: 8px;
+}
+.item-image img {
+  width: 88%;
+  height: 88%;
+  object-fit: contain;
+  image-rendering: auto;
+}
+.item-image--sm {
+  width: 36px;
+  height: 36px;
+}
+.item-image--md {
+  width: 64px;
+  height: 64px;
+}
+.item-image--lg {
+  width: clamp(112px, 18vw, 164px);
+  height: clamp(112px, 18vw, 164px);
+}
 </style>

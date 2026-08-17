@@ -2,7 +2,7 @@
 
 ## 版本与来源
 
-项目使用反编译源码 `D:\wxsource\wx5306c5978fdb76e4-code\tsdk\tsdk.wasm`，版本为 `v3.8.6.1785239995`，文件大小为 161,018 bytes，SHA-256 为：
+项目当前使用 `core/src/utils/tsdk.wasm`，来源为对应微信小程序的 TSDK `v3.8.6.1785239995`，文件大小为 161,018 bytes，SHA-256 为：
 
 ```text
 14754428297ee0d5aa6cceee76e6ef076bdac31ceda0ea2e2bf4a0472c8e717f

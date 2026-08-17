@@ -5,7 +5,6 @@ const { Worker } = require('node:worker_threads');
 const store = require('../models/store');
 const { updateRuntimeConfig, getRuntimeConfig, getDefaultSystemConfig } = require('../config/config');
 const { sendPushooMessage } = require('../services/push');
-const { MiniProgramLoginSession } = require('../services/qrlogin');
 const { createDataProvider } = require('./data-provider');
 const { createReloginReminderService } = require('./relogin-reminder');
 const { createRuntimeState } = require('./runtime-state');
@@ -37,7 +36,6 @@ function createRuntimeEngine(options: RuntimeEngineOptions = {}) {
     const onAccountLog = typeof options.onAccountLog === 'function' ? options.onAccountLog : null;
     const startAdminServer = typeof options.startAdminServer === 'function' ? options.startAdminServer : null;
 
-    const workerControls: { startWorker: ((account: any) => boolean) | null; restartWorker: ((account: any) => void) | null } = { startWorker: null, restartWorker: null };
     const runtimeState = createRuntimeState({
         store,
         operationKeys: OPERATION_KEYS,
@@ -58,13 +56,8 @@ function createRuntimeEngine(options: RuntimeEngineOptions = {}) {
 
     const reloginReminder = createReloginReminderService({
         store,
-        miniProgramLoginSession: MiniProgramLoginSession,
         sendPushooMessage,
         log,
-        addAccountLog,
-        getAccounts: store.getAccounts,
-        addOrUpdateAccount: store.addOrUpdateAccount,
-        resolveWorkerControls: () => workerControls,
     });
 
     const {
@@ -98,9 +91,6 @@ function createRuntimeEngine(options: RuntimeEngineOptions = {}) {
             if (onLog) onLog(entry, accountId, accountName);
         },
     });
-    workerControls.startWorker = startWorker;
-    workerControls.restartWorker = restartWorker;
-
     const dataProvider = createDataProvider({
         workers,
         globalLogs: GLOBAL_LOGS,

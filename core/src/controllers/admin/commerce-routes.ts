@@ -2,7 +2,7 @@ export {};
 import type { Application, Request, Response } from 'express';
 import type { AdminContext } from './context';
 
-const { getAccId, checkAccountAccess } = require('./middleware');
+const { getAccId } = require('./middleware');
 
 const ERROR_MESSAGES: Record<string, string> = {
     INVALID_GOODS_ID: '商品信息无效，请刷新商城后重试',
@@ -13,7 +13,6 @@ const ERROR_MESSAGES: Record<string, string> = {
     INSUFFICIENT_BALANCE: '货币余额不足，无法完成购买',
     INVALID_MYSTERY_NPC_ID: '神秘商人信息无效，请刷新后重试',
     MYSTERY_OFFER_STALE: '神秘商人货品已变化，请刷新后重试',
-    MYSTERY_OFFER_SOLD_OUT: '神秘商人货品已售罄',
     MYSTERY_PURCHASE_NOT_CONFIRMED: '购买结果未确认，请刷新后查看',
 };
 
@@ -35,9 +34,6 @@ function mountCommerceRoutes(app: Application, ctx: AdminContext): void {
         return async (req: Request, res: Response) => {
             const accountId = getAccId(ctx, req);
             if (!accountId) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
-            if (!checkAccountAccess(ctx, req as any, accountId)) {
-                return res.status(403).json({ ok: false, error: '无权访问此账号' });
-            }
             try {
                 const data = await handler(accountId, req);
                 return res.json({ ok: true, data });

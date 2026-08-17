@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { NButton, NInputNumber, NTab, NTabs } from 'naive-ui'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, ref, watch } from 'vue'
 import api from '@/api'
@@ -7,6 +8,7 @@ import { usePlantBlacklistStore } from '@/stores/plant-blacklist'
 import { useSettingStore } from '@/stores/setting'
 import { useStatusStore } from '@/stores/status'
 import { useToastStore } from '@/stores/toast'
+import ConfigManage from '@/views/ConfigManage.vue'
 
 const accountStore = useAccountStore()
 const plantBlacklistStore = usePlantBlacklistStore()
@@ -24,7 +26,17 @@ const sortKey = ref('exp')
 const imageErrors = ref<Record<string | number, boolean>>({})
 const batchLoading = ref(false)
 
-const activeTab = ref('strategy')
+type AnalysisTab = 'strategy' | 'blacklist' | 'seeds' | 'fruits' | 'items'
+type ConfigSection = 'seeds' | 'fruits' | 'items'
+
+const activeTab = ref<AnalysisTab>('strategy')
+const isConfigTab = computed(() => ['seeds', 'fruits', 'items'].includes(activeTab.value))
+const configSection = computed(() => activeTab.value as ConfigSection)
+const configTabs: Array<{ key: ConfigSection, icon: string, label: string }> = [
+  { key: 'seeds', icon: 'i-carbon-sprout', label: '种子' },
+  { key: 'fruits', icon: 'i-carbon-apple', label: '果实' },
+  { key: 'items', icon: 'i-carbon-tool-box', label: '道具' },
+]
 
 const strategyLevel = ref(1)
 
@@ -40,7 +52,7 @@ const strategies = [
     label: '经验/时',
     metric: 'expPerHour',
     color: 'purple',
-    icon: '📈',
+    icon: 'i-carbon-chart-line',
     unit: 'EXP',
     desc: '每小时经验收益最高',
   },
@@ -49,7 +61,7 @@ const strategies = [
     label: '利润/时',
     metric: 'profitPerHour',
     color: 'amber',
-    icon: '💰',
+    icon: 'i-carbon-currency-dollar',
     unit: '金币',
     desc: '每小时净利润最高',
   },
@@ -58,7 +70,7 @@ const strategies = [
     label: '普肥经验/时',
     metric: 'normalFertilizerExpPerHour',
     color: 'blue',
-    icon: '🧪',
+    icon: 'i-carbon-chemistry',
     unit: 'EXP',
     desc: '使用普通化肥后经验最高',
   },
@@ -67,7 +79,7 @@ const strategies = [
     label: '普肥利润/时',
     metric: 'normalFertilizerProfitPerHour',
     color: 'green',
-    icon: '🐷',
+    icon: 'i-carbon-money',
     unit: '金币',
     desc: '使用普通化肥后利润最高',
   },
@@ -76,7 +88,7 @@ const strategies = [
     label: '最高等级',
     metric: 'level',
     color: 'rose',
-    icon: '⭐',
+    icon: 'i-carbon-star',
     unit: 'Lv',
     desc: '等级最高的作物',
   },
@@ -99,7 +111,8 @@ const preferredSeedId = computed(() => settings.value?.preferredSeedId || 0)
 const currentStrategyBestPlant = computed(() => {
   if (currentStrategy.value === 'preferred' && preferredSeedId.value > 0) {
     const found = list.value.find((item: any) => item.seedId === preferredSeedId.value)
-    if (found) return found
+    if (found)
+      return found
   }
   if (currentStrategy.value === 'bag_priority') {
     return null
@@ -189,7 +202,6 @@ function getColorClass(color: string, type: 'bg' | 'text' | 'border' | 'gradient
   return colorMap[color]?.[type] || ''
 }
 
-
 async function loadAnalytics() {
   if (!currentAccountId.value)
     return
@@ -268,48 +280,34 @@ function getSeedNameById(seedId: number) {
   const item = list.value.find((i: any) => i.seedId === seedId)
   return item?.name || `蔬菜ID:${seedId}`
 }
-
 </script>
 
 <template>
-  <div class="space-y-4">
-    <div class="flex gap-2 border-b border-gray-200 dark:border-gray-700">
-      <button
-        class="border-b-2 px-4 py-2 text-sm font-medium transition-colors"
-        :class="activeTab === 'strategy'
-          ? 'border-blue-500 text-blue-600 dark:border-blue-400 dark:text-blue-400'
-          : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'"
-        @click="activeTab = 'strategy'"
-      >
-        <div class="flex items-center space-x-2">
-          <span class="text-lg">📊</span>
-          <span>种植策略</span>
-        </div>
-      </button>
-      <button
-        class="border-b-2 px-4 py-2 text-sm font-medium transition-colors"
-        :class="activeTab === 'blacklist'
-          ? 'border-blue-500 text-blue-600 dark:border-blue-400 dark:text-blue-400'
-          : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'"
-        @click="activeTab = 'blacklist'"
-      >
-        <div class="flex items-center space-x-2">
-          <span class="text-lg">🚫</span>
-          <span>黑名单</span>
-          <span v-if="blacklist.length" class="ml-1 rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700 dark:bg-red-900/50 dark:text-red-300">
+  <div class="page-stack space-y-4">
+    <NTabs v-model:value="activeTab" type="line">
+      <NTab name="strategy">
+        <span class="inline-flex items-center gap-2"><span class="i-carbon-chart-line" />种植策略</span>
+      </NTab>
+      <NTab name="blacklist">
+        <span class="inline-flex items-center gap-2">
+          <span class="i-carbon-user-x-ray" />黑名单
+          <span v-if="blacklist.length" class="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700 dark:bg-red-900/50 dark:text-red-300">
             {{ blacklist.length }}
           </span>
-        </div>
-      </button>
-    </div>
+        </span>
+      </NTab>
+      <NTab v-for="tab in configTabs" :key="tab.key" :name="tab.key">
+        <span class="inline-flex items-center gap-2"><span :class="tab.icon" />{{ tab.label }}</span>
+      </NTab>
+    </NTabs>
 
     <div>
       <div v-if="activeTab === 'strategy'" class="space-y-4">
-        <div class="farm-card overflow-hidden border border-blue-200 rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 shadow-md dark:border-blue-800 dark:from-blue-900/20 dark:to-indigo-900/20">
+        <div class="overflow-hidden border farm-card border-blue-200 rounded-2xl from-blue-50 to-indigo-50 bg-gradient-to-r shadow-md dark:border-blue-800 dark:from-blue-900/20 dark:to-indigo-900/20">
           <div class="p-4">
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-3">
-                <span class="text-xl text-blue-500">🎯</span>
+                <span class="i-carbon-center-circle text-xl text-blue-500" />
                 <div>
                   <h3 class="text-gray-700 font-semibold dark:text-gray-300">
                     当前策略: {{ currentStrategyLabel }}
@@ -333,7 +331,7 @@ function getSeedNameById(seedId: number) {
                   loading="lazy"
                   @error="imageErrors[currentStrategyBestPlant.seedId] = true"
                 >
-                <span v-else class="text-2xl text-gray-400">🌱</span>
+                <span v-else class="i-carbon-sprout text-2xl text-gray-400" />
               </div>
               <div class="flex-1">
                 <div class="text-gray-800 font-bold dark:text-gray-100">
@@ -355,11 +353,11 @@ function getSeedNameById(seedId: number) {
           </div>
         </div>
 
-        <div class="farm-card overflow-hidden border border-gray-200 rounded-2xl bg-white shadow-md dark:border-gray-700 dark:bg-gray-800">
+        <div class="overflow-hidden border farm-card border-gray-200 rounded-2xl bg-white shadow-md dark:border-gray-700 dark:bg-gray-800">
           <div class="border-b border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-700/50">
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-3">
-                <span class="text-xl text-blue-500">📊</span>
+                <span class="i-carbon-chart-line text-xl text-blue-500" />
                 <div>
                   <h3 class="text-gray-700 font-semibold dark:text-gray-300">
                     策略对比
@@ -371,13 +369,14 @@ function getSeedNameById(seedId: number) {
               </div>
               <div class="flex items-center gap-2">
                 <span class="text-sm text-gray-500">参考等级:</span>
-                <input
-                  v-model.number="strategyLevel"
-                  type="number"
-                  min="1"
-                  max="100"
-                  class="farm-input w-16 border border-gray-300 rounded-xl bg-white px-3 py-1.5 text-center text-sm outline-none dark:border-gray-600 focus:border-blue-400 dark:bg-gray-700 dark:text-gray-200"
-                >
+                <NInputNumber
+                  v-model:value="strategyLevel"
+                  class="w-24"
+                  :min="1"
+                  :max="100"
+                  :show-button="false"
+                  size="small"
+                />
               </div>
             </div>
           </div>
@@ -387,7 +386,7 @@ function getSeedNameById(seedId: number) {
               <div
                 v-for="strategy in strategies"
                 :key="strategy.key"
-                class="cartoon-card overflow-hidden border rounded-2xl bg-white transition-shadow dark:bg-gray-800 hover:shadow-md"
+                class="overflow-hidden border cartoon-card rounded-2xl bg-white transition-shadow dark:bg-gray-800 hover:shadow-md"
                 :class="[
                   getColorClass(strategy.color, 'border'),
                   currentStrategy === strategy.key ? 'ring-2 ring-blue-400 dark:ring-blue-500' : '',
@@ -421,7 +420,7 @@ function getSeedNameById(seedId: number) {
                           loading="lazy"
                           @error="imageErrors[getStrategyBestPlant(strategy.key)?.seedId] = true"
                         >
-                        <span v-else class="text-lg text-gray-400">🌱</span>
+                        <span v-else class="i-carbon-sprout text-lg text-gray-400" />
                       </div>
                       <div class="min-w-0 flex-1">
                         <div class="truncate text-sm text-gray-800 font-medium dark:text-gray-200">
@@ -449,19 +448,19 @@ function getSeedNameById(seedId: number) {
             </div>
 
             <div class="mt-3 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-              <span>💡</span>
+              <span class="i-carbon-idea" />
               <span>可种植 {{ getStrategyAvailableCount() }}/{{ list.length }} 种作物 · 蓝色边框为当前设置的种植策略</span>
             </div>
           </div>
         </div>
       </div>
 
-      <div v-if="activeTab === 'blacklist'" class="farm-card overflow-hidden border border-gray-200 rounded-2xl bg-white shadow-md dark:border-gray-700 dark:bg-gray-800">
-        <div class="border-b border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-700/50">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-3">
-              <span class="text-xl text-red-500">🚫</span>
-              <div>
+      <div v-if="activeTab === 'blacklist'" class="overflow-hidden border farm-card border-gray-200 rounded-2xl bg-white shadow-md dark:border-gray-700 dark:bg-gray-800">
+        <div class="border-b border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-700/50 sm:p-4">
+          <div class="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div class="min-w-0 flex items-start gap-3 sm:items-center">
+              <span class="i-carbon-user-x-ray text-xl text-red-500" />
+              <div class="min-w-0">
                 <h3 class="text-gray-700 font-semibold dark:text-gray-300">
                   偷菜黑名单
                 </h3>
@@ -470,25 +469,29 @@ function getSeedNameById(seedId: number) {
                 </p>
               </div>
             </div>
-            <div class="flex items-center gap-2">
-              <button
-                class="cartoon-btn flex items-center gap-1 rounded-xl bg-orange-50 px-3 py-2 text-sm text-orange-600 transition dark:bg-orange-900/20 hover:bg-orange-100 dark:text-orange-400 disabled:opacity-50 dark:hover:bg-orange-900/30"
+            <div class="w-full flex flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+              <NButton
+                class="w-full sm:w-auto"
+                type="warning"
+                secondary
                 :disabled="batchLoading || list.length === 0"
+                :loading="batchLoading"
                 @click="handleAddAllToBlacklist"
               >
-                <span v-if="batchLoading" class="animate-spin">⏳</span>
-                <span v-else>➕</span>
+                <span class="i-carbon-add" />
                 一键全部加入黑名单
-              </button>
-              <button
+              </NButton>
+              <NButton
                 v-if="blacklist.length > 0"
-                class="cartoon-btn flex items-center gap-1 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-600 transition dark:bg-red-900/20 hover:bg-red-100 dark:text-red-400 disabled:opacity-50 dark:hover:bg-red-900/30"
+                class="w-full sm:w-auto"
+                type="error"
+                secondary
                 :disabled="batchLoading"
                 @click="handleClearBlacklist"
               >
-                🗑️
+                <span class="i-carbon-trash-can" />
                 清空黑名单
-              </button>
+              </NButton>
             </div>
           </div>
         </div>
@@ -501,9 +504,9 @@ function getSeedNameById(seedId: number) {
             <div
               v-for="seedId in blacklist"
               :key="seedId"
-              class="flex items-center justify-between rounded-xl bg-gray-50 px-4 py-3 dark:bg-gray-700/50"
+              class="flex flex-col items-stretch gap-3 rounded-lg bg-gray-50 px-3 py-3 sm:flex-row sm:items-center sm:justify-between dark:bg-gray-700/50 sm:px-4"
             >
-              <div class="flex items-center gap-3">
+              <div class="min-w-0 flex items-center gap-3">
                 <div class="relative h-10 w-10 flex shrink-0 items-center justify-center overflow-hidden border border-gray-200 rounded-lg bg-gray-100 dark:border-gray-600 dark:bg-gray-700">
                   <img
                     v-if="list.find(i => i.seedId === seedId)?.image"
@@ -511,10 +514,10 @@ function getSeedNameById(seedId: number) {
                     class="h-8 w-8 object-contain"
                     loading="lazy"
                   >
-                  <span v-else class="text-xl text-gray-400">🌱</span>
+                  <span v-else class="i-carbon-sprout text-xl text-gray-400" />
                 </div>
-                <div>
-                  <div class="text-sm text-gray-900 font-medium dark:text-white">
+                <div class="min-w-0">
+                  <div class="truncate text-sm text-gray-900 font-medium dark:text-white">
                     {{ getSeedNameById(seedId) }}
                   </div>
                   <div class="text-xs text-gray-400">
@@ -522,16 +525,21 @@ function getSeedNameById(seedId: number) {
                   </div>
                 </div>
               </div>
-              <button
-                class="cartoon-btn rounded-xl bg-red-100 px-3 py-1.5 text-sm text-red-700 transition dark:bg-red-900/30 hover:bg-red-200 dark:text-red-400 dark:hover:bg-red-900/50"
+              <NButton
+                class="w-full sm:w-auto"
+                type="error"
+                secondary
+                size="small"
                 @click="plantBlacklistStore.removeFromBlacklist(seedId)"
               >
                 移出黑名单
-              </button>
+              </NButton>
             </div>
           </div>
         </div>
       </div>
+
+      <ConfigManage v-if="isConfigTab" :section="configSection" />
     </div>
   </div>
 </template>

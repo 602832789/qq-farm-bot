@@ -8,6 +8,7 @@ export interface Account {
   name: string
   nick?: string
   uin?: number
+  avatar?: string
   platform?: string
   running?: boolean
   // Add other fields as discovered
@@ -91,6 +92,13 @@ export const useAccountStore = defineStore('account', () => {
     selectAccount(acc.id)
   }
 
+  function syncAccountAvatar(id: string, avatar: string) {
+    const account = accounts.value.find(item => String(item.id) === String(id))
+    if (account && avatar) {
+      account.avatar = avatar
+    }
+  }
+
   async function startAccount(id: string) {
     await api.post(`/api/accounts/${id}/start`)
     await fetchAccounts()
@@ -159,5 +167,6 @@ export const useAccountStore = defineStore('account', () => {
     addAccount,
     updateAccount,
     setCurrentAccount,
+    syncAccountAvatar,
   }
 })

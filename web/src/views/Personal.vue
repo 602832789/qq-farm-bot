@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { NTab, NTabs } from 'naive-ui'
 import { ref } from 'vue'
 import BagPanel from '@/components/BagPanel.vue'
 import FarmPanel from '@/components/FarmPanel.vue'
@@ -8,48 +9,18 @@ const currentTab = ref<'farm' | 'bag' | 'task'>('farm')
 </script>
 
 <template>
-  <div class="h-full flex flex-col p-4">
-    <div class="mb-4 flex space-x-2">
-      <button
-        class="cartoon-btn rounded-2xl px-5 py-2.5 font-medium transition-all"
-        :class="currentTab === 'farm'
-          ? 'text-white shadow-md'
-          : 'bg-white text-gray-600 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'"
-        :style="currentTab === 'farm' ? { backgroundColor: 'var(--theme-primary)' } : {}"
-        @click="currentTab = 'farm'"
-      >
-        <div class="flex items-center space-x-2">
-          <div class="i-carbon-sprout text-lg" />
-          <span>我的农场</span>
-        </div>
-      </button>
-      <button
-        class="cartoon-btn rounded-2xl px-5 py-2.5 font-medium transition-all"
-        :class="currentTab === 'bag'
-          ? 'text-white shadow-md'
-          : 'bg-white text-gray-600 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'"
-        :style="currentTab === 'bag' ? { backgroundColor: 'var(--theme-primary)' } : {}"
-        @click="currentTab = 'bag'"
-      >
-        <div class="flex items-center space-x-2">
-          <div class="i-carbon-box text-lg" />
-          <span>我的背包</span>
-        </div>
-      </button>
-      <button
-        class="cartoon-btn rounded-2xl px-5 py-2.5 font-medium transition-all"
-        :class="currentTab === 'task'
-          ? 'text-white shadow-md'
-          : 'bg-white text-gray-600 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'"
-        :style="currentTab === 'task' ? { backgroundColor: 'var(--theme-primary)' } : {}"
-        @click="currentTab = 'task'"
-      >
-        <div class="flex items-center space-x-2">
-          <div class="i-carbon-task text-lg" />
-          <span>我的任务</span>
-        </div>
-      </button>
-    </div>
+  <div class="page-stack h-full flex flex-col">
+    <NTabs v-model:value="currentTab" class="mb-4" type="line" animated>
+      <NTab name="farm">
+        <span class="inline-flex items-center gap-2"><span class="i-carbon-sprout" />我的农场</span>
+      </NTab>
+      <NTab name="bag">
+        <span class="inline-flex items-center gap-2"><span class="i-carbon-box" />我的背包</span>
+      </NTab>
+      <NTab name="task">
+        <span class="inline-flex items-center gap-2"><span class="i-carbon-task" />我的任务</span>
+      </NTab>
+    </NTabs>
 
     <div class="flex-1 overflow-hidden overflow-y-auto">
       <Transition

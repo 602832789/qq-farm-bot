@@ -9,12 +9,11 @@ import type { AdminContext } from './context';
 const store = require('../../models/store');
 const { addOrUpdateAccount, deleteAccount } = store;
 const { findAccountByRef } = require('../../services/account-resolver');
-const userStore = require('../../models/user-store');
+const { updateRuntimeConfig, getRuntimeConfig, getDefaultSystemConfig, getDevicePresets, getTimeZoneOptions } = require('../../config/config');
 
 const {
     getAccId,
-    checkAccountAccess,
-    getAccessibleAccountIds,
+    getAccountIds,
     handleApiError,
     getAccountList,
     resolveAccId,
@@ -25,25 +24,7 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
     // API: 账号管理
     app.get('/api/accounts', (req: Request, res: Response) => {
         try {
-            const currentUser = (req as any).currentUser;
-            let data: any;
-
-            if (currentUser) {
-                // 管理员可以看到所有账号，普通用户只能看到自己的账号
-                const allAccounts = ctx.provider.getAccounts();
-                if (currentUser.role === 'admin') {
-                    data = allAccounts;
-                } else {
-                    data = {
-                        ...allAccounts,
-                        accounts: allAccounts.accounts.filter((a: any) => a.username === currentUser.username)
-                    };
-                }
-            } else {
-                // 未登录用户返回空列表
-                data = { accounts: [], nextId: 1 };
-            }
-
+            const data = ctx.provider.getAccounts();
             res.json({ ok: true, data });
         } catch (e: any) {
             res.status(500).json({ ok: false, error: e.message });
@@ -83,39 +64,15 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
     app.post('/api/accounts', (req: Request, res: Response) => {
         try {
             const rawBody = (req.body && typeof req.body === 'object') ? req.body : {};
-            const currentUser = (req as any).currentUser;
             const requestedName = typeof rawBody.name === 'string' ? rawBody.name.trim() : '';
             const body = typeof rawBody.name === 'string' ? { ...rawBody, name: requestedName } : rawBody;
-            const visibleAccounts = currentUser && currentUser.username
-                ? getAccountList(ctx, currentUser.username)
-                : [];
+            const visibleAccounts = getAccountList(ctx);
             const remarkMatchedAccount = !body.id && requestedName
                 ? visibleAccounts.find((account: any) => String(account.name || '').trim() === requestedName)
                 : null;
             const isRemarkRelogin = !!remarkMatchedAccount;
             const updateRef = body.id || (remarkMatchedAccount && remarkMatchedAccount.id) || '';
             const isUpdate = !!updateRef;
-
-            // 检查权限：普通用户只能更新自己的账号
-            if (isUpdate && currentUser && currentUser.role !== 'admin') {
-                if (!checkAccountAccess(ctx, req as any, resolveAccId(ctx, updateRef))) {
-                    return res.status(403).json({ ok: false, error: '无权访问此账号' });
-                }
-            }
-
-            // 检查额度：新增账号时检查用户额度限制
-            if (!isUpdate && currentUser && currentUser.role !== 'admin') {
-                const userAccounts = getAccountList(ctx, currentUser.username);
-                const currentCount = userAccounts.length;
-                const accountLimit = currentUser.accountLimit || userStore.DEFAULT_ACCOUNT_LIMIT || 2;
-
-                if (currentCount >= accountLimit) {
-                    return res.status(403).json({
-                        ok: false,
-                        error: `账号数量已达上限（${accountLimit}个），请购买额度卡密增加额度`
-                    });
-                }
-            }
 
             const resolvedUpdateId = isUpdate ? resolveAccId(ctx, updateRef) : '';
             const payload = isUpdate ? { ...body, id: resolvedUpdateId || String(updateRef) } : body;
@@ -137,11 +94,6 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
                         onlyRemarkChanged = true;
                     }
                 }
-            }
-
-            // 如果是新增账号，自动关联当前用户
-            if (!isUpdate && currentUser) {
-                payload.username = currentUser.username;
             }
 
             const data = addOrUpdateAccount(payload);
@@ -178,11 +130,6 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
         try {
             const resolvedId = resolveAccId(ctx, req.params.id) || String(req.params.id || '');
 
-            // 检查权限
-            if (!checkAccountAccess(ctx, req as any, resolvedId)) {
-                return res.status(403).json({ ok: false, error: '无权访问此账号' });
-            }
-
             const before = ctx.provider.getAccounts();
             const target = findAccountByRef(before.accounts || [], req.params.id);
             ctx.provider.stopAccount(resolvedId);
@@ -200,19 +147,8 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
     app.get('/api/account-logs', (req: Request, res: Response) => {
         try {
             const limit = Number.parseInt(req.query.limit as string) || 100;
-            const currentUser = (req as any).currentUser;
-
             let list: any[] = ctx.provider.getAccountLogs ? ctx.provider.getAccountLogs(limit) : [];
             if (!Array.isArray(list)) list = [];
-
-            // 所有用户（包括管理员）只能看到自己账号的操作日志
-            if (currentUser) {
-                const accessibleIds = getAccessibleAccountIds(ctx, req as any);
-                list = list.filter((log: any) => {
-                    const logAccountId = log.accountId || log.id;
-                    return accessibleIds.includes(logAccountId);
-                });
-            }
 
             // 与当前 web 前端保持一致：直接返回数组
             res.json(list);
@@ -225,22 +161,9 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
     app.get('/api/logs', (req: Request, res: Response) => {
         const queryAccountIdRaw = (req.query.accountId || '').toString().trim();
         const id = queryAccountIdRaw ? (queryAccountIdRaw === 'all' ? '' : resolveAccId(ctx, queryAccountIdRaw)) : getAccId(ctx, req);
-        const currentUser = (req as any).currentUser;
-
-        // 必须登录才能查看日志
-        if (!currentUser) {
-            return res.status(401).json({ ok: false, error: '未登录' });
-        }
-
-        // 如果指定了账号ID，检查权限
-        if (id && !checkAccountAccess(ctx, req as any, id)) {
-            return res.status(403).json({ ok: false, error: '无权访问此账号' });
-        }
-
-        // 如果没有指定账号ID，获取当前用户可访问的所有账号的日志
+        // 如果没有指定账号ID，获取所有账号的日志
         if (!id) {
-            // 所有用户（包括管理员）只能获取自己可访问账号的日志
-            const accessibleIds = getAccessibleAccountIds(ctx, req as any);
+            const accountIds = getAccountIds(ctx);
             const allLogs: any[] = [];
             const options = {
                 limit: Number.parseInt(req.query.limit as string) || 100,
@@ -253,8 +176,7 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
                 timeTo: req.query.timeTo || '',
             };
 
-            // 获取每个可访问账号的日志
-            for (const accId of accessibleIds) {
+            for (const accId of accountIds) {
                 const logs = ctx.provider.getLogs(accId, options);
                 if (Array.isArray(logs)) {
                     allLogs.push(...logs);
@@ -288,11 +210,6 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
         const id = getAccId(ctx, req);
         if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
 
-        // 检查权限
-        if (!checkAccountAccess(ctx, req as any, id)) {
-            return res.status(403).json({ ok: false, error: '无权访问此账号' });
-        }
-
         try {
             const data = ctx.provider.clearLogs(id);
 
@@ -321,11 +238,6 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
         const id = getAccId(ctx, req);
         if (!id) {
             return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
-        }
-
-        // 检查权限
-        if (!checkAccountAccess(ctx, req as any, id)) {
-            return res.status(403).json({ ok: false, error: '无权访问此账号' });
         }
 
         try {
@@ -362,17 +274,7 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
     app.post('/api/settings/offline-reminder', async (req: Request, res: Response) => {
         try {
             const body = (req.body && typeof req.body === 'object') ? req.body : {};
-            const currentUser = (req as any).currentUser;
-
-            // 必须登录才能保存下线提醒配置
-            if (!currentUser) {
-                return res.status(401).json({ ok: false, error: '未登录' });
-            }
-
-            // 保存到用户隔离的配置中
-            const data = store.setOfflineReminder
-                ? store.setOfflineReminder(body, currentUser.username)
-                : {};
+            const data = store.setOfflineReminder ? store.setOfflineReminder(body) : {};
             res.json({ ok: true, data: data || {} });
         } catch (e: any) {
             res.status(500).json({ ok: false, error: e.message });
@@ -382,10 +284,7 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
     // API: 测试下线提醒推送（不落盘）
     app.post('/api/settings/offline-reminder/test', async (req: Request, res: Response) => {
         try {
-            const currentUser = (req as any).currentUser;
-            const saved = store.getOfflineReminder && currentUser
-                ? store.getOfflineReminder(currentUser.username)
-                : {};
+            const saved = store.getOfflineReminder ? store.getOfflineReminder() : {};
             const body = (req.body && typeof req.body === 'object') ? req.body : {};
             const cfg = { ...(saved || {}), ...body };
 
@@ -436,13 +335,6 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
     app.get('/api/settings', async (req: Request, res: Response) => {
         try {
             const id = getAccId(ctx, req);
-            const currentUser = (req as any).currentUser;
-
-            // 检查权限（如果指定了账号ID）
-            if (id && !checkAccountAccess(ctx, req as any, id)) {
-                return res.status(403).json({ ok: false, error: '无权访问此账号' });
-            }
-
             // 直接从主进程的 store 读取，确保即使账号未运行也能获取配置
             const intervals = id ? store.getIntervals(id) : {};
             const strategy = id ? store.getPlantingStrategy(id) : null;
@@ -460,10 +352,9 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
             const bagSeedPriority = id && (typeof store.getBagSeedPriority === 'function') ? store.getBagSeedPriority(id) : [];
             const bagSeedFallbackStrategy = id && (typeof store.getBagSeedFallbackStrategy === 'function') ? store.getBagSeedFallbackStrategy(id) : 'level';
             const ui = store.getUI();
-            // 获取用户隔离的下线提醒配置
-            const offlineReminder = store.getOfflineReminder && currentUser
-                ? store.getOfflineReminder(currentUser.username)
-                : { channel: 'webhook', reloginUrlMode: 'none', endpoint: '', token: '', title: '账号下线提醒', msg: '账号下线', offlineDeleteSec: 0 };
+            const offlineReminder = store.getOfflineReminder
+                ? store.getOfflineReminder()
+                : { channel: 'webhook', endpoint: '', token: '', title: '账号下线提醒', msg: '账号下线', offlineDeleteSec: 0 };
             res.json({ ok: true, data: { intervals, strategy, preferredSeed, friendQuietHours, automation, stealDelaySeconds, plantOrderRandom, plantDelaySeconds, fertilizerBuyOrganicCount, fertilizerBuyOrganicThresholdHours, fertilizerBuyNormalCount, fertilizerBuyNormalThresholdHours, fertilizerBuyCheckIntervalMinutes, bagSeedPriority, bagSeedFallbackStrategy, ui, offlineReminder } });
         } catch (e: any) {
             res.status(500).json({ ok: false, error: e.message });
@@ -478,6 +369,58 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
                 return res.status(500).json({ ok: false, error: '无法获取默认配置' });
             }
             res.json({ ok: true, data: defaultConfig });
+        } catch (e: any) {
+            res.status(500).json({ ok: false, error: e.message });
+        }
+    });
+
+    app.get('/api/settings/device-presets', (_req: Request, res: Response) => {
+        try {
+            res.json({ ok: true, data: getDevicePresets() });
+        } catch (e: any) {
+            res.status(500).json({ ok: false, error: e.message });
+        }
+    });
+
+    app.get('/api/settings/system-config', (_req: Request, res: Response) => {
+        try {
+            res.json({
+                ok: true,
+                data: {
+                    saved: store.getSystemConfig(),
+                    default: getDefaultSystemConfig(),
+                    current: getRuntimeConfig(),
+                    timeZones: getTimeZoneOptions(),
+                },
+            });
+        } catch (e: any) {
+            res.status(500).json({ ok: false, error: e.message });
+        }
+    });
+
+    app.post('/api/settings/system-config', (req: Request, res: Response) => {
+        try {
+            const { serverUrl, clientVersion, platform, os, timeZone, deviceInfo } = req.body || {};
+            const saved = store.setSystemConfig({ serverUrl, clientVersion, platform, os, timeZone, deviceInfo });
+            updateRuntimeConfig(saved);
+            if (ctx.provider && typeof ctx.provider.broadcastConfig === 'function') {
+                ctx.provider.broadcastConfig('');
+            }
+            res.json({ ok: true, data: { saved, current: getRuntimeConfig() } });
+        } catch (e: any) {
+            res.status(500).json({ ok: false, error: e.message });
+        }
+    });
+
+    app.post('/api/settings/system-config/reset', (_req: Request, res: Response) => {
+        try {
+            const saved = getDefaultSystemConfig();
+            store.setSystemConfig(saved);
+            updateRuntimeConfig(saved);
+            if (ctx.provider && typeof ctx.provider.broadcastConfig === 'function') {
+                ctx.provider.broadcastConfig('');
+            }
+            res.json({ ok: true, data: { saved, current: getRuntimeConfig() } });
         } catch (e: any) {
             res.status(500).json({ ok: false, error: e.message });
         }

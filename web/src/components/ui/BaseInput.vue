@@ -1,65 +1,75 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { NInput, NInputNumber } from 'naive-ui'
+import { computed, useAttrs } from 'vue'
 
-const props = defineProps<{
+defineOptions({ inheritAttrs: false })
+
+defineProps<{
   type?: string
   placeholder?: string
   label?: string
   disabled?: boolean
   clearable?: boolean
+  min?: string | number
+  max?: string | number
+  step?: string | number
 }>()
+
 const emit = defineEmits<{
   (e: 'clear'): void
 }>()
+
+const attrs = useAttrs()
 const model = defineModel<string | number>()
-const showPassword = ref(false)
-const inputType = computed(() => {
-  if (props.type === 'password' && showPassword.value) {
-    return 'text'
-  }
-  return props.type || 'text'
+
+const textValue = computed({
+  get: () => model.value === undefined || model.value === null ? '' : String(model.value),
+  set: (value: string) => {
+    model.value = value
+  },
+})
+
+const numberValue = computed<number | null>({
+  get: () => {
+    if (model.value === undefined || model.value === null || model.value === '')
+      return null
+    const value = Number(model.value)
+    return Number.isFinite(value) ? value : null
+  },
+  set: (value) => {
+    model.value = value === null ? '' : value
+  },
 })
 </script>
 
 <template>
-  <div class="flex flex-col gap-1.5">
-    <label v-if="label" class="text-sm text-gray-700 font-medium dark:text-gray-300">
+  <div class="base-field">
+    <label v-if="label" class="base-field__label" :for="String(attrs.id || '')">
       {{ label }}
     </label>
-    <div class="relative">
-      <input
-        v-model="model"
-        :type="inputType"
-        :placeholder="placeholder"
-        :disabled="disabled"
-        class="base-input w-full border-3 border-black/10 rounded-xl bg-white px-4 py-2.5 outline-none transition-all duration-200 dark:border-gray-600 focus:border-[#4a8c3f] focus:ring-2 focus:ring-[#4a8c3f]/30 focus:scale-[1.01] dark:bg-gray-800 disabled:bg-gray-50 dark:text-white disabled:text-gray-400 dark:focus:border-[#6dbf5b] dark:disabled:bg-gray-800/50"
-        :class="{ 'pr-10': type === 'password' || (clearable && model) }"
-      >
-      <button
-        v-if="type === 'password'"
-        type="button"
-        class="absolute right-3 top-1/2 text-gray-400 -translate-y-1/2 hover:text-gray-600 dark:hover:text-gray-300"
-        @click="showPassword = !showPassword"
-      >
-        <div v-if="showPassword" class="i-carbon-view-off" />
-        <div v-else class="i-carbon-view" />
-      </button>
-
-      <button
-        v-else-if="clearable && model"
-        type="button"
-        class="absolute right-3 top-1/2 text-gray-400 -translate-y-1/2 hover:text-gray-600 dark:hover:text-gray-300"
-        @click="model = ''; emit('clear')"
-      >
-        <div class="i-carbon-close" />
-      </button>
-    </div>
+    <NInputNumber
+      v-if="type === 'number'"
+      v-model:value="numberValue"
+      v-bind="attrs"
+      class="w-full"
+      :placeholder="placeholder"
+      :disabled="disabled"
+      :clearable="clearable"
+      :min="min"
+      :max="max"
+      :step="step"
+      @clear="emit('clear')"
+    />
+    <NInput
+      v-else
+      v-model:value="textValue"
+      v-bind="attrs"
+      :type="type === 'password' ? 'password' : 'text'"
+      :placeholder="placeholder"
+      :disabled="disabled"
+      :clearable="clearable"
+      :show-password-on="type === 'password' ? 'click' : undefined"
+      @clear="emit('clear')"
+    />
   </div>
 </template>
-
-<style scoped>
-.base-input::-ms-reveal,
-.base-input::-ms-clear {
-  display: none;
-}
-</style>

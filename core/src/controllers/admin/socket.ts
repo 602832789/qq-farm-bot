@@ -9,37 +9,11 @@ const SocketIOServer = Server;
 
 const {
     resolveAccId,
-    getAccountList,
-    getAccessibleAccountIdsForUser,
 } = require('./middleware');
 
 function applySocketSubscription(ctx: AdminContext, socket: any, accountRef: string = ''): void {
     const incoming = String(accountRef || '').trim();
     const resolved = incoming && incoming !== 'all' ? resolveAccId(ctx, incoming) : '';
-
-    // 获取当前用户信息
-    const token = socket.data.adminToken;
-    const currentUser = token ? ctx.tokenUserMap.get(token) : null;
-
-    // 检查权限：如果指定了账号ID，检查用户是否有权访问
-    if (resolved && currentUser) {
-        // 管理员可以访问所有账号
-        if (currentUser.role !== 'admin') {
-            const accounts = getAccountList(ctx);
-            const account = accounts.find((a: any) => a.id === resolved);
-            if (!account || account.username !== currentUser.username) {
-                // 无权访问，拒绝订阅
-                socket.emit('subscribed', { accountId: 'all', error: '无权访问此账号' });
-                // 只订阅all频道（空数据）
-                for (const room of socket.rooms) {
-                    if (room.startsWith('account:')) socket.leave(room);
-                }
-                socket.join('account:all');
-                socket.data.accountId = '';
-                return;
-            }
-        }
-    }
 
     for (const room of socket.rooms) {
         if (room.startsWith('account:')) socket.leave(room);
@@ -55,8 +29,6 @@ function applySocketSubscription(ctx: AdminContext, socket: any, accountRef: str
 
     try {
         const targetId = socket.data.accountId || '';
-        const user = socket.data.user;
-
         if (targetId && ctx.provider && typeof ctx.provider.getStatus === 'function') {
             const currentStatus = ctx.provider.getStatus(targetId);
             socket.emit('status:update', { accountId: targetId, status: currentStatus });
@@ -64,17 +36,6 @@ function applySocketSubscription(ctx: AdminContext, socket: any, accountRef: str
         if (ctx.provider && typeof ctx.provider.getLogs === 'function') {
             let currentLogs: any[] = ctx.provider.getLogs(targetId, { limit: 100 });
             if (!Array.isArray(currentLogs)) currentLogs = [];
-
-            // 过滤日志：只返回用户有权限访问的账号的日志
-            if (user) {
-                const accessibleIds = getAccessibleAccountIdsForUser(ctx, user);
-                currentLogs = currentLogs.filter((log: any) => {
-                    const logAccountId = log.accountId || log.id;
-                    // 如果没有账号ID，只返回给用户自己的日志（系统日志）
-                    if (!logAccountId) return true;
-                    return accessibleIds.includes(logAccountId);
-                });
-            }
 
             socket.emit('logs:snapshot', {
                 accountId: targetId || 'all',
@@ -84,15 +45,6 @@ function applySocketSubscription(ctx: AdminContext, socket: any, accountRef: str
         if (ctx.provider && typeof ctx.provider.getAccountLogs === 'function') {
             let currentAccountLogs: any[] = ctx.provider.getAccountLogs(100);
             if (!Array.isArray(currentAccountLogs)) currentAccountLogs = [];
-
-            // 过滤账号操作日志：只返回用户有权限访问的账号的日志
-            if (user) {
-                const accessibleIds = getAccessibleAccountIdsForUser(ctx, user);
-                currentAccountLogs = currentAccountLogs.filter((log: any) => {
-                    const logAccountId = log.accountId || log.id;
-                    return accessibleIds.includes(logAccountId);
-                });
-            }
 
             socket.emit('account-logs:snapshot', {
                 logs: currentAccountLogs,
@@ -125,8 +77,6 @@ function setupSocketIO(ctx: AdminContext): void {
             return next(new Error('Unauthorized'));
         }
         socket.data.adminToken = token;
-        // 存储用户信息到socket
-        socket.data.user = ctx.tokenUserMap.get(token);
         return next();
     });
 

@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { useIntervalFn } from '@vueuse/core'
+import { NButton, NButtonGroup, NCard, NModal, NPagination, NSpin, NTab, NTabs } from 'naive-ui'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, ref, watch } from 'vue'
 import api from '@/api'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import LandCard from '@/components/LandCard.vue'
+import BaseButton from '@/components/ui/BaseButton.vue'
+import BaseInput from '@/components/ui/BaseInput.vue'
+import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 import { useAccountStore } from '@/stores/account'
 import { useFriendStore } from '@/stores/friend'
 import { useStatusStore } from '@/stores/status'
@@ -44,6 +48,8 @@ const knownFriendGidCount = computed(() => knownFriendGids.value.length)
 const knownFriendGidSet = computed(() => new Set(knownFriendGids.value.map(Number)))
 const friendGidSet = computed(() => new Set(friends.value.map(f => Number(f.gid))))
 const blacklistGidSet = computed(() => new Set(blacklist.value.map(item => Number(item.gid))))
+const showGidListModal = ref(false)
+const gidSearchKeyword = ref('')
 
 const filteredKnownFriendGids = computed(() => {
   const keyword = gidSearchKeyword.value.trim().toLowerCase()
@@ -85,14 +91,19 @@ function openGidListModal() {
 }
 
 const TABS = [
-  { key: 'friends', label: '好友列表', icon: '👥' },
-  { key: 'blacklist', label: '好友黑名单', icon: '🚫' },
-  { key: 'visitors', label: '最近访客', icon: '👀' },
+  { key: 'friends', label: '好友列表', icon: 'i-carbon-user-multiple' },
+  { key: 'blacklist', label: '好友黑名单', icon: 'i-carbon-rule-cancelled' },
+  { key: 'visitors', label: '最近访客', icon: 'i-carbon-recently-viewed' },
 ] as const
 
 type TabKey = typeof TABS[number]['key']
 
 const activeTab = ref<TabKey>('friends')
+
+function setActiveTab(value: string) {
+  if (TABS.some(tab => tab.key === value))
+    activeTab.value = value as TabKey
+}
 
 const showConfirm = ref(false)
 const confirmMessage = ref('')
@@ -104,9 +115,6 @@ const localKnownFriendGidSyncCooldownSec = ref(300)
 const localFriendsListCacheTtlSec = ref(60)
 const showBatchAddGidModal = ref(false)
 const batchGidInput = ref('')
-const showGidListModal = ref(false)
-const gidSearchKeyword = ref('')
-
 const interactFilter = ref('all')
 const interactFilters = [
   { key: 'all', label: '全部' },
@@ -175,10 +183,6 @@ const paginatedFriends = computed(() => {
   return filteredFriends.value.slice(start, end)
 })
 
-function goToPage(page: number) {
-  currentPage.value = Math.max(1, Math.min(page, totalPages.value))
-}
-
 watch(searchKeyword, () => {
   currentPage.value = 1
 })
@@ -221,11 +225,10 @@ async function loadData() {
 }
 
 useIntervalFn(() => {
-  for (const gid in friendLands.value) {
-    if (friendLands.value[gid]) {
-      friendLands.value[gid] = friendLands.value[gid].map((l: any) =>
-        l.matureInSec > 0 ? { ...l, matureInSec: l.matureInSec - 1 } : l,
-      )
+  for (const gid of expandedFriends.value) {
+    for (const land of friendLands.value[gid] || []) {
+      if (land.matureInSec > 0)
+        land.matureInSec--
     }
   }
 }, 1000)
@@ -341,13 +344,7 @@ function formatFriendGold(value: unknown) {
 }
 
 function getFriendAvatar(friend: any) {
-  const direct = String(friend?.avatarUrl || friend?.avatar_url || '').trim()
-  if (direct)
-    return direct
-  const uin = String(friend?.uin || '').trim()
-  if (uin)
-    return `https://q1.qlogo.cn/g?b=qq&nk=${uin}&s=100`
-  return ''
+  return String(friend?.avatarUrl || friend?.avatar_url || '').trim()
 }
 
 function getFriendAvatarKey(friend: any) {
@@ -550,20 +547,20 @@ async function handleBatchAddKnownFriendGids() {
 </script>
 
 <template>
-  <div class="p-4">
+  <div class="page-stack">
     <div class="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <h2 class="flex items-center gap-2 text-2xl font-bold font-display">
-        👥 好友
+        <span class="i-carbon-user-multiple" />
+        好友
       </h2>
       <div class="flex items-center gap-3">
-        <div v-if="activeTab === 'friends'" class="relative">
-          <span class="absolute left-3 top-1/2 text-gray-400 -translate-y-1/2">🔍</span>
-          <input
+        <div v-if="activeTab === 'friends'">
+          <BaseInput
             v-model="searchKeyword"
-            type="text"
             placeholder="搜索好友..."
-            class="farm-input w-full border border-gray-300 rounded-xl bg-white py-2 pl-10 pr-4 text-sm sm:w-64 dark:border-gray-600 focus:border-blue-500 dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-          >
+            clearable
+            class="w-full sm:w-64"
+          />
         </div>
         <div v-if="activeTab === 'friends' && friends.length" class="text-sm text-gray-500">
           共 {{ filteredFriends.length }}/{{ friends.length }} 名好友
@@ -577,34 +574,24 @@ async function handleBatchAddKnownFriendGids() {
       </div>
     </div>
 
-    <div class="mb-4 flex border-b border-gray-200 dark:border-gray-700">
-      <button
-        v-for="tab in TABS"
-        :key="tab.key"
-        class="flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors"
-        :class="activeTab === tab.key
-          ? 'border-b-2'
-          : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'"
-        :style="{ borderColor: activeTab === tab.key ? 'var(--theme-primary)' : 'transparent', color: activeTab === tab.key ? 'var(--theme-primary)' : undefined }"
-        @click="activeTab = tab.key"
-      >
-        <div :class="tab.icon" />
-        {{ tab.label }}
-        <span
-          v-if="tab.key === 'blacklist' && blacklist.length > 0"
-          class="rounded-full bg-red-100 px-1.5 py-0.5 text-xs text-red-600 dark:bg-red-900/30 dark:text-red-400"
-        >
-          {{ blacklist.length }}
+    <NTabs class="mb-4" :value="activeTab" type="line" @update:value="setActiveTab">
+      <NTab v-for="tab in TABS" :key="tab.key" :name="tab.key">
+        <span class="inline-flex items-center gap-2">
+          <span :class="tab.icon" />
+          {{ tab.label }}
+          <span v-if="tab.key === 'blacklist' && blacklist.length > 0" class="text-xs text-red-500">
+            {{ blacklist.length }}
+          </span>
         </span>
-      </button>
-    </div>
+      </NTab>
+    </NTabs>
 
     <div v-if="loading || statusLoading || interactLoading" class="flex justify-center py-12">
-      <span class="text-4xl animate-spin">⏳</span>
+      <NSpin size="large" />
     </div>
 
-    <div v-else-if="!currentAccountId" class="farm-card flex flex-col items-center justify-center gap-4 rounded-2xl bg-white p-12 text-center text-gray-500 shadow-md dark:bg-gray-800">
-      <span class="text-4xl text-gray-400">👤</span>
+    <div v-else-if="!currentAccountId" class="flex flex-col items-center justify-center gap-4 farm-card rounded-2xl bg-white p-12 text-center text-gray-500 shadow-md dark:bg-gray-800">
+      <span class="i-carbon-user-avatar text-4xl text-gray-400" />
       <div>
         <div class="text-lg text-gray-700 font-medium dark:text-gray-300">
           未登录账号
@@ -615,8 +602,8 @@ async function handleBatchAddKnownFriendGids() {
       </div>
     </div>
 
-    <div v-else-if="!status?.connection?.connected" class="farm-card flex flex-col items-center justify-center gap-4 rounded-2xl bg-white p-12 text-center text-gray-500 shadow-md dark:bg-gray-800">
-      <span class="text-4xl text-gray-400">📡</span>
+    <div v-else-if="!status?.connection?.connected" class="flex flex-col items-center justify-center gap-4 farm-card rounded-2xl bg-white p-12 text-center text-gray-500 shadow-md dark:bg-gray-800">
+      <span class="i-carbon-network-4 text-4xl text-gray-400" />
       <div>
         <div class="text-lg text-gray-700 font-medium dark:text-gray-300">
           账号未登录
@@ -629,68 +616,67 @@ async function handleBatchAddKnownFriendGids() {
 
     <template v-else>
       <div v-if="activeTab === 'friends'" class="space-y-4">
-        <div v-if="currentAccountId && isQqAccount" class="farm-card mb-4 border border-amber-200 rounded-2xl bg-white p-4 shadow-md dark:border-amber-700/50 dark:bg-gray-800">
+        <div v-if="currentAccountId && isQqAccount" class="mb-4 border farm-card border-amber-200 rounded-2xl bg-white p-4 shadow-md dark:border-amber-700/50 dark:bg-gray-800">
           <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <div class="flex items-center gap-2">
-                <span class="text-lg text-amber-500">📋</span>
+                <span class="i-carbon-list-checked text-lg text-amber-500" />
                 <h3 class="text-lg text-gray-700 font-semibold dark:text-gray-200">
                   QQ 好友自动同步
                 </h3>
-                <button
-                  class="farm-badge cursor-pointer rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700 transition dark:bg-amber-900/30 hover:bg-amber-200 dark:text-amber-400 dark:hover:bg-amber-900/50"
+                <NButton
+                  text
+                  type="primary"
+                  size="tiny"
                   @click="openGidListModal"
                 >
-                  {{ knownFriendGidCount }}
-                </button>
+                  {{ knownFriendGidCount }} 个 GID
+                </NButton>
               </div>
               <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
                 QQ 新好友接口依赖已知 GID。系统会自动从最近访客补充，进入好友农场明确失败时自动移除失效 GID。
               </p>
             </div>
             <div class="flex shrink-0 gap-2">
-              <button
-                class="cartoon-btn rounded-xl bg-amber-100 px-3 py-1.5 text-sm text-amber-700 transition dark:bg-amber-900/30 hover:bg-amber-200 dark:text-amber-400 disabled:opacity-50 dark:hover:bg-amber-900/50"
-                :disabled="knownFriendSettingsLoading"
+              <BaseButton
+                variant="secondary"
+                size="sm"
+                :loading="knownFriendSettingsLoading"
                 @click="currentAccountId && friendStore.fetchKnownFriendSettings(currentAccountId)"
               >
-                <div v-if="knownFriendSettingsLoading" class="i-svg-spinners-90-ring-with-bg mr-1 inline-block align-text-bottom" />
                 刷新
-              </button>
-              <button
-                class="cartoon-btn rounded-xl bg-green-100 px-3 py-1.5 text-sm text-green-700 transition dark:bg-green-900/30 hover:bg-green-200 dark:text-green-400 disabled:opacity-50 dark:hover:bg-green-900/50"
-                :disabled="knownFriendSettingsSaving"
+              </BaseButton>
+              <BaseButton
+                variant="primary"
+                size="sm"
+                :loading="knownFriendSettingsSaving"
                 @click="handleSaveKnownFriendSettings"
               >
-                <div v-if="knownFriendSettingsSaving" class="i-svg-spinners-90-ring-with-bg mr-1 inline-block align-text-bottom" />
                 保存设置
-              </button>
-              <button
-                class="cartoon-btn rounded-xl bg-blue-100 px-3 py-1.5 text-sm text-blue-700 transition dark:bg-blue-900/30 hover:bg-blue-200 dark:text-blue-400 disabled:opacity-50 dark:hover:bg-blue-900/50"
+              </BaseButton>
+              <BaseButton
+                variant="secondary"
+                size="sm"
                 @click="showBatchAddGidModal = true"
               >
                 批量新增 GID
-              </button>
+              </BaseButton>
             </div>
           </div>
 
-          <div class="mt-4 grid gap-3 lg:grid-cols-2">
-            <div>
-              <label class="mb-1 block text-xs text-gray-500 dark:text-gray-400">访客检测入库冷却(秒)</label>
-              <input
-                v-model.number="localKnownFriendGidSyncCooldownSec"
-                type="number"
-                class="farm-input w-full border border-gray-300 rounded-xl bg-white px-3 py-2 text-sm dark:border-gray-600 focus:border-blue-500 dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-              >
-            </div>
-            <div>
-              <label class="mb-1 block text-xs text-gray-500 dark:text-gray-400">好友列表缓存(秒)</label>
-              <input
-                v-model.number="localFriendsListCacheTtlSec"
-                type="number"
-                class="farm-input w-full border border-gray-300 rounded-xl bg-white px-3 py-2 text-sm dark:border-gray-600 focus:border-blue-500 dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-              >
-            </div>
+          <div class="grid mt-4 gap-3 lg:grid-cols-2">
+            <BaseInput
+              v-model.number="localKnownFriendGidSyncCooldownSec"
+              type="number"
+              label="访客检测入库冷却（秒）"
+              :min="10"
+            />
+            <BaseInput
+              v-model.number="localFriendsListCacheTtlSec"
+              type="number"
+              label="好友列表缓存（秒）"
+              :min="10"
+            />
           </div>
         </div>
 
@@ -699,22 +685,22 @@ async function handleBatchAddKnownFriendGids() {
         </div>
 
         <template v-else>
-          <div class="farm-card flex flex-wrap items-center gap-2 rounded-2xl bg-white p-3 shadow-md dark:bg-gray-800">
+          <div class="flex flex-wrap items-center gap-2 farm-card rounded-2xl bg-white p-3 shadow-md dark:bg-gray-800">
             <div class="flex-1" />
-            <button
-              class="cartoon-btn rounded-xl bg-gray-100 px-3 py-1.5 text-sm text-gray-600 transition dark:bg-gray-700 hover:bg-gray-200 dark:text-gray-300 disabled:opacity-50 dark:hover:bg-gray-600"
-              :disabled="loading"
+            <BaseButton
+              variant="secondary"
+              size="sm"
+              :loading="loading"
               @click="handleRefreshFriends"
             >
-              <div v-if="loading" class="i-svg-spinners-90-ring-with-bg mr-1 inline-block align-text-bottom" />
               刷新列表
-            </button>
+            </BaseButton>
           </div>
 
           <div
             v-for="friend in paginatedFriends"
             :key="friend.gid"
-            class="cartoon-card overflow-hidden rounded-2xl bg-white shadow-md dark:bg-gray-800"
+            class="overflow-hidden cartoon-card rounded-2xl bg-white shadow-md dark:bg-gray-800"
           >
             <div
               class="flex flex-col cursor-pointer justify-between gap-4 p-4 transition sm:flex-row sm:items-center hover:bg-gray-50 dark:hover:bg-gray-700/50"
@@ -730,7 +716,7 @@ async function handleBatchAddKnownFriendGids() {
                     loading="lazy"
                     @error="handleFriendAvatarError(friend)"
                   >
-                  <span v-else class="text-gray-400">👤</span>
+                  <span v-else class="i-carbon-user text-gray-400" />
                 </div>
                 <div>
                   <div class="flex items-center gap-2 font-bold">
@@ -762,40 +748,46 @@ async function handleBatchAddKnownFriendGids() {
               </div>
 
               <div class="flex flex-wrap gap-2">
-                <button
-                  class="cartoon-btn rounded-xl bg-blue-100 px-3 py-2 text-sm text-blue-700 transition hover:bg-blue-200"
+                <NButton
+                  type="info"
+                  secondary
+                  size="small"
                   @click="handleOp(friend.gid, 'steal', $event)"
                 >
                   偷取
-                </button>
-                <button
-                  class="cartoon-btn rounded-xl bg-green-100 px-3 py-2 text-sm text-green-700 transition hover:bg-green-200"
+                </NButton>
+                <NButton
+                  type="success"
+                  secondary
+                  size="small"
                   @click="handleOp(friend.gid, 'farming', $event)"
                 >
                   一键务农
-                </button>
-                <button
-                  class="cartoon-btn rounded-xl bg-red-100 px-3 py-2 text-sm text-red-700 transition hover:bg-red-200"
+                </NButton>
+                <NButton
+                  type="error"
+                  secondary
+                  size="small"
                   @click="handleOp(friend.gid, 'bad', $event)"
                 >
                   捣乱
-                </button>
-                <button
-                  class="cartoon-btn rounded-xl px-3 py-2 text-sm transition"
-                  :class="blacklistGidSet.has(Number(friend.gid))
-                    ? 'bg-gray-200 text-gray-600 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
-                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-700/50 dark:text-gray-400 dark:hover:bg-gray-700'"
+                </NButton>
+                <NButton
+                  secondary
+                  size="small"
                   @click="handleToggleBlacklist(friend, $event)"
                 >
                   {{ blacklistGidSet.has(Number(friend.gid)) ? '移出黑名单' : '加入黑名单' }}
-                </button>
-                <button
+                </NButton>
+                <NButton
                   v-if="isQqAccount && knownFriendGidSet.has(Number(friend.gid))"
-                  class="cartoon-btn rounded-xl bg-amber-100 px-3 py-2 text-sm text-amber-700 transition dark:bg-amber-900/30 hover:bg-amber-200 dark:text-amber-400 dark:hover:bg-amber-900/50"
+                  type="warning"
+                  secondary
+                  size="small"
                   @click="handleRemoveKnownFriendGid(friend, $event)"
                 >
                   移出同步列表
-                </button>
+                </NButton>
               </div>
             </div>
 
@@ -818,53 +810,7 @@ async function handleBatchAddKnownFriendGids() {
 
           <!-- 分页控件 -->
           <div v-if="filteredFriends.length > pageSize" class="mt-4 flex flex-wrap items-center justify-center gap-2">
-            <button
-              class="cartoon-btn border border-gray-200 rounded-xl bg-white px-3 py-1.5 text-sm text-gray-600 transition dark:border-gray-600 dark:bg-gray-800 hover:bg-gray-50 dark:text-gray-300 disabled:opacity-50 dark:hover:bg-gray-700"
-              :disabled="currentPage === 1"
-              @click="goToPage(1)"
-            >
-              首页
-            </button>
-            <button
-              class="cartoon-btn border border-gray-200 rounded-xl bg-white px-3 py-1.5 text-sm text-gray-600 transition dark:border-gray-600 dark:bg-gray-800 hover:bg-gray-50 dark:text-gray-300 disabled:opacity-50 dark:hover:bg-gray-700"
-              :disabled="currentPage === 1"
-              @click="goToPage(currentPage - 1)"
-            >
-              上一页
-            </button>
-            <div class="flex items-center gap-1">
-              <template v-for="p in totalPages" :key="p">
-                <button
-                  v-if="p === 1 || p === totalPages || (p >= currentPage - 1 && p <= currentPage + 1)"
-                  class="h-8 w-8 rounded-xl text-sm transition"
-                  :class="p === currentPage
-                    ? 'text-white'
-                    : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'"
-                  :style="p === currentPage ? { backgroundColor: 'var(--theme-primary)' } : {}"
-                  @click="goToPage(p)"
-                >
-                  {{ p }}
-                </button>
-                <span
-                  v-else-if="p === currentPage - 2 || p === currentPage + 2"
-                  class="px-1 text-gray-400"
-                >...</span>
-              </template>
-            </div>
-            <button
-              class="cartoon-btn border border-gray-200 rounded-xl bg-white px-3 py-1.5 text-sm text-gray-600 transition dark:border-gray-600 dark:bg-gray-800 hover:bg-gray-50 dark:text-gray-300 disabled:opacity-50 dark:hover:bg-gray-700"
-              :disabled="currentPage === totalPages"
-              @click="goToPage(currentPage + 1)"
-            >
-              下一页
-            </button>
-            <button
-              class="cartoon-btn border border-gray-200 rounded-xl bg-white px-3 py-1.5 text-sm text-gray-600 transition dark:border-gray-600 dark:bg-gray-800 hover:bg-gray-50 dark:text-gray-300 disabled:opacity-50 dark:hover:bg-gray-700"
-              :disabled="currentPage === totalPages"
-              @click="goToPage(totalPages)"
-            >
-              末页
-            </button>
+            <NPagination v-model:page="currentPage" :page-count="totalPages" />
             <span class="text-sm text-gray-500 dark:text-gray-400">
               共 {{ filteredFriends.length }} 位好友
             </span>
@@ -880,7 +826,7 @@ async function handleBatchAddKnownFriendGids() {
         </div>
 
         <div v-if="blacklist.length === 0" class="farm-card rounded-2xl bg-white p-8 text-center text-gray-500 shadow-md dark:bg-gray-800">
-          <div class="mx-auto mb-3 text-4xl text-gray-300">🚫</div>
+          <div class="i-carbon-user-x-ray mx-auto mb-3 text-4xl text-gray-300" />
           暂无黑名单好友
         </div>
 
@@ -888,7 +834,7 @@ async function handleBatchAddKnownFriendGids() {
           <div
             v-for="item in blacklist"
             :key="item.gid"
-            class="cartoon-card flex items-center justify-between rounded-2xl bg-white p-4 shadow-md dark:bg-gray-800"
+            class="flex items-center justify-between cartoon-card rounded-2xl bg-white p-4 shadow-md dark:bg-gray-800"
           >
             <div class="flex items-center gap-3">
               <div class="h-10 w-10 flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-200 ring-1 ring-gray-100 dark:bg-gray-600 dark:ring-gray-700">
@@ -899,44 +845,45 @@ async function handleBatchAddKnownFriendGids() {
                   loading="lazy"
                   @error="($event.target as HTMLImageElement).style.display = 'none'"
                 >
-                <span v-else class="text-gray-400">👤</span>
+                <span v-else class="i-carbon-user text-gray-400" />
               </div>
               <div>
                 <span class="font-medium">{{ item.name || `GID:${item.gid}` }}</span>
                 <span class="ml-2 text-sm text-gray-400">({{ item.gid }})</span>
               </div>
             </div>
-            <button
-              class="cartoon-btn rounded-xl bg-red-100 px-3 py-1.5 text-sm text-red-600 dark:bg-red-900/30 hover:bg-red-200 dark:text-red-400 dark:hover:bg-red-900/50"
+            <NButton
+              type="error"
+              secondary
+              size="small"
               @click="handleRemoveFromBlacklist(item.gid)"
             >
               移出黑名单
-            </button>
+            </NButton>
           </div>
         </div>
       </div>
 
       <div v-else-if="activeTab === 'visitors'" class="space-y-4">
         <div class="flex flex-wrap items-center gap-2">
-          <button
-            v-for="item in interactFilters"
-            :key="item.key"
-            class="cartoon-btn rounded-full px-3 py-1 text-xs transition"
-            :class="interactFilter === item.key
-              ? 'text-white'
-              : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'"
-            :style="interactFilter === item.key ? { backgroundColor: 'var(--theme-primary)' } : {}"
-            @click="interactFilter = item.key"
-          >
-            {{ item.label }}
-          </button>
-          <button
-            class="cartoon-btn rounded-xl bg-gray-100 px-3 py-1.5 text-xs text-gray-600 transition disabled:cursor-not-allowed dark:bg-gray-700 hover:bg-gray-200 dark:text-gray-300 disabled:opacity-60 dark:hover:bg-gray-600"
-            :disabled="interactLoading"
+          <NButtonGroup size="small">
+            <NButton
+              v-for="item in interactFilters"
+              :key="item.key"
+              :type="interactFilter === item.key ? 'primary' : 'default'"
+              @click="interactFilter = item.key"
+            >
+              {{ item.label }}
+            </NButton>
+          </NButtonGroup>
+          <BaseButton
+            variant="secondary"
+            size="sm"
+            :loading="interactLoading"
             @click="refreshInteractRecords"
           >
-            {{ interactLoading ? '刷新中...' : '刷新' }}
-          </button>
+            刷新
+          </BaseButton>
         </div>
 
         <div v-if="!!interactError" class="rounded-lg bg-red-50 px-4 py-6 text-center text-sm text-red-600 dark:bg-red-900/20 dark:text-red-300">
@@ -944,7 +891,9 @@ async function handleBatchAddKnownFriendGids() {
         </div>
 
         <div v-else-if="visibleInteractRecords.length === 0" class="farm-card rounded-2xl bg-white p-8 text-center text-gray-500 shadow-md dark:bg-gray-800">
-          <div class="mx-auto mb-3 text-4xl text-gray-300">👀</div>
+          <div class="mx-auto mb-3 text-4xl text-gray-300">
+            👀
+          </div>
           暂无访客记录
         </div>
 
@@ -952,7 +901,7 @@ async function handleBatchAddKnownFriendGids() {
           <div
             v-for="record in visibleInteractRecords"
             :key="record.key"
-            class="cartoon-card flex items-start gap-3 rounded-2xl bg-white p-4 shadow-md dark:bg-gray-800"
+            class="flex items-start gap-3 cartoon-card rounded-2xl bg-white p-4 shadow-md dark:bg-gray-800"
           >
             <div class="h-12 w-12 flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-200 ring-1 ring-gray-100 dark:bg-gray-700 dark:ring-gray-600">
               <img
@@ -962,7 +911,7 @@ async function handleBatchAddKnownFriendGids() {
                 loading="lazy"
                 @error="handleInteractAvatarError(record)"
               >
-              <span v-else class="text-xl text-gray-400">👤</span>
+              <span v-else class="i-carbon-user text-xl text-gray-400" />
             </div>
             <div class="min-w-0 flex-1">
               <div class="mb-1 flex flex-wrap items-center gap-2">
@@ -1007,136 +956,101 @@ async function handleBatchAddKnownFriendGids() {
       @cancel="!confirmLoading && (showConfirm = false)"
     />
 
-    <Teleport to="body">
-      <div
-        v-if="showBatchAddGidModal"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-        @click.self="showBatchAddGidModal = false"
-      >
-        <div class="max-w-lg w-full rounded-2xl bg-white p-6 shadow-xl dark:bg-gray-800">
-          <h3 class="mb-4 text-lg text-gray-800 font-semibold dark:text-gray-100">
-            批量新增 GID
-          </h3>
-          <p class="mb-3 text-sm text-gray-500 dark:text-gray-400">
-            支持一行一个或用逗号/空格分隔，自动去重
-          </p>
-          <textarea
-            v-model="batchGidInput"
-            rows="8"
-            placeholder="每行一个 GID，或用逗号、空格分隔&#10;例如：&#10;12345678&#10;87654321&#10;或&#10;12345678, 87654321, 11111111"
-            class="farm-input mb-4 w-full border border-gray-300 rounded-xl bg-white p-3 text-sm dark:border-gray-600 focus:border-blue-500 dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-          />
-          <div class="flex justify-end gap-3">
-            <button
-              class="cartoon-btn border border-gray-300 rounded-xl bg-white px-4 py-2 text-sm text-gray-700 transition dark:border-gray-600 dark:bg-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-600"
-              @click="showBatchAddGidModal = false"
-            >
+    <NModal :show="showBatchAddGidModal" @update:show="showBatchAddGidModal = $event">
+      <NCard class="gid-entry-card" title="批量新增 GID" :bordered="false" closable @close="showBatchAddGidModal = false">
+        <p class="mb-3 mt-0 text-sm text-gray-500 dark:text-gray-400">
+          支持一行一个或用逗号、空格分隔，提交时自动去重。
+        </p>
+        <BaseTextarea
+          v-model="batchGidInput"
+          :rows="8"
+          placeholder="每行一个 GID，或用逗号、空格分隔"
+        />
+        <template #footer>
+          <div class="flex justify-end gap-2">
+            <BaseButton variant="secondary" @click="showBatchAddGidModal = false">
               取消
-            </button>
-            <button
-              class="cartoon-btn rounded-xl px-4 py-2 text-sm text-white transition disabled:opacity-50"
-              :disabled="knownFriendSettingsSaving || !batchGidInput.trim()"
-              :style="{ backgroundColor: 'var(--theme-primary)' }"
+            </BaseButton>
+            <BaseButton
+              variant="primary"
+              :loading="knownFriendSettingsSaving"
+              :disabled="!batchGidInput.trim()"
               @click="handleBatchAddKnownFriendGids"
             >
-              <div v-if="knownFriendSettingsSaving" class="i-svg-spinners-90-ring-with-bg mr-1 inline-block align-text-bottom" />
               确认添加
-            </button>
+            </BaseButton>
           </div>
-        </div>
-      </div>
+        </template>
+      </NCard>
+    </NModal>
 
-      <div
-        v-if="showGidListModal"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-        @click.self="showGidListModal = false"
-      >
-        <div class="max-h-[80vh] max-w-2xl w-full flex flex-col rounded-2xl bg-white shadow-xl dark:bg-gray-800">
-          <div class="flex shrink-0 items-center justify-between border-b border-gray-200 p-4 dark:border-gray-700">
-            <div>
-              <h3 class="text-lg text-gray-800 font-semibold dark:text-gray-100">
-                已导入的 GID 列表
-              </h3>
-              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                共 {{ knownFriendGidCount }} 个 GID，
-                <span class="text-yellow-600 dark:text-yellow-400">已同步 {{ syncedGidCount }} 个</span>，
-                <span class="text-red-600 dark:text-red-400">未同步 {{ unsyncedGidCount }} 个</span>
-              </p>
-            </div>
-            <button
-              class="rounded-lg p-2 text-gray-400 transition hover:bg-gray-100 dark:hover:bg-gray-700"
-              @click="showGidListModal = false"
+    <NModal :show="showGidListModal" @update:show="showGidListModal = $event">
+      <NCard class="gid-list-card" title="已导入的 GID" :bordered="false" closable @close="showGidListModal = false">
+        <p class="mt-0 text-sm text-gray-500 dark:text-gray-400">
+          共 {{ knownFriendGidCount }} 个，已同步 {{ syncedGidCount }} 个，未同步 {{ unsyncedGidCount }} 个。
+        </p>
+        <div class="mb-4 flex gap-2">
+          <BaseInput v-model="gidSearchKeyword" placeholder="搜索 GID..." clearable class="flex-1" />
+          <BaseButton
+            variant="danger"
+            :loading="knownFriendSettingsSaving"
+            :disabled="unsyncedGidCount === 0"
+            @click="handleRemoveUnsyncedGids"
+          >
+            删除未同步（{{ unsyncedGidCount }}）
+          </BaseButton>
+        </div>
+        <div class="gid-list-scroll">
+          <div v-if="filteredKnownFriendGids.length === 0" class="py-8 text-center text-gray-500 dark:text-gray-400">
+            暂无数据
+          </div>
+          <div v-else class="grid gap-2 lg:grid-cols-3 sm:grid-cols-2">
+            <div
+              v-for="item in filteredKnownFriendGids"
+              :key="item.gid"
+              class="flex items-center justify-between border rounded-lg p-2"
+              :class="item.synced
+                ? 'border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20'
+                : 'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/20'"
             >
-              <span class="text-xl">✕</span>
-            </button>
-          </div>
-
-          <div class="shrink-0 border-b border-gray-200 p-4 dark:border-gray-700">
-            <div class="flex gap-2">
-              <input
-                v-model="gidSearchKeyword"
-                type="text"
-                placeholder="搜索 GID..."
-                class="farm-input flex-1 border border-gray-300 rounded-xl bg-white px-3 py-2 text-sm dark:border-gray-600 focus:border-blue-500 dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-              >
-              <button
-                class="cartoon-btn shrink-0 rounded-xl bg-red-100 px-3 py-2 text-sm text-red-700 transition dark:bg-red-900/30 hover:bg-red-200 dark:text-red-400 disabled:opacity-50 dark:hover:bg-red-900/50"
-                :disabled="knownFriendSettingsSaving || unsyncedGidCount === 0"
-                @click="handleRemoveUnsyncedGids"
-              >
-                <div v-if="knownFriendSettingsSaving" class="i-svg-spinners-90-ring-with-bg mr-1 inline-block align-text-bottom" />
-                删除未同步 ({{ unsyncedGidCount }})
-              </button>
-            </div>
-          </div>
-
-          <div class="flex-1 overflow-y-auto p-4">
-            <div v-if="filteredKnownFriendGids.length === 0" class="py-8 text-center text-gray-500 dark:text-gray-400">
-              暂无数据
-            </div>
-            <div v-else class="grid gap-2 lg:grid-cols-3 sm:grid-cols-2">
-              <div
-                v-for="item in filteredKnownFriendGids"
-                :key="item.gid"
-                class="flex items-center justify-between border rounded-xl p-2 transition"
-                :class="[
-                  item.synced
-                    ? 'border-yellow-300 bg-yellow-50 dark:border-yellow-700/50 dark:bg-yellow-900/20'
-                    : 'border-red-300 bg-red-50 dark:border-red-700/50 dark:bg-red-900/20',
-                ]"
-              >
-                <div class="flex items-center gap-2">
-                  <span
-                    class="text-sm font-mono"
-                    :class="item.synced ? 'text-yellow-700 dark:text-yellow-400' : 'text-red-700 dark:text-red-400'"
-                  >
-                    {{ item.gid }}
-                  </span>
-                  <span
-                    v-if="item.synced"
-                    class="rounded bg-yellow-200 px-1 py-0.5 text-xs text-yellow-700 dark:bg-yellow-800/50 dark:text-yellow-300"
-                  >
-                    已同步
-                  </span>
-                  <span
-                    v-else
-                    class="rounded bg-red-200 px-1 py-0.5 text-xs text-red-700 dark:bg-red-800/50 dark:text-red-300"
-                  >
-                    未同步
-                  </span>
+              <div class="min-w-0">
+                <div class="truncate text-sm font-mono">
+                  {{ item.gid }}
                 </div>
-                <button
-                  class="rounded p-1 text-gray-400 transition hover:bg-gray-200 hover:text-red-500 dark:hover:bg-gray-700"
-                  :disabled="knownFriendSettingsSaving"
-                  @click="handleRemoveGidFromList(item.gid)"
-                >
-                  <span class="text-sm">🗑️</span>
-                </button>
+                <div class="text-xs" :class="item.synced ? 'text-green-600' : 'text-red-600'">
+                  {{ item.synced ? '已同步' : '未同步' }}
+                </div>
               </div>
+              <NButton
+                quaternary
+                circle
+                type="error"
+                size="small"
+                :disabled="knownFriendSettingsSaving"
+                aria-label="删除 GID"
+                @click="handleRemoveGidFromList(item.gid)"
+              >
+                <span class="i-carbon-trash-can" />
+              </NButton>
             </div>
           </div>
         </div>
-      </div>
-    </Teleport>
+      </NCard>
+    </NModal>
   </div>
 </template>
+
+<style scoped>
+.gid-entry-card {
+  width: min(520px, calc(100vw - 32px));
+}
+
+.gid-list-card {
+  width: min(760px, calc(100vw - 32px));
+}
+
+.gid-list-scroll {
+  max-height: min(56vh, 520px);
+  overflow-y: auto;
+}
+</style>

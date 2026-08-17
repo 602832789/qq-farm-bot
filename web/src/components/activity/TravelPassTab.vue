@@ -327,4 +327,176 @@ const canClaim = computed(() => Boolean(props.enabled && hasClaimableNode.value 
   filter: none;
   opacity: 0.8;
 }
+
+/* Generic activity gameplay layout. */
+.travel-tab {
+  min-height: 100%;
+  padding: 24px;
+  color: #203a32;
+  background: transparent;
+}
+.travel-progress {
+  min-height: 112px;
+  grid-template-columns: 82px minmax(0, 1fr);
+  gap: 18px;
+  padding: 16px 20px;
+  border: 1px solid rgba(42, 112, 86, 0.18);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.7);
+  box-shadow:
+    0 12px 30px rgba(40, 74, 61, 0.08),
+    inset 0 1px rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(16px);
+}
+.travel-progress__badge,
+.level-medal {
+  clip-path: none;
+  filter: none;
+  border: 1px solid rgba(38, 129, 94, 0.16);
+  border-radius: 14px;
+  color: #1f7453;
+  background: rgba(226, 245, 237, 0.9);
+}
+.travel-progress__badge {
+  width: 76px;
+  height: 76px;
+}
+.travel-progress__badge b {
+  font-size: 30px;
+}
+.travel-progress__main strong {
+  color: #263d36;
+  font-size: 14px;
+}
+.score {
+  color: #1c6249;
+}
+.score i {
+  color: #87958f;
+}
+.progress {
+  height: 9px;
+  border: 0;
+  background: #e4ebe8;
+  box-shadow: inset 0 1px 2px rgba(24, 60, 46, 0.1);
+}
+.progress i {
+  background: linear-gradient(90deg, #40a979, #5a8bd6);
+}
+.travel-tip {
+  justify-content: flex-start;
+  margin: 10px 0 0;
+  padding: 8px 10px 8px 14px;
+  border: 1px solid rgba(72, 111, 97, 0.1);
+  border-radius: 10px;
+  color: #62756e;
+  background: rgba(244, 248, 246, 0.72);
+}
+.travel-tip span {
+  text-align: left;
+}
+.travel-tip button {
+  border-color: rgba(53, 104, 84, 0.24);
+  color: #356b56;
+  background: white;
+}
+.travel-labels {
+  padding: 20px 10px 8px;
+  color: #6e7e78;
+}
+.travel-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.travel-row {
+  min-height: 96px;
+  grid-template-columns: 72px minmax(0, 1fr);
+  border: 1px solid rgba(52, 85, 73, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.62);
+  box-shadow: 0 8px 22px rgba(36, 68, 56, 0.06);
+}
+.travel-row.current {
+  border-color: rgba(56, 140, 108, 0.38);
+  background: rgba(233, 247, 241, 0.9);
+  box-shadow: 0 8px 24px rgba(39, 112, 83, 0.1);
+}
+.travel-row.claimable {
+  border-color: rgba(197, 142, 44, 0.4);
+  box-shadow: 0 8px 24px rgba(154, 112, 36, 0.1);
+}
+.travel-row.milestone::before {
+  border-color: rgba(195, 146, 51, 0.2);
+}
+.level-medal {
+  width: 58px;
+  height: 66px;
+  margin-left: 8px;
+  color: #366b58;
+  background: #eef5f2;
+}
+.level-medal b {
+  font-size: 22px;
+}
+.state {
+  color: #52655d;
+  background: rgba(234, 239, 237, 0.92);
+}
+.travel-empty {
+  color: #76877f;
+}
+.empty-star {
+  color: rgba(59, 118, 94, 0.28);
+}
+.claim-action {
+  position: sticky;
+  right: auto;
+  bottom: 0;
+  left: auto;
+  margin: 16px -24px -24px;
+  padding: 12px 24px;
+  border-top: 1px solid rgba(45, 76, 65, 0.1);
+  background: rgba(248, 251, 250, 0.82);
+  backdrop-filter: blur(16px);
+}
+.claim-action button {
+  min-width: 142px;
+  padding: 10px 22px;
+  border: 1px solid #2d8b66;
+  border-radius: 10px;
+  color: white;
+  background: #2d8b66;
+  box-shadow: 0 8px 18px rgba(35, 113, 83, 0.2);
+  font-size: 14px;
+}
+.claim-action button:disabled {
+  border-color: #cbd5d1;
+  color: #87938e;
+  background: #e5ebe8;
+  box-shadow: none;
+}
+@media (max-width: 760px) {
+  .travel-tab {
+    padding: 14px;
+  }
+  .travel-list {
+    grid-template-columns: 1fr;
+  }
+  .travel-progress {
+    grid-template-columns: 64px minmax(0, 1fr);
+    gap: 10px;
+    padding: 13px;
+  }
+  .travel-progress__badge {
+    width: 60px;
+    height: 60px;
+  }
+  .travel-progress__badge b {
+    font-size: 24px;
+  }
+  .claim-action {
+    margin: 14px -14px -14px;
+    padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+  }
+}
 </style>

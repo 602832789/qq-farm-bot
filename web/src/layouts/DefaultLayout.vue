@@ -1,183 +1,164 @@
 <script setup lang="ts">
+import { NButton } from 'naive-ui'
 import { storeToRefs } from 'pinia'
-import { onMounted, onUnmounted } from 'vue'
+import { computed } from 'vue'
 import { useRoute } from 'vue-router'
+import MobileBottomNav from '@/components/MobileBottomNav.vue'
 import Sidebar from '@/components/Sidebar.vue'
+import { menuRoutes } from '@/router/menu'
 import { useAppStore } from '@/stores/app'
 
 const appStore = useAppStore()
 const route = useRoute()
 const { sidebarOpen } = storeToRefs(appStore)
 
-onMounted(() => {
-  // 移除了强制警告弹窗
-})
-
-onUnmounted(() => {
-  // 清理逻辑
+const pageTitle = computed(() => {
+  const segment = route.path.split('/').filter(Boolean)[0] || ''
+  return menuRoutes.find(item => item.path === segment)?.label || '概览'
 })
 </script>
 
 <template>
-  <div class="w-screen flex overflow-hidden bg-[#fef9ef] dark:bg-gray-900" style="height: 100dvh;">
-    <!-- Mobile Sidebar Overlay -->
+  <div class="liquid-layout w-screen flex overflow-hidden">
     <div
       v-if="sidebarOpen"
-      class="fixed inset-0 z-40 bg-gray-900/50 backdrop-blur-sm transition-opacity lg:hidden"
+      class="navigation-overlay fixed inset-0 z-40 lg:hidden"
       @click="appStore.closeSidebar"
     />
 
     <Sidebar />
 
-    <main class="relative h-full min-w-0 flex flex-1 flex-col overflow-hidden">
-      <!-- Top Bar (Mobile/Tablet only or for additional actions) -->
-      <header v-if="!route.meta.fullBleed" class="h-16 flex shrink-0 items-center justify-between border-b-3 border-[#8b6914]/30 bg-gradient-to-r from-[#f5e6c8] to-[#fef9ef] px-6 lg:hidden dark:border-gray-700/50 dark:bg-gray-800">
-        <div class="font-display text-lg text-[#3d2b1f]">
-          🌾 QQ农场智能助手
+    <main class="app-main relative h-full min-w-0 flex flex-1 flex-col overflow-hidden">
+      <header v-if="!route.meta.fullBleed" class="glass-mobile-header lg:hidden">
+        <div class="mobile-heading min-w-0">
+          <span class="mobile-heading__brand">
+            <span class="i-carbon-sprout" />
+            QQ农场智能助手
+          </span>
+          <strong>{{ pageTitle }}</strong>
         </div>
-        <button
-          class="flex items-center justify-center rounded-xl p-2 text-[#8b6914] hover:bg-[#f0c040]/20 dark:text-[#f0c040] dark:hover:bg-gray-700 transition-colors"
-          @click="appStore.toggleSidebar"
-        >
+        <NButton quaternary circle aria-label="打开全部导航" @click="appStore.toggleSidebar">
           <div class="i-carbon-menu text-xl" />
-        </button>
+        </NButton>
       </header>
 
-      <!-- Main Content Area -->
-      <div class="flex flex-1 flex-col overflow-hidden">
+      <div class="app-content flex flex-1 flex-col overflow-hidden">
         <div
-          class="custom-scrollbar flex flex-1 flex-col"
-          :class="route.meta.fullBleed ? 'overflow-hidden p-0' : 'overflow-y-auto p-2 md:p-6 sm:p-4'"
+          class="page-scroll custom-scrollbar flex flex-1 flex-col"
+          :class="route.meta.fullBleed ? 'overflow-hidden p-0' : 'overflow-y-auto'"
         >
           <RouterView v-slot="{ Component, route: currentRoute }">
-            <Transition name="slide-fade" mode="out-in">
+            <Transition name="page-fade" mode="out-in">
               <component :is="Component" :key="currentRoute.path" />
             </Transition>
           </RouterView>
         </div>
       </div>
     </main>
+
+    <MobileBottomNav v-if="!route.meta.fullBleed" />
   </div>
 </template>
 
 <style scoped>
-/* 弹窗动画 */
-.modal-fade-enter-active {
-  animation: modal-in 0.4s ease-out;
+.liquid-layout {
+  height: 100dvh;
 }
 
-.modal-fade-leave-active {
-  animation: modal-out 0.3s ease-in;
+.navigation-overlay {
+  background: rgba(30, 39, 32, 0.32);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
 }
 
-@keyframes modal-in {
-  0% {
-    opacity: 0;
-    transform: scale(0.9);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
+.glass-mobile-header {
+  display: flex;
+  min-height: 58px;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 10px 0;
+  padding: 8px 9px 8px 13px;
+  border: 1px solid var(--ui-border);
+  border-radius: 18px;
+  background: rgba(250, 251, 247, 0.82);
+  box-shadow:
+    var(--ui-shadow-sm),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  -webkit-backdrop-filter: blur(20px) saturate(135%);
+  backdrop-filter: blur(20px) saturate(135%);
 }
 
-@keyframes modal-out {
-  0% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  100% {
-    opacity: 0;
-    transform: scale(0.9);
-  }
+.mobile-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 
-/* 弹窗样式 */
-.warning-modal {
-  animation: float 3s ease-in-out infinite;
-}
-
-@keyframes float {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-5px);
-  }
-}
-
-/* 水波纹背景 */
-.ripple-bg {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 100%;
-  height: 100%;
+.mobile-heading__brand {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   overflow: hidden;
-  pointer-events: none;
+  color: var(--ui-primary);
+  font-size: 11px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.ripple {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(239, 68, 68, 0.1) 0%, transparent 70%);
-  animation: ripple-effect 4s ease-out infinite;
+.mobile-heading strong {
+  overflow: hidden;
+  color: var(--ui-ink);
+  font-size: 14px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.ripple-1 {
-  width: 200px;
-  height: 200px;
-  animation-delay: 0s;
+.page-scroll {
+  padding: 22px clamp(16px, 2.4vw, 34px) 28px;
 }
 
-.ripple-2 {
-  width: 300px;
-  height: 300px;
-  animation-delay: 1.3s;
+.page-scroll > :deep(*) {
+  width: 100%;
+  max-width: 1580px;
+  margin-inline: auto;
 }
 
-.ripple-3 {
-  width: 400px;
-  height: 400px;
-  animation-delay: 2.6s;
+.page-fade-enter-active {
+  transition:
+    opacity 0.16s ease,
+    transform 0.16s ease;
 }
 
-/* Slide Fade Transition — 弹性动画 */
-.slide-fade-enter-active {
-  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+.page-fade-leave-active {
+  transition: opacity 0.1s ease;
 }
 
-.slide-fade-leave-active {
-  transition: all 0.2s ease-in;
-}
-
-.slide-fade-enter-from {
+.page-fade-enter-from {
   opacity: 0;
-  transform: translateY(12px) scale(0.98);
+  transform: translateY(3px);
 }
 
-.slide-fade-leave-to {
+.page-fade-leave-to {
   opacity: 0;
-  transform: translateY(-8px) scale(0.98);
 }
 
-.custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+@media (max-width: 1023px) {
+  .page-scroll {
+    padding: 14px 12px calc(96px + env(safe-area-inset-bottom));
+  }
 }
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background-color: rgba(156, 163, 175, 0.3);
-  border-radius: 3px;
-}
-.custom-scrollbar:hover::-webkit-scrollbar-thumb {
-  background-color: rgba(156, 163, 175, 0.5);
+
+@media (max-width: 480px) {
+  .glass-mobile-header {
+    margin-inline: 8px;
+  }
+
+  .page-scroll {
+    padding-inline: 8px;
+  }
 }
 </style>

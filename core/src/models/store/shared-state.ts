@@ -30,7 +30,6 @@ let systemConfigMigrated: boolean = false;
 
 const DEFAULT_OFFLINE_REMINDER: OfflineReminder = {
     channel: 'webhook',
-    reloginUrlMode: 'none',
     endpoint: '',
     token: '',
     title: '账号下线提醒',
@@ -380,14 +379,6 @@ const globalConfig: GlobalConfig = {
         theme: 'light',
     },
     offlineReminder: { ...DEFAULT_OFFLINE_REMINDER },
-    userOfflineReminders: {},
-    adminPasswordHash: '',
-    announcement: {
-        content: '',
-        showOnce: true,
-        updatedAt: 0,
-    },
-    announcementReadRecords: {},
     systemConfig: null,
 };
 
@@ -425,30 +416,6 @@ function loadGlobalConfig(): void {
             // offlineReminder normalization done in global-config
             if (data.offlineReminder && typeof data.offlineReminder === 'object') {
                 globalConfig.offlineReminder = data.offlineReminder;
-            }
-
-            if (data.userOfflineReminders && typeof data.userOfflineReminders === 'object') {
-                globalConfig.userOfflineReminders = {};
-                for (const [username, cfg] of Object.entries(data.userOfflineReminders)) {
-                    if (username && cfg) {
-                        globalConfig.userOfflineReminders[username] = cfg as OfflineReminder;
-                    }
-                }
-            }
-
-            if (typeof data.adminPasswordHash === 'string') {
-                globalConfig.adminPasswordHash = data.adminPasswordHash;
-            }
-
-            if (data.announcement && typeof data.announcement === 'object') {
-                globalConfig.announcement = {
-                    content: String(data.announcement.content || '').trim(),
-                    showOnce: data.announcement.showOnce !== false,
-                    updatedAt: Number(data.announcement.updatedAt) || 0,
-                };
-            }
-            if (data.announcementReadRecords && typeof data.announcementReadRecords === 'object') {
-                globalConfig.announcementReadRecords = { ...data.announcementReadRecords };
             }
 
             if (data.systemConfig && typeof data.systemConfig === 'object') {

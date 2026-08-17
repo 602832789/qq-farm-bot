@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { NCard, NModal, NRadio, NRadioGroup, NTab, NTabs } from 'naive-ui'
 import { onBeforeUnmount, reactive, ref, watch } from 'vue'
 import api from '@/api'
 import BaseButton from '@/components/ui/BaseButton.vue'
@@ -135,9 +136,11 @@ function isWxFlowActive(taskId: string, flowVersion: number) {
 }
 
 async function getWxCodeAndAdd(taskId: string, flowVersion: number) {
-  if (!isWxFlowActive(taskId, flowVersion)) return
+  if (!isWxFlowActive(taskId, flowVersion))
+    return
   const codeResult = await api.post(`/api/wx-login/tasks/${taskId}/code`)
-  if (!isWxFlowActive(taskId, flowVersion)) return
+  if (!isWxFlowActive(taskId, flowVersion))
+    return
   const code = String(codeResult.data?.data?.code || '').trim()
   if (!code)
     throw new Error('未获取到登录 Code')
@@ -147,10 +150,12 @@ async function getWxCodeAndAdd(taskId: string, flowVersion: number) {
 }
 
 async function confirmWxLogin(taskId: string, flowVersion: number) {
-  if (!isWxFlowActive(taskId, flowVersion)) return
+  if (!isWxFlowActive(taskId, flowVersion))
+    return
   wxStatus.value = '正在建立登录会话...'
   await api.post(`/api/wx-login/tasks/${taskId}/confirm`)
-  if (!isWxFlowActive(taskId, flowVersion)) return
+  if (!isWxFlowActive(taskId, flowVersion))
+    return
   await getWxCodeAndAdd(taskId, flowVersion)
 }
 
@@ -164,13 +169,17 @@ async function pollWxLoginRequest(taskId: string, flowVersion: number) {
     const response = await runWxLoginStatusPoll(() => api.get(`/api/wx-login/tasks/${taskId}/status`, {
       timeout: 40000,
       signal: controller.signal,
-    }))
-    if (!isWxFlowActive(taskId, flowVersion)) return
+      skipErrorToast: true,
+    } as any))
+    if (!isWxFlowActive(taskId, flowVersion))
+      return
     const status = response.data?.data?.status
-    if (status === 'waiting')
+    if (status === 'waiting') {
       wxStatus.value = '等待微信扫码'
-    else if (status === 'scanned')
+    }
+    else if (status === 'scanned') {
       wxStatus.value = '已扫码，请在手机上确认'
+    }
     else if (status === 'authorized') {
       stopWxPolling()
       await confirmWxLogin(taskId, flowVersion)
@@ -183,23 +192,28 @@ async function pollWxLoginRequest(taskId: string, flowVersion: number) {
     wxPollTimer = setTimeout(() => void pollWxLogin(taskId, flowVersion), 1200)
   }
   catch (error: any) {
-    if (!isWxFlowActive(taskId, flowVersion) || error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') return
+    if (!isWxFlowActive(taskId, flowVersion) || error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED')
+      return
     wxError.value = error.response?.data?.error || error.message || '登录状态检查失败'
   }
   finally {
-    if (wxPollController === controller) wxPollController = undefined
+    if (wxPollController === controller)
+      wxPollController = undefined
   }
 }
 
 async function pollWxLogin(taskId: string, flowVersion: number) {
-  if (!isWxFlowActive(taskId, flowVersion)) return
+  if (!isWxFlowActive(taskId, flowVersion))
+    return
 
   const previous = wxPollInFlight
   const previousKey = wxPollKey
   if (previous) {
     await previous.catch(() => undefined)
-    if (!isWxFlowActive(taskId, flowVersion)) return
-    if (previousKey === `${taskId}:${flowVersion}`) return
+    if (!isWxFlowActive(taskId, flowVersion))
+      return
+    if (previousKey === `${taskId}:${flowVersion}`)
+      return
   }
 
   const current = pollWxLoginRequest(taskId, flowVersion)
@@ -232,18 +246,21 @@ async function startWxLogin() {
     }
     wxTaskId.value = taskId
     const qrResponse = await api.get(task.qr_url, { responseType: 'blob' })
-    if (!isWxFlowActive(taskId, flowVersion)) return
+    if (!isWxFlowActive(taskId, flowVersion))
+      return
     wxQrObjectUrl = URL.createObjectURL(qrResponse.data)
     wxQrUrl.value = wxQrObjectUrl
     wxStatus.value = '等待微信扫码'
     void pollWxLogin(taskId, flowVersion)
   }
   catch (error: any) {
-    if (flowVersion !== wxFlowVersion) return
+    if (flowVersion !== wxFlowVersion)
+      return
     wxError.value = error.response?.data?.error || error.message || '二维码获取失败'
   }
   finally {
-    if (flowVersion === wxFlowVersion) wxLoading.value = false
+    if (flowVersion === wxFlowVersion)
+      wxLoading.value = false
   }
 }
 
@@ -281,48 +298,33 @@ onBeforeUnmount(resetWxLogin)
 </script>
 
 <template>
-  <div v-if="show" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-    <div class="max-h-[90vh] max-w-md w-full overflow-hidden rounded-2xl" :style="{ background: 'var(--theme-bg)', boxShadow: 'var(--theme-shadow-lg, 0 8px 32px rgba(0,0,0,0.16))' }">
-      <!-- Header -->
-      <div class="flex items-center justify-between p-4" style="border-bottom: 1px solid color-mix(in srgb, var(--theme-text) 10%, transparent)">
-        <h3 class="text-lg font-semibold" style="color: var(--theme-primary, var(--theme-text))">
-          {{ editData ? '编辑账号' : '添加账号' }}
-        </h3>
-        <BaseButton variant="ghost" class="!p-1" @click="close">
-          <div class="i-carbon-close text-xl" :style="{ color: 'var(--theme-text)' }" />
-        </BaseButton>
-      </div>
-
-      <div class="max-h-[calc(90vh-80px)] overflow-y-auto p-4">
+  <NModal
+    :show="show"
+    :mask-closable="!loading && !wxLoading"
+    :close-on-esc="!loading && !wxLoading"
+    @update:show="value => !value && close()"
+  >
+    <NCard
+      class="account-modal-card"
+      :title="editData ? '编辑账号' : '添加账号'"
+      :bordered="false"
+      :closable="!loading && !wxLoading"
+      @close="close"
+    >
+      <div class="account-modal-content overflow-y-auto">
         <!-- 错误信息 -->
         <div v-if="errorMessage" class="mb-4 rounded-xl p-3 text-sm" style="background: rgba(239, 68, 68, 0.1); color: #ef4444">
           {{ errorMessage }}
         </div>
 
-        <div v-if="!editData" class="mb-4 flex border-b" style="border-color: color-mix(in srgb, var(--theme-text) 10%, transparent)" role="tablist" aria-label="登录方式">
-          <button
-            type="button"
-            role="tab"
-            :aria-selected="activeLoginTab === 'code'"
-            class="border-b-2 px-3 py-2 text-sm transition-colors"
-            :class="activeLoginTab === 'code' ? 'font-medium' : 'border-transparent opacity-60'"
-            :style="activeLoginTab === 'code' ? { borderColor: 'var(--theme-primary)', color: 'var(--theme-primary)' } : { color: 'var(--theme-text)' }"
-            @click="activeLoginTab = 'code'"
-          >
-            输入code登录
-          </button>
-          <button
-            type="button"
-            role="tab"
-            :aria-selected="activeLoginTab === 'wx_qr'"
-            class="border-b-2 px-3 py-2 text-sm transition-colors"
-            :class="activeLoginTab === 'wx_qr' ? 'font-medium' : 'border-transparent opacity-60'"
-            :style="activeLoginTab === 'wx_qr' ? { borderColor: 'var(--theme-primary)', color: 'var(--theme-primary)' } : { color: 'var(--theme-text)' }"
-            @click="activeLoginTab = 'wx_qr'"
-          >
+        <NTabs v-if="!editData" v-model:value="activeLoginTab" class="mb-4" type="line">
+          <NTab name="code">
+            输入 Code 登录
+          </NTab>
+          <NTab name="wx_qr">
             微信扫码登录
-          </button>
-        </div>
+          </NTab>
+        </NTabs>
 
         <div v-if="editData || activeLoginTab === 'code'" class="space-y-4">
           <BaseInput
@@ -340,34 +342,22 @@ onBeforeUnmount(resetWxLogin)
             class="farm-input"
           />
 
-          <div v-if="!editData" class="flex gap-4">
-            <label class="flex cursor-pointer items-center gap-2">
-              <input
-                v-model="form.platform"
-                type="radio"
-                value="qq"
-                class="h-4 w-4"
-                :style="{ accentColor: 'var(--theme-primary)' }"
-              >
-              <span class="text-sm" :style="{ color: 'var(--theme-text)' }">QQ小程序</span>
-            </label>
-            <label class="flex cursor-pointer items-center gap-2">
-              <input
-                v-model="form.platform"
-                type="radio"
-                value="wx"
-                class="h-4 w-4"
-                :style="{ accentColor: 'var(--theme-primary)' }"
-              >
-              <span class="text-sm" :style="{ color: 'var(--theme-text)' }">微信小程序</span>
-            </label>
-          </div>
+          <NRadioGroup v-if="!editData" v-model:value="form.platform" name="account-platform">
+            <div class="flex gap-5">
+              <NRadio value="qq">
+                QQ 小程序
+              </NRadio>
+              <NRadio value="wx">
+                微信小程序
+              </NRadio>
+            </div>
+          </NRadioGroup>
 
           <div class="flex justify-end gap-2 pt-4">
-            <BaseButton variant="outline" class="cartoon-btn" @click="close">
+            <BaseButton variant="outline" @click="close">
               取消
             </BaseButton>
-            <BaseButton variant="primary" class="cartoon-btn" :loading="loading" @click="submitManual">
+            <BaseButton variant="primary" :loading="loading" @click="submitManual">
               {{ editData ? '保存' : '添加' }}
             </BaseButton>
           </div>
@@ -379,22 +369,40 @@ onBeforeUnmount(resetWxLogin)
             placeholder="留空使用默认账号"
             class="farm-input"
           />
-          <div class="flex min-h-64 flex-col items-center justify-center gap-3">
+          <div class="min-h-64 flex flex-col items-center justify-center gap-3">
             <div v-if="wxQrUrl" class="bg-white p-2">
               <img :src="wxQrUrl" alt="微信登录二维码" class="h-52 w-52">
             </div>
-            <div v-else class="flex h-52 w-52 items-center justify-center text-sm opacity-60">
+            <div v-else class="h-52 w-52 flex items-center justify-center text-sm opacity-60">
               {{ wxLoading ? '正在获取二维码...' : '二维码不可用' }}
             </div>
-            <p class="text-sm" :style="{ color: 'var(--theme-text)' }">{{ wxStatus }}</p>
-            <p v-if="wxError" class="text-sm text-red-500">{{ wxError }}</p>
+            <p class="text-sm" :style="{ color: 'var(--theme-text)' }">
+              {{ wxStatus }}
+            </p>
+            <p v-if="wxError" class="text-sm text-red-500">
+              {{ wxError }}
+            </p>
           </div>
           <div class="flex justify-end gap-2">
-            <BaseButton variant="outline" class="cartoon-btn" @click="startWxLogin">刷新二维码</BaseButton>
-            <BaseButton variant="outline" class="cartoon-btn" @click="close">取消</BaseButton>
+            <BaseButton variant="outline" @click="startWxLogin">
+              刷新二维码
+            </BaseButton>
+            <BaseButton variant="outline" @click="close">
+              取消
+            </BaseButton>
           </div>
         </div>
       </div>
-    </div>
-  </div>
+    </NCard>
+  </NModal>
 </template>
+
+<style scoped>
+.account-modal-card {
+  width: min(448px, calc(100vw - 32px));
+}
+
+.account-modal-content {
+  max-height: calc(90vh - 100px);
+}
+</style>

@@ -1,6 +1,6 @@
 {
   "name": "qq-farm-bot",
-  "version": "20260812",
+  "version": "20260817",
   "description": "",
   "license": "ISC",
   "author": "",
@@ -18,17 +18,15 @@
     "build:linux": "tsc && tsc -p tsconfig.client.json && pkg . --no-bytecode --targets node18-linux-x64 --out-path dist/bin",
     "build:mac": "tsc && tsc -p tsconfig.client.json && pkg . --no-bytecode --targets node18-macos-x64,node18-macos-arm64 --out-path dist/bin",
     "lint": "eslint . --fix",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "pnpm run build:ts && node --test --test-isolation=none tests/sell-conditions.test.js tests/activity-directory.test.js"
   },
   "dependencies": {
     "axios": "^1.6.0",
     "express": "^4.21.0",
     "long": "^5.3.2",
-    "multer": "^2.1.1",
     "node-fetch": "^2.7.0",
     "protobufjs": "^8.0.0",
     "pushoo": "^0.1.11",
-    "qrcode": "^1.5.4",
     "socket.io": "^4.8.3",
     "winston": "^3.18.3",
     "ws": "^8.19.0"
@@ -36,7 +34,6 @@
   "devDependencies": {
     "@antfu/eslint-config": "^7.4.3",
     "@types/express": "^5.0.6",
-    "@types/multer": "^2.1.0",
     "@types/node": "^24.10.1",
     "@types/ws": "^8.18.1",
     "eslint": "^9.39.1",

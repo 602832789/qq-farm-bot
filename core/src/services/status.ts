@@ -25,6 +25,7 @@ const statusData: StatusData = {
     level: 0,
     gold: 0,
     exp: 0,
+    avatarUrl: '',
 };
 
 // ============ 状态栏高度 ============
@@ -172,6 +173,7 @@ function updateStatusFromLogin(basic: any): void {
         level: (basic.level ?? statusData.level),
         gold: (basic.gold ?? statusData.gold),
         exp: (basic.exp ?? statusData.exp),
+        avatarUrl: String(basic.avatarUrl || basic.avatar_url || statusData.avatarUrl || '').trim(),
     });
 }
 

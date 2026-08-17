@@ -18,38 +18,106 @@ textarea * {
   user-select: text !important;
 }
 
-/* Global Scrollbar Customization — 农场木纹风格 */
+/* Compact, neutral scrollbars for dense admin views. */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
+}
+
+:root {
+  color-scheme: light;
+  --ui-bg: #f3f5ef;
+  --ui-bg-soft: #eef2eb;
+  --ui-surface: rgba(255, 255, 255, 0.78);
+  --ui-surface-strong: rgba(255, 255, 255, 0.92);
+  --ui-surface-soft: rgba(239, 245, 238, 0.8);
+  --ui-border: rgba(58, 86, 68, 0.13);
+  --ui-border-strong: rgba(58, 86, 68, 0.2);
+  --ui-ink: #243028;
+  --ui-muted: #6d776f;
+  --ui-subtle: #929b94;
+  --ui-primary: #438d63;
+  --ui-primary-soft: #e4f1e7;
+  --ui-teal: #5ba495;
+  --ui-warning: #c58b3f;
+  --ui-warning-soft: #fbf2e3;
+  --ui-danger: #c95f66;
+  --ui-danger-soft: #fae9ea;
+  --ui-violet: #8f79bc;
+  --ui-violet-soft: #f0edf8;
+  --ui-blue: #5c8fa8;
+  --ui-blue-soft: #eaf2f5;
+  --ui-radius-control: 10px;
+  --ui-radius-card: 8px;
+  --ui-shadow-sm: 0 3px 14px rgba(55, 75, 61, 0.06);
+  --ui-shadow-md: 0 12px 32px rgba(55, 75, 61, 0.1);
+  --ui-shadow-lg: 0 24px 64px rgba(55, 75, 61, 0.15);
+
+  /* Compatibility aliases for existing business components. */
+  --theme-bg: var(--ui-bg);
+  --theme-text: var(--ui-ink);
+  --theme-primary: var(--ui-primary);
+  --theme-secondary: var(--ui-teal);
+  --theme-primary-rgb: 67, 141, 99;
+  --theme-radius-sm: 6px;
+  --theme-radius-md: 8px;
+  --theme-radius-lg: var(--ui-radius-card);
+  --theme-radius-xl: var(--ui-radius-card);
+  --theme-shadow-sm: var(--ui-shadow-sm);
+  --theme-shadow-md: var(--ui-shadow-md);
+  --theme-shadow-lg: var(--ui-shadow-lg);
+  --theme-shadow-3d: var(--ui-shadow-md);
+  --theme-soil: #8b6914;
+  --theme-soil-dark: #6b4f0e;
+  --theme-grass: #4a8c3f;
+  --theme-grass-light: #6dbf5b;
+  --theme-sky: #87ceeb;
+  --theme-sky-light: #b8e4f7;
+  --theme-wood: #a16207;
+  --theme-wood-dark: #7a4a05;
+  --theme-leaf: #4a8c3f;
+  --theme-flower: #f472b6;
+  --theme-water: #5bb8f5;
+  --theme-sun: #f0c040;
+  --theme-gold: #f0c040;
+  --theme-wheat: #deb887;
+  --glass-panel: rgba(250, 251, 247, 0.78);
+  --glass-card: var(--ui-surface);
+  --glass-elevated: var(--ui-surface-strong);
+  --glass-input: rgba(255, 255, 255, 0.7);
+  --glass-border: var(--ui-border);
+  --glass-highlight: rgba(255, 255, 255, 0.9);
+  --glass-muted: var(--ui-muted);
+  --glass-shadow: var(--ui-shadow-lg);
 }
 
 ::-webkit-scrollbar-track {
-  background: #f5e6c8;
-  border-radius: 10px;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #c9a96e 0%, #a16207 50%, #8b6914 100%);
-  border-radius: 10px;
-  border: 2px solid #f5e6c8;
+  background: rgba(100, 116, 139, 0.38);
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, #deb887 0%, #8b6914 50%, #6b4f0e 100%);
-}
-
-.dark ::-webkit-scrollbar-track {
-  background: #2a3a2a;
+  background: rgba(100, 116, 139, 0.62);
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 .dark ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #6b8f60 0%, #4a6b3f 100%);
-  border-color: #2a3a2a;
+  background: rgba(148, 163, 184, 0.42);
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 .dark ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, #8bb67e 0%, #5a8b4f 100%);
+  background: rgba(148, 163, 184, 0.68);
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 /* 暗色模式下 select option 文字可见（仅 farm-input 下拉框） */
@@ -65,42 +133,260 @@ body {
   margin: 0;
   padding: 0;
   overflow: hidden; /* App handles scrolling */
+  font-family: Inter, "Microsoft YaHei", "PingFang SC", ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: 0;
+  color: var(--ui-ink);
+  background: var(--ui-bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.app-shell {
+  color: var(--ui-ink);
+  background: var(--ui-bg);
+}
+
+.liquid-layout,
+.app-content {
+  background: transparent;
+}
+
+/* Uno's Tailwind reset has the same specificity as Naive UI's button rule. */
+.n-button {
+  background-color: var(--n-color);
+}
+
+.base-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.base-field__label {
+  color: var(--theme-text);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.base-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.base-switch__label {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  color: var(--theme-text);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.base-switch__label:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 /* NProgress Customization — 农场绿 */
 #nprogress .bar {
-  background: linear-gradient(90deg, #4a8c3f, #6dbf5b) !important;
-  height: 4px !important;
-  border-radius: 4px;
+  height: 2px !important;
+  border-radius: 0;
+  background: var(--theme-primary) !important;
 }
 
 #nprogress .peg {
-  box-shadow:
-    0 0 10px #4a8c3f,
-    0 0 5px #6dbf5b !important;
+  box-shadow: 0 0 8px var(--theme-primary) !important;
 }
 
-/* QQ Farm Cartoon Style Foundation */
+/* Shared liquid-glass surfaces. Repeated cards skip backdrop blur for performance. */
 
-/* Google Fonts for cartoon style */
-@import url('https://fonts.googleapis.com/css2?family=ZCOOL+KuaiLe&family=Nunito:wght@400;600;700;800&display=swap');
-
-/* Cartoon card component — 3D浮雕卡片 */
-.cartoon-card {
-  border-radius: var(--theme-radius-lg, 18px);
-  box-shadow: var(--theme-shadow-md, 0 4px 0 rgba(0,0,0,0.18), 0 4px 16px rgba(0,0,0,0.12));
-  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease;
-  border: 3px solid rgba(0,0,0,0.08);
+/* Legacy aliases kept while feature pages move to framework components. */
+.cartoon-card:not(.land-card) {
+  border: 1px solid var(--glass-border) !important;
+  border-radius: var(--ui-radius-card) !important;
+  background: var(--glass-card) !important;
+  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--ui-shadow-sm) !important;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
 }
 
-.cartoon-card:hover {
-  transform: translateY(-3px) scale(1.01);
-  box-shadow: var(--theme-shadow-lg, 0 6px 0 rgba(0,0,0,0.2), 0 8px 32px rgba(0,0,0,0.16));
+.cartoon-card:not(.land-card):hover {
+  border-color: color-mix(in srgb, var(--theme-primary) 34%, var(--glass-border)) !important;
+  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--theme-shadow-md) !important;
 }
 
-.cartoon-card:active {
-  transform: translateY(0) scale(0.99);
-  box-shadow: 0 2px 0 rgba(0,0,0,0.15), 0 2px 8px rgba(0,0,0,0.1);
+.cartoon-card:not(.land-card):active {
+  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--theme-shadow-sm) !important;
+}
+
+.farm-card,
+.farm-panel {
+  border: 1px solid var(--glass-border) !important;
+  border-radius: var(--ui-radius-card) !important;
+  background: var(--glass-card) !important;
+  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--ui-shadow-sm) !important;
+}
+
+.farm-input {
+  border-color: var(--glass-border) !important;
+  background: var(--glass-input) !important;
+}
+
+.n-card {
+  border-color: var(--glass-border) !important;
+  background-color: var(--glass-card) !important;
+  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--ui-shadow-sm);
+}
+
+.n-modal,
+.n-dialog,
+.n-drawer,
+.n-popover:not(.n-popover--raw),
+.n-dropdown-menu {
+  border: 1px solid var(--glass-border) !important;
+  background-color: var(--glass-elevated) !important;
+  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--glass-shadow) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  backdrop-filter: blur(22px) saturate(150%);
+}
+
+.n-input,
+.n-input-number,
+.n-base-selection {
+  --n-color: var(--glass-input) !important;
+  --n-color-focus: var(--glass-input) !important;
+  --n-border: 1px solid var(--glass-border) !important;
+  --n-border-hover: 1px solid color-mix(in srgb, var(--theme-primary) 52%, var(--glass-border)) !important;
+  --n-border-focus: 1px solid var(--theme-primary) !important;
+}
+
+.n-data-table,
+.n-table {
+  --n-merged-td-color: transparent !important;
+}
+
+.n-card-header,
+.n-card__content,
+.n-card__footer {
+  color: var(--ui-ink);
+}
+
+.n-tabs-nav {
+  min-width: 0;
+}
+
+.n-data-table,
+.n-table,
+.n-pagination {
+  color: var(--ui-ink);
+}
+
+.rounded-2xl,
+.rounded-3xl {
+  border-radius: var(--ui-radius-card) !important;
+}
+
+.shadow-md,
+.shadow-lg,
+.shadow-xl {
+  box-shadow: var(--ui-shadow-sm) !important;
+}
+
+.bg-white {
+  background-color: var(--ui-surface) !important;
+}
+
+.text-gray-900,
+.text-gray-800,
+.text-gray-700 {
+  color: var(--ui-ink) !important;
+}
+
+.text-gray-600,
+.text-gray-500,
+.text-gray-400 {
+  color: var(--ui-muted) !important;
+}
+
+.border-gray-100,
+.border-gray-200,
+.border-gray-300 {
+  border-color: var(--ui-border) !important;
+}
+
+.bg-gray-50,
+.bg-gray-100 {
+  background-color: var(--ui-surface-soft) !important;
+}
+
+.bg-blue-50,
+.bg-cyan-50 {
+  background-color: var(--ui-blue-soft) !important;
+}
+
+.bg-green-50,
+.bg-emerald-50,
+.bg-lime-50 {
+  background-color: var(--ui-primary-soft) !important;
+}
+
+.bg-amber-50,
+.bg-yellow-50,
+.bg-orange-50 {
+  background-color: var(--ui-warning-soft) !important;
+}
+
+.bg-red-50,
+.bg-rose-50,
+.bg-pink-50 {
+  background-color: var(--ui-danger-soft) !important;
+}
+
+.bg-purple-50,
+.bg-violet-50,
+.bg-indigo-50 {
+  background-color: var(--ui-violet-soft) !important;
+}
+
+.page-stack,
+.settings-page {
+  width: 100%;
+  min-width: 0;
+}
+
+.settings-page > :first-child h1 {
+  margin: 0;
+  color: var(--ui-ink);
+  font-size: 26px;
+  line-height: 1.25;
+}
+
+@media (max-width: 640px) {
+  .settings-page > :first-child h1 {
+    font-size: 22px;
+  }
+}
+
+button,
+a,
+input,
+textarea,
+select {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 3px solid rgba(67, 141, 99, 0.2);
+  outline-offset: 2px;
 }
 
 /* Farm background gradient — 天空+草地渐变 */
@@ -201,46 +487,14 @@ body {
 
 /* Cartoon font classes */
 .font-display {
-  font-family: 'ZCOOL KuaiLe', cursive;
-  letter-spacing: 0.02em;
+  font-family: inherit;
+  font-weight: 600;
+  letter-spacing: 0;
 }
 
 .font-body {
-  font-family: 'Nunito', sans-serif;
-  letter-spacing: 0.01em;
-}
-
-/* Cartoon button — 3D按压效果 */
-.cartoon-btn {
-  border-radius: var(--theme-radius-lg, 18px);
-  font-weight: 700;
-  padding: 10px 24px;
-  border: 3px solid rgba(0,0,0,0.1);
-  border-bottom: 4px solid rgba(0,0,0,0.2);
-  box-shadow: 0 4px 0 rgba(0,0,0,0.18), 0 4px 12px rgba(0,0,0,0.1);
-  transition: all 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
-  cursor: pointer;
-  position: relative;
-  overflow: hidden;
-  text-shadow: 0 1px 1px rgba(255,255,255,0.2);
-}
-
-.cartoon-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 0 rgba(0,0,0,0.18), 0 6px 16px rgba(0,0,0,0.12);
-}
-
-.cartoon-btn:active {
-  transform: translateY(3px);
-  box-shadow: 0 1px 0 rgba(0,0,0,0.18), 0 1px 4px rgba(0,0,0,0.1);
-  border-bottom-width: 3px;
-}
-
-.cartoon-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  transform: none;
-  box-shadow: 0 2px 0 rgba(0,0,0,0.1), 0 2px 6px rgba(0,0,0,0.06);
+  font-family: inherit;
+  letter-spacing: 0;
 }
 
 /* Farm progress bar — 卡通进度条 */
@@ -265,7 +519,6 @@ body {
     rgba(255,255,255,0.2) 4px,
     rgba(255,255,255,0.2) 8px
   );
-  animation: barberpole 1s linear infinite;
 }
 
 @keyframes barberpole {
@@ -292,4 +545,54 @@ body {
 
 .animate-shake {
   animation: shake 0.5s ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (max-width: 767px) {
+  .glass-mobile-header,
+  .app-sidebar,
+  .n-modal,
+  .n-dialog,
+  .n-drawer,
+  .n-popover:not(.n-popover--raw),
+  .n-dropdown-menu {
+    -webkit-backdrop-filter: blur(12px) saturate(125%);
+    backdrop-filter: blur(12px) saturate(125%);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass-mobile-header,
+  .app-sidebar,
+  .n-modal,
+  .n-dialog,
+  .n-drawer,
+  .n-popover:not(.n-popover--raw),
+  .n-dropdown-menu {
+    background: var(--theme-bg) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}
+
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .glass-mobile-header,
+  .app-sidebar,
+  .n-modal,
+  .n-dialog,
+  .n-drawer,
+  .n-popover:not(.n-popover--raw),
+  .n-dropdown-menu {
+    background: var(--glass-elevated) !important;
+  }
 }
