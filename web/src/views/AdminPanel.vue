@@ -2,6 +2,7 @@
 import type { AdminTabKey } from '@/components/admin/AdminPanelTabs.vue'
 import { onMounted, ref, watch } from 'vue'
 import AdminAlertModal from '@/components/admin/AdminAlertModal.vue'
+import AdminActivityUpdatePanel from '@/components/admin/AdminActivityUpdatePanel.vue'
 import AdminCardConfirmModals from '@/components/admin/AdminCardConfirmModals.vue'
 import AdminCardPanel from '@/components/admin/AdminCardPanel.vue'
 import AdminLoginLogConfirmModal from '@/components/admin/AdminLoginLogConfirmModal.vue'
@@ -31,6 +32,7 @@ const tabs = [
   { key: 'user', label: '用户', icon: 'i-carbon-user-admin' },
   { key: 'log', label: '日志', icon: 'i-carbon-document' },
   { key: 'system', label: '系统', icon: 'i-carbon-settings' },
+  { key: 'activity-update', label: '活动更新', icon: 'i-carbon-update-now' },
 ] as const
 
 const modalVisible = ref(false)
@@ -334,6 +336,8 @@ onMounted(() => {
         @save-login-links="handleSaveLoginLinks"
         @upload-login-logo="handleUploadLoginLogo"
       />
+
+      <AdminActivityUpdatePanel v-else-if="activeTab === 'activity-update'" />
     </AdminPanelTabs>
 
     <AdminLoginLogConfirmModal

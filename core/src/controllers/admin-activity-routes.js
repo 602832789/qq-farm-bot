@@ -4,6 +4,7 @@ const {
 const {
   registerAdminNanguaActivityRoutes,
 } = require("./admin-nangua-activity-routes");
+const { registerAdminActivityUpdateRoutes } = require('./admin-activity-update-routes');
 
 function registerAdminActivityRoutes({
   app,
@@ -11,6 +12,7 @@ function registerAdminActivityRoutes({
   getAccountIdFromRequest,
   canAccessAccount,
   sendProviderError,
+  requireAdminToken,
 }) {
   const routeContext = {
     app,
@@ -22,6 +24,7 @@ function registerAdminActivityRoutes({
 
   registerAdminNanguaActivityRoutes(routeContext);
   registerAdminHeluActivityRoutes(routeContext);
+  registerAdminActivityUpdateRoutes({ app, requireAdminToken });
 }
 
 module.exports = { registerAdminActivityRoutes };

@@ -457,6 +457,7 @@ function startAdminServer(dataProvider) {
   registerAdminActivityRoutes({
     app,
     provider,
+    requireAdminToken,
     getAccountIdFromRequest,
     canAccessAccount,
     sendProviderError,
