@@ -124,7 +124,9 @@ tail -f app_dev.log
 pnpm stop
 ```
 
-`pnpm start` 会安装工作区依赖、构建前端并在后台启动后端，进程号记录在 `app_dev.pid`。
+`pnpm start` 会检查当前操作系统所需的依赖入口；依赖未安装或来自其他操作系统时会自动重建工作区依赖。前端源码有变化时使用低内存模式构建，构建完成后在后台启动后端，进程号记录在 `app_dev.pid`。没有代码变化的普通重启会直接复用 `web/dist/`，不会重复构建。依赖更新后也可以手动执行 `pnpm install`。
+
+在 2 核 2GB 等低配置服务器上，启动构建默认将 Node.js 堆内存限制为 768MB。前端类型检查已与生产构建拆分，需要单独检查时执行 `pnpm typecheck:web`。
 
 ### Docker Compose
 
@@ -260,6 +262,7 @@ qq-farm-bot/
 | `pnpm dev:web` | 启动 Vite 前端开发服务 |
 | `pnpm dev:core` | 使用 `tsx` 启动后端 |
 | `pnpm lint` | 检查并自动修复前后端代码风格 |
+| `pnpm typecheck:web` | 执行前端 TypeScript 类型检查（不参与生产启动） |
 | `pnpm build:web` | 构建 Web 面板到 `web/dist/` |
 | `pnpm build:core` | 编译后端 TypeScript |
 | `pnpm build` | 依次构建前端和后端 |
