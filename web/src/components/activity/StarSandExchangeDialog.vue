@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
 import type { ShopDto, ShopGoodsDto } from '@/stores/activity-center'
+import { computed, nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
 
 const props = defineProps<{
   open: boolean
@@ -162,8 +162,12 @@ onBeforeUnmount(() => unlockPage(false))
           tabindex="-1"
         >
           <header>
-            <h2 :id="titleId">确认兑换</h2>
-            <button type="button" class="close-button" aria-label="关闭兑换确认" :disabled="busy" @click="close">×</button>
+            <h2 :id="titleId">
+              确认兑换
+            </h2>
+            <button type="button" class="close-button" aria-label="关闭兑换确认" :disabled="busy" @click="close">
+              ×
+            </button>
           </header>
 
           <div class="goods-summary">
@@ -187,7 +191,9 @@ onBeforeUnmount(() => unlockPage(false))
           <div class="quantity-section">
             <label for="star-sand-exchange-quantity">兑换数量</label>
             <div class="quantity-control">
-              <button type="button" aria-label="减少兑换数量" :disabled="busy || quantity <= 1" @click="setQuantity(quantity - 1)">−</button>
+              <button type="button" aria-label="减少兑换数量" :disabled="busy || quantity <= 1" @click="setQuantity(quantity - 1)">
+                −
+              </button>
               <input
                 id="star-sand-exchange-quantity"
                 ref="quantityInput"
@@ -202,11 +208,19 @@ onBeforeUnmount(() => unlockPage(false))
                 @blur="normalizeQuantity"
                 @keydown.enter.prevent="confirm"
               >
-              <button type="button" aria-label="增加兑换数量" :disabled="busy || !validQuantity || (maxCount !== null && quantity >= maxCount)" @click="setQuantity(quantity + 1)">＋</button>
-              <button type="button" class="maximum-button" :disabled="busy || maxCount === null || maxCount < 1" @click="setQuantity(maxCount || 1)">最大</button>
+              <button type="button" aria-label="增加兑换数量" :disabled="busy || !validQuantity || (maxCount !== null && quantity >= maxCount)" @click="setQuantity(quantity + 1)">
+                ＋
+              </button>
+              <button type="button" class="maximum-button" :disabled="busy || maxCount === null || maxCount < 1" @click="setQuantity(maxCount || 1)">
+                最大
+              </button>
             </div>
-            <p v-if="validationMessage" id="star-sand-exchange-error" class="validation-message" role="alert">{{ validationMessage }}</p>
-            <p v-else class="limit-message">最多可兑换 {{ maxCount ?? '—' }} 份</p>
+            <p v-if="validationMessage" id="star-sand-exchange-error" class="validation-message" role="alert">
+              {{ validationMessage }}
+            </p>
+            <p v-else class="limit-message">
+              最多可兑换 {{ maxCount ?? '—' }} 份
+            </p>
           </div>
 
           <div class="totals" aria-live="polite">
@@ -218,7 +232,9 @@ onBeforeUnmount(() => unlockPage(false))
             请再次确认商品和数量。确认后将立即扣除星砂并发放奖励。
           </p>
           <div class="dialog-actions">
-            <button type="button" class="cancel-button" :disabled="busy" @click="close">取消</button>
+            <button type="button" class="cancel-button" :disabled="busy" @click="close">
+              取消
+            </button>
             <button type="button" class="confirm-button" :disabled="busy || !validQuantity" @click="confirm">
               {{ busy ? '兑换中…' : `确认兑换 ${validQuantity ? quantity : ''} 份` }}
             </button>
@@ -230,6 +246,267 @@ onBeforeUnmount(() => unlockPage(false))
 </template>
 
 <style scoped>
-.exchange-overlay{position:fixed;z-index:1000;inset:0;display:flex;align-items:center;justify-content:center;padding:24px 18px;background:rgba(0,12,38,.78);backdrop-filter:blur(2px)}.exchange-dialog{position:relative;width:min(390px,100%);max-height:100%;overflow-y:auto;padding:20px;border:3px solid #83cdec;border-radius:22px;color:#eefaff;background:radial-gradient(circle at 50% 0,rgba(67,163,218,.52),transparent 42%),linear-gradient(155deg,#164c92,#252f77 70%,#18235e);box-shadow:0 16px 45px rgba(0,0,0,.58),inset 0 0 0 2px rgba(208,243,255,.18);scrollbar-width:thin}.exchange-dialog header{position:relative;display:flex;justify-content:center;align-items:center;margin-bottom:15px}.exchange-dialog h2{margin:0;color:#fff4bd;font-size:22px;letter-spacing:.08em;text-shadow:0 2px 3px #664a18}.close-button{position:absolute;top:-10px;right:-9px;width:38px;height:38px;padding:0;border:2px solid #b6e8fa;border-radius:50%;color:white;background:#326ca7;font:700 27px/30px Arial;cursor:pointer}.close-button:disabled{opacity:.55;cursor:wait}.goods-summary{display:flex;gap:13px;padding:12px;border:1px solid rgba(167,225,250,.45);border-radius:15px;background:rgba(9,53,110,.46)}.goods-picture{width:96px;height:96px;display:grid;flex:none;place-items:center;border-radius:12px;background:linear-gradient(160deg,rgba(161,226,247,.5),rgba(55,103,170,.4))}.goods-picture img{width:90%;height:90%;object-fit:contain}.goods-picture span{font-size:45px;color:#bce9f8}.goods-copy{min-width:0;display:flex;flex-direction:column;justify-content:center;gap:4px}.goods-copy strong{overflow:hidden;color:white;font-size:16px;text-overflow:ellipsis;white-space:nowrap}.goods-copy span{color:#cce9f6;font-size:11px}.balance-row{display:flex;justify-content:space-between;margin:12px 2px 8px;padding:9px 12px;border-radius:10px;color:#cdeafb;background:rgba(5,33,83,.42)}.balance-row b{color:#fff0a6}.quantity-section{padding:4px 2px}.quantity-section label{display:block;margin-bottom:7px;font-size:13px;font-weight:700}.quantity-control{display:grid;grid-template-columns:40px minmax(62px,1fr) 40px 54px;gap:6px}.quantity-control button,.quantity-control input{height:40px;border:1px solid #81c8e8;border-radius:9px}.quantity-control button{color:white;background:#286ea9;font-size:20px;font-weight:700;cursor:pointer}.quantity-control button:disabled{opacity:.45;cursor:not-allowed}.quantity-control input{min-width:0;padding:0 7px;color:#42310e;background:#fff9d8;font-size:17px;font-weight:700;text-align:center;outline:none}.quantity-control input:focus{border-color:#fff0a0;box-shadow:0 0 0 3px rgba(255,239,145,.25)}.quantity-control .maximum-button{font-size:12px}.validation-message,.limit-message{min-height:17px;margin:5px 2px 0;font-size:10px}.validation-message{color:#ffd1c9}.limit-message{color:#a9d1e6}.totals{display:grid;gap:4px;margin-top:5px;padding:11px 12px;border:1px solid rgba(255,230,133,.36);border-radius:11px;color:#d9edf8;background:rgba(7,30,78,.42);font-size:12px}.totals span{display:flex;justify-content:space-between;gap:8px}.totals b{color:#fff0a4}.confirmation-copy{margin:12px 5px;color:#bcd9e8;font-size:11px;line-height:1.55;text-align:center}.dialog-actions{display:grid;grid-template-columns:1fr 1.5fr;gap:9px}.dialog-actions button{min-height:44px;border-radius:12px;font-weight:700;cursor:pointer}.dialog-actions button:disabled{opacity:.55;cursor:not-allowed}.cancel-button{border:1px solid #80b8d6;color:#d9eff9;background:rgba(20,70,122,.68)}.confirm-button{border:2px solid #fff0a2;color:#66440c;background:linear-gradient(#fff6b8,#e7b94f);box-shadow:0 3px 8px rgba(0,0,0,.24)}button:focus-visible,input:focus-visible{outline:3px solid #fff5a8;outline-offset:2px}.exchange-fade-enter-active,.exchange-fade-leave-active{transition:opacity .16s ease}.exchange-fade-enter-active .exchange-dialog,.exchange-fade-leave-active .exchange-dialog{transition:transform .16s ease}.exchange-fade-enter-from,.exchange-fade-leave-to{opacity:0}.exchange-fade-enter-from .exchange-dialog,.exchange-fade-leave-to .exchange-dialog{transform:scale(.96)}
-@media(max-height:650px){.exchange-overlay{align-items:flex-start;padding-top:12px;padding-bottom:12px}.exchange-dialog{padding:15px}.goods-picture{width:78px;height:78px}}
+.exchange-overlay {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 18px;
+  background: rgba(0, 12, 38, 0.78);
+  backdrop-filter: blur(2px);
+}
+.exchange-dialog {
+  position: relative;
+  width: min(390px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 20px;
+  border: 3px solid #83cdec;
+  border-radius: 22px;
+  color: #eefaff;
+  background:
+    radial-gradient(circle at 50% 0, rgba(67, 163, 218, 0.52), transparent 42%),
+    linear-gradient(155deg, #164c92, #252f77 70%, #18235e);
+  box-shadow:
+    0 16px 45px rgba(0, 0, 0, 0.58),
+    inset 0 0 0 2px rgba(208, 243, 255, 0.18);
+  scrollbar-width: thin;
+}
+.exchange-dialog header {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 15px;
+}
+.exchange-dialog h2 {
+  margin: 0;
+  color: #fff4bd;
+  font-size: 22px;
+  letter-spacing: 0.08em;
+  text-shadow: 0 2px 3px #664a18;
+}
+.close-button {
+  position: absolute;
+  top: -10px;
+  right: -9px;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 2px solid #b6e8fa;
+  border-radius: 50%;
+  color: white;
+  background: #326ca7;
+  font: 700 27px/30px Arial;
+  cursor: pointer;
+}
+.close-button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+.goods-summary {
+  display: flex;
+  gap: 13px;
+  padding: 12px;
+  border: 1px solid rgba(167, 225, 250, 0.45);
+  border-radius: 15px;
+  background: rgba(9, 53, 110, 0.46);
+}
+.goods-picture {
+  width: 96px;
+  height: 96px;
+  display: grid;
+  flex: none;
+  place-items: center;
+  border-radius: 12px;
+  background: linear-gradient(160deg, rgba(161, 226, 247, 0.5), rgba(55, 103, 170, 0.4));
+}
+.goods-picture img {
+  width: 90%;
+  height: 90%;
+  object-fit: contain;
+}
+.goods-picture span {
+  font-size: 45px;
+  color: #bce9f8;
+}
+.goods-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+}
+.goods-copy strong {
+  overflow: hidden;
+  color: white;
+  font-size: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.goods-copy span {
+  color: #cce9f6;
+  font-size: 11px;
+}
+.balance-row {
+  display: flex;
+  justify-content: space-between;
+  margin: 12px 2px 8px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  color: #cdeafb;
+  background: rgba(5, 33, 83, 0.42);
+}
+.balance-row b {
+  color: #fff0a6;
+}
+.quantity-section {
+  padding: 4px 2px;
+}
+.quantity-section label {
+  display: block;
+  margin-bottom: 7px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.quantity-control {
+  display: grid;
+  grid-template-columns: 40px minmax(62px, 1fr) 40px 54px;
+  gap: 6px;
+}
+.quantity-control button,
+.quantity-control input {
+  height: 40px;
+  border: 1px solid #81c8e8;
+  border-radius: 9px;
+}
+.quantity-control button {
+  color: white;
+  background: #286ea9;
+  font-size: 20px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.quantity-control button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.quantity-control input {
+  min-width: 0;
+  padding: 0 7px;
+  color: #42310e;
+  background: #fff9d8;
+  font-size: 17px;
+  font-weight: 700;
+  text-align: center;
+  outline: none;
+}
+.quantity-control input:focus {
+  border-color: #fff0a0;
+  box-shadow: 0 0 0 3px rgba(255, 239, 145, 0.25);
+}
+.quantity-control .maximum-button {
+  font-size: 12px;
+}
+.validation-message,
+.limit-message {
+  min-height: 17px;
+  margin: 5px 2px 0;
+  font-size: 10px;
+}
+.validation-message {
+  color: #ffd1c9;
+}
+.limit-message {
+  color: #a9d1e6;
+}
+.totals {
+  display: grid;
+  gap: 4px;
+  margin-top: 5px;
+  padding: 11px 12px;
+  border: 1px solid rgba(255, 230, 133, 0.36);
+  border-radius: 11px;
+  color: #d9edf8;
+  background: rgba(7, 30, 78, 0.42);
+  font-size: 12px;
+}
+.totals span {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.totals b {
+  color: #fff0a4;
+}
+.confirmation-copy {
+  margin: 12px 5px;
+  color: #bcd9e8;
+  font-size: 11px;
+  line-height: 1.55;
+  text-align: center;
+}
+.dialog-actions {
+  display: grid;
+  grid-template-columns: 1fr 1.5fr;
+  gap: 9px;
+}
+.dialog-actions button {
+  min-height: 44px;
+  border-radius: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.dialog-actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.cancel-button {
+  border: 1px solid #80b8d6;
+  color: #d9eff9;
+  background: rgba(20, 70, 122, 0.68);
+}
+.confirm-button {
+  border: 2px solid #fff0a2;
+  color: #66440c;
+  background: linear-gradient(#fff6b8, #e7b94f);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.24);
+}
+button:focus-visible,
+input:focus-visible {
+  outline: 3px solid #fff5a8;
+  outline-offset: 2px;
+}
+.exchange-fade-enter-active,
+.exchange-fade-leave-active {
+  transition: opacity 0.16s ease;
+}
+.exchange-fade-enter-active .exchange-dialog,
+.exchange-fade-leave-active .exchange-dialog {
+  transition: transform 0.16s ease;
+}
+.exchange-fade-enter-from,
+.exchange-fade-leave-to {
+  opacity: 0;
+}
+.exchange-fade-enter-from .exchange-dialog,
+.exchange-fade-leave-to .exchange-dialog {
+  transform: scale(0.96);
+}
+@media (max-height: 650px) {
+  .exchange-overlay {
+    align-items: flex-start;
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+  .exchange-dialog {
+    padding: 15px;
+  }
+  .goods-picture {
+    width: 78px;
+    height: 78px;
+  }
+}
 </style>

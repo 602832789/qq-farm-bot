@@ -27,6 +27,10 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use((response) => {
   return response
 }, (error) => {
+  // Aborting an in-flight request is expected when a modal closes or a QR flow restarts.
+  if (axios.isCancel(error) || error?.code === 'ERR_CANCELED')
+    return Promise.reject(error)
+
   const toast = useToastStore()
 
   // 支持 skipErrorToast 配置，让调用方自行处理错误

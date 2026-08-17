@@ -10,7 +10,6 @@ import type { Server as SocketIOServer } from 'socket.io';
 
 export interface AdminContext {
     tokens: Set<string>;
-    tokenUserMap: Map<string, any>;
     app: Application | null;
     server: Server | null;
     io: SocketIOServer | null;
@@ -19,10 +18,8 @@ export interface AdminContext {
 
 function createAdminContext(dataProvider: any): AdminContext {
     const tokens = new Set<string>();
-    const tokenUserMap = new Map<string, any>();
     return {
         tokens,
-        tokenUserMap,
         app: null,
         server: null,
         io: null,

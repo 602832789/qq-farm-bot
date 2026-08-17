@@ -24,7 +24,7 @@ function getAccounts(): AccountsData {
 
 function normalizeAccountsData(raw: unknown): AccountsData {
     const data: any = raw && typeof raw === 'object' ? raw : {};
-    const accounts: Account[] = Array.isArray(data.accounts) ? data.accounts : [];
+    const accounts: Account[] = (Array.isArray(data.accounts) ? data.accounts : []).map(normalizeAccount);
     const maxId = accounts.reduce((m: number, a: any) => Math.max(m, Number.parseInt(a && a.id, 10) || 0), 0);
     let nextId = Number.parseInt(data.nextId, 10);
     if (!Number.isFinite(nextId) || nextId <= 0) nextId = maxId + 1;
@@ -33,10 +33,34 @@ function normalizeAccountsData(raw: unknown): AccountsData {
     return { accounts, nextId };
 }
 
+function normalizeAccount(raw: any): Account {
+    const source = raw && typeof raw === 'object' ? raw : {};
+    const account: Account = {
+        id: String(source.id || ''),
+        name: String(source.name || ''),
+        code: String(source.code || ''),
+        platform: String(source.platform || 'qq'),
+        uin: String(source.uin || ''),
+        qq: String(source.qq || source.uin || ''),
+        avatar: String(source.avatar || source.avatarUrl || ''),
+        createdAt: Number(source.createdAt) || Date.now(),
+        updatedAt: Number(source.updatedAt) || Date.now(),
+    };
+    const nick = String(source.nick || '').trim();
+    if (nick) account.nick = nick;
+    return account;
+}
+
 function addOrUpdateAccount(acc: Partial<Account> & { avatarUrl?: string }): AccountsData {
     const { ensureAccountConfig, removeAccountConfig } = require('./account-config');
     const data = normalizeAccountsData(loadAccounts());
     let touchedAccountId = '';
+    const source: any = acc || {};
+    const cleanAccount: any = {};
+    for (const key of ['id', 'name', 'code', 'platform', 'uin', 'qq', 'avatar', 'avatarUrl', 'nick']) {
+        if (source[key] !== undefined) cleanAccount[key] = source[key];
+    }
+    acc = cleanAccount;
     if (acc.id) {
         const idx = data.accounts.findIndex(a => a.id === acc.id);
         if (idx >= 0) {
@@ -54,7 +78,6 @@ function addOrUpdateAccount(acc: Partial<Account> & { avatarUrl?: string }): Acc
             uin: acc.uin ? String(acc.uin) : '',
             qq: acc.qq ? String(acc.qq) : (acc.uin ? String(acc.uin) : ''),
             avatar: acc.avatar || acc.avatarUrl || '',
-            username: acc.username || '',
             createdAt: Date.now(),
             updatedAt: Date.now(),
         });
@@ -78,39 +101,6 @@ function deleteAccount(id: unknown): AccountsData {
     return data;
 }
 
-function getAccountsByUser(username: string): AccountsData {
-    const allAccounts = loadAccounts();
-    if (!username) return allAccounts;
-    return {
-        accounts: allAccounts.accounts.filter(a => a.username === username),
-        nextId: allAccounts.nextId
-    };
-}
-
-function deleteAccountsByUser(username: string): { deletedCount: number; deletedIds: string[] } {
-    const { removeAccountConfig } = require('./account-config');
-    const data = loadAccounts();
-    const deletedIds: string[] = [];
-    data.accounts = data.accounts.filter(a => {
-        if (a.username === username) {
-            deletedIds.push(a.id);
-            return false;
-        }
-        return true;
-    });
-    if (data.accounts.length === 0) {
-        data.nextId = 1;
-    }
-    saveAccounts(data);
-    deletedIds.forEach(id => removeAccountConfig(id));
-    return { deletedCount: deletedIds.length, deletedIds };
-}
-
-function deleteUserConfig(username: string): void {
-    const { deleteUserOfflineReminder } = require('./global-config');
-    deleteUserOfflineReminder(username);
-}
-
 module.exports = {
     loadAccounts,
     saveAccounts,
@@ -118,7 +108,4 @@ module.exports = {
     normalizeAccountsData,
     addOrUpdateAccount,
     deleteAccount,
-    getAccountsByUser,
-    deleteAccountsByUser,
-    deleteUserConfig,
 };

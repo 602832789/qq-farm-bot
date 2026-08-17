@@ -3,8 +3,20 @@ import { computed, ref } from 'vue'
 import api from '@/api'
 
 export type ActivityTabKey = 'travel' | 'constellation' | 'shop' | 'solar'
+export type ActivityGameplayKey = 'stellar'
 export type ActivityVariant = 'blue' | 'violet' | 'gold' | 'green'
 export type ActivityRecord = Record<string, unknown>
+
+export interface ActivityDirectoryItemDto {
+  id: string
+  activityIds: string[]
+  name: string
+  startTime: number | null
+  endTime: number | null
+  gameplayKey: ActivityGameplayKey | null
+  gameplayTargets: ActivityTabKey[]
+  detailTarget: ActivityTabKey | null
+}
 
 export interface ActivityItemDto {
   id: string
@@ -252,6 +264,8 @@ export interface QingMeiActivityDto {
 }
 
 export interface ActivityCenterSnapshotDto {
+  serverTime: number | null
+  activities: ActivityDirectoryItemDto[]
   season: SeasonDto | null
   shop: ShopDto | null
   solarTerms: SolarTermsDto | null
@@ -321,7 +335,7 @@ function plainText(value: unknown): string {
     .replace(/&lt;/gi, '<')
     .replace(/&gt;/gi, '>')
     .replace(/&quot;/gi, '"')
-    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&#39;|&apos;/gi, '\'')
     .replace(/&#(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
     .replace(/&#x([\da-f]+);/gi, (_, code: string) => String.fromCodePoint(Number.parseInt(code, 16)))
     .trim()
@@ -642,6 +656,35 @@ function normalizeSolarTerms(value: unknown): SolarTermsDto | null {
   }
 }
 
+function normalizeActivityDirectory(value: unknown): ActivityDirectoryItemDto[] {
+  return records(value).map((entry) => {
+    const detailTarget = text(entry.detailTarget, entry.detail_target)
+    const normalizedDetailTarget = ['travel', 'constellation', 'shop', 'solar'].includes(detailTarget)
+      ? detailTarget as ActivityTabKey
+      : null
+    const gameplayKey = text(entry.gameplayKey, entry.gameplay_key)
+    const rawGameplayTargets = first(entry.gameplayTargets, entry.gameplay_targets)
+    const gameplayTargets = Array.isArray(rawGameplayTargets)
+      ? rawGameplayTargets.map(value => text(value)).filter((value): value is ActivityTabKey => ['travel', 'constellation', 'shop', 'solar'].includes(value))
+      : []
+    const id = text(entry.id, entry.activityId, entry.activity_id)
+    const rawActivityIds = first(entry.activityIds, entry.activity_ids)
+    const activityIds = Array.isArray(rawActivityIds)
+      ? rawActivityIds.map(value => text(value)).filter(Boolean)
+      : []
+    return {
+      id,
+      activityIds: activityIds.length > 0 ? activityIds : [id].filter(Boolean),
+      name: text(entry.name, entry.title),
+      startTime: toMilliseconds(first(entry.startTime, entry.start_time, entry.beginTime, entry.begin_time)),
+      endTime: toMilliseconds(first(entry.endTime, entry.end_time)),
+      gameplayKey: gameplayKey === 'stellar' || normalizedDetailTarget ? 'stellar' as const : null,
+      gameplayTargets: gameplayTargets.length > 0 ? gameplayTargets : normalizedDetailTarget ? [normalizedDetailTarget] : [],
+      detailTarget: normalizedDetailTarget,
+    }
+  }).filter(entry => entry.id)
+}
+
 function normalizeQingMei(value: unknown): QingMeiActivityDto | null {
   if (!isRecord(value))
     return null
@@ -679,17 +722,21 @@ function normalizeQingMei(value: unknown): QingMeiActivityDto | null {
     finished: bool(raw.finished),
     quotePrices: Array.isArray(raw.quotePrices) ? raw.quotePrices.map(String) : [],
     quoteTotals: Array.isArray(raw.quoteTotals) ? raw.quoteTotals.map(String) : [],
-    quote: Object.keys(quoteRaw).length ? {
-      round: finiteNumber(quoteRaw.round) || 0,
-      unitPrice: text(quoteRaw.unitPrice),
-      totalGold: text(quoteRaw.totalGold),
-      doubled: bool(quoteRaw.doubled),
-    } : null,
-    dailySeed: Object.keys(dailySeedRaw).length ? {
-      claimed: bool(dailySeedRaw.claimed),
-      grantId: text(dailySeedRaw.grantId),
-      reward: normalizeItem(dailySeedRaw.reward),
-    } : null,
+    quote: Object.keys(quoteRaw).length
+      ? {
+          round: finiteNumber(quoteRaw.round) || 0,
+          unitPrice: text(quoteRaw.unitPrice),
+          totalGold: text(quoteRaw.totalGold),
+          doubled: bool(quoteRaw.doubled),
+        }
+      : null,
+    dailySeed: Object.keys(dailySeedRaw).length
+      ? {
+          claimed: bool(dailySeedRaw.claimed),
+          grantId: text(dailySeedRaw.grantId),
+          reward: normalizeItem(dailySeedRaw.reward),
+        }
+      : null,
     actions: {
       claimSeed: action('claimSeed'),
       start: action('start'),
@@ -748,6 +795,8 @@ export function normalizeActivitySnapshot(value: unknown): ActivityCenterSnapsho
   const actionsRaw = record(first(root.actions, seasonRecord.actions))
   const capabilitiesRaw = record(first(root.capabilities, seasonRecord.capabilities, record(root.shop).capabilities, record(first(root.solarTerms, root.solar)).capabilities))
   return {
+    serverTime: toMilliseconds(first(root.serverTime, root.server_time)),
+    activities: normalizeActivityDirectory(first(root.activities, root.activityList, root.activity_list)),
     season: normalizeSeason(seasonRaw),
     shop: normalizeShop(first(root.shop, root.starSandShop, root.star_sand_shop)),
     solarTerms: normalizeSolarTerms(first(root.solarTerms, root.solar_terms, root.solar)),
@@ -763,9 +812,9 @@ export function normalizeActivitySnapshot(value: unknown): ActivityCenterSnapsho
 }
 
 const activityErrorMessages: Record<string, string> = {
-  '1034038': '当前没有可点亮或可领取的星宿奖励，可能已经领取过，请稍后或明天再来看看',
-  '1034001': '当前活动暂不可操作，请稍后再试',
-  '1034002': '活动尚未开放或已经结束',
+  1034038: '当前没有可点亮或可领取的星宿奖励，可能已经领取过，请稍后或明天再来看看',
+  1034001: '当前活动暂不可操作，请稍后再试',
+  1034002: '活动尚未开放或已经结束',
   NO_PASS_REWARD: '当前没有可领取的游记奖励，请完成新的游记等级后再试',
   SOLAR_TERM_UNAVAILABLE: '当前节令奖励暂不可领取，请在开放后再试',
   CONSTELLATION_UNAVAILABLE: '观星礼录活动暂未开放或已经结束',
@@ -838,6 +887,7 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
   })
 
   const season = computed(() => snapshot.value.season)
+  const activities = computed(() => snapshot.value.activities)
   const shop = computed(() => snapshot.value.shop)
   const solarTerms = computed(() => snapshot.value.solarTerms)
   const solar = solarTerms
@@ -871,7 +921,7 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
   function applySnapshot(value: unknown, clientStartedAt = Date.now()) {
     const normalized = normalizeActivitySnapshot(value)
     snapshot.value = normalized
-    const serverTime = [normalized.season?.serverTime, normalized.shop?.serverTime, normalized.solarTerms?.serverTime, normalized.constellation?.serverTime]
+    const serverTime = [normalized.serverTime, normalized.season?.serverTime, normalized.shop?.serverTime, normalized.solarTerms?.serverTime, normalized.constellation?.serverTime]
       .find(value => value !== null && value !== undefined)
     if (serverTime !== undefined && serverTime !== null)
       serverClockOffset.value = serverTime - Math.round((clientStartedAt + Date.now()) / 2)
@@ -1023,6 +1073,7 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
 
   return {
     snapshot,
+    activities,
     season,
     shop,
     solar,

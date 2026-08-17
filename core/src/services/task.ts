@@ -276,7 +276,6 @@ async function checkAndClaimTasks(): Promise<void> {
             }
         }
         await checkAndClaimActives(normalized.actives);
-        await checkAndClaimIllustratedRewards();
     } catch (e: any) {
         logWarn('任务', `检查任务失败: ${e.message}`, {
             module: 'task', event: '扫描任务', result: 'error'
@@ -334,7 +333,6 @@ function onTaskInfoNotify(taskInfo: any): void {
     taskScheduler.setTimeoutTask('task_claim_debounce', 1000, async () => {
         if (hasClaimable) await claimTasksFromList(claimable);
         await checkAndClaimActives(actives);
-        await checkAndClaimIllustratedRewards();
     });
 }
 
@@ -350,8 +348,9 @@ async function claimTasksFromList(claimable: any[]): Promise<void> {
 function initTaskSystem(): void {
     cleanupTaskSystem();
     networkEvents.on('taskInfoNotify', onTaskInfoNotify);
-    taskScheduler.setTimeoutTask('task_init_bootstrap', 4000, () => {
-        checkAndClaimTasks();
+    taskScheduler.setTimeoutTask('task_init_bootstrap', 4000, async () => {
+        await checkAndClaimTasks();
+        if (isAutomationOn('task')) await checkAndClaimIllustratedRewards();
     });
 }
 

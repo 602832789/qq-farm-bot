@@ -99,6 +99,7 @@ const userState = {
     coupon: 0,
     goldBean: 0,
     openId: '',
+    avatarUrl: '',
 };
 
 function getUserState() { return userState; }
@@ -602,12 +603,14 @@ async function sendLogin(context: ConnectionContext, onLoginSuccess?: () => void
         userState.gold = toNum(reply.basic.gold);
         userState.exp = toNum(reply.basic.exp);
         userState.openId = String(reply.basic.open_id || '').trim();
+        userState.avatarUrl = String(reply.basic.avatar_url || '').trim();
 
         updateStatusFromLogin({
             name: userState.name,
             level: userState.level,
             gold: userState.gold,
             exp: userState.exp,
+            avatarUrl: userState.avatarUrl,
         });
 
         log('系统', `登录成功: ${userState.name} (Lv${userState.level})`);

@@ -6,7 +6,6 @@ defineProps<{
   currencyImage?: string
   currencyName?: string
   loading?: boolean
-  brandImage?: string
   showRefresh?: boolean
 }>()
 
@@ -19,11 +18,14 @@ defineEmits<{
 <template>
   <header class="activity-header">
     <div class="activity-header__brand">
-      <button type="button" class="activity-header__back" aria-label="返回" @click="$emit('back')">
+      <button type="button" class="activity-header__back" aria-label="返回活动列表" @click="$emit('back')">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 4-8 8 8 8" /></svg>
+        <span>活动列表</span>
       </button>
-      <img v-if="brandImage" class="activity-header__logo" :src="brandImage" :alt="title || '活动标题'">
-      <h1 v-else>{{ title || '—' }}</h1>
+      <div class="activity-header__title">
+        <small>活动中心</small>
+        <h1>{{ title || '活动详情' }}</h1>
+      </div>
     </div>
     <div v-if="balance !== undefined" class="activity-header__balance" :title="currencyName">
       <img v-if="currencyImage" :src="currencyImage" alt="">
@@ -40,18 +42,162 @@ defineEmits<{
 </template>
 
 <style scoped>
-.activity-header { position: absolute; z-index: 20; inset: 0 0 auto; min-height: calc(122px + env(safe-area-inset-top)); padding: calc(12px + env(safe-area-inset-top)) 14px 8px; pointer-events: none; background: linear-gradient(180deg, rgba(7,25,66,.55), rgba(7,35,78,.08) 86%, transparent); text-shadow: 0 2px 3px rgba(0,23,65,.8); }
-.activity-header__brand { display: flex; align-items: center; gap: 4px; max-width: calc(100% - 90px); }
-button { pointer-events: auto; }
-.activity-header__back { width: 35px; height: 40px; display: grid; flex: none; place-items: center; padding: 0; border: 0; color: #f5fdff; background: transparent; filter: drop-shadow(0 2px 2px #155a91); cursor: pointer; }
-.activity-header__back svg { width: 34px; fill: none; stroke: currentColor; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }
-.activity-header__logo { width: min(250px, calc(100vw - 66px)); height: 62px; object-fit: contain; object-position: left center; filter: drop-shadow(0 2px 3px rgba(21, 90, 145, .48)); }
-h1 { min-width: 0; margin: 0; overflow: hidden; color: white; font-size: clamp(20px, 5.7vw, 27px); font-weight: 800; letter-spacing: .035em; text-overflow: ellipsis; white-space: nowrap; }
-.activity-header__balance { position: absolute; top: calc(18px + env(safe-area-inset-top)); right: 54px; min-width: 53px; height: 29px; display: flex; align-items: center; justify-content: center; gap: 3px; padding: 2px 8px 2px 4px; border: 1px solid rgba(255,255,255,.65); border-radius: 999px; color: #79531d; background: rgba(255,249,220,.94); text-shadow: none; font-size: 12px; }
-.activity-header__balance img { width: 23px; height: 23px; object-fit: contain; }
-.activity-header__refresh { position: absolute; top: calc(16px + env(safe-area-inset-top)); right: 13px; width: 31px; height: 31px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.36); border-radius: 50%; color: white; background: rgba(4,53,105,.48); cursor: pointer; }
-.activity-header__refresh:disabled { opacity: .55; cursor: wait; }
-.activity-header__refresh svg { width: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.activity-header__time { width: max-content; max-width: calc(100% - 55px); display: flex; align-items: center; gap: 4px; margin: 1px 0 0 37px; padding: 4px 10px; border-radius: 999px; overflow: hidden; color: #eff9ff; background: rgba(0,20,51,.78); box-shadow: 0 2px 8px rgba(0, 12, 43, .2); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.activity-header__time svg { width: 14px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.activity-header {
+  position: absolute;
+  z-index: 20;
+  inset: 0 0 auto;
+  height: calc(86px + env(safe-area-inset-top));
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: env(safe-area-inset-top) 22px 0;
+  border-bottom: 1px solid var(--ui-border);
+  background: rgba(250, 251, 247, 0.82);
+  backdrop-filter: blur(20px) saturate(135%);
+}
+.activity-header__brand {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+}
+.activity-header__back,
+.activity-header__refresh {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  flex: none;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  color: var(--ui-primary);
+  background: var(--ui-surface);
+  cursor: pointer;
+}
+.activity-header__back {
+  width: auto;
+  grid-auto-flow: column;
+  gap: 4px;
+  padding: 0 10px 0 7px;
+}
+.activity-header__back svg {
+  width: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.activity-header__back span {
+  font-size: 12px;
+  font-weight: 700;
+}
+.activity-header__title {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.activity-header__title small {
+  color: var(--ui-muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+h1 {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--ui-ink);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.activity-header__balance,
+.activity-header__time {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--ui-border);
+  border-radius: 999px;
+  background: var(--ui-surface);
+}
+.activity-header__balance {
+  min-width: 72px;
+  height: 34px;
+  justify-content: center;
+  gap: 5px;
+  padding: 3px 10px 3px 5px;
+  color: var(--ui-warning);
+  font-size: 12px;
+}
+.activity-header__balance img {
+  width: 25px;
+  height: 25px;
+  object-fit: contain;
+}
+.activity-header__refresh:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+.activity-header__refresh svg {
+  width: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.activity-header__time {
+  max-width: 230px;
+  gap: 5px;
+  padding: 7px 11px;
+  overflow: hidden;
+  color: var(--ui-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.activity-header__time svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+@media (max-width: 900px) {
+  .activity-header {
+    height: calc(72px + env(safe-area-inset-top));
+    padding-right: 12px;
+    padding-left: 12px;
+    gap: 7px;
+  }
+  .activity-header__back,
+  .activity-header__refresh {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+  }
+  .activity-header__back {
+    width: 34px;
+    padding: 0;
+  }
+  .activity-header__back span,
+  .activity-header__title small {
+    display: none;
+  }
+  h1 {
+    font-size: 17px;
+  }
+  .activity-header__time {
+    display: none;
+  }
+  .activity-header__balance {
+    min-width: 58px;
+    padding-right: 7px;
+  }
+}
 </style>

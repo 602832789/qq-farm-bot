@@ -50,7 +50,6 @@ export interface MysteryShopDto {
   npc: null | {
     id: number
     reward: CommerceItemDto
-    stock: number
     price: CommerceItemDto & { balance: number | null }
     originalPrice: number
     unitPrice: number
@@ -90,16 +89,19 @@ export const useCommerceStore = defineStore('commerce', () => {
 
   async function mergeDiamondBalance(accountId: string, catalog: MallCatalogDto) {
     const diamond = catalog.currencies.find(currency => currency.id === 1004)
-    if (!diamond) return
+    if (!diamond)
+      return
 
     try {
       const response = await api.get('/api/diamond', {
         headers: { 'x-account-id': accountId },
         skipErrorToast: true,
       } as any)
-      if (!response.data?.ok) return
+      if (!response.data?.ok)
+        return
       const balance = Number(response.data.data?.diamond)
-      if (!Number.isFinite(balance) || balance < 0) return
+      if (!Number.isFinite(balance) || balance < 0)
+        return
 
       catalog.currencies = catalog.currencies.map(currency => currency.id === 1004
         ? { ...currency, count: balance, balanceKnown: true }
@@ -128,25 +130,31 @@ export const useCommerceStore = defineStore('commerce', () => {
         params: { slotType: 1, subSlotType: 0 },
         skipErrorToast: true,
       } as any)
-      if (!isCurrent(version, id)) return
-      if (!response.data?.ok) throw new Error(response.data?.error || '商城加载失败')
+      if (!isCurrent(version, id))
+        return
+      if (!response.data?.ok)
+        throw new Error(response.data?.error || '商城加载失败')
       const catalog = response.data.data as MallCatalogDto
       await mergeDiamondBalance(id, catalog)
-      if (!isCurrent(version, id)) return
+      if (!isCurrent(version, id))
+        return
       mall.value = catalog
     }
     catch (cause: any) {
-      if (!isCurrent(version, id)) return
+      if (!isCurrent(version, id))
+        return
       error.value = cause?.response?.data?.error || cause?.message || '商城加载失败'
     }
     finally {
-      if (isCurrent(version, id)) mallLoading.value = false
+      if (isCurrent(version, id))
+        mallLoading.value = false
     }
   }
 
   async function purchaseMall(accountId: string, goods: MallGoodsDto, count: number) {
     const id = String(accountId || '').trim()
-    if (!id || purchasingGoodsId.value !== null) return false
+    if (!id || purchasingGoodsId.value !== null)
+      return false
     purchasingGoodsId.value = goods.id
     clearMessages()
     try {
@@ -157,11 +165,14 @@ export const useCommerceStore = defineStore('commerce', () => {
         headers: { 'x-account-id': id },
         skipErrorToast: true,
       } as any)
-      if (!response.data?.ok) throw new Error(response.data?.error || '购买失败')
-      if (String(localStorage.getItem('current_account_id') || '') !== id) return false
+      if (!response.data?.ok)
+        throw new Error(response.data?.error || '购买失败')
+      if (String(localStorage.getItem('current_account_id') || '') !== id)
+        return false
       const catalog = response.data.data.catalog as MallCatalogDto
       await mergeDiamondBalance(id, catalog)
-      if (String(localStorage.getItem('current_account_id') || '') !== id) return false
+      if (String(localStorage.getItem('current_account_id') || '') !== id)
+        return false
       mall.value = catalog
       const rewards = (response.data.data.purchase?.rewards || [])
         .map((item: CommerceItemDto) => `${item.name} x${item.count}`)
@@ -193,22 +204,27 @@ export const useCommerceStore = defineStore('commerce', () => {
         headers: { 'x-account-id': id },
         skipErrorToast: true,
       } as any)
-      if (!isCurrent(version, id)) return
-      if (!response.data?.ok) throw new Error(response.data?.error || '神秘商人加载失败')
+      if (!isCurrent(version, id))
+        return
+      if (!response.data?.ok)
+        throw new Error(response.data?.error || '神秘商人加载失败')
       mystery.value = response.data.data
     }
     catch (cause: any) {
-      if (!isCurrent(version, id)) return
+      if (!isCurrent(version, id))
+        return
       error.value = cause?.response?.data?.error || cause?.message || '神秘商人加载失败'
     }
     finally {
-      if (isCurrent(version, id)) mysteryLoading.value = false
+      if (isCurrent(version, id))
+        mysteryLoading.value = false
     }
   }
 
   async function purchaseMystery(accountId: string, npcId: number) {
     const id = String(accountId || '').trim()
-    if (!id || mysteryPurchasing.value) return false
+    if (!id || mysteryPurchasing.value)
+      return false
     mysteryPurchasing.value = true
     clearMessages()
     try {
@@ -216,11 +232,20 @@ export const useCommerceStore = defineStore('commerce', () => {
         headers: { 'x-account-id': id },
         skipErrorToast: true,
       } as any)
-      if (!response.data?.ok) throw new Error(response.data?.error || '购买失败')
-      if (String(localStorage.getItem('current_account_id') || '') !== id) return false
+      if (!response.data?.ok)
+        throw new Error(response.data?.error || '购买失败')
+      if (String(localStorage.getItem('current_account_id') || '') !== id)
+        return false
       mystery.value = response.data.data.shop
-      const reward = response.data.data.purchase?.reward as CommerceItemDto | undefined
-      notice.value = reward ? `购买成功：${reward.name} x${reward.count}` : '购买成功'
+      const purchase = response.data.data.purchase as { reward?: CommerceItemDto, price?: CommerceItemDto } | undefined
+      const reward = purchase?.reward
+      const price = purchase?.price
+      if (reward && price)
+        notice.value = `购买成功：获得 ${reward.name} x${reward.count}，花费 ${price.count.toLocaleString()} ${price.name}`
+      else if (reward)
+        notice.value = `购买成功：获得 ${reward.name} x${reward.count}`
+      else
+        notice.value = '购买成功'
       return true
     }
     catch (cause: any) {

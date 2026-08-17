@@ -1,7 +1,7 @@
 {
   "name": "qq-farm-bot-web",
   "type": "module",
-  "version": "20260812",
+  "version": "20260817",
   "private": true,
   "scripts": {
     "dev": "vite",
@@ -12,6 +12,7 @@
   "dependencies": {
     "@vueuse/core": "^14.2.1",
     "axios": "^1.13.5",
+    "naive-ui": "^2.43.2",
     "nprogress": "^0.2.0",
     "pinia": "^3.0.4",
     "socket.io-client": "^4.8.3",

@@ -14,12 +14,10 @@ const { getResourcePath } = require('../../config/runtime-paths');
 const { createModuleLogger } = require('../../services/logger');
 
 const { createAdminContext } = require('./context');
-const { createCleanupExpiredUsers } = require('./middleware');
 const { mountAuthRoutes } = require('./auth-routes');
 const { mountAccountRoutes } = require('./account-routes');
 const { mountFarmRoutes } = require('./farm-routes');
 const { mountFriendRoutes } = require('./friend-routes');
-const { mountAdminRoutes } = require('./admin-routes');
 const { mountActivityCenterRoutes } = require('./activity-center-routes');
 const { mountCommerceRoutes } = require('./commerce-routes');
 const { mountWxLoginRoutes } = require('./wx-login-routes');
@@ -78,7 +76,6 @@ function startAdminServer(dataProvider: any): void {
     mountWxLoginRoutes(app, ctx);
     mountFarmRoutes(app, ctx);
     mountFriendRoutes(app, ctx);
-    mountAdminRoutes(app, ctx);
     mountAccountRoutes(app, ctx);
     mountActivityCenterRoutes(app, ctx);
     mountCommerceRoutes(app, ctx);
@@ -103,9 +100,6 @@ function startAdminServer(dataProvider: any): void {
     // Setup Socket.IO
     setupSocketIO(ctx);
 
-    // 启动定期清理
-    const cleanupFn = createCleanupExpiredUsers(ctx);
-    setInterval(cleanupFn, 5 * 60 * 1000); // 每5分钟检查一次
 }
 
 function emitRealtimeStatus(accountId: string, status: any): void {

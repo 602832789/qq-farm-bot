@@ -14,7 +14,7 @@ interface WorkerManagerOptions {
     addAccountLog: (action: string, msg: string, accountId?: string, accountName?: string, extra?: any) => void;
     normalizeStatusForPanel: (data: any, accountId: string, accountName: string) => any;
     buildConfigSnapshotForAccount: (accountId: string) => any;
-    getOfflineAutoDeleteMs: (username?: string) => number;
+    getOfflineAutoDeleteMs: () => number;
     triggerOfflineReminder: (payload: any) => void;
     addOrUpdateAccount: (acc: any) => any;
     deleteAccount: (id: string) => void;
@@ -109,7 +109,8 @@ function createWorkerManager(options: WorkerManagerOptions) {
             requests: new Map(),
             reqId: 1,
             name: account.name,
-            username: account.username || '',
+            nick: account.nick || '',
+            avatar: account.avatar || '',
             stopping: false,
             disconnectedSince: 0,
             autoDeleteTriggered: false,
@@ -237,21 +238,36 @@ function createWorkerManager(options: WorkerManagerOptions) {
                 onStatusSync(accountId, worker.status, worker.name);
             }
 
-            if (msg.data && msg.data.status && msg.data.status.name) {
-                const newNick = String(msg.data.status.name).trim();
+            const profile = msg.data && msg.data.status && typeof msg.data.status === 'object'
+                ? msg.data.status
+                : {};
+            const accountUpdate: any = { id: accountId };
+            let profileChanged = false;
+
+            if (profile.name) {
+                const newNick = String(profile.name).trim();
                 if (newNick && newNick !== '未知' && newNick !== '未登录') {
                     if (worker.nick !== newNick) {
                         const oldNick = worker.nick;
                         worker.nick = newNick;
-                        addOrUpdateAccount({
-                            id: accountId,
-                            nick: newNick,
-                        });
+                        accountUpdate.nick = newNick;
+                        profileChanged = true;
                         if (oldNick !== newNick) {
                             log('系统', `已同步账号昵称: ${oldNick || 'None'} -> ${newNick}`, { accountId, accountName: worker.name });
                         }
                     }
                 }
+            }
+
+            const newAvatar = String(profile.avatarUrl || profile.avatar_url || '').trim();
+            if (newAvatar && worker.avatar !== newAvatar) {
+                worker.avatar = newAvatar;
+                accountUpdate.avatar = newAvatar;
+                profileChanged = true;
+            }
+
+            if (profileChanged) {
+                addOrUpdateAccount(accountUpdate);
             }
 
             const connected = !!(msg.data && msg.data.connection && msg.data.connection.connected);
@@ -263,7 +279,7 @@ function createWorkerManager(options: WorkerManagerOptions) {
                 const now = Date.now();
                 if (!worker.disconnectedSince) worker.disconnectedSince = now;
                 const offlineMs = now - worker.disconnectedSince;
-                const autoDeleteMs = getOfflineAutoDeleteMs(worker.username);
+                const autoDeleteMs = getOfflineAutoDeleteMs();
                 if (!worker.autoDeleteTriggered && offlineMs >= autoDeleteMs) {
                     worker.autoDeleteTriggered = true;
                     const offlineMin = Math.floor(offlineMs / 60000);
@@ -271,7 +287,6 @@ function createWorkerManager(options: WorkerManagerOptions) {
                     triggerOfflineReminder({
                         accountId,
                         accountName: worker.name,
-                        username: worker.username,
                         reason: 'offline_timeout',
                         offlineMs,
                     });
@@ -364,7 +379,6 @@ function createWorkerManager(options: WorkerManagerOptions) {
             triggerOfflineReminder({
                 accountId,
                 accountName: worker.name,
-                username: worker.username,
                 reason: `disconnect:${source}:${phase}:${code}`,
                 offlineMs: 0,
             });

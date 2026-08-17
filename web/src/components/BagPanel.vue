@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useIntervalFn } from '@vueuse/core'
+import { NButton, NInputNumber } from 'naive-ui'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, ref, watch } from 'vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
@@ -355,10 +356,10 @@ useIntervalFn(loadBag, 60000)
 </script>
 
 <template>
-  <div class="space-y-4">
+  <div class="page-stack space-y-4">
     <div class="mb-4 flex items-center justify-between">
       <h2 class="flex items-center gap-2 text-2xl font-bold font-display">
-        🎒 背包
+        <span class="i-carbon-box" /> 背包
       </h2>
       <div v-if="items.length" class="text-sm text-gray-500">
         共 {{ items.length }} 种物品
@@ -366,7 +367,7 @@ useIntervalFn(loadBag, 60000)
     </div>
 
     <div v-if="bagLoading || statusLoading" class="flex justify-center py-12">
-      <span class="text-4xl animate-spin">⏳</span>
+      <span class="i-carbon-circle-dash animate-spin text-4xl" />
     </div>
 
     <div v-else-if="!currentAccountId" class="farm-card rounded-xl p-8 text-center text-gray-500">
@@ -382,8 +383,8 @@ useIntervalFn(loadBag, 60000)
       </div>
     </div>
 
-    <div v-else-if="!status?.connection?.connected" class="farm-card flex flex-col items-center justify-center gap-4 rounded-xl p-12 text-center text-gray-500">
-      <div class="text-4xl" style="opacity: 0.5">📡</div>
+    <div v-else-if="!status?.connection?.connected" class="flex flex-col items-center justify-center gap-4 farm-card rounded-xl p-12 text-center text-gray-500">
+      <div class="i-carbon-network-4 text-4xl" style="opacity: 0.5" />
       <div>
         <div class="text-lg font-medium" style="color: var(--theme-text, #374151)">
           账号未登录
@@ -400,50 +401,47 @@ useIntervalFn(loadBag, 60000)
 
     <div v-else>
       <div class="mb-4 flex flex-wrap items-center gap-2">
-        <button
+        <NButton
           v-for="cat in CATEGORY_OPTIONS"
           :key="cat.value"
-          class="rounded-xl px-3 py-1.5 text-sm font-medium transition"
-          :class="selectedCategory === cat.value
-            ? 'bg-blue-500 text-white dark:bg-blue-600'
-            : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'"
+          :type="selectedCategory === cat.value ? 'primary' : 'default'"
+          :secondary="selectedCategory !== cat.value"
+          size="small"
           @click="selectedCategory = cat.value"
         >
           {{ cat.value === 'fruit' ? '🍎' : cat.value === 'seed' ? '🌱' : cat.value === 'tool' ? '🔧' : cat.value === 'other' ? '📦' : '📋' }}
           {{ cat.label }}
           <span class="ml-1 text-xs opacity-70">({{ categoryCounts[cat.value] || 0 }})</span>
-        </button>
+        </NButton>
 
         <div class="flex-1" />
 
         <template v-if="selectedCategory === 'fruit' || selectedCategory === 'all'">
-          <button
-            class="cartoon-btn rounded-xl px-3 py-1.5 text-sm font-medium transition"
-            :class="batchMode
-              ? 'bg-orange-500 text-white dark:bg-orange-600'
-              : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'"
+          <NButton
+            :type="batchMode ? 'warning' : 'default'"
+            :secondary="!batchMode"
+            size="small"
             @click="toggleBatchMode"
           >
             <span v-if="batchMode" class="mr-1">✕</span>
             {{ batchMode ? '取消批量' : '批量出售' }}
-          </button>
+          </NButton>
           <template v-if="batchMode">
-            <button
-              class="cartoon-btn rounded-xl bg-blue-500 px-3 py-1.5 text-sm text-white font-medium transition dark:bg-blue-600 hover:bg-blue-600 dark:hover:bg-blue-700"
+            <NButton
+              type="primary"
+              size="small"
               @click="selectAllSellable"
             >
               全选
-            </button>
-            <button
-              class="cartoon-btn rounded-xl px-3 py-1.5 text-sm font-medium transition"
-              :class="selectedSellableCount > 0
-                ? 'bg-red-500 text-white hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700'
-                : 'bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-500'"
+            </NButton>
+            <NButton
+              type="error"
+              size="small"
               :disabled="selectedSellableCount === 0"
               @click="handleBatchSellClick"
             >
               出售 ({{ selectedSellableCount }})
-            </button>
+            </NButton>
           </template>
         </template>
       </div>
@@ -452,7 +450,7 @@ useIntervalFn(loadBag, 60000)
         <div
           v-for="item in filteredItems"
           :key="itemKey(item)"
-          class="farm-card group relative flex flex-col items-center rounded-xl p-3 transition"
+          class="group relative flex flex-col items-center farm-card rounded-xl p-3 transition"
           :class="{
             'ring-2 ring-orange-500 dark:ring-orange-400': batchMode && selectedForBatch.has(itemKey(item)),
             'opacity-50': batchMode && canBatchSell(item) && !selectedForBatch.has(itemKey(item)),
@@ -465,22 +463,26 @@ useIntervalFn(loadBag, 60000)
 
           <div class="absolute right-1 top-1 flex gap-1">
             <template v-if="!batchMode">
-              <button
+              <NButton
                 v-if="canSell(item)"
-                class="cartoon-btn rounded-lg bg-red-500 px-1.5 py-0.5 text-[10px] text-white opacity-70 transition dark:bg-red-600 hover:opacity-100"
+                type="error"
+                size="tiny"
+                circle
                 title="出售全部"
                 @click.stop="handleSellClick(item)"
               >
                 售
-              </button>
-              <button
+              </NButton>
+              <NButton
                 v-if="canUse(item)"
-                class="cartoon-btn rounded-lg bg-green-500 px-1.5 py-0.5 text-[10px] text-white opacity-70 transition dark:bg-green-600 hover:opacity-100"
+                type="success"
+                size="tiny"
+                circle
                 title="选择使用数量"
                 @click.stop="handleUseClick(item)"
               >
                 用
-              </button>
+              </NButton>
             </template>
             <div
               v-else-if="canBatchSell(item)"
@@ -494,7 +496,7 @@ useIntervalFn(loadBag, 60000)
           </div>
 
           <div
-            class="thumb-wrap mb-2 mt-6 h-16 w-16 flex items-center justify-center rounded-2xl"
+            class="thumb-wrap mb-2 mt-6 h-16 w-16 flex items-center justify-center rounded-xl"
             :data-fallback="(item.name || '物').slice(0, 1)"
             style="background: color-mix(in srgb, var(--theme-bg, #fff) 90%, var(--theme-primary, #3b82f6))"
           >
@@ -523,8 +525,8 @@ useIntervalFn(loadBag, 60000)
                 class="inline-block rounded-md px-1.5 py-0.5 text-[10px] font-bold"
                 :class="getItemCategory(item) === 'fruit' ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'
                   : getItemCategory(item) === 'seed' ? 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400'
-                  : getItemCategory(item) === 'tool' ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
-                  : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'"
+                    : getItemCategory(item) === 'tool' ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
+                      : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'"
               >
                 {{ getItemCategory(item) === 'fruit' ? '🍎' : getItemCategory(item) === 'seed' ? '🌱' : getItemCategory(item) === 'tool' ? '🔧' : '📦' }}
                 {{ item.itemType || 0 }}
@@ -559,23 +561,16 @@ useIntervalFn(loadBag, 60000)
       <div v-if="confirmModal.action === 'use' && confirmModal.item" class="use-quantity">
         <span>使用数量</span>
         <div class="use-stepper">
-          <button type="button" aria-label="减少数量" :disabled="confirmModal.loading || confirmModal.useCount <= 1" @click="setUseCount(confirmModal.useCount - 1)">
-            <div class="i-carbon-subtract" />
-          </button>
-          <input
+          <NInputNumber
             :value="confirmModal.useCount"
-            type="number"
-            inputmode="numeric"
-            min="1"
+            :min="1"
             :max="maxUseCount"
             :disabled="confirmModal.loading"
-            aria-label="使用数量"
-            @input="setUseCount(($event.target as HTMLInputElement).value)"
-          >
-          <button type="button" aria-label="增加数量" :disabled="confirmModal.loading || confirmModal.useCount >= maxUseCount" @click="setUseCount(confirmModal.useCount + 1)">
-            <div class="i-carbon-add" />
-          </button>
-          <button type="button" class="use-all" :disabled="confirmModal.loading || confirmModal.useCount >= maxUseCount" @click="setUseCount(maxUseCount)">全部</button>
+            @update:value="value => setUseCount(value ?? 1)"
+          />
+          <NButton size="small" :disabled="confirmModal.loading || confirmModal.useCount >= maxUseCount" @click="setUseCount(maxUseCount)">
+            全部
+          </NButton>
         </div>
       </div>
     </ConfirmModal>
@@ -595,5 +590,25 @@ useIntervalFn(loadBag, 60000)
   text-transform: uppercase;
 }
 
-.use-quantity{margin:-1rem 0 1.5rem;padding:14px;border:1px solid #dccda9;border-radius:8px;background:#fffdf7}.use-quantity>span{display:block;margin-bottom:8px;color:#715f48;font-size:12px;font-weight:700}.use-stepper{display:grid;grid-template-columns:40px minmax(60px,1fr) 40px 54px;gap:7px}.use-stepper button,.use-stepper input{height:40px;border:1px solid #c9b98f;border-radius:6px}.use-stepper button{display:grid;place-items:center;color:#4e402e;background:#f5ead0;cursor:pointer}.use-stepper button:disabled{opacity:.45;cursor:not-allowed}.use-stepper input{min-width:0;padding:0 6px;color:#3d2b1f;background:white;font-weight:800;text-align:center}.use-stepper .use-all{color:white;background:#537c49;font-size:12px;font-weight:700}
+.use-quantity {
+  margin: -1rem 0 1.5rem;
+  padding: 14px;
+  border: 1px solid var(--n-border-color);
+  border-radius: 8px;
+  background: var(--n-color);
+}
+
+.use-quantity > span {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.use-stepper {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
 </style>

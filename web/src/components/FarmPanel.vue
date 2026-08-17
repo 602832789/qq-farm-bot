@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useIntervalFn } from '@vueuse/core'
+import { NButton } from 'naive-ui'
 import { storeToRefs } from 'pinia'
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
@@ -57,12 +58,12 @@ function handleOperate(opType: string) {
 }
 
 const operations = [
-  { type: 'harvest', label: '收获', icon: '🌾', color: 'bg-[#5bb8f5] hover:bg-[#4aa8e5]' },
-  { type: 'clear', label: '一键务农', icon: '🌿', color: 'bg-[#4a8c3f] hover:bg-[#3a7c2f]' },
-  { type: 'plant', label: '种植', icon: '🌱', color: 'bg-[#6dbf5b] hover:bg-[#5daf4b]' },
-  { type: 'upgrade', label: '升级土地', icon: '⬆️', color: 'bg-[#a855f7] hover:bg-[#9333ea]' },
-  { type: 'all', label: '一键全收', icon: '⚡', color: 'bg-[#f0c040] hover:bg-[#e0b030] text-[#3d2b1f]' },
-]
+  { type: 'harvest', label: '收获', icon: 'i-carbon-wheat', buttonType: 'info' },
+  { type: 'clear', label: '一键务农', icon: 'i-carbon-clean', buttonType: 'success' },
+  { type: 'plant', label: '种植', icon: 'i-carbon-sprout', buttonType: 'primary' },
+  { type: 'upgrade', label: '升级土地', icon: 'i-carbon-upgrade', buttonType: 'warning' },
+  { type: 'all', label: '一键全收', icon: 'i-carbon-flash', buttonType: 'primary' },
+] as const
 
 async function refresh() {
   if (currentAccountId.value) {
@@ -85,10 +86,9 @@ watch(currentAccountId, () => {
 })
 
 const { pause, resume } = useIntervalFn(() => {
-  if (lands.value) {
-    lands.value = lands.value.map((l: any) =>
-      l.matureInSec > 0 ? { ...l, matureInSec: l.matureInSec - 1 } : l,
-    )
+  for (const land of lands.value || []) {
+    if (land.matureInSec > 0)
+      land.matureInSec--
   }
 }, 1000)
 
@@ -111,43 +111,38 @@ onUnmounted(() => {
     <div class="cartoon-card farm-card rounded-2xl bg-white shadow-lg dark:bg-gray-800">
       <!-- Header with Title and Actions -->
       <div class="flex flex-col items-center justify-between gap-4 border-b border-gray-100 p-5 sm:flex-row dark:border-gray-700">
-        <h3 class="font-display flex items-center gap-2 text-xl font-bold">
-          🌾 土地详情
+        <h3 class="flex items-center gap-2 text-xl font-bold font-display">
+          <span class="i-carbon-sprout text-green-600" /> 土地详情
         </h3>
         <div class="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
-          <button
+          <NButton
             v-for="op in operations"
             :key="op.type"
-            class="cartoon-btn flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm text-white transition disabled:cursor-not-allowed disabled:opacity-50"
-            :class="op.color"
+            :type="op.buttonType"
             :disabled="operating"
             @click="handleOperate(op.type)"
           >
-            <span>{{ op.icon }}</span>
+            <span :class="op.icon" />
             {{ op.label }}
-          </button>
+          </NButton>
         </div>
       </div>
 
       <!-- Summary -->
-      <div class="flex flex-wrap gap-4 border-b border-gray-100 bg-gradient-to-r from-green-50 to-yellow-50 p-5 text-sm dark:border-gray-700 dark:bg-gray-900/50">
-        <div class="farm-card flex items-center gap-2 rounded-full bg-orange-100 px-4 py-1.5 text-orange-700 shadow-sm dark:bg-orange-900/30 dark:text-orange-400">
-          <span>🌾</span>
+      <div class="flex flex-wrap gap-x-5 gap-y-2 border-b border-gray-100 px-5 py-3 text-sm dark:border-gray-700">
+        <div class="flex items-center gap-1.5 text-amber-700 dark:text-amber-300">
           <div class="i-carbon-clean" />
           <span class="font-body font-semibold">可收: {{ summary?.harvestable || 0 }}</span>
         </div>
-        <div class="farm-card flex items-center gap-2 rounded-full bg-green-100 px-4 py-1.5 text-green-700 shadow-sm dark:bg-green-900/30 dark:text-green-400">
-          <span>🌿</span>
+        <div class="flex items-center gap-1.5 text-green-700 dark:text-green-300">
           <div class="i-carbon-sprout" />
           <span class="font-body font-semibold">生长: {{ summary?.growing || 0 }}</span>
         </div>
-        <div class="farm-card flex items-center gap-2 rounded-full bg-gray-100 px-4 py-1.5 text-gray-700 shadow-sm dark:bg-gray-800 dark:text-gray-400">
-          <span>🟫</span>
+        <div class="flex items-center gap-1.5 text-gray-600 dark:text-gray-300">
           <div class="i-carbon-checkbox" />
           <span class="font-body font-semibold">空闲: {{ summary?.empty || 0 }}</span>
         </div>
-        <div class="farm-card flex items-center gap-2 rounded-full bg-red-100 px-4 py-1.5 text-red-700 shadow-sm dark:bg-red-900/30 dark:text-red-400">
-          <span>🥀</span>
+        <div class="flex items-center gap-1.5 text-red-700 dark:text-red-300">
           <div class="i-carbon-warning" />
           <span class="font-body font-semibold">枯萎: {{ summary?.dead || 0 }}</span>
         </div>
@@ -159,10 +154,10 @@ onUnmounted(() => {
           <div class="i-svg-spinners-90-ring-with-bg text-4xl text-green-500" />
         </div>
 
-        <div v-else-if="!currentAccountId" class="farm-card flex flex-col items-center justify-center gap-4 rounded-2xl bg-white p-12 text-center text-gray-500 shadow-md dark:bg-gray-800">
-          <div class="text-5xl">🧑‍🌾</div>
+        <div v-else-if="!currentAccountId" class="flex flex-col items-center justify-center gap-4 farm-card rounded-2xl bg-white p-12 text-center text-gray-500 shadow-md dark:bg-gray-800">
+          <div class="i-carbon-user-avatar text-5xl" />
           <div>
-            <div class="font-display text-lg text-gray-700 font-medium dark:text-gray-300">
+            <div class="text-lg text-gray-700 font-medium font-display dark:text-gray-300">
               未登录账号
             </div>
             <div class="font-body mt-1 text-sm text-gray-400">
@@ -171,25 +166,25 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div v-else-if="!status?.connection?.connected" class="farm-card flex flex-col items-center justify-center gap-4 rounded-2xl bg-white p-12 text-center text-gray-500 shadow-md dark:bg-gray-800">
-          <div class="text-5xl">📡</div>
+        <div v-else-if="!status?.connection?.connected" class="flex flex-col items-center justify-center gap-4 farm-card rounded-2xl bg-white p-12 text-center text-gray-500 shadow-md dark:bg-gray-800">
+          <div class="i-carbon-network-4 text-5xl" />
           <div>
-            <div class="font-display text-lg text-gray-700 font-medium dark:text-gray-300">
+            <div class="text-lg text-gray-700 font-medium font-display dark:text-gray-300">
               账号未登录
             </div>
             <div class="font-body mt-1 text-sm text-gray-400">
-              请先运行账号或检查网络连接 🔄
+              请先运行账号或检查网络连接
             </div>
           </div>
         </div>
 
         <div v-else-if="!lands || lands.length === 0" class="flex flex-col items-center justify-center gap-4 py-16">
-          <div class="text-6xl">🌱🏡🌻</div>
-          <div class="font-display text-lg text-gray-500">
+          <div class="i-carbon-sprout text-6xl text-green-500" />
+          <div class="text-lg text-gray-500 font-display">
             还没有种下作物哦~
           </div>
           <div class="font-body text-sm text-gray-400">
-            快去种下第一棵种子吧! 🧑‍🌾✨
+            快去种下第一棵种子吧
           </div>
         </div>
 

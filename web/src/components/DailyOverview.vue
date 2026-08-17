@@ -6,16 +6,16 @@ const props = defineProps<{
 }>()
 
 const GIFT_ICONS: Record<string, string> = {
-  task_claim: '✅',
-  email_rewards: '📧',
-  mall_free_gifts: '🛍️',
-  daily_share: '📤',
-  vip_daily_gift: '⭐',
-  month_card_gift: '📅',
+  task_claim: 'i-carbon-task-complete',
+  email_rewards: 'i-carbon-email',
+  mall_free_gifts: 'i-carbon-shopping-bag',
+  daily_share: 'i-carbon-share',
+  vip_daily_gift: 'i-carbon-star',
+  month_card_gift: 'i-carbon-calendar',
 }
 
 function getGiftIcon(key: string) {
-  return GIFT_ICONS[key] || '🎁'
+  return GIFT_ICONS[key] || 'i-carbon-gift'
 }
 
 const hasDailyData = computed(() => !!props.dailyGifts)
@@ -88,7 +88,7 @@ function formatGiftProgress(gift: any) {
     <!-- Daily Gifts Grid -->
     <div class="farm-card rounded-xl p-4">
       <h3 class="mb-3 flex items-center gap-2 font-medium" style="color: var(--theme-primary, #ec4899)">
-        <span>🎁</span>
+        <span class="i-carbon-gift" />
         <span>每日礼包 & 任务</span>
       </h3>
 
@@ -110,7 +110,7 @@ function formatGiftProgress(gift: any) {
         <div
           v-for="gift in gifts"
           :key="gift.key"
-          class="farm-card flex flex-col justify-between rounded-xl p-3 2xl:p-4"
+          class="flex flex-col justify-between farm-card rounded-xl p-3 2xl:p-4"
         >
           <div class="mb-2 flex items-center gap-2">
             <div
@@ -119,8 +119,7 @@ function formatGiftProgress(gift: any) {
                 ? 'bg-blue-100 dark:bg-blue-900/30'
                 : (gift.doneToday ? 'bg-green-100 dark:bg-green-900/30' : (gift.enabled ? 'bg-blue-100 dark:bg-blue-900/30' : 'bg-gray-100 dark:bg-gray-700'))"
             >
-              <span>{{ getGiftIcon(gift.key) }}</span>
-              />
+              <span :class="getGiftIcon(gift.key)" />
             </div>
             <span class="text-sm font-medium leading-tight 2xl:text-base" style="color: var(--theme-text, #374151)">
               {{ gift.label }}

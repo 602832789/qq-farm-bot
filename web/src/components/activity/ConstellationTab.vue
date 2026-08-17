@@ -55,8 +55,10 @@ const catalogUnsupported = computed(() => props.constellation?.catalogStatus.toL
 const stateLabel = computed(() => {
   if (selectedGroup.value?.visualState === 'lit')
     return selectedGroup.value.claimStatus === 'confirmed-no-claimable' ? '今日已领取' : '已点亮'
-  if (selectedGroup.value?.visualState === 'locked') return '未开启'
-  if (selectedGroup.value?.visualState === 'unknown') return '历史状态待同步'
+  if (selectedGroup.value?.visualState === 'locked')
+    return '未开启'
+  if (selectedGroup.value?.visualState === 'unknown')
+    return '历史状态待同步'
   return ''
 })
 const canLight = computed(() => ['lightable', 'claimableUnknown'].includes(selectedGroup.value?.visualState || '') && Boolean(props.enabled) && !props.pending)
@@ -81,10 +83,14 @@ function selectGroup(group: ConstellationGroupDto, focus = false) {
 
 function onTabKeydown(event: KeyboardEvent, index: number) {
   let target = index
-  if (event.key === 'ArrowRight') target = Math.min(orderedGroups.value.length - 1, index + 1)
-  else if (event.key === 'ArrowLeft') target = Math.max(0, index - 1)
-  else if (event.key === 'Home') target = 0
-  else if (event.key === 'End') target = orderedGroups.value.length - 1
+  if (event.key === 'ArrowRight')
+    target = Math.min(orderedGroups.value.length - 1, index + 1)
+  else if (event.key === 'ArrowLeft')
+    target = Math.max(0, index - 1)
+  else if (event.key === 'Home')
+    target = 0
+  else if (event.key === 'End')
+    target = orderedGroups.value.length - 1
   else return
   event.preventDefault()
   const group = orderedGroups.value[target]
@@ -101,8 +107,6 @@ watch(() => props.constellation, (value) => {
 
 <template>
   <div class="constellation-tab">
-    <div class="constellation-background" aria-hidden="true" />
-
     <div v-if="catalogUnsupported" class="catalog-unsupported" role="status">
       <span aria-hidden="true">✦</span>
       <strong>本期星宿配置暂未支持</strong>
@@ -149,7 +153,6 @@ watch(() => props.constellation, (value) => {
           </button>
         </div>
 
-        <img class="constellation-creature" src="/activity-center/stellar/constellation-creature.png" alt="" aria-hidden="true">
         <svg class="star-chart" viewBox="0 0 100 78" role="img" :aria-label="`${selectedGroup.category}七宿展示图，当前选中${selectedGroup.name}；坐标为页面展示布局`">
           <defs>
             <filter id="star-blue-glow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="1.1" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
@@ -169,7 +172,9 @@ watch(() => props.constellation, (value) => {
       <section v-if="selectedGroup" class="star-reward" aria-labelledby="constellation-reward-title">
         <h2 id="constellation-reward-title" class="star-reward__title">
           <span>星宿福利</span>
-          <button type="button" aria-label="查看观星礼录活动说明" title="查看活动说明" @click.stop="rulesOpen = true">?</button>
+          <button type="button" aria-label="查看观星礼录活动说明" title="查看活动说明" @click.stop="rulesOpen = true">
+            ?
+          </button>
         </h2>
         <div class="star-reward__items">
           <RewardItem
@@ -205,18 +210,11 @@ watch(() => props.constellation, (value) => {
   padding: calc(128px + env(safe-area-inset-top)) 10px calc(105px + env(safe-area-inset-bottom));
   isolation: isolate;
 }
-.constellation-background {
-  position: absolute;
-  z-index: -2;
-  inset: 0;
-  background: url('/activity-center/stellar/constellation-background.png') center top/cover no-repeat;
-  opacity: .82;
-}
 .constellation-tab::before {
   position: absolute;
   z-index: -1;
   inset: 0;
-  background: radial-gradient(ellipse at 50% 42%, rgba(35, 100, 188, .22), transparent 54%);
+  background: radial-gradient(ellipse at 50% 42%, rgba(35, 100, 188, 0.22), transparent 54%);
   content: '';
 }
 .group-strip {
@@ -231,18 +229,20 @@ watch(() => props.constellation, (value) => {
   scroll-snap-type: x mandatory;
   scrollbar-width: none;
 }
-.group-strip::-webkit-scrollbar { display: none; }
+.group-strip::-webkit-scrollbar {
+  display: none;
+}
 .group-strip button {
   position: relative;
   min-width: 72px;
   height: 29px;
   flex: none;
   padding: 2px 20px 3px;
-  border: 1px solid rgba(104, 133, 202, .68);
+  border: 1px solid rgba(104, 133, 202, 0.68);
   border-radius: 999px;
   color: #8299ce;
-  background: linear-gradient(180deg, rgba(49, 68, 134, .78), rgba(33, 50, 112, .75));
-  box-shadow: inset 0 1px rgba(197, 221, 255, .15);
+  background: linear-gradient(180deg, rgba(49, 68, 134, 0.78), rgba(33, 50, 112, 0.75));
+  box-shadow: inset 0 1px rgba(197, 221, 255, 0.15);
   scroll-snap-align: center;
   font-size: 12px;
   font-weight: 700;
@@ -255,18 +255,26 @@ watch(() => props.constellation, (value) => {
   top: 50%;
   width: 11px;
   height: 1px;
-  background: rgba(115, 150, 216, .48);
+  background: rgba(115, 150, 216, 0.48);
   content: '';
 }
-.group-strip button::before { right: calc(100% + 1px); }
-.group-strip button::after { left: calc(100% + 1px); }
+.group-strip button::before {
+  right: calc(100% + 1px);
+}
+.group-strip button::after {
+  left: calc(100% + 1px);
+}
 .group-strip button.active {
   border-color: #d7e5ff;
   color: #6985cc;
   background: linear-gradient(#fff, #e8efff);
-  box-shadow: 0 0 10px rgba(213, 229, 255, .72), inset 0 -2px 4px rgba(120, 150, 215, .25);
+  box-shadow:
+    0 0 10px rgba(213, 229, 255, 0.72),
+    inset 0 -2px 4px rgba(120, 150, 215, 0.25);
 }
-.group-strip button.state-lit:not(.active) { color: #b9cdf0; }
+.group-strip button.state-lit:not(.active) {
+  color: #b9cdf0;
+}
 .group-strip button:focus-visible {
   outline: 2px solid #fff0a2;
   outline-offset: 2px;
@@ -279,7 +287,7 @@ watch(() => props.constellation, (value) => {
   height: 11px;
   border-radius: 50%;
   background: #ff4f68;
-  box-shadow: 0 0 5px rgba(255, 69, 93, .8);
+  box-shadow: 0 0 5px rgba(255, 69, 93, 0.8);
 }
 .group-strip__sync {
   position: absolute;
@@ -293,7 +301,7 @@ watch(() => props.constellation, (value) => {
   border-radius: 50%;
   color: #e8f7ff;
   background: #496da8;
-  box-shadow: 0 1px 4px rgba(5, 26, 70, .65);
+  box-shadow: 0 1px 4px rgba(5, 26, 70, 0.65);
   font-size: 10px;
   line-height: 1;
 }
@@ -306,8 +314,24 @@ watch(() => props.constellation, (value) => {
   height: 16px;
   overflow: visible;
 }
-.group-strip__lock { fill: #314773; stroke: #d5e1ff; stroke-width: 2; filter: drop-shadow(0 1px 2px rgba(7, 24, 67, .75)); }
-.group-strip__done { padding: 2px; border: 1px solid rgba(255, 239, 124, .7); border-radius: 50%; fill: none; stroke: #fff285; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; background: #766719; filter: drop-shadow(0 1px 3px rgba(71, 53, 0, .75)); }
+.group-strip__lock {
+  fill: #314773;
+  stroke: #d5e1ff;
+  stroke-width: 2;
+  filter: drop-shadow(0 1px 2px rgba(7, 24, 67, 0.75));
+}
+.group-strip__done {
+  padding: 2px;
+  border: 1px solid rgba(255, 239, 124, 0.7);
+  border-radius: 50%;
+  fill: none;
+  stroke: #fff285;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  background: #766719;
+  filter: drop-shadow(0 1px 3px rgba(71, 53, 0, 0.75));
+}
 .constellation-scene {
   position: relative;
   height: 355px;
@@ -321,18 +345,23 @@ watch(() => props.constellation, (value) => {
   align-items: center;
   gap: 8px;
 }
-.constellation-heading div { display: flex; flex-direction: column; }
+.constellation-heading div {
+  display: flex;
+  flex-direction: column;
+}
 .constellation-heading strong {
   color: #a9eaff;
   font-size: 22px;
   line-height: 1.1;
-  text-shadow: 0 2px 3px #16497f, 0 0 7px rgba(84, 210, 255, .4);
+  text-shadow:
+    0 2px 3px #16497f,
+    0 0 7px rgba(84, 210, 255, 0.4);
 }
 .constellation-heading span {
   margin-top: 3px;
   color: #d4efff;
   font-size: 14px;
-  letter-spacing: .16em;
+  letter-spacing: 0.16em;
 }
 .book-button {
   width: 29px;
@@ -344,21 +373,16 @@ watch(() => props.constellation, (value) => {
   border-radius: 50%;
   color: #ecf8ff;
   background: linear-gradient(#679ee4, #456abd);
-  box-shadow: 0 2px 4px rgba(0, 33, 87, .5);
+  box-shadow: 0 2px 4px rgba(0, 33, 87, 0.5);
   cursor: pointer;
 }
-.book-button svg { width: 17px; fill: currentColor; }
-.book-button:focus-visible { outline: 2px solid #fff0a2; outline-offset: 2px; }
-.constellation-creature {
-  position: absolute;
-  top: 24px;
-  left: 50%;
-  width: min(340px, 86vw);
-  height: 304px;
-  transform: translateX(-50%);
-  object-fit: contain;
-  opacity: .29;
-  filter: hue-rotate(-7deg) saturate(.8);
+.book-button svg {
+  width: 17px;
+  fill: currentColor;
+}
+.book-button:focus-visible {
+  outline: 2px solid #fff0a2;
+  outline-offset: 2px;
 }
 .star-chart {
   position: absolute;
@@ -371,26 +395,26 @@ watch(() => props.constellation, (value) => {
   overflow: visible;
 }
 .star-constellation line {
-  stroke: rgba(146, 225, 255, .67);
-  stroke-width: .28;
+  stroke: rgba(146, 225, 255, 0.67);
+  stroke-width: 0.28;
   stroke-linecap: round;
   filter: url('#star-blue-glow');
 }
 .star-constellation circle {
   fill: #2f9bc3;
   stroke: #86ddff;
-  stroke-width: .22;
+  stroke-width: 0.22;
   filter: url('#star-blue-glow');
 }
 .star-constellation.selected line {
   stroke: #b46b27;
-  stroke-width: .48;
+  stroke-width: 0.48;
   filter: url('#star-gold-glow');
 }
 .star-constellation.selected circle {
   fill: #fff3a2;
   stroke: #ff982f;
-  stroke-width: .42;
+  stroke-width: 0.42;
   filter: url('#star-gold-glow');
 }
 .star-reward {
@@ -401,8 +425,10 @@ watch(() => props.constellation, (value) => {
   padding: 14px 11px 9px;
   border: 2px solid #e9cf73;
   border-radius: 17px;
-  background: linear-gradient(145deg, rgba(25, 100, 182, .95), rgba(31, 80, 158, .94));
-  box-shadow: inset 0 0 0 3px rgba(113, 195, 250, .22), 0 5px 12px rgba(0, 31, 80, .45);
+  background: linear-gradient(145deg, rgba(25, 100, 182, 0.95), rgba(31, 80, 158, 0.94));
+  box-shadow:
+    inset 0 0 0 3px rgba(113, 195, 250, 0.22),
+    0 5px 12px rgba(0, 31, 80, 0.45);
 }
 .star-reward::after {
   position: absolute;
@@ -461,14 +487,20 @@ watch(() => props.constellation, (value) => {
   border: 1px solid #d4bd91;
   border-radius: 50%;
   background: #fff8df;
-  box-shadow: 0 1px 4px rgba(8, 37, 84, .35);
+  box-shadow: 0 1px 4px rgba(8, 37, 84, 0.35);
   content: '?';
   font-size: 13px;
   font-weight: 700;
   line-height: 1;
 }
-.star-reward__title button:hover::before { background: #fff3c4; transform: scale(1.05); }
-.star-reward__title button:focus-visible { outline: 2px solid #fff0a2; outline-offset: 1px; }
+.star-reward__title button:hover::before {
+  background: #fff3c4;
+  transform: scale(1.05);
+}
+.star-reward__title button:focus-visible {
+  outline: 2px solid #fff0a2;
+  outline-offset: 1px;
+}
 .star-reward__items {
   min-height: 54px;
   display: flex;
@@ -486,10 +518,19 @@ watch(() => props.constellation, (value) => {
 .light-action strong {
   color: #d9f5ff;
   font-size: 21px;
-  text-shadow: 0 2px #13518b, 0 0 12px rgba(74, 207, 255, .65);
+  text-shadow:
+    0 2px #13518b,
+    0 0 12px rgba(74, 207, 255, 0.65);
 }
-.light-action--unknown strong { color: #b6cbe0; font-size: 17px; }
-.light-action--claimableUnknown button { min-width: 190px; border-radius: 28px; font-size: 15px; }
+.light-action--unknown strong {
+  color: #b6cbe0;
+  font-size: 17px;
+}
+.light-action--claimableUnknown button {
+  min-width: 190px;
+  border-radius: 28px;
+  font-size: 15px;
+}
 .light-action button {
   min-width: 118px;
   min-height: 51px;
@@ -498,13 +539,18 @@ watch(() => props.constellation, (value) => {
   border-radius: 50%;
   color: #fff3b5;
   background: radial-gradient(circle, #f7c660 10%, #ce852d 68%, #9d5b24);
-  box-shadow: 0 0 26px rgba(255, 203, 80, .68), inset 0 1px rgba(255, 255, 255, .62);
+  box-shadow:
+    0 0 26px rgba(255, 203, 80, 0.68),
+    inset 0 1px rgba(255, 255, 255, 0.62);
   font-size: 20px;
   font-weight: 800;
   text-shadow: 0 2px #a35b1f;
   cursor: pointer;
 }
-.light-action button:disabled { cursor: wait; opacity: .7; }
+.light-action button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
 .catalog-unsupported {
   min-height: calc(100vh - 217px);
   display: flex;
@@ -515,11 +561,197 @@ watch(() => props.constellation, (value) => {
   color: #cdeaff;
   text-align: center;
 }
-.catalog-unsupported span { color: #8fdfff; font-size: 50px; text-shadow: 0 0 15px #58bde9; }
-.catalog-unsupported strong { font-size: 16px; }
+.catalog-unsupported span {
+  color: #8fdfff;
+  font-size: 50px;
+  text-shadow: 0 0 15px #58bde9;
+}
+.catalog-unsupported strong {
+  font-size: 16px;
+}
 @media (max-height: 720px) {
-  .constellation-scene { height: 320px; }
-  .constellation-creature { height: 277px; }
-  .star-chart { height: 285px; }
+  .constellation-scene {
+    height: 320px;
+  }
+  .star-chart {
+    height: 285px;
+  }
+}
+
+/* Generic activity gameplay layout. */
+.constellation-tab {
+  min-height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(280px, 0.75fr);
+  align-content: start;
+  gap: 14px;
+  padding: 24px;
+  color: #203a32;
+  background: transparent;
+  isolation: auto;
+}
+.constellation-tab::before {
+  display: none;
+}
+.group-strip {
+  grid-column: 1 / -1;
+  gap: 7px;
+  margin: 0;
+  padding: 4px 0 10px;
+}
+.group-strip button {
+  min-width: 82px;
+  height: 42px;
+  padding: 5px 12px 5px 32px;
+  border: 1px solid rgba(48, 82, 70, 0.14);
+  border-radius: 10px;
+  color: #697a73;
+  background: rgba(255, 255, 255, 0.58);
+  box-shadow: none;
+}
+.group-strip button::before,
+.group-strip button::after {
+  display: none;
+}
+.group-strip button.active {
+  border-color: rgba(54, 118, 166, 0.3);
+  color: #315f80;
+  background: rgba(230, 240, 248, 0.94);
+  box-shadow: none;
+}
+.group-strip button.state-lit:not(.active) {
+  color: #456e5e;
+}
+.group-strip__dot {
+  top: 5px;
+  right: 5px;
+}
+.group-strip__sync {
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+}
+.group-strip__lock,
+.group-strip__done {
+  top: 50%;
+  left: 9px;
+  transform: translateY(-50%);
+}
+.constellation-scene {
+  height: 480px;
+  overflow: hidden;
+  border: 1px solid rgba(55, 87, 104, 0.2);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 70% 18%, rgba(79, 139, 177, 0.24), transparent 34%),
+    linear-gradient(145deg, #203846, #152831);
+  box-shadow: 0 14px 34px rgba(35, 58, 67, 0.14);
+}
+.constellation-heading {
+  top: 22px;
+  left: 24px;
+}
+.constellation-heading strong {
+  color: #e6f3f6;
+  font-size: 22px;
+  text-shadow: none;
+}
+.constellation-heading span {
+  color: #94b5c2;
+  letter-spacing: 0;
+}
+.book-button {
+  border: 1px solid rgba(200, 226, 235, 0.28);
+  border-radius: 10px;
+  color: #d8ebf1;
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: none;
+}
+.star-chart {
+  top: 58px;
+  height: 395px;
+}
+.star-reward {
+  width: auto;
+  min-height: 220px;
+  margin: 0;
+  padding: 52px 18px 20px;
+  border: 1px solid rgba(49, 82, 70, 0.12);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.66);
+  box-shadow: 0 12px 30px rgba(38, 69, 57, 0.07);
+}
+.star-reward::after {
+  display: none;
+}
+.star-reward__title {
+  top: 18px;
+  justify-content: flex-start;
+  padding: 0 16px;
+  color: #2b493f;
+  font-size: 16px;
+  text-align: left;
+  text-shadow: none;
+}
+.star-reward__items {
+  justify-content: flex-start;
+}
+.light-action {
+  min-height: 82px;
+  align-self: start;
+  padding: 14px;
+  border: 1px solid rgba(49, 82, 70, 0.1);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.52);
+}
+.light-action strong {
+  color: #416858;
+  font-size: 16px;
+  text-shadow: none;
+}
+.light-action button,
+.light-action--claimableUnknown button {
+  min-width: 126px;
+  min-height: 40px;
+  padding: 8px 18px;
+  border: 1px solid #2e8a66;
+  border-radius: 10px;
+  color: white;
+  background: #2e8a66;
+  box-shadow: 0 8px 18px rgba(35, 113, 83, 0.18);
+  font-size: 14px;
+  text-shadow: none;
+}
+.catalog-unsupported {
+  grid-column: 1 / -1;
+  min-height: 300px;
+  color: #667a72;
+}
+.catalog-unsupported span {
+  color: #4b8b72;
+  text-shadow: none;
+}
+@media (max-width: 760px) {
+  .constellation-tab {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding: 14px;
+  }
+  .group-strip {
+    grid-column: auto;
+  }
+  .constellation-scene {
+    height: 360px;
+  }
+  .star-chart {
+    top: 50px;
+    height: 300px;
+  }
+  .star-reward {
+    min-height: 150px;
+  }
+  .light-action {
+    min-height: 66px;
+  }
 }
 </style>

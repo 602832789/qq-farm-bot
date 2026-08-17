@@ -1,10 +1,11 @@
 <script setup lang="ts">
+import type { MallGoodsDto } from '@/stores/commerce'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import CommerceItemImage from '@/components/commerce/CommerceItemImage.vue'
 import PurchaseDialog from '@/components/commerce/PurchaseDialog.vue'
 import { useAccountStore } from '@/stores/account'
-import { useCommerceStore, type MallGoodsDto } from '@/stores/commerce'
+import { useCommerceStore } from '@/stores/commerce'
 import { useToastStore } from '@/stores/toast'
 
 type FilterKey = 'all' | 'free' | 'discount' | 'fertilizer' | 'pet'
@@ -32,17 +33,23 @@ const filteredGoods = computed(() => {
   const keyword = query.value.trim().toLowerCase()
   return (mall.value?.goods || []).filter((goods) => {
     const names = [goods.name, ...goods.rewards.map(item => item.name)].join(' ').toLowerCase()
-    if (keyword && !names.includes(keyword) && !String(goods.id).includes(keyword)) return false
-    if (filter.value === 'free') return goods.isFree
-    if (filter.value === 'discount') return goods.isDiscounted || !!goods.discountText
-    if (filter.value === 'fertilizer') return names.includes('化肥')
-    if (filter.value === 'pet') return names.includes('狗粮')
+    if (keyword && !names.includes(keyword) && !String(goods.id).includes(keyword))
+      return false
+    if (filter.value === 'free')
+      return goods.isFree
+    if (filter.value === 'discount')
+      return goods.isDiscounted || !!goods.discountText
+    if (filter.value === 'fertilizer')
+      return names.includes('化肥')
+    if (filter.value === 'pet')
+      return names.includes('狗粮')
     return true
   })
 })
 
 const refreshRemaining = computed(() => {
-  if (!mall.value) return ''
+  if (!mall.value)
+    return ''
   const refreshAt = mall.value.serverTime + mall.value.refreshCountdown * 1000
   const seconds = Math.max(0, Math.floor((refreshAt - clock.value) / 1000))
   const hours = Math.floor(seconds / 3600)
@@ -55,11 +62,13 @@ function load() {
 }
 
 function choose(goods: MallGoodsDto) {
-  if (goods.purchasable) selected.value = goods
+  if (goods.purchasable)
+    selected.value = goods
 }
 
 async function purchase(count: number) {
-  if (!selected.value) return
+  if (!selected.value)
+    return
   const goods = selected.value
   const succeeded = await commerceStore.purchaseMall(String(currentAccountId.value || ''), goods, count)
   if (succeeded) {
@@ -84,7 +93,8 @@ onMounted(() => {
   timer = window.setInterval(() => clock.value = Date.now(), 1000)
 })
 onUnmounted(() => {
-  if (timer) window.clearInterval(timer)
+  if (timer)
+    window.clearInterval(timer)
 })
 </script>
 
@@ -110,12 +120,16 @@ onUnmounted(() => {
 
     <div v-if="error || notice" class="mall-message" :class="{ success: !!notice && !error }">
       <span>{{ error || notice }}</span>
-      <button type="button" title="关闭消息" @click="commerceStore.clearMessages"><div class="i-carbon-close" /></button>
+      <button type="button" title="关闭消息" @click="commerceStore.clearMessages">
+        <div class="i-carbon-close" />
+      </button>
     </div>
 
     <section class="mall-toolbar" aria-label="商品筛选">
       <div class="filter-tabs">
-        <button v-for="entry in filters" :key="entry.key" type="button" :class="{ active: filter === entry.key }" @click="filter = entry.key">{{ entry.label }}</button>
+        <button v-for="entry in filters" :key="entry.key" type="button" :class="{ active: filter === entry.key }" @click="filter = entry.key">
+          {{ entry.label }}
+        </button>
       </div>
       <label class="mall-search">
         <div class="i-carbon-search" />
@@ -134,7 +148,9 @@ onUnmounted(() => {
     <div v-else-if="!mall && error" class="mall-state">
       <div class="i-carbon-warning-alt" />
       <strong>{{ error }}</strong>
-      <button type="button" @click="load">重试</button>
+      <button type="button" @click="load">
+        重试
+      </button>
     </div>
     <div v-else-if="filteredGoods.length === 0" class="mall-state">
       <div class="i-carbon-search-locate" />
@@ -191,8 +207,371 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.mall-page{min-height:100%;color:#302b26}.mall-header{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:8px 2px 20px;border-bottom:1px solid rgba(116,91,59,.18)}.mall-header p{margin:0 0 3px;color:#856c4f;font-size:12px}.mall-header h1{margin:0;font-size:28px;letter-spacing:0}.mall-header>div>span{display:block;margin-top:5px;color:#7c7166;font-size:12px}.mall-header__actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}.mall-header__actions>button{display:grid;width:40px;height:40px;place-items:center;border:1px solid #d9d0c4;border-radius:6px;background:white;color:#51483f;font-size:18px;cursor:pointer}.currency-balance{display:grid;grid-template-columns:36px auto auto;gap:7px;align-items:center;padding:3px 10px 3px 3px;border:1px solid #e1d8cc;border-radius:8px;background:rgba(255,255,255,.72)}.currency-balance span{font-size:11px;color:#7c7166}.currency-balance strong{font-size:14px}.mall-message{display:flex;align-items:center;justify-content:space-between;margin-top:12px;padding:10px 12px;border-left:3px solid #b24b42;background:#fff1ef;color:#8f2f28;font-size:13px}.mall-message.success{border-color:#3e8d5a;background:#edf8f0;color:#246a3c}.mall-message button{border:0;background:transparent;color:inherit;cursor:pointer}.mall-toolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:16px 0}.filter-tabs{display:flex;gap:4px;overflow-x:auto;padding-bottom:2px}.filter-tabs button{height:36px;padding:0 14px;border:1px solid transparent;border-radius:6px;background:transparent;color:#665d54;white-space:nowrap;cursor:pointer}.filter-tabs button.active{border-color:#b5cdbc;background:#e7f2e9;color:#246a3c;font-weight:700}.mall-search{display:flex;width:min(260px,38vw);height:38px;align-items:center;gap:8px;padding:0 11px;border:1px solid #d9d0c4;border-radius:6px;background:white;color:#81776d}.mall-search input{min-width:0;flex:1;border:0;outline:0;background:transparent}.goods-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;padding-bottom:24px}.goods-card{display:flex;min-height:390px;flex-direction:column;overflow:hidden;border:1px solid rgba(111,90,64,.18);border-radius:8px;background:rgba(255,255,255,.82);box-shadow:0 3px 12px rgba(77,59,36,.06)}.goods-card.unavailable{opacity:.65}.goods-visual{position:relative;display:grid;min-height:178px;place-items:center;background:linear-gradient(180deg,#f5f8f1,#eef2e9)}.goods-badge{position:absolute;top:10px;right:10px;padding:3px 8px;border-radius:4px;color:white;font-size:11px;font-weight:800}.goods-badge.free{background:#348857}.goods-badge.discount{background:#c65336}.goods-main{display:flex;flex:1;flex-direction:column;padding:14px}.goods-title{display:flex;align-items:baseline;justify-content:space-between;gap:8px}.goods-title h2{margin:0;font-size:16px;letter-spacing:0}.goods-title small{color:#a1968b}.reward-list{display:flex;flex-direction:column;gap:5px;margin-top:12px}.reward-list>span{display:flex;align-items:center;gap:7px;color:#635a51;font-size:12px}.limit-row{margin-top:auto;padding-top:12px;color:#82776c;font-size:11px}.limit-row>div{height:4px;margin-top:5px;overflow:hidden;border-radius:2px;background:#e8e1d8}.limit-row i{display:block;height:100%;background:#c48935}.goods-card footer{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border-top:1px solid #eee8e0}.goods-price{display:flex;align-items:center;gap:7px;color:#8c5d14}.goods-card footer>button{display:flex;height:38px;align-items:center;gap:6px;padding:0 14px;border:0;border-radius:6px;background:#2f7d4b;color:white;font-weight:700;cursor:pointer}.goods-card footer>button:disabled{cursor:not-allowed;background:#9a958d}.mall-state{display:flex;min-height:360px;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#80756a;text-align:center}.mall-state>div{font-size:34px}.mall-state button{height:36px;padding:0 16px;border:0;border-radius:6px;background:#2f7d4b;color:white;cursor:pointer}@media(max-width:720px){.mall-header{align-items:flex-start;flex-direction:column}.mall-header__actions{width:100%;justify-content:flex-start}.mall-toolbar{align-items:stretch;flex-direction:column}.mall-search{width:100%}.goods-grid{grid-template-columns:repeat(auto-fill,minmax(230px,1fr))}}@media(max-width:480px){.goods-grid{grid-template-columns:1fr}.mall-header h1{font-size:24px}}
-/* Compact product density: keep the catalog scannable without changing the card content. */
-.goods-grid{grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px}.goods-card{min-height:240px}.goods-visual{min-height:90px}.goods-visual :deep(.item-image--lg){width:64px;height:64px}.goods-main{padding:7px 8px}.goods-title{gap:4px}.goods-title h2{font-size:13px}.goods-title small{font-size:10px}.reward-list{gap:2px;margin-top:5px}.reward-list>span{gap:4px;font-size:10px;line-height:1.15}.reward-list>span :deep(.item-image--sm){width:22px;height:22px}.limit-row{padding-top:5px;font-size:9px}.limit-row>div{height:3px;margin-top:3px}.goods-card footer{gap:5px;padding:6px 8px}.goods-price{gap:4px;font-size:11px}.goods-price :deep(.item-image--sm){width:22px;height:22px}.goods-card footer>button{height:28px;gap:3px;padding:0 7px;font-size:11px}
-@media(max-width:720px){.goods-grid{grid-template-columns:repeat(auto-fill,minmax(155px,1fr))}}@media(max-width:480px){.goods-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}}
+.mall-page {
+  min-height: 100%;
+  color: var(--ui-ink);
+}
+.mall-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 4px 2px 20px;
+  border-bottom: 1px solid var(--ui-border);
+}
+.mall-header p {
+  margin: 0 0 4px;
+  color: var(--ui-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+.mall-header h1 {
+  margin: 0;
+  font-size: 26px;
+  line-height: 1.2;
+}
+.mall-header > div > span {
+  display: block;
+  margin-top: 5px;
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+.mall-header__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.mall-header__actions > button {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  color: var(--ui-primary);
+  background: var(--ui-surface);
+  cursor: pointer;
+}
+.currency-balance {
+  display: grid;
+  grid-template-columns: 30px auto auto;
+  gap: 6px;
+  align-items: center;
+  padding: 3px 9px 3px 3px;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  background: var(--ui-surface);
+}
+.currency-balance span {
+  color: var(--ui-muted);
+  font-size: 11px;
+}
+.currency-balance strong {
+  color: var(--ui-ink);
+  font-size: 13px;
+}
+.mall-message {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(201, 95, 102, 0.2);
+  border-radius: 8px;
+  color: #9a4048;
+  background: var(--ui-danger-soft);
+  font-size: 13px;
+}
+.mall-message.success {
+  border-color: rgba(67, 141, 99, 0.2);
+  color: #2e714b;
+  background: var(--ui-primary-soft);
+}
+.mall-message button {
+  display: grid;
+  place-items: center;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+.mall-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 18px 0;
+}
+.filter-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.filter-tabs button {
+  height: 34px;
+  padding: 0 13px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: var(--ui-muted);
+  background: transparent;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.filter-tabs button:hover {
+  background: var(--ui-surface-soft);
+}
+.filter-tabs button.active {
+  border-color: rgba(67, 141, 99, 0.17);
+  color: var(--ui-primary);
+  background: var(--ui-primary-soft);
+  font-weight: 700;
+}
+.mall-search {
+  display: flex;
+  width: min(270px, 38vw);
+  height: 38px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  color: var(--ui-muted);
+  background: var(--ui-surface);
+}
+.mall-search:focus-within {
+  border-color: rgba(67, 141, 99, 0.5);
+  box-shadow: 0 0 0 3px rgba(67, 141, 99, 0.1);
+}
+.mall-search input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  color: var(--ui-ink);
+  background: transparent;
+}
+.goods-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(218px, 1fr));
+  gap: 12px;
+  padding-bottom: 24px;
+}
+.goods-card {
+  display: flex;
+  min-height: 290px;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-card);
+  background: var(--ui-surface);
+  box-shadow: var(--ui-shadow-sm);
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    transform 0.16s ease;
+}
+.goods-card:hover {
+  border-color: rgba(67, 141, 99, 0.28);
+  box-shadow: var(--ui-shadow-md);
+  transform: translateY(-1px);
+}
+.goods-card.unavailable {
+  opacity: 0.62;
+}
+.goods-visual {
+  position: relative;
+  display: grid;
+  min-height: 126px;
+  place-items: center;
+  border-bottom: 1px solid rgba(58, 86, 68, 0.08);
+  background: var(--ui-surface-soft);
+}
+.goods-visual :deep(.item-image--lg) {
+  width: 92px;
+  height: 92px;
+}
+.goods-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+}
+.goods-badge.free {
+  background: var(--ui-primary);
+}
+.goods-badge.discount {
+  background: var(--ui-danger);
+}
+.goods-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  padding: 13px 14px;
+}
+.goods-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.goods-title h2 {
+  margin: 0;
+  overflow: hidden;
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.goods-title small,
+.limit-row {
+  color: var(--ui-subtle);
+  font-size: 10px;
+}
+.reward-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+}
+.reward-list > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+.reward-list > span :deep(.item-image--sm),
+.goods-price :deep(.item-image--sm) {
+  width: 24px;
+  height: 24px;
+}
+.limit-row {
+  margin-top: auto;
+  padding-top: 10px;
+}
+.limit-row > div {
+  height: 4px;
+  margin-top: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e8ede7;
+}
+.limit-row i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ui-warning);
+}
+.goods-card footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border-top: 1px solid rgba(58, 86, 68, 0.09);
+}
+.goods-price {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ui-warning);
+  font-size: 13px;
+}
+.goods-card footer > button {
+  display: flex;
+  height: 34px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 11px;
+  border: 1px solid var(--ui-primary);
+  border-radius: 9px;
+  color: white;
+  background: var(--ui-primary);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.goods-card footer > button:disabled {
+  border-color: #bdc4be;
+  color: #f5f7f4;
+  background: #bdc4be;
+  cursor: not-allowed;
+}
+.mall-state {
+  display: flex;
+  min-height: 340px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  color: var(--ui-muted);
+  text-align: center;
+}
+.mall-state > div {
+  color: var(--ui-primary);
+  font-size: 34px;
+}
+.mall-state button {
+  height: 36px;
+  padding: 0 16px;
+  border: 1px solid var(--ui-primary);
+  border-radius: 9px;
+  color: white;
+  background: var(--ui-primary);
+  cursor: pointer;
+}
+@media (max-width: 720px) {
+  .mall-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .mall-header__actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .mall-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .mall-search {
+    width: 100%;
+  }
+  .goods-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .goods-card {
+    min-height: 252px;
+  }
+  .goods-visual {
+    min-height: 94px;
+  }
+  .goods-visual :deep(.item-image--lg) {
+    width: 66px;
+    height: 66px;
+  }
+  .goods-main {
+    padding: 9px;
+  }
+  .goods-card footer {
+    gap: 6px;
+    padding: 8px 9px;
+  }
+  .goods-card footer > button {
+    height: 31px;
+    padding: 0 8px;
+    font-size: 11px;
+  }
+  .goods-price {
+    font-size: 11px;
+  }
+}
 </style>

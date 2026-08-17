@@ -1,9 +1,9 @@
+import type protobuf from 'protobufjs';
+
 export {};
 /**
  * Proto 加载与消息类型管理
  */
-import type protobuf from 'protobufjs';
-
 const protobufModule = require('protobufjs');
 const { getResourcePath } = require('../config/runtime-paths');
 const { log } = require('./utils');
@@ -216,6 +216,8 @@ async function loadProto(): Promise<void> {
     types.GetInviteInfoReply = root.lookupType('gamepb.sharepb.GetInviteInfoReply');
 
     // 活动中心
+    types.ActivityListRequest = root.lookupType('gamepb.activitypb.ActivityListRequest');
+    types.ActivityListReply = root.lookupType('gamepb.activitypb.ActivityListReply');
     types.QueryActivityRequest = root.lookupType('gamepb.activitypb.QueryActivityRequest');
     types.ExchangeShopOperateParams = root.lookupType('gamepb.activitypb.ExchangeShopOperateParams');
     types.ExchangeShopRequest = root.lookupType('gamepb.activitypb.ExchangeShopRequest');

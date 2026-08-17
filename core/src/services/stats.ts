@@ -278,6 +278,7 @@ function getStats(statusData: any, userState: any, connected: boolean, limits: a
             goldBean: currentGoldBean,
             exp: currentExp,
             platform: statusObj.platform || userObj.platform || 'qq',
+            avatarUrl: String(userObj.avatarUrl || statusObj.avatarUrl || '').trim(),
         },
         uptime: process.uptime(),
         operations: operationsSnapshot,

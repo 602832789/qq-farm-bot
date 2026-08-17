@@ -66,15 +66,15 @@ function formatTaskProgress(task: any) {
     <DailyOverview :daily-gifts="dailyGifts" />
 
     <!-- Growth Task -->
-    <div class="farm-card flex flex-col rounded-xl p-4">
+    <div class="flex flex-col farm-card rounded-xl p-4">
       <div class="mb-3 flex items-center justify-between">
         <h3 class="flex items-center gap-2 font-medium" style="color: var(--theme-primary, #22c55e)">
-          <span>🌱</span>
+          <span class="i-carbon-growth" />
           <span>成长任务</span>
         </h3>
         <span
           v-if="growth"
-          class="rounded-lg px-2.5 py-0.5 text-xs font-bold text-blue-600 bg-blue-50 dark:text-blue-400 dark:bg-blue-900/20"
+          class="rounded-lg bg-blue-50 px-2.5 py-0.5 text-xs text-blue-600 font-bold dark:bg-blue-900/20 dark:text-blue-400"
         >
           {{ growthCurrentTask ? `${growthCurrentTask.progress}/${growthCurrentTask.totalProgress}` : '暂无任务' }}
         </span>
@@ -85,7 +85,7 @@ function formatTaskProgress(task: any) {
         class="flex flex-col items-center justify-center gap-3 rounded-xl py-8 text-center"
         style="background: color-mix(in srgb, var(--theme-bg, #fff) 90%, var(--theme-primary, #3b82f6))"
       >
-        <div class="text-3xl" style="opacity: 0.5">👤</div>
+        <div class="i-carbon-user-avatar text-3xl" style="opacity: 0.5" />
         <div>
           <div class="text-sm font-medium" style="color: var(--theme-text, #374151)">
             未登录账号
@@ -100,7 +100,7 @@ function formatTaskProgress(task: any) {
         class="flex flex-col items-center justify-center gap-3 rounded-xl py-8 text-center"
         style="background: color-mix(in srgb, var(--theme-bg, #fff) 90%, var(--theme-primary, #3b82f6))"
       >
-        <div class="text-3xl" style="opacity: 0.5">📡</div>
+        <div class="i-carbon-network-4 text-3xl" style="opacity: 0.5" />
         <div>
           <div class="text-sm font-medium" style="color: var(--theme-text, #374151)">
             账号未登录

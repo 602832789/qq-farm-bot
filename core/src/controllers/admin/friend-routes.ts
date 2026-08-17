@@ -11,7 +11,6 @@ const store = require('../../models/store');
 
 const {
     getAccId,
-    checkAccountAccess,
     handleApiError,
     getAccountList,
     buildKnownFriendGidSettings,
@@ -23,11 +22,6 @@ function mountFriendRoutes(app: Application, ctx: AdminContext): void {
     app.get('/api/friends', async (req: Request, res: Response) => {
         const id = getAccId(ctx, req);
         if (!id) return res.status(400).json({ ok: false });
-
-        // 检查权限
-        if (!checkAccountAccess(ctx, req as any, id)) {
-            return res.status(403).json({ ok: false, error: '无权访问此账号' });
-        }
 
         const forceSync = req.query.forceSync === 'true';
 
@@ -43,11 +37,6 @@ function mountFriendRoutes(app: Application, ctx: AdminContext): void {
     app.post('/api/friends/clear-cache', async (req: Request, res: Response) => {
         const id = getAccId(ctx, req);
         if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
-
-        // 检查权限
-        if (!checkAccountAccess(ctx, req as any, id)) {
-            return res.status(403).json({ ok: false, error: '无权访问此账号' });
-        }
 
         try {
             await ctx.provider.clearFriendsCache(id);
@@ -74,11 +63,6 @@ function mountFriendRoutes(app: Application, ctx: AdminContext): void {
         const id = getAccId(ctx, req);
         if (!id) return res.status(400).json({ ok: false });
 
-        // 检查权限
-        if (!checkAccountAccess(ctx, req as any, id)) {
-            return res.status(403).json({ ok: false, error: '无权访问此账号' });
-        }
-
         try {
             const data = await ctx.provider.getFriendLands(id, req.params.gid);
             res.json({ ok: true, data });
@@ -91,11 +75,6 @@ function mountFriendRoutes(app: Application, ctx: AdminContext): void {
     app.post('/api/friend/:gid/op', async (req: Request, res: Response) => {
         const id = getAccId(ctx, req);
         if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
-
-        // 检查权限
-        if (!checkAccountAccess(ctx, req as any, id)) {
-            return res.status(403).json({ ok: false, error: '无权访问此账号' });
-        }
 
         try {
             const opType = String((req.body || {}).opType || '');
@@ -110,11 +89,6 @@ function mountFriendRoutes(app: Application, ctx: AdminContext): void {
     app.get('/api/friend-blacklist', async (req: Request, res: Response) => {
         const id = getAccId(ctx, req);
         if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
-
-        // 检查权限
-        if (!checkAccountAccess(ctx, req as any, id)) {
-            return res.status(403).json({ ok: false, error: '无权访问此账号' });
-        }
 
         const gids = store.getFriendBlacklist ? store.getFriendBlacklist(id) : [];
 
@@ -156,11 +130,6 @@ function mountFriendRoutes(app: Application, ctx: AdminContext): void {
     app.post('/api/friend-blacklist/toggle', async (req: Request, res: Response) => {
         const id = getAccId(ctx, req);
         if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
-
-        // 检查权限
-        if (!checkAccountAccess(ctx, req as any, id)) {
-            return res.status(403).json({ ok: false, error: '无权访问此账号' });
-        }
 
         const gid = Number((req.body || {}).gid);
         if (!gid) return res.status(400).json({ ok: false, error: 'Missing gid' });
@@ -220,11 +189,6 @@ function mountFriendRoutes(app: Application, ctx: AdminContext): void {
         const id = getAccId(ctx, req);
         if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
 
-        // 检查权限
-        if (!checkAccountAccess(ctx, req as any, id)) {
-            return res.status(403).json({ ok: false, error: '无权访问此账号' });
-        }
-
         try {
             return res.json({ ok: true, data: buildKnownFriendGidSettings(id) });
         } catch (e: any) {
@@ -236,11 +200,6 @@ function mountFriendRoutes(app: Application, ctx: AdminContext): void {
     app.post('/api/friend-known-gids', (req: Request, res: Response) => {
         const id = getAccId(ctx, req);
         if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
-
-        // 检查权限
-        if (!checkAccountAccess(ctx, req as any, id)) {
-            return res.status(403).json({ ok: false, error: '无权访问此账号' });
-        }
 
         try {
             const body = (req.body && typeof req.body === 'object') ? req.body : {};
@@ -268,11 +227,6 @@ function mountFriendRoutes(app: Application, ctx: AdminContext): void {
         const id = getAccId(ctx, req);
         if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
 
-        // 检查权限
-        if (!checkAccountAccess(ctx, req as any, id)) {
-            return res.status(403).json({ ok: false, error: '无权访问此账号' });
-        }
-
         const gid = Number((req.body || {}).gid);
         if (!Number.isFinite(gid) || gid <= 0) {
             return res.status(400).json({ ok: false, error: 'GID 无效' });
@@ -298,11 +252,6 @@ function mountFriendRoutes(app: Application, ctx: AdminContext): void {
     app.post('/api/friend-known-gids/batch-add', (req: Request, res: Response) => {
         const id = getAccId(ctx, req);
         if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
-
-        // 检查权限
-        if (!checkAccountAccess(ctx, req as any, id)) {
-            return res.status(403).json({ ok: false, error: '无权访问此账号' });
-        }
 
         const gids = (req.body || {}).gids;
         if (!Array.isArray(gids) || gids.length === 0) {
@@ -343,11 +292,6 @@ function mountFriendRoutes(app: Application, ctx: AdminContext): void {
     app.post('/api/friend-known-gids/batch-remove', (req: Request, res: Response) => {
         const id = getAccId(ctx, req);
         if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
-
-        // 检查权限
-        if (!checkAccountAccess(ctx, req as any, id)) {
-            return res.status(403).json({ ok: false, error: '无权访问此账号' });
-        }
 
         const gids = (req.body || {}).gids;
         if (!Array.isArray(gids) || gids.length === 0) {

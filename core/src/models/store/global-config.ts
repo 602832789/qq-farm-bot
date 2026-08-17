@@ -1,5 +1,5 @@
 export {};
-import type { AccountConfig, OfflineReminder, UIConfig, SystemConfig, Announcement, GlobalConfig } from '../../types/config';
+import type { AccountConfig, OfflineReminder, UIConfig, SystemConfig } from '../../types/config';
 
 const fs = require('node:fs');
 const { readTextFile, writeJsonFileAtomic } = require('../../services/json-db');
@@ -37,12 +37,6 @@ function normalizeOfflineReminder(input: unknown): OfflineReminder {
     const channel = PUSHOO_CHANNELS.has(migratedChannel)
         ? migratedChannel
         : DEFAULT_OFFLINE_REMINDER.channel;
-    const rawReloginUrlMode = (src.reloginUrlMode !== undefined && src.reloginUrlMode !== null)
-        ? String(src.reloginUrlMode).trim().toLowerCase()
-        : DEFAULT_OFFLINE_REMINDER.reloginUrlMode;
-    const reloginUrlMode: OfflineReminder['reloginUrlMode'] = new Set(['none', 'qq_link', 'qr_link']).has(rawReloginUrlMode)
-        ? rawReloginUrlMode as OfflineReminder['reloginUrlMode']
-        : DEFAULT_OFFLINE_REMINDER.reloginUrlMode;
     const token = (src.token !== undefined && src.token !== null)
         ? String(src.token).trim()
         : DEFAULT_OFFLINE_REMINDER.token;
@@ -54,7 +48,6 @@ function normalizeOfflineReminder(input: unknown): OfflineReminder {
         : DEFAULT_OFFLINE_REMINDER.msg;
     return {
         channel,
-        reloginUrlMode,
         endpoint,
         token,
         title,
@@ -78,16 +71,6 @@ function sanitizeGlobalConfigBeforeSave(): void {
     }
     globalConfig.accountConfigs = nextMap;
 
-    const userReminders = (globalConfig.userOfflineReminders && typeof globalConfig.userOfflineReminders === 'object')
-        ? globalConfig.userOfflineReminders
-        : {};
-    const nextReminders: Record<string, OfflineReminder> = {};
-    for (const [username, cfg] of Object.entries(userReminders)) {
-        const u = String(username || '').trim();
-        if (!u) continue;
-        nextReminders[u] = normalizeOfflineReminder(cfg);
-    }
-    globalConfig.userOfflineReminders = nextReminders;
 }
 
 function saveGlobalConfig(): void {
@@ -108,16 +91,6 @@ function saveGlobalConfig(): void {
     }
 }
 
-function getAdminPasswordHash(): string {
-    return String(globalConfig.adminPasswordHash || '');
-}
-
-function setAdminPasswordHash(hash: unknown): string {
-    globalConfig.adminPasswordHash = String(hash || '');
-    saveGlobalConfig();
-    return globalConfig.adminPasswordHash;
-}
-
 function getUI(): UIConfig {
     return { ...globalConfig.ui };
 }
@@ -133,79 +106,15 @@ function setUITheme(theme: unknown): UIConfig {
     return getUI();
 }
 
-function getOfflineReminder(username?: string): OfflineReminder {
-    if (!username) {
-        return normalizeOfflineReminder(globalConfig.offlineReminder);
-    }
-    const userCfg = globalConfig.userOfflineReminders && globalConfig.userOfflineReminders[username];
-    if (userCfg) {
-        return normalizeOfflineReminder(userCfg);
-    }
-    return normalizeOfflineReminder({});
+function getOfflineReminder(): OfflineReminder {
+    return normalizeOfflineReminder(globalConfig.offlineReminder);
 }
 
-function setOfflineReminder(cfg: Partial<OfflineReminder> | undefined, username?: string): OfflineReminder {
-    if (!username) {
-        const current = normalizeOfflineReminder(globalConfig.offlineReminder);
-        globalConfig.offlineReminder = normalizeOfflineReminder({ ...current, ...(cfg || {}) });
-        saveGlobalConfig();
-        return getOfflineReminder();
-    }
-    if (!globalConfig.userOfflineReminders) {
-        globalConfig.userOfflineReminders = {};
-    }
-    const current = normalizeOfflineReminder(globalConfig.userOfflineReminders[username] || {});
-    globalConfig.userOfflineReminders[username] = normalizeOfflineReminder({ ...current, ...(cfg || {}) });
+function setOfflineReminder(cfg: Partial<OfflineReminder> | undefined): OfflineReminder {
+    const current = normalizeOfflineReminder(globalConfig.offlineReminder);
+    globalConfig.offlineReminder = normalizeOfflineReminder({ ...current, ...(cfg || {}) });
     saveGlobalConfig();
-    return getOfflineReminder(username);
-}
-
-function deleteUserOfflineReminder(username: string): void {
-    if (globalConfig.userOfflineReminders && globalConfig.userOfflineReminders[username]) {
-        delete globalConfig.userOfflineReminders[username];
-        saveGlobalConfig();
-    }
-}
-
-function getAnnouncement(): Announcement {
-    return {
-        content: globalConfig.announcement?.content || '',
-        showOnce: globalConfig.announcement?.showOnce ?? true,
-        updatedAt: globalConfig.announcement?.updatedAt || 0,
-    };
-}
-
-function setAnnouncement(content: unknown, showOnce: boolean = true): Announcement {
-    globalConfig.announcement = {
-        content: String(content || '').trim(),
-        showOnce: !!showOnce,
-        updatedAt: Date.now(),
-    };
-    saveGlobalConfig();
-    return getAnnouncement();
-}
-
-function getAnnouncementReadRecord(username: string): number {
-    if (!username) return 0;
-    return globalConfig.announcementReadRecords?.[username] || 0;
-}
-
-function markAnnouncementRead(username: string): void {
-    if (!username) return;
-    if (!globalConfig.announcementReadRecords) {
-        globalConfig.announcementReadRecords = {};
-    }
-    globalConfig.announcementReadRecords[username] = Date.now();
-    saveGlobalConfig();
-}
-
-function shouldShowAnnouncement(username: string): boolean {
-    const announcement = getAnnouncement();
-    if (!announcement.content) return false;
-    if (!username) return false;
-    if (!announcement.showOnce) return true;
-    const readAt = getAnnouncementReadRecord(username);
-    return readAt < announcement.updatedAt;
+    return getOfflineReminder();
 }
 
 function getSystemConfig(): SystemConfig | null {
@@ -254,9 +163,6 @@ const { loadGlobalConfig } = sharedState;
 loadGlobalConfig();
 // Apply offlineReminder normalization after load
 globalConfig.offlineReminder = normalizeOfflineReminder(globalConfig.offlineReminder);
-for (const [username, cfg] of Object.entries(globalConfig.userOfflineReminders || {})) {
-    globalConfig.userOfflineReminders[username] = normalizeOfflineReminder(cfg);
-}
 if (sharedState.systemConfigMigrated) {
     saveGlobalConfig();
     sharedState.systemConfigMigrated = false;
@@ -264,18 +170,10 @@ if (sharedState.systemConfigMigrated) {
 
 module.exports = {
     saveGlobalConfig,
-    getAdminPasswordHash,
-    setAdminPasswordHash,
     getUI,
     setUITheme,
     getOfflineReminder,
     setOfflineReminder,
-    deleteUserOfflineReminder,
-    getAnnouncement,
-    setAnnouncement,
-    getAnnouncementReadRecord,
-    markAnnouncementRead,
-    shouldShowAnnouncement,
     getSystemConfig,
     setSystemConfig,
 };

@@ -83,8 +83,12 @@ const emit = defineEmits<{ close: [] }>()
   font-size: 30px;
   text-shadow: 0 2px 2px #85501c;
 }
-.guide-icon--fruit { color: #ffe382; }
-.guide-icon--level { color: #fff6a3; }
+.guide-icon--fruit {
+  color: #ffe382;
+}
+.guide-icon--level {
+  color: #fff6a3;
+}
 .guide-icon--sand img {
   width: 43px;
   height: 43px;

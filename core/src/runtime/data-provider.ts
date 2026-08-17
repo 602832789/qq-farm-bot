@@ -289,6 +289,9 @@ function createDataProvider(options: DataProviderOptions) {
                 if (worker && worker.status && worker.status.status && worker.status.status.name) {
                     a.nick = worker.status.status.name;
                 }
+                if (worker && worker.status && worker.status.status && worker.status.status.avatarUrl) {
+                    a.avatar = worker.status.status.avatarUrl;
+                }
             });
             return data;
         },

@@ -77,7 +77,6 @@ export interface AccountConfig {
 
 export interface OfflineReminder {
   channel: string;
-  reloginUrlMode: 'none' | 'qq_link' | 'qr_link';
   endpoint: string;
   token: string;
   title: string;
@@ -107,20 +106,10 @@ export interface SystemConfig {
   deviceInfo: DeviceInfo;
 }
 
-export interface Announcement {
-  content: string;
-  showOnce: boolean;
-  updatedAt: number;
-}
-
 export interface GlobalConfig {
   accountConfigs: Record<string, AccountConfig>;
   defaultAccountConfig: AccountConfig;
   ui: UIConfig;
   offlineReminder: OfflineReminder;
-  userOfflineReminders: Record<string, OfflineReminder>;
-  adminPasswordHash: string;
-  announcement: Announcement;
-  announcementReadRecords: Record<string, number>;
   systemConfig: SystemConfig | null;
 }

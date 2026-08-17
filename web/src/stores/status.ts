@@ -31,7 +31,6 @@ interface DailyGiftsResponse {
 export const useStatusStore = defineStore('status', () => {
   const status = ref<any>(null)
   const logs = ref<any[]>([])
-  const accountLogs = ref<any[]>([])
   const dailyGifts = ref<DailyGiftsResponse | null>(null)
   const diamondBalance = ref(0)
   const loading = ref(false)
@@ -61,15 +60,8 @@ export const useStatusStore = defineStore('status', () => {
   function pushRealtimeLog(entry: any) {
     const next = normalizeLogEntry(entry)
     logs.value.push(next)
-    if (logs.value.length > 1000)
-      logs.value = logs.value.slice(-1000)
-  }
-
-  function pushRealtimeAccountLog(entry: any) {
-    const next = (entry && typeof entry === 'object') ? entry : {}
-    accountLogs.value.push(next)
-    if (accountLogs.value.length > 300)
-      accountLogs.value = accountLogs.value.slice(-300)
+    if (logs.value.length > 300)
+      logs.value = logs.value.slice(-300)
   }
 
   function handleRealtimeStatus(payload: any) {
@@ -89,20 +81,10 @@ export const useStatusStore = defineStore('status', () => {
     pushRealtimeLog(payload)
   }
 
-  function handleRealtimeAccountLog(payload: any) {
-    pushRealtimeAccountLog(payload)
-  }
-
   function handleRealtimeLogsSnapshot(payload: any) {
     const body = (payload && typeof payload === 'object') ? payload : {}
     const list = Array.isArray(body.logs) ? body.logs : []
     logs.value = list.map((item: any) => normalizeLogEntry(item))
-  }
-
-  function handleRealtimeAccountLogsSnapshot(payload: any) {
-    const body = (payload && typeof payload === 'object') ? payload : {}
-    const list = Array.isArray(body.logs) ? body.logs : []
-    accountLogs.value = list
   }
 
   function ensureRealtimeSocket() {
@@ -139,9 +121,7 @@ export const useStatusStore = defineStore('status', () => {
 
     socket.on('status:update', handleRealtimeStatus)
     socket.on('log:new', handleRealtimeLog)
-    socket.on('account-log:new', handleRealtimeAccountLog)
     socket.on('logs:snapshot', handleRealtimeLogsSnapshot)
-    socket.on('account-logs:snapshot', handleRealtimeAccountLogsSnapshot)
     return socket
   }
 
@@ -171,9 +151,7 @@ export const useStatusStore = defineStore('status', () => {
     socket.off('connect_error')
     socket.off('status:update', handleRealtimeStatus)
     socket.off('log:new', handleRealtimeLog)
-    socket.off('account-log:new', handleRealtimeAccountLog)
     socket.off('logs:snapshot', handleRealtimeLogsSnapshot)
-    socket.off('account-logs:snapshot', handleRealtimeAccountLogsSnapshot)
     socket.disconnect()
     socket = null
     realtimeConnected.value = false
@@ -263,18 +241,6 @@ export const useStatusStore = defineStore('status', () => {
     }
   }
 
-  async function fetchAccountLogs(limit = 100) {
-    try {
-      const res = await api.get(`/api/account-logs?limit=${Math.max(1, Number(limit) || 100)}`)
-      if (Array.isArray(res.data)) {
-        accountLogs.value = res.data
-      }
-    }
-    catch (e) {
-      console.error(e)
-    }
-  }
-
   function setRealtimeLogsEnabled(enabled: boolean) {
     realtimeLogsEnabled.value = !!enabled
   }
@@ -282,7 +248,6 @@ export const useStatusStore = defineStore('status', () => {
   return {
     status,
     logs,
-    accountLogs,
     dailyGifts,
     diamondBalance,
     loading,
@@ -292,7 +257,6 @@ export const useStatusStore = defineStore('status', () => {
     fetchStatus,
     fetchDiamond,
     fetchLogs,
-    fetchAccountLogs,
     fetchDailyGifts,
     setRealtimeLogsEnabled,
     connectRealtime,

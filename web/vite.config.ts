@@ -30,20 +30,38 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (id.includes('node_modules')) {
-            if (id.includes('vue') || id.includes('pinia') || id.includes('vue-router') || id.includes('@vueuse')) {
-              return 'vendor-vue'
-            }
-            if (id.includes('axios')) {
-              return 'vendor-axios'
-            }
-            // Split other large dependencies if needed
-            if (id.includes('echarts') || id.includes('zrender')) {
-              return 'vendor-echarts'
-            }
-            // Default vendor chunk
-            return 'vendor'
+          const normalizedId = id.replace(/\\/g, '/')
+          if (!normalizedId.includes('/node_modules/'))
+            return undefined
+
+          const matchesPackage = (name: string) => normalizedId.includes(`/node_modules/${name}/`)
+
+          if (['vue', 'vue-router', 'pinia', '@vueuse/core'].some(matchesPackage))
+            return 'vendor-vue'
+
+          if ([
+            'naive-ui',
+            'vueuc',
+            'vdirs',
+            'vooks',
+            'css-render',
+            '@css-render/vue3-ssr',
+            '@css-render/plugin-bem',
+            'seemly',
+            'treemate',
+            'evtd',
+            'date-fns',
+            'date-fns-tz',
+            'lodash-es',
+            'async-validator',
+          ].some(matchesPackage)) {
+            return 'vendor-ui'
           }
+
+          if (matchesPackage('axios'))
+            return 'vendor-axios'
+
+          return 'vendor'
         },
       },
     },

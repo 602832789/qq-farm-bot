@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useIntervalFn } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import api from '@/api'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
@@ -19,7 +19,6 @@ const {
   status,
   diamondBalance,
   logs: statusLogs,
-  accountLogs: statusAccountLogs,
   realtimeConnected,
 } = storeToRefs(statusStore)
 const { currentAccountId, currentAccount } = storeToRefs(accountStore)
@@ -30,16 +29,9 @@ const lastBagFetchAt = ref(0)
 const clearingLogs = ref(false)
 
 const allLogs = computed(() => {
-  const sLogs = statusLogs.value || []
-  const aLogs = (statusAccountLogs.value || []).map((l: any) => ({
-    ts: new Date(l.time).getTime(),
-    time: l.time,
-    tag: l.action === 'Error' ? '错误' : '系统',
-    msg: l.reason ? `${l.msg} (${l.reason})` : l.msg,
-    isAccountLog: true,
-  }))
-
-  return [...sLogs, ...aLogs].sort((a: any, b: any) => a.ts - b.ts).filter((l: any) => !l.isAccountLog)
+  return [...(statusLogs.value || [])]
+    .slice(-200)
+    .sort((a: any, b: any) => a.ts - b.ts)
 })
 
 const filter = reactive({
@@ -231,20 +223,22 @@ function updateCountdowns() {
   }
 }
 
-watch(status, (newVal) => {
-  if (newVal?.nextChecks) {
+watch(() => status.value?.nextChecks, (nextChecks) => {
+  if (nextChecks) {
     // Only update local counters if they are significantly different or 0
     // Actually, we should sync from server periodically.
     // Here we just take server value when it comes.
-    localNextFarmRemainSec = newVal.nextChecks.farmRemainSec || 0
-    localNextHelpRemainSec = newVal.nextChecks.helpRemainSec || 0
-    localNextStealRemainSec = newVal.nextChecks.stealRemainSec || 0
+    localNextFarmRemainSec = nextChecks.farmRemainSec || 0
+    localNextHelpRemainSec = nextChecks.helpRemainSec || 0
+    localNextStealRemainSec = nextChecks.stealRemainSec || 0
     updateCountdowns() // Update immediately
   }
-  if (newVal?.uptime !== undefined) {
-    localUptime.value = newVal.uptime
-  }
-}, { deep: true })
+}, { immediate: true })
+
+watch(() => status.value?.uptime, (uptime) => {
+  if (uptime !== undefined)
+    localUptime.value = uptime
+}, { immediate: true })
 
 function formatDuration(seconds: number) {
   if (seconds <= 0)
@@ -286,14 +280,14 @@ function formatLogTime(timeStr: string) {
 }
 
 const OP_META: Record<string, { label: string, icon: string, color: string }> = {
-  harvest: { label: '收获', icon: '🌾', color: 'text-green-500' },
-  farming: { label: '一键务农', icon: '🧑‍🌾', color: 'text-yellow-500' },
-  fertilize: { label: '施肥', icon: '🧪', color: 'text-emerald-500' },
-  plant: { label: '种植', icon: '🌱', color: 'text-lime-500' },
-  steal: { label: '偷菜', icon: '🏃', color: 'text-orange-500' },
-  helpFarming: { label: '帮务农', icon: '🧑‍🌾', color: 'text-yellow-400' },
-  taskClaim: { label: '任务', icon: '✅', color: 'text-indigo-500' },
-  sell: { label: '出售', icon: '💰', color: 'text-pink-500' },
+  harvest: { label: '收获', icon: 'i-carbon-wheat', color: 'text-green-500' },
+  farming: { label: '一键务农', icon: 'i-carbon-agriculture-analytics', color: 'text-yellow-500' },
+  fertilize: { label: '施肥', icon: 'i-carbon-chemistry', color: 'text-emerald-500' },
+  plant: { label: '种植', icon: 'i-carbon-sprout', color: 'text-lime-500' },
+  steal: { label: '偷菜', icon: 'i-carbon-run', color: 'text-orange-500' },
+  helpFarming: { label: '帮务农', icon: 'i-carbon-collaborate', color: 'text-yellow-400' },
+  taskClaim: { label: '任务', icon: 'i-carbon-task-complete', color: 'text-indigo-500' },
+  sell: { label: '出售', icon: 'i-carbon-currency-dollar', color: 'text-pink-500' },
 }
 
 const filteredOperations = computed(() => {
@@ -312,7 +306,7 @@ function getOpName(key: string | number) {
 }
 
 function getOpIcon(key: string | number) {
-  return OP_META[String(key)]?.icon || '⭕'
+  return OP_META[String(key)]?.icon
 }
 
 function getExpPercent(p: any) {
@@ -358,7 +352,6 @@ async function refresh(forceReloadLogs = false) {
     // 首次加载、断线兜底时走 HTTP；连接正常时优先走 WS 实时推送
     if (!realtimeConnected.value) {
       await statusStore.fetchStatus(currentAccountId.value)
-      await statusStore.fetchAccountLogs()
     }
 
     if (forceReloadLogs || hasActiveLogFilter.value || !realtimeConnected.value) {
@@ -397,8 +390,16 @@ watch(() => status.value?.connection?.connected, (connected) => {
   }
 })
 
-watch(() => JSON.stringify(status.value?.operations || {}), (next, prev) => {
-  if (!realtimeConnected.value || next === prev)
+function operationsEqual(next: Record<string, unknown> | null | undefined, prev: Record<string, unknown> | null | undefined) {
+  const nextOperations = next || {}
+  const prevOperations = prev || {}
+  const nextKeys = Object.keys(nextOperations)
+  const prevKeys = Object.keys(prevOperations)
+  return nextKeys.length === prevKeys.length && nextKeys.every(key => nextOperations[key] === prevOperations[key])
+}
+
+watch(() => status.value?.operations, (next, prev) => {
+  if (!realtimeConnected.value || operationsEqual(next, prev))
     return
   refreshBag()
 })
@@ -439,21 +440,26 @@ async function clearLogs() {
   }
 }
 
-// Auto scroll logs
-watch(allLogs, () => {
+let logScrollFrame: number | undefined
+
+function scheduleLogScroll(force = false) {
   nextTick(() => {
-    if (logContainer.value && autoScroll.value) {
-      logContainer.value.scrollTop = logContainer.value.scrollHeight
-    }
+    if (!logContainer.value || (!force && !autoScroll.value) || logScrollFrame !== undefined)
+      return
+    logScrollFrame = window.requestAnimationFrame(() => {
+      if (logContainer.value)
+        logContainer.value.scrollTop = logContainer.value.scrollHeight
+      logScrollFrame = undefined
+    })
   })
-}, { deep: true })
+}
+
+watch(allLogs, () => {
+  scheduleLogScroll()
+})
 
 function scrollToBottom() {
-  nextTick(() => {
-    if (logContainer.value) {
-      logContainer.value.scrollTop = logContainer.value.scrollHeight
-    }
-  })
+  scheduleLogScroll(true)
 }
 
 onMounted(async () => {
@@ -463,6 +469,11 @@ onMounted(async () => {
   scrollToBottom()
 })
 
+onBeforeUnmount(() => {
+  if (logScrollFrame !== undefined)
+    window.cancelAnimationFrame(logScrollFrame)
+})
+
 // Auto refresh fallback every 10s (WS 断开或筛选条件启用时会回退 HTTP)
 useIntervalFn(refresh, 10000)
 // Countdown timer (every 1s)
@@ -470,11 +481,11 @@ useIntervalFn(updateCountdowns, 1000)
 </script>
 
 <template>
-  <div class="flex flex-col gap-6 pt-6">
+  <div class="page-stack flex flex-col gap-5">
     <!-- Status Cards -->
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-3 sm:grid-cols-2">
       <!-- Account & Exp -->
-      <div class="farm-card flex flex-col rounded-2xl bg-white p-5 shadow-md dark:bg-gray-800">
+      <div class="flex flex-col farm-card rounded-2xl bg-white p-5 shadow-md dark:bg-gray-800">
         <div class="mb-2 flex items-start justify-between">
           <div class="flex items-center gap-1.5 text-sm text-gray-500">
             <div class="i-fas-user-circle" />
@@ -511,7 +522,7 @@ useIntervalFn(updateCountdowns, 1000)
       </div>
 
       <!-- Assets & Status -->
-      <div class="farm-card flex flex-col justify-between rounded-2xl bg-white p-5 shadow-md dark:bg-gray-800">
+      <div class="flex flex-col justify-between farm-card rounded-2xl bg-white p-5 shadow-md dark:bg-gray-800">
         <div class="grid grid-cols-2 gap-x-4 gap-y-3">
           <div class="border-b border-r border-gray-100 pb-3 pr-3 dark:border-gray-700">
             <div class="flex items-center gap-1.5 text-xs text-gray-500">
@@ -545,7 +556,7 @@ useIntervalFn(updateCountdowns, 1000)
               {{ (status?.sessionCouponGained || 0) > 0 ? '+' : '' }}{{ status?.sessionCouponGained || 0 }}
             </div>
           </div>
-          <div class="border-r border-gray-100 pt-3 pr-3 dark:border-gray-700">
+          <div class="border-r border-gray-100 pr-3 pt-3 dark:border-gray-700">
             <div class="flex items-center gap-1.5 text-xs text-gray-500">
               <div class="i-fas-seedling text-amber-500" />
               金豆豆
@@ -554,7 +565,7 @@ useIntervalFn(updateCountdowns, 1000)
               {{ formatAssetAmount(status?.status?.goldBean) }}
             </div>
           </div>
-          <div class="pt-3 pl-3 text-right">
+          <div class="pl-3 pt-3 text-right">
             <div class="flex items-center justify-end gap-1.5 text-xs text-gray-500">
               <div class="i-fas-gem text-cyan-500" />
               钻石
@@ -579,7 +590,7 @@ useIntervalFn(updateCountdowns, 1000)
       </div>
 
       <!-- Items (Fertilizer & Collection) -->
-      <div class="farm-card flex flex-col justify-between rounded-2xl bg-white p-5 shadow-md dark:bg-gray-800">
+      <div class="flex flex-col justify-between farm-card rounded-2xl bg-white p-5 shadow-md dark:bg-gray-800">
         <div class="mb-2 flex items-center gap-1.5 text-sm text-gray-500">
           <div class="i-fas-flask text-emerald-400" />
           化肥容器
@@ -637,10 +648,10 @@ useIntervalFn(updateCountdowns, 1000)
       <!-- Logs (Left Column) -->
       <div class="flex flex-1 flex-col gap-6 md:w-3/4">
         <!-- Logs -->
-        <div class="farm-card flex flex-1 flex-col rounded-2xl bg-white p-6 shadow-md md:overflow-hidden dark:bg-gray-800">
+        <div class="flex flex-1 flex-col farm-card rounded-2xl bg-white p-6 shadow-md md:overflow-hidden dark:bg-gray-800">
           <div class="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <h3 class="flex items-center gap-2 text-lg font-medium font-display">
-              📋 <span>运行日志</span>
+              <span class="i-carbon-document" /> <span>运行日志</span>
             </h3>
 
             <div class="flex flex-wrap items-center gap-2 text-sm">
@@ -679,7 +690,7 @@ useIntervalFn(updateCountdowns, 1000)
                 size="sm"
                 @click="onLogSearchTrigger"
               >
-                🔍
+                <span class="i-carbon-search" />
               </BaseButton>
 
               <BaseButton
@@ -688,7 +699,7 @@ useIntervalFn(updateCountdowns, 1000)
                 :loading="clearingLogs"
                 @click="clearLogs"
               >
-                🗑️
+                <span class="i-carbon-trash-can" />
               </BaseButton>
             </div>
           </div>
@@ -697,7 +708,7 @@ useIntervalFn(updateCountdowns, 1000)
             <div v-if="!allLogs.length" class="py-8 text-center text-gray-400">
               暂无日志
             </div>
-            <div v-for="log in allLogs" :key="log.ts + log.msg" class="mb-1 break-all">
+            <div v-for="log in allLogs" :key="log.ts + log.msg" class="log-row mb-1 break-all">
               <span class="mr-2 select-none text-gray-400">[{{ formatLogTime(log.time) }}]</span>
               <span class="mr-2 rounded-full px-1.5 py-0.5 text-xs font-bold" :class="getLogTagClass(log.tag)">{{ log.tag }}</span>
               <span v-if="log.meta?.event" class="mr-2 rounded-full bg-blue-50 px-1.5 py-0.5 text-xs text-blue-500 dark:bg-blue-900/20 dark:text-blue-400">{{ getEventLabel(log.meta.event) }}</span>
@@ -710,14 +721,14 @@ useIntervalFn(updateCountdowns, 1000)
       <!-- Right Column Stack -->
       <div class="flex flex-col gap-6 md:w-1/4">
         <!-- Next Checks -->
-        <div class="farm-card flex flex-col rounded-2xl bg-white p-6 shadow-md dark:bg-gray-800">
+        <div class="flex flex-col farm-card rounded-2xl bg-white p-6 shadow-md dark:bg-gray-800">
           <h3 class="mb-4 flex items-center gap-2 text-lg font-medium font-display">
-            ⏳ <span>下次巡查倒计时</span>
+            <span class="i-carbon-time" /> <span>下次巡查倒计时</span>
           </h3>
           <div class="flex flex-col justify-center gap-4">
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2 text-gray-700 dark:text-gray-300">
-                <span class="text-lg text-green-500">🌱</span>
+                <span class="i-carbon-sprout text-lg text-green-500" />
                 <span>农场</span>
               </div>
               <div class="text-lg font-bold font-mono">
@@ -726,7 +737,7 @@ useIntervalFn(updateCountdowns, 1000)
             </div>
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2 text-gray-700 dark:text-gray-300">
-                <span class="text-lg text-blue-500">🤝</span>
+                <span class="i-carbon-collaborate text-lg text-blue-500" />
                 <span>帮助</span>
               </div>
               <div class="text-lg font-bold font-mono">
@@ -735,7 +746,7 @@ useIntervalFn(updateCountdowns, 1000)
             </div>
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2 text-gray-700 dark:text-gray-300">
-                <span class="text-lg text-orange-500">🏃</span>
+                <span class="i-carbon-run text-lg text-orange-500" />
                 <span>偷菜</span>
               </div>
               <div class="text-lg font-bold font-mono">
@@ -746,12 +757,12 @@ useIntervalFn(updateCountdowns, 1000)
         </div>
 
         <!-- Operations Grid -->
-        <div class="farm-card flex-1 rounded-2xl bg-white p-5 shadow-md dark:bg-gray-800">
+        <div class="flex-1 farm-card rounded-2xl bg-white p-5 shadow-md dark:bg-gray-800">
           <h3 class="mb-3 flex items-center gap-2 text-lg font-medium font-display">
-            📊 <span>今日统计</span>
+            <span class="i-carbon-chart-column" /> <span>今日统计</span>
           </h3>
-          <div v-if="!status?.connection?.connected" class="farm-card flex flex-col items-center justify-center gap-4 rounded-2xl bg-white p-12 text-center text-gray-500 shadow-md dark:bg-gray-800">
-            <span class="text-4xl text-gray-400">📡</span>
+          <div v-if="!status?.connection?.connected" class="flex flex-col items-center justify-center gap-4 farm-card rounded-2xl bg-white p-12 text-center text-gray-500 shadow-md dark:bg-gray-800">
+            <span class="i-carbon-network-4 text-4xl text-gray-400" />
             <div class="flex flex-col">
               <div class="text-lg text-gray-700 font-medium dark:text-gray-300">
                 账号未登录
@@ -768,7 +779,7 @@ useIntervalFn(updateCountdowns, 1000)
               class="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2 transition-transform hover:scale-105 dark:bg-gray-700/30"
             >
               <div class="flex items-center gap-2">
-                <span class="text-base 2xl:text-lg select-none">{{ getOpIcon(key) }}</span>
+                <span class="select-none text-base 2xl:text-lg" :class="getOpIcon(key)" />
                 <div class="text-xs text-gray-500 2xl:text-sm">
                   {{ getOpName(key) }}
                 </div>
@@ -783,3 +794,10 @@ useIntervalFn(updateCountdowns, 1000)
     </div>
   </div>
 </template>
+
+<style scoped>
+.log-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 24px;
+}
+</style>

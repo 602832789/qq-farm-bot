@@ -7,7 +7,7 @@ export interface Account {
   uin: string;
   qq: string;
   avatar: string;
-  username: string;
+  nick?: string;
   createdAt: number;
   updatedAt: number;
 }

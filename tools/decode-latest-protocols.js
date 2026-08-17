@@ -17,6 +17,7 @@ const protoFiles = fs.readdirSync(protoDir)
     .map((name) => path.join(protoDir, name));
 
 const selected = new Set([
+    'gamepb.activitypb.ActivityService.List',
     'gamepb.activitypb.ActivityService.Operate',
     'gamepb.itempb.ItemService.Bag',
     'gamepb.itempb.ItemService.Use',
@@ -77,6 +78,7 @@ function rawFields(buffer, depth = 0) {
 function knownType(root, service, method, messageType) {
     const request = messageType === 1;
     const names = {
+        'gamepb.activitypb.ActivityService.List': request ? 'gamepb.activitypb.ActivityListRequest' : 'gamepb.activitypb.ActivityListReply',
         'gamepb.itempb.ItemService.Bag': request ? 'gamepb.itempb.BagRequest' : 'gamepb.itempb.BagReply',
         'gamepb.itempb.ItemService.Use': request ? 'gamepb.itempb.UseRequest' : 'gamepb.itempb.UseReply',
         'gamepb.itempb.ItemService.BatchUse': request ? 'gamepb.itempb.BatchUseRequest' : 'gamepb.itempb.BatchUseReply',

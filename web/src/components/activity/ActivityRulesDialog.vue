@@ -136,7 +136,10 @@ onBeforeUnmount(() => unlockPage(false))
   border: 5px solid #8c471e;
   border-radius: 23px;
   background: linear-gradient(90deg, #a95b27 0 4%, #cf8243 4% 8%, #ad6029 8% 92%, #d58a49 92% 96%, #955022 96%);
-  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.55), inset 0 0 0 3px #e4a35c, inset 0 0 20px #703516;
+  box-shadow:
+    0 12px 35px rgba(0, 0, 0, 0.55),
+    inset 0 0 0 3px #e4a35c,
+    inset 0 0 20px #703516;
 }
 .activity-rules-dialog::before,
 .activity-rules-dialog::after {
@@ -149,8 +152,12 @@ onBeforeUnmount(() => unlockPage(false))
   content: '';
   box-shadow: 0 2px 3px rgba(67, 25, 8, 0.7);
 }
-.activity-rules-dialog::before { left: 18px; }
-.activity-rules-dialog::after { right: 18px; }
+.activity-rules-dialog::before {
+  left: 18px;
+}
+.activity-rules-dialog::after {
+  right: 18px;
+}
 .activity-rules-dialog__header {
   position: absolute;
   z-index: 2;
@@ -180,8 +187,12 @@ onBeforeUnmount(() => unlockPage(false))
   border-radius: 14px;
   color: #fff;
   background: linear-gradient(#c77939, #8d411d);
-  box-shadow: 0 4px 7px rgba(0, 0, 0, 0.4), inset 0 0 0 2px #6f3016;
-  font: 700 34px/36px Arial, sans-serif;
+  box-shadow:
+    0 4px 7px rgba(0, 0, 0, 0.4),
+    inset 0 0 0 2px #6f3016;
+  font:
+    700 34px/36px Arial,
+    sans-serif;
   cursor: pointer;
 }
 .activity-rules-dialog__close:focus-visible {
@@ -195,7 +206,9 @@ onBeforeUnmount(() => unlockPage(false))
   border: 3px solid #75421f;
   border-radius: 13px;
   color: #684119;
-  background: linear-gradient(rgba(255, 250, 212, 0.93), rgba(248, 226, 165, 0.96)), repeating-linear-gradient(0deg, transparent 0 25px, rgba(131, 82, 31, 0.08) 26px);
+  background:
+    linear-gradient(rgba(255, 250, 212, 0.93), rgba(248, 226, 165, 0.96)),
+    repeating-linear-gradient(0deg, transparent 0 25px, rgba(131, 82, 31, 0.08) 26px);
   box-shadow: inset 0 0 20px rgba(133, 76, 25, 0.25);
   overscroll-behavior: contain;
   scrollbar-color: #aa713a #f5dfa9;
@@ -209,25 +222,37 @@ onBeforeUnmount(() => unlockPage(false))
   margin: 0 0 13px;
   white-space: pre-line;
 }
-.activity-rules-copy p:first-child { font-weight: 700; }
+.activity-rules-copy p:first-child {
+  font-weight: 700;
+}
 .activity-rules-empty {
   padding: 50px 0;
   color: #a2794c;
   text-align: center;
 }
 .activity-rules-fade-enter-active,
-.activity-rules-fade-leave-active { transition: opacity 0.18s ease; }
+.activity-rules-fade-leave-active {
+  transition: opacity 0.18s ease;
+}
 .activity-rules-fade-enter-active .activity-rules-dialog,
-.activity-rules-fade-leave-active .activity-rules-dialog { transition: transform 0.18s ease; }
+.activity-rules-fade-leave-active .activity-rules-dialog {
+  transition: transform 0.18s ease;
+}
 .activity-rules-fade-enter-from,
-.activity-rules-fade-leave-to { opacity: 0; }
+.activity-rules-fade-leave-to {
+  opacity: 0;
+}
 .activity-rules-fade-enter-from .activity-rules-dialog,
-.activity-rules-fade-leave-to .activity-rules-dialog { transform: scale(0.96); }
+.activity-rules-fade-leave-to .activity-rules-dialog {
+  transform: scale(0.96);
+}
 @media (max-height: 680px) {
   .activity-rules-overlay {
     padding-top: 44px;
     padding-bottom: 30px;
   }
-  .activity-rules-dialog { height: 100%; }
+  .activity-rules-dialog {
+    height: 100%;
+  }
 }
 </style>

@@ -1,353 +1,313 @@
 # QQ 农场多账号挂机 + Web 面板
 
-基于 Node.js 的 QQ 农场自动化工具，支持多账号管理、Web 控制面板、实时日志、活动中心与数据分析。
+基于 Node.js 的 QQ 农场自动化工具，提供多账号挂机、农场与好友自动化、活动中心、商城、数据分析和 Web 控制面板。当前项目版本为 `20260817`。
 
-> 📖 喜欢的点一个 star ⭐ 吧！
->
-> 🔐 默认面板管理员账号/密码都是 `admin`，端口 `3007`，请部署登录后尽快修改密码！
+> [!IMPORTANT]
+> 首次启动会创建默认管理员 `admin` / `admin`，Web 面板默认端口为 `3007`。对外部署后请立即修改密码，并避免将未加防护的管理端口直接暴露到公网。
 
----
+## 功能概览
 
-## 功能截图
+### 账号与登录
 
-<div align="center">
-  <img src="https://free.picui.cn/free/2026/08/03/6a700b8aa44ef.png" alt="功能截图" width="45%" />
-  <img src="https://free.picui.cn/free/2026/08/03/6a700b8ace5bd.png" alt="功能截图" width="45%" />
-  <img src="https://free.picui.cn/free/2026/08/03/6a700b8ac5bd0.png" alt="功能截图" width="45%" />
-  <img src="https://free.picui.cn/free/2026/08/03/6a700b8ab46b1.png" alt="功能截图" width="45%" />
-  <img src="https://free.picui.cn/free/2026/08/03/6a700b8a9b049.png" alt="功能截图" width="45%" />
-  <img src="https://free.picui.cn/free/2026/08/03/6a700b8e47e15.png" alt="功能截图" width="45%" />
-  <img src="https://free.picui.cn/free/2026/08/03/6a700b8e48377.png" alt="功能截图" width="45%" />
-  <img src="https://free.picui.cn/free/2026/08/03/6a700b8e49ba4.png" alt="功能截图" width="45%" />
-  <img src="https://free.picui.cn/free/2026/08/03/6a700b8e4c9f2.png" alt="功能截图" width="45%" />
-  <img src="https://free.picui.cn/free/2026/08/03/6a700b8e4880e.png" alt="功能截图" width="45%" />
-</div>
+- 游戏账号可无限添加并独立运行，每个账号可单独配置种植、好友、自动化和执行间隔策略
+- 支持抓包 Code 登录和微信小程序扫码登录
+- 支持账号启停、状态监控、实时日志和离线提醒
+- Web 面板只保留一个超级管理员，不提供注册、普通用户和租户隔离
 
----
+### 农场自动化
 
-## 功能特性
+- 自动收获、种植、浇水、除草、除虫、铲除和土地升级
+- 自动施肥、多季作物补肥、指定土地类型施肥和化肥自动购买
+- 支持一键务农、一键种植、一键收获、一键铲除和一键全收等面板操作
+- 支持多种种植策略、背包种子优先级、作物黑名单和执行间隔配置
+- 汇总任务、免费礼包、分享奖励、会员礼包、月卡礼包和图鉴奖励等每日状态，并按天自动处理支持的领取项
 
-### 🌾 核心功能
+### 好友互动
 
-- **多账号管理** — 同时挂机多个 QQ 农场账号，独立配置策略
-- **Code / 扫码登录** — 支持抓包 code 和微信小程序二维码登录游戏账号
-- **自动化农场** — 自动种植、浇水、施肥、收获、偷菜
-- **智能施肥** — 支持有机肥/普通肥/智能施肥模式，多季作物自动补肥
-- **化肥自动购买** — 定时检测并自动购买化肥（有机肥/普通肥分别配置）
-- **好友互动** — 自动访问好友农场、除草除虫、批量操作
-- **数据分析** — 作物收益统计、种植策略推荐、游戏配置查询与黑名单管理
+- 自动访问好友、偷菜、帮忙浇水、除草除虫及放草放虫
+- 支持好友黑名单、安静时段和互动经验上限
+- 支持已知好友 GID 的批量维护、同步参数和互动记录查询
+- 面板可对指定好友执行单次访问或农场操作
 
-### ✨ 活动中心
+### 背包与交易
 
-- **千星游记** — 查看赛季进度，领取可用游记奖励
-- **观星礼录** — 点亮星座并领取星宿奖励
-- **星砂商店** — 查看星砂余额，兑换当前活动商品
-- **节令活动** — 查看当前节令并领取开放奖励
+- 查看背包，使用、出售或批量出售物品
+- 根据游戏配置判断活动区间外、活动结束后和道具过期后的物品可售状态
+- 查看神秘商人活动商品及购买状态
+- 浏览游戏商城商品、价格、折扣和限购信息，并执行购买
+- 查询种子、果实、道具和作物收益数据
 
-### 🎫 用户系统
+### 活动中心
 
-- **卡密管理** — 支持时间卡密和额度卡密，批量创建与导出
-- **卡密领取** — 用户注册时可免费领取时间卡密（管理员可开关）
-- **用户认证** — 完整的登录注册系统，服务端 Token 令牌认证
+- 通过活动列表协议统一展示当前活动和已结束活动；未实现详情页的活动仍会显示，但不可进入玩法页面
+- 千星游记：查看赛季与通行证进度，领取可用奖励
+- 观星礼录：查看星座进度、点亮星座并领取奖励
+- 星砂商店：查看星砂余额和活动商品，执行兑换
+- 节令活动：查看当前节令并领取开放奖励
+- 青梅酿酒活动已下线，前端不再提供入口；相关协议和实现暂时保留用于兼容
 
-### 📡 通知与面板
+### Web 控制面板
 
-- **推送通知** — 支持多种推送渠道（pushoo）：钉钉、企业微信、Telegram、Bark 等
-- **Web 控制面板** — 实时日志、状态监控、远程管理
-- **主题切换** — 农场风格主题，明暗模式切换
-- **跨平台** — 源码运行或打包为 Windows / Linux / macOS 二进制
-
----
+- 概览、个人、活动、好友、分析、神秘商人、游戏商城和设置页面
+- Socket.IO 实时状态与日志，全局使用单一暖白液态玻璃界面
+- PC 端使用固定侧栏，移动端使用顶部栏和底部导航，并针对常用操作完成响应式适配
+- 作物收益分析、策略预览、批量维护作物黑名单
+- 设置页统一管理游戏账号、自动化策略、运行环境、管理员密码和下线提醒
+- 基于 `pushoo` 的实例级事件推送，可配置通知渠道和离线自动清理时间
 
 ## 技术栈
 
-**后端**
+| 模块 | 技术 |
+| --- | --- |
+| 后端 | Node.js 20、Express 4、Socket.IO 4、TypeScript 5.9 |
+| 前端 | Vue 3.5、Naive UI 2、Vue Router 5、Pinia 3、Vite 7、UnoCSS 66 |
+| 工程 | pnpm 10.30.2、ESLint 9、Docker Compose |
+| 协议 | WebSocket、Protocol Buffers、TSDK WASM |
 
-[<img src="https://skillicons.dev/icons?i=nodejs" height="48" title="Node.js 20+" />](https://nodejs.org/)
-[<img src="https://skillicons.dev/icons?i=express" height="48" title="Express 4" />](https://expressjs.com/)
-[<img src="https://skillicons.dev/icons?i=socketio" height="48" title="Socket.io 4" />](https://socket.io/)
-[<img src="https://skillicons.dev/icons?i=ts" height="48" title="TypeScript 5.9" />](https://www.typescriptlang.org/)
+## 快速开始
 
-**前端**
-
-[<img src="https://skillicons.dev/icons?i=vue" height="48" title="Vue 3.5" />](https://vuejs.org/)
-[<img src="https://skillicons.dev/icons?i=vite" height="48" title="Vite 7" />](https://vitejs.dev/)
-[<img src="https://cdn.simpleicons.org/pinia/FFD859" height="48" title="Pinia 3" />](https://pinia.vuejs.org/)
-[<img src="https://skillicons.dev/icons?i=unocss" height="48" title="UnoCSS" />](https://unocss.dev/)
-
-**部署**
-
-[<img src="https://skillicons.dev/icons?i=pnpm" height="48" title="pnpm 10" />](https://pnpm.io/)
-[<img src="https://skillicons.dev/icons?i=docker" height="48" title="Docker" />](https://www.docker.com/)
-[<img src="https://skillicons.dev/icons?i=githubactions" height="48" title="GitHub Actions" />](https://github.com/features/actions)
-
----
-
-## 项目结构
-
-```
-qq-farm-bot/
-├── core/                          # 后端（Node.js 机器人引擎）
-│   ├── src/
-│   │   ├── activity-data/         # 活动中心静态数据
-│   │   ├── config/                # 配置管理 & 游戏配置
-│   │   ├── controllers/admin/     # HTTP API 路由（账号、农场、好友、认证）
-│   │   ├── core/                  # Worker 进程管理
-│   │   ├── gameConfig/            # 游戏静态数据（作物、道具、等级）
-│   │   │   └── seed_images_named/ # 作物种子图片资源
-│   │   ├── models/
-│   │   │   ├── store/             # 全局配置与账号持久化
-│   │   │   └── user-store/        # 用户认证与卡片数据
-│   │   ├── proto/                 # Protobuf 协议定义（20+ .proto 文件）
-│   │   ├── runtime/               # 运行时引擎、状态管理、Worker 调度
-│   │   ├── services/              # 业务逻辑
-│   │   │   ├── activity-center.ts # 活动中心（游记、星座、商店、节令）
-│   │   │   ├── farm/              # 农场核心（种植、土地分析、调度）
-│   │   │   └── friend/            # 好友系统（访问策略、GID 管理、调度）
-│   │   ├── types/                 # TypeScript 类型定义
-│   │   └── utils/                 # 工具函数（加密 WASM、网络、Proto 解析）
-│   └── data/                      # 运行时数据（账号、用户、卡密、日志等）
-├── web/                           # 前端（Vue 3 + Vite）
-│   ├── src/
-│   │   ├── api/                   # API 客户端 & Socket.io 连接
-│   │   ├── components/            # 通用组件（LandCard、BagPanel、Modal 等）
-│   │   │   ├── activity/          # 活动中心组件
-│   │   │   └── ui/                # 基础 UI 组件（Button、Input、Select、Switch）
-│   │   ├── layouts/               # 页面布局（DefaultLayout）
-│   │   ├── router/                # 路由配置 & 菜单定义
-│   │   ├── stores/                # Pinia 状态管理（account、farm、friend 等）
-│   │   └── views/                 # 页面视图
-│   │       ├── Dashboard.vue      # 概览 — 实时状态、日志、快捷操作
-│   │       ├── Personal.vue       # 个人 — 仓库、背包、作物管理
-│   │       ├── ActivityCenter.vue # 活动 — 游记、星座、星砂商店、节令
-│   │       ├── Friends.vue        # 好友 — 访问、互动、黑名单
-│   │       ├── Analytics.vue      # 分析 — 收益统计、种植策略
-│   │       ├── Settings.vue       # 设置 — 账号、策略、自动化、用户
-│   │       ├── ConfigManage.vue   # 游戏配置 — 种子、果实、道具查询与维护
-│   │       ├── AdminPanel.vue     # 后台 — 系统管理（管理员）
-│   │       └── Login.vue          # 登录页
-│   ├── public/
-│   │   └── activity-center/       # 活动中心静态图片资源
-│   └── dist/                      # 构建产物
-├── tools/                         # 游戏配置 / 图片下载工具
-│   ├── README.md                  # 工具说明
-│   ├── download-game-config.js    # 下载并解析游戏配置
-│   └── download-game-images.js    # 下载游戏图片资源
-├── docker-compose.yml             # Docker Compose 配置
-├── pnpm-workspace.yaml            # pnpm 工作区
-└── package.json                   # 根 package.json（统一脚本）
-```
-
----
-
-## 环境要求
+### 环境要求
 
 | 运行方式 | 要求 |
-|---------|------|
-| 源码运行 | Node.js 20+，pnpm（推荐通过 `corepack enable` 启用） |
-| 二进制版 | 无需安装 Node.js，直接运行 |
-| Docker | Docker 20+，Docker Compose 2+ |
+| --- | --- |
+| 源码运行 | Node.js 20+、pnpm 10+ |
+| Docker | Docker 20+、Docker Compose 2+ |
+| 二进制发布版 | 无需安装 Node.js |
 
----
+推荐通过 Corepack 启用项目指定版本的 pnpm：
 
-## 安装与启动
-
-### 方式一：源码运行（Windows）
-
-```powershell
-# 1. 安装 Node.js 20+（https://nodejs.org/）并启用 pnpm
-node -v
+```bash
 corepack enable
-pnpm -v
+pnpm --version
+```
 
-# 2. 克隆仓库并安装依赖
-git clone https://github.com/XyhTender/qq-farm-bot.git
+### 源码运行
+
+Windows、Linux 和 macOS 均可使用以下方式：
+
+```bash
+git clone https://github.com/liyangpengs/qq-farm-bot.git
 cd qq-farm-bot
 pnpm install
-pnpm build:web
+pnpm dev
+```
 
-# 3. 启动
-pnpm dev:core
+`pnpm dev` 会先构建前端，再启动后端服务。启动后访问：
 
-# （可选）设置其他端口后启动
-$env:ADMIN_PORT="你的新端口"
+- 本机：`http://localhost:3007`
+- 局域网：`http://<服务器 IP>:3007`
+
+如需分别启动开发服务：
+
+```bash
+# 终端 1：Vite 前端开发服务
+pnpm dev:web
+
+# 终端 2：后端开发服务
 pnpm dev:core
 ```
 
-### 方式二：源码运行（Linux）
+只运行 `pnpm dev:core` 并由后端托管页面时，应先执行一次 `pnpm build:web`。
 
-建议使用宝塔面板部署最为便捷，在网站其他项目选项中按照如图所示配置即可：
-
-<img src="https://free.picui.cn/free/2026/03/27/69c6398dd326c.png" alt="宝塔部署示例" width="600" />
+### Linux 后台脚本
 
 ```bash
-# 或手动部署
-git clone https://github.com/XyhTender/qq-farm-bot.git
+git clone https://github.com/liyangpengs/qq-farm-bot.git
 cd qq-farm-bot
-
-# 后台启动（自动安装依赖，无需 chmod +x）
+corepack enable
 pnpm start
 
 # 查看日志
 tail -f app_dev.log
 
-# 停止
+# 停止服务
 pnpm stop
 ```
 
-启动后访问面板：
-- 本机：`http://localhost:3007`
-- 局域网：`http://<你的IP>:3007`
+`pnpm start` 会安装工作区依赖、构建前端并在后台启动后端，进程号记录在 `app_dev.pid`。
 
----
-
-### 方式三：Docker 部署
+### Docker Compose
 
 ```bash
-# 拉取仓库
-git clone https://github.com/XyhTender/qq-farm-bot.git
+git clone https://github.com/liyangpengs/qq-farm-bot.git
 cd qq-farm-bot
-
-# （可选）修改根目录 .env 中的 PORT，调整宿主机访问端口
-# PORT=3008
-
-# 构建并后台启动
 docker compose up -d --build
 
-# 查看日志
+# 查看状态和日志
+docker compose ps
 docker compose logs -f
 
 # 停止并移除容器
 docker compose down
 ```
 
-浏览器访问 `http://你的IP:3007`；如果修改了 `.env` 的 `PORT`，请使用对应端口访问。
+默认访问 `http://<服务器 IP>:3007`。修改根目录 `.env` 中的 `PORT` 后，可调整宿主机映射端口：
 
----
+```dotenv
+PORT=3008
+TZ=Asia/Shanghai
+```
 
-### 方式四：二进制发布版（无需 Node.js）
+Docker 数据保存在 `qq-farm-data` 和 `qq-farm-logs` 命名卷中。执行 `docker compose down` 不会删除这些卷；不要使用 `docker compose down -v`，除非确认要删除运行数据。
 
-#### 构建
+### 二进制发布版
+
+可从 [Releases](https://github.com/liyangpengs/qq-farm-bot/releases) 下载对应平台文件，也可以自行构建：
 
 ```bash
 pnpm install
 pnpm package:release
 ```
 
-产物输出在 `dist/bin/` 目录，也可在 [Releases](https://github.com/XyhTender/qq-farm-bot/releases) 中直接下载。
+Windows x64、Linux x64、macOS Intel 和 macOS Apple Silicon 产物生成在 `core/dist/bin/`。运行后，程序会在可执行文件同级创建 `data/` 目录。
 
-| 平台 | 文件名 |
-|------|--------|
-| Windows x64 | `qq-farm-bot.exe` |
-| Linux x64 | `qq-farm-bot` |
-| macOS Intel | `qq-farm-bot-x64` |
-| macOS Apple Silicon | `qq-farm-bot-arm64` |
-
-#### 运行
+Linux 和 macOS 首次运行可能需要添加执行权限：
 
 ```bash
-# Windows：双击 exe 或在终端执行
-.\qq-farm-bot.exe
-
-# Linux / macOS
-chmod +x ./qq-farm-bot && ./qq-farm-bot
+chmod +x ./qq-farm-bot
+./qq-farm-bot
 ```
 
-程序会在可执行文件同级目录自动创建 `data/`，并写入账号、用户、卡密、日志和活动状态等运行数据。
+## 首次使用
 
----
+1. 打开 Web 面板，使用 `admin` / `admin` 登录。
+2. 进入“设置 → 系统设置”修改管理员密码。
+3. 在设置页添加游戏账号，可使用有效 Code 或扫码登录。
+4. 为账号配置种植、自动化和好友策略，并按需设置实例级下线提醒。
+5. 启动账号，在概览页确认连接状态、农场数据和实时日志。
+
+Code 具有时效性；登录失败时应先重新获取 Code 或重新扫码。
 
 ## 配置说明
 
 ### 环境变量
 
-| 变量名 | 默认值 | 说明 |
-|--------|--------|------|
-| `ADMIN_PORT` | `3007` | Web 面板监听端口；源码运行时可直接设置，Docker 容器内固定为 `3007` |
-| `PORT` | `3007` | Docker Compose 对外映射端口（读取根目录 `.env`） |
-| `TZ` | `Asia/Shanghai` | Docker 容器时区 |
-| `NODE_ENV` | `production` | Docker 运行环境 |
-| `LOG_LEVEL` | `info` | 服务端日志级别 |
+| 变量 | 默认值 | 适用范围 | 说明 |
+| --- | --- | --- | --- |
+| `ADMIN_PORT` | `3007` | 源码、二进制 | Web 面板监听端口；Compose 容器内固定为 `3007` |
+| `PORT` | `3007` | Docker Compose | 宿主机映射端口，从根目录 `.env` 读取 |
+| `TZ` | `Asia/Shanghai` | Docker Compose | 容器时区 |
+| `NODE_ENV` | `production` | Docker | Compose 当前固定为生产环境 |
+| `LOG_LEVEL` | `info` | 后端 | 服务端日志级别 |
 
-> 管理员账号不是通过环境变量配置的。首次运行会自动创建 `admin` / `admin`，登录后请在面板中修改密码。
+管理员账号不通过环境变量初始化。首次运行会自动创建 `admin` / `admin`，之后的管理员凭据保存在数据目录的 `admin.json` 中。项目不提供注册或新增管理员功能。
 
 ### 种植策略
 
-| 策略 | 说明 |
-|------|------|
-| `max_exp` | 最大经验值（默认） |
-| `max_profit` | 最大利润 |
-| `max_fert_exp` | 施肥最大经验 |
-| `max_fert_profit` | 施肥最大利润 |
-| `level` | 按等级种植 |
-| `preferred` | 优先种植指定作物 |
-| `bag_priority` | 背包种子优先 |
+| 策略值 | 面板名称 | 行为 |
+| --- | --- | --- |
+| `preferred` | 优先种植种子 | 优先使用指定种子，不可用时自动回退 |
+| `level` | 最高等级作物 | 优先选择当前可种植的高等级作物 |
+| `max_exp` | 最大经验/时 | 按单位时间经验选择，默认策略 |
+| `max_fert_exp` | 最大普通肥经验/时 | 按普通肥条件下的单位时间经验选择 |
+| `max_profit` | 最大净利润/时 | 按单位时间净利润选择 |
+| `max_fert_profit` | 最大普通肥净利润/时 | 按普通肥条件下的单位时间净利润选择 |
+| `bag_priority` | 背包种子优先 | 先按优先级消耗背包种子，再使用回退策略 |
 
 ### 施肥模式
 
-| 模式 | 说明 |
-|------|------|
-| `smart` | 智能施肥（默认） |
-| `both` | 有机肥 + 普通肥 |
-| `organic` | 仅有机肥 |
-| `normal` | 仅普通肥 |
-| `none` | 关闭施肥 |
+| 模式值 | 面板名称 | 行为 |
+| --- | --- | --- |
+| `smart` | 普通 + 快成熟有机 | 默认模式，按成熟时间智能选择有机肥 |
+| `both` | 普通 + 有机 | 同时使用普通肥和有机肥 |
+| `normal` | 仅普通化肥 | 只使用普通化肥 |
+| `organic` | 仅有机化肥 | 只使用有机化肥 |
+| `none` | 不施肥 | 关闭自动施肥 |
 
----
+## 数据与备份
 
-## 登录与安全
+| 运行方式 | 数据位置 |
+| --- | --- |
+| 源码运行 | `core/data/` |
+| 二进制运行 | 可执行文件同级的 `data/` |
+| Docker | `/app/core/data`，映射到 `qq-farm-data` 命名卷 |
 
-- 面板首次访问需要登录
-- 首次运行会自动创建默认管理员：`admin` / `admin`
-- ⚠️ **建议部署后立即修改为强密码**
-- 用户和卡密数据保存在 `data/users.json`、`data/cards.json`
-- 登录失败会记录日志，并启用 IP 频率限制与账户锁定
-- 会话 Token 保存在服务端内存中，退出登录、账号过期/封禁或服务重启后需重新登录
+管理员凭据、游戏账号、配置、活动状态和日志都属于运行数据。升级、迁移或重新部署前，建议先停止服务并备份整个数据目录或 Docker 命名卷，而不是只复制单个 JSON 文件。
 
----
+游戏账号属于当前实例，不带用户归属字段，也没有数量上限。下线提醒同样是实例级配置，对当前实例内的所有游戏账号生效。
 
-## 辅助工具
+## 项目结构
 
-`tools/` 目录提供独立的游戏配置与图片下载工具：
+```text
+qq-farm-bot/
+├── core/                  # Node.js 后端、账号 Worker 与协议实现
+│   ├── src/
+│   │   ├── controllers/   # Web API 与鉴权路由
+│   │   ├── core/          # 单账号 Worker 与任务调度
+│   │   ├── runtime/       # 多账号运行时和状态同步
+│   │   ├── services/      # 农场、好友、活动、商城、微信登录等业务
+│   │   ├── proto/         # Protocol Buffers 定义
+│   │   ├── gameConfig/    # 作物、道具、等级等游戏配置
+│   │   └── models/        # 超级管理员、游戏账号与配置持久化
+│   └── data/              # 源码模式运行数据
+├── web/                   # Vue 3 Web 面板
+│   ├── src/components/    # 农场、背包、任务、活动与基础组件
+│   ├── src/stores/        # Pinia 状态管理
+│   ├── src/views/         # 各功能页面
+│   └── dist/              # 前端构建产物
+├── docs/                  # 项目专题文档
+├── tools/                 # 配置下载、图片下载与协议分析工具
+├── docker-compose.yml
+├── pnpm-workspace.yaml
+└── package.json
+```
 
-- `node tools/download-game-config.js` — 从微信小程序 CDN 下载并解析 `ItemInfo.json`、`Plant.json`、`RoleLevel.json`、`Land.json`
-- `node tools/download-game-images.js` — 根据配置下载种子、果实和道具图片
+## 开发命令
 
-工具默认输出到 `tools/json` 和 `tools/img`，不会自动覆盖 `core/src/gameConfig`；正式更新游戏配置前请先人工核对差异。
+| 命令 | 说明 |
+| --- | --- |
+| `pnpm dev` | 构建前端并启动后端开发服务 |
+| `pnpm dev:web` | 启动 Vite 前端开发服务 |
+| `pnpm dev:core` | 使用 `tsx` 启动后端 |
+| `pnpm lint` | 检查并自动修复前后端代码风格 |
+| `pnpm build:web` | 构建 Web 面板到 `web/dist/` |
+| `pnpm build:core` | 编译后端 TypeScript |
+| `pnpm build` | 依次构建前端和后端 |
+| `pnpm package:release` | 构建四个平台的独立二进制文件 |
 
----
+## 项目文档
+
+专题说明统一收录在 [`docs/`](docs/README.md)：
+
+- [工具脚本](docs/tools.md)
+- [TSDK Node.js 运行约定](docs/tsdk-runtime.md)
+- [神秘商人、游戏商城与购买协议](docs/shop-protocols.md)
 
 ## 常见问题
 
-### Q: 登录失败怎么办？
-A: 请确保抓包获取的 code 有效，code 有时效性，过期需重新获取。
+### 面板能打开，但没有农场数据
 
-### Q: 如何批量添加账号？
-A: 在后台管理面板的「账号」标签页中，支持批量导入账号。
+确认已在设置页添加并启动账号，且账号 Code 未过期。源码模式只启动后端时，还要确认 `web/dist/` 已通过 `pnpm build:web` 生成。
 
-### Q: 化肥购买不生效？
-A: 请检查设置中是否开启了「化肥自动购买」功能，并确认购买数量和阈值配置正确。
+### Code 登录失败
 
-### Q: 多季作物不自动施肥？
-A: 请在设置中开启「多季作物自动施肥」选项。
+Code 是短效凭据，过期后需要重新抓取。也可以改用微信小程序扫码登录。
 
----
+### 修改 Docker 端口后仍访问不了
+
+`PORT` 是宿主机端口，容器内始终监听 `3007`。修改 `.env` 后需要重新创建容器：
+
+```bash
+docker compose up -d --force-recreate
+```
+
+同时确认服务器防火墙只放行实际使用的宿主机端口。
+
+### 化肥自动购买或多季施肥没有生效
+
+检查对应账号是否开启化肥购买开关、购买数量和阈值是否有效；多季作物还需要开启多季自动施肥，并确认施肥土地类型包含目标土地。
 
 ## 特别感谢
 
-- 基于 [Penty-d/qq-farm-bot-ui](https://github.com/Penty-d/qq-farm-bot-ui) 二改
+- 基于 [Penty-d/qq-farm-bot-ui](https://github.com/Penty-d/qq-farm-bot-ui) 二次开发
 - 核心功能：[linguo2625469/qq-farm-bot](https://github.com/linguo2625469/qq-farm-bot)
 - 部分功能：[QianChenJun/qq-farm-bot](https://github.com/QianChenJun/qq-farm-bot)
 - 推送通知：[imaegoo/pushoo](https://github.com/imaegoo/pushoo)
-
----
 
 ## 免责声明
 
 本项目仅供学习与研究用途。使用本工具可能违反游戏服务条款，由此产生的一切后果由使用者自行承担。
 
----
-
 <div align="center">
-  <p>如果觉得有用，请点个 ⭐ Star 支持一下！</p>
+  <p>如果觉得项目有用，欢迎点一个 Star。</p>
 </div>

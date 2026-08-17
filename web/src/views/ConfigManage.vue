@@ -1,27 +1,32 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
+import { NButton, NInput, NPagination } from 'naive-ui'
+import { computed, onMounted, ref, watch } from 'vue'
 import api from '@/api'
+import ConfirmModal from '@/components/ConfirmModal.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
-import FruitModal from '@/components/FruitModal.vue'
-import ItemModal from '@/components/ItemModal.vue'
-import SeedModal from '@/components/SeedModal.vue'
 import { useToastStore } from '@/stores/toast'
+
+const props = defineProps<{
+  section: 'seeds' | 'fruits' | 'items'
+}>()
 
 const toast = useToastStore()
 
-// ============ Tab ============
-const activeTab = ref<'seeds' | 'fruits' | 'items'>('seeds')
+const activeTab = computed(() => props.section)
 
 // ============ 通用状态 ============
 const loading = ref(false)
 const imageErrors = ref<Record<string | number, boolean>>({})
 const searchKeyword = ref('')
+const isDesktop = useMediaQuery('(min-width: 640px)')
+const currentPage = ref(1)
+const pageSize = computed(() => isDesktop.value ? 50 : 30)
 
 // ============ 种子 ============
 const seedList = ref<any[]>([])
 const seedSort = ref('name')
 const seedSeasonFilter = ref('')
-const showSeedModal = ref(false)
 
 const seedSortOptions = [
   { value: 'name', label: '名称' },
@@ -49,7 +54,8 @@ const filteredSeeds = computed(() => {
   return [...list].sort((a: any, b: any) => {
     const va = a[sortKey] ?? ''
     const vb = b[sortKey] ?? ''
-    if (typeof va === 'number' && typeof vb === 'number') return va - vb
+    if (typeof va === 'number' && typeof vb === 'number')
+      return va - vb
     return String(va).localeCompare(String(vb))
   })
 })
@@ -58,7 +64,6 @@ const filteredSeeds = computed(() => {
 const fruitList = ref<any[]>([])
 const fruitSort = ref('name')
 const fruitRarityFilter = ref('')
-const showFruitModal = ref(false)
 
 const fruitSortOptions = [
   { value: 'name', label: '名称' },
@@ -77,14 +82,15 @@ const filteredFruits = computed(() => {
     )
   }
   if (fruitRarityFilter.value !== '') {
-    const r = Number(fruitRarityFilter.value)
-    list = list.filter((f: any) => f.rarity === r)
+    const rarity = Number(fruitRarityFilter.value)
+    list = list.filter((f: any) => f.rarity === rarity)
   }
   const sortKey = fruitSort.value
   return [...list].sort((a: any, b: any) => {
     const va = a[sortKey] ?? ''
     const vb = b[sortKey] ?? ''
-    if (typeof va === 'number' && typeof vb === 'number') return va - vb
+    if (typeof va === 'number' && typeof vb === 'number')
+      return va - vb
     return String(va).localeCompare(String(vb))
   })
 })
@@ -94,7 +100,6 @@ const itemList = ref<any[]>([])
 const itemSort = ref('name')
 const itemTypeFilter = ref('')
 const itemRarityFilter = ref('')
-const showItemModal = ref(false)
 
 const itemSortOptions = [
   { value: 'name', label: '名称' },
@@ -126,15 +131,35 @@ const itemTypeOptions = [
 ]
 
 const itemTypeLabelMap: Record<number, string> = {
-  1: '特殊道具', 2: '货币', 3: '经验', 4: '农场工具',
-  5: '种子', 6: '果实', 7: '化肥', 8: '宠物', 9: '宠物食品',
-  10: '头像框', 11: '礼品盒', 12: '收藏点', 13: '活跃点',
-  14: '解锁卡', 15: '高级货币', 16: '自选礼包', 17: '变异果实',
-  18: '装饰', 19: '印章', 23: '特殊',
+  1: '特殊道具',
+  2: '货币',
+  3: '经验',
+  4: '农场工具',
+  5: '种子',
+  6: '果实',
+  7: '化肥',
+  8: '宠物',
+  9: '宠物食品',
+  10: '头像框',
+  11: '礼品盒',
+  12: '收藏点',
+  13: '活跃点',
+  14: '解锁卡',
+  15: '高级货币',
+  16: '自选礼包',
+  17: '变异果实',
+  18: '装饰',
+  19: '印章',
+  23: '特殊',
 }
 
 const rarityLabelMap: Record<number, string> = {
-  0: '普通', 1: '优秀', 2: '精良', 3: '稀有', 4: '史诗', 5: '传说',
+  0: '普通',
+  1: '优秀',
+  2: '精良',
+  3: '稀有',
+  4: '史诗',
+  5: '传说',
 }
 
 const rarityFilterOptions = [
@@ -168,9 +193,47 @@ const filteredItems = computed(() => {
   return [...list].sort((a: any, b: any) => {
     const va = a[sortKey] ?? ''
     const vb = b[sortKey] ?? ''
-    if (typeof va === 'number' && typeof vb === 'number') return va - vb
+    if (typeof va === 'number' && typeof vb === 'number')
+      return va - vb
     return String(va).localeCompare(String(vb))
   })
+})
+
+const activeItemCount = computed(() => {
+  if (activeTab.value === 'seeds')
+    return filteredSeeds.value.length
+  if (activeTab.value === 'fruits')
+    return filteredFruits.value.length
+  return filteredItems.value.length
+})
+const totalPages = computed(() => Math.max(1, Math.ceil(activeItemCount.value / pageSize.value)))
+
+function paginate<T>(items: T[]) {
+  const start = (currentPage.value - 1) * pageSize.value
+  return items.slice(start, start + pageSize.value)
+}
+
+const paginatedSeeds = computed(() => paginate(filteredSeeds.value))
+const paginatedFruits = computed(() => paginate(filteredFruits.value))
+const paginatedItems = computed(() => paginate(filteredItems.value))
+
+watch([
+  activeTab,
+  searchKeyword,
+  seedSort,
+  seedSeasonFilter,
+  fruitSort,
+  fruitRarityFilter,
+  itemSort,
+  itemTypeFilter,
+  itemRarityFilter,
+  pageSize,
+], () => {
+  currentPage.value = 1
+})
+
+watch(totalPages, (pages) => {
+  currentPage.value = Math.min(currentPage.value, pages)
 })
 
 // ============ 数据加载 ============
@@ -178,7 +241,8 @@ async function loadSeeds() {
   loading.value = true
   try {
     const { data } = await api.get('/api/config/seeds')
-    if (data?.ok) seedList.value = data.data || []
+    if (data?.ok)
+      seedList.value = data.data || []
   }
   catch { /* ignore */ }
   finally { loading.value = false }
@@ -188,7 +252,8 @@ async function loadFruits() {
   loading.value = true
   try {
     const { data } = await api.get('/api/config/fruits')
-    if (data?.ok) fruitList.value = data.data || []
+    if (data?.ok)
+      fruitList.value = data.data || []
   }
   catch { /* ignore */ }
   finally { loading.value = false }
@@ -198,55 +263,40 @@ async function loadItems() {
   loading.value = true
   try {
     const { data } = await api.get('/api/config/items')
-    if (data?.ok) itemList.value = data.data || []
+    if (data?.ok)
+      itemList.value = data.data || []
   }
   catch { /* ignore */ }
   finally { loading.value = false }
 }
 
 function loadCurrentTab() {
-  if (activeTab.value === 'seeds') loadSeeds()
-  else if (activeTab.value === 'fruits') loadFruits()
-  else if (activeTab.value === 'items') loadItems()
+  if (activeTab.value === 'seeds')
+    loadSeeds()
+  else if (activeTab.value === 'fruits')
+    loadFruits()
+  else if (activeTab.value === 'items')
+    loadItems()
 }
 
-function switchTab(tab: 'seeds' | 'fruits' | 'items') {
-  if (activeTab.value === tab) return
-  activeTab.value = tab
+function resetFilters() {
   searchKeyword.value = ''
   seedSeasonFilter.value = ''
   fruitRarityFilter.value = ''
   itemTypeFilter.value = ''
   itemRarityFilter.value = ''
-  loadCurrentTab()
 }
 
 onMounted(() => {
   loadCurrentTab()
 })
 
-// ============ 录入成功回调 ============
-function handleSeedSaved() {
-  toast.success('种子录入成功！')
-  loadSeeds()
-}
+watch(() => props.section, () => {
+  resetFilters()
+  loadCurrentTab()
+})
 
-function handleFruitSaved() {
-  toast.success('果实录入成功！')
-  loadFruits()
-}
-
-function handleItemSaved() {
-  toast.success('道具录入成功！')
-  loadItems()
-}
-
-// ============ 编辑状态 ============
-const editSeedData = ref<any>(null)
-const editFruitData = ref<any>(null)
-const editItemData = ref<any>(null)
-
-// ============ 删除确认 ============
+// ============ 操作确认 ============
 const confirmVisible = ref(false)
 const confirmTitle = ref('')
 const confirmMessage = ref('')
@@ -260,63 +310,9 @@ function showConfirm(title: string, message: string, action: () => Promise<void>
 }
 
 async function executeConfirm() {
-  if (confirmAction) await confirmAction()
+  if (confirmAction)
+    await confirmAction()
   confirmVisible.value = false
-}
-
-// ============ 删除操作 ============
-async function handleDeleteSeed(seedId: number, name: string) {
-  showConfirm('删除种子', `确定要删除种子「${name}」(ID:${seedId}) 吗？关联的植物和果实也会一并删除。`, async () => {
-    try {
-      const { data } = await api.delete(`/api/config/seed/${seedId}`)
-      if (data?.ok) {
-        toast.success(`已删除种子「${name}」`)
-        loadSeeds()
-      }
-      else {
-        toast.error(`删除失败: ${data.error}`)
-      }
-    }
-    catch (e: any) {
-      toast.error(`删除失败: ${e.response?.data?.error || e.message}`)
-    }
-  })
-}
-
-async function handleDeleteFruit(fruitId: number, name: string) {
-  showConfirm('删除果实', `确定要删除果实「${name}」(ID:${fruitId}) 吗？`, async () => {
-    try {
-      const { data } = await api.delete(`/api/config/fruit/${fruitId}`)
-      if (data?.ok) {
-        toast.success(`已删除果实「${name}」`)
-        loadFruits()
-      }
-      else {
-        toast.error(`删除失败: ${data.error}`)
-      }
-    }
-    catch (e: any) {
-      toast.error(`删除失败: ${e.response?.data?.error || e.message}`)
-    }
-  })
-}
-
-async function handleDeleteItem(itemId: number, name: string) {
-  showConfirm('删除道具', `确定要删除道具「${name}」(ID:${itemId}) 吗？`, async () => {
-    try {
-      const { data } = await api.delete(`/api/config/item/${itemId}`)
-      if (data?.ok) {
-        toast.success(`已删除道具「${name}」`)
-        loadItems()
-      }
-      else {
-        toast.error(`删除失败: ${data.error}`)
-      }
-    }
-    catch (e: any) {
-      toast.error(`删除失败: ${e.response?.data?.error || e.message}`)
-    }
-  })
 }
 
 // ============ 黑名单 ============
@@ -341,94 +337,41 @@ async function handleToggleBlacklist(seedId: number) {
 
 // ============ 工具函数 ============
 function formatGrowTime(seconds: number): string {
-  if (!seconds || seconds <= 0) return '-'
-  if (seconds < 60) return `${seconds}秒`
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}分`
+  if (!seconds || seconds <= 0)
+    return '-'
+  if (seconds < 60)
+    return `${seconds}秒`
+  if (seconds < 3600)
+    return `${Math.floor(seconds / 60)}分`
   const hours = Math.floor(seconds / 3600)
   const mins = Math.floor((seconds % 3600) / 60)
   return mins > 0 ? `${hours}时${mins}分` : `${hours}时`
 }
 
 function formatPrice(price: number, priceId?: number): string {
-  if (priceId === 1005) return `${price} 金豆`
-  if (priceId === 1004) return `${price} 钻石`
+  if (priceId === 1005)
+    return `${price} 金豆`
+  if (priceId === 1004)
+    return `${price} 钻石`
   return `${price} 金币`
 }
 </script>
 
 <template>
   <div class="space-y-5">
-    <!-- Tab 切换 -->
-    <div class="flex gap-2 border-b border-gray-200 dark:border-gray-700">
-      <button
-        class="flex items-center gap-1.5 border-b-2 px-4 py-2 text-sm font-medium transition-colors"
-        :class="activeTab === 'seeds'
-          ? 'border-green-500 text-green-600 dark:border-green-400 dark:text-green-400'
-          : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'"
-        @click="switchTab('seeds')"
-      >
-        <span class="text-lg">🌱</span>
-        <span>种子</span>
-        <span v-if="seedList.length" class="ml-1 rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700 dark:bg-green-900/50 dark:text-green-300">
-          {{ seedList.length }}
-        </span>
-      </button>
-      <button
-        class="flex items-center gap-1.5 border-b-2 px-4 py-2 text-sm font-medium transition-colors"
-        :class="activeTab === 'fruits'
-          ? 'border-orange-500 text-orange-600 dark:border-orange-400 dark:text-orange-400'
-          : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'"
-        @click="switchTab('fruits')"
-      >
-        <span class="text-lg">🍎</span>
-        <span>果实</span>
-        <span v-if="fruitList.length" class="ml-1 rounded-full bg-orange-100 px-2 py-0.5 text-xs text-orange-700 dark:bg-orange-900/50 dark:text-orange-300">
-          {{ fruitList.length }}
-        </span>
-      </button>
-      <button
-        class="flex items-center gap-1.5 border-b-2 px-4 py-2 text-sm font-medium transition-colors"
-        :class="activeTab === 'items'
-          ? 'border-blue-500 text-blue-600 dark:border-blue-400 dark:text-blue-400'
-          : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'"
-        @click="switchTab('items')"
-      >
-        <span class="text-lg">🎒</span>
-        <span>道具</span>
-        <span v-if="itemList.length" class="ml-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
-          {{ itemList.length }}
-        </span>
-      </button>
-    </div>
-
-    <div class="rounded-2xl border border-gray-200 bg-white shadow-md dark:border-gray-700 dark:bg-gray-800">
-      <!-- 搜索 + 筛选 + 录入按钮 -->
-      <div class="flex flex-wrap items-center gap-2 border-b border-gray-100 bg-gradient-to-r from-green-50/50 to-yellow-50/50 p-4 dark:border-gray-700 dark:bg-gray-900/30">
-        <button
-          v-show="activeTab === 'seeds'"
-          class="cartoon-btn flex shrink-0 items-center gap-1 rounded-xl bg-green-50 px-3 py-2 text-sm text-green-600 transition dark:bg-green-900/20 hover:bg-green-100 dark:text-green-400 dark:hover:bg-green-900/30"
-          @click="showSeedModal = true"
+    <div class="border farm-card border-gray-200 rounded-2xl bg-white shadow-md dark:border-gray-700 dark:bg-gray-800">
+      <!-- 搜索 + 筛选 -->
+      <div class="flex flex-wrap items-center gap-2 border-b border-gray-100 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/30">
+        <NInput
+          v-model:value="searchKeyword"
+          class="w-52 shrink-0"
+          clearable
+          :placeholder="activeTab === 'seeds' ? '搜索种子...' : activeTab === 'fruits' ? '搜索果实...' : '搜索道具...'"
         >
-          <span>➕</span>
-          录入种子
-        </button>
-        <button
-          v-show="activeTab === 'items'"
-          class="cartoon-btn flex shrink-0 items-center gap-1 rounded-xl bg-blue-50 px-3 py-2 text-sm text-blue-600 transition dark:bg-blue-900/20 hover:bg-blue-100 dark:text-blue-400 dark:hover:bg-blue-900/30"
-          @click="showItemModal = true"
-        >
-          <span>➕</span>
-          录入道具
-        </button>
-        <div class="relative w-48 shrink-0">
-          <span class="absolute left-3 top-1/2 text-gray-400 -translate-y-1/2">🔍</span>
-          <input
-            v-model="searchKeyword"
-            type="text"
-            :placeholder="activeTab === 'seeds' ? '搜索种子...' : activeTab === 'fruits' ? '搜索果实...' : '搜索道具...'"
-            class="w-full border border-gray-300 rounded-lg bg-white py-2 pl-10 pr-4 text-sm dark:border-gray-600 focus:border-green-500 dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-1 focus:ring-green-500"
-          >
-        </div>
+          <template #prefix>
+            <span class="i-carbon-search" />
+          </template>
+        </NInput>
         <!-- 种子筛选 -->
         <BaseSelect
           v-show="activeTab === 'seeds'"
@@ -493,7 +436,7 @@ function formatPrice(price: number, priceId?: number): string {
         <div v-if="filteredSeeds.length === 0" class="py-16 text-center text-gray-400">
           {{ searchKeyword ? '没有匹配的种子' : '暂无种子数据' }}
         </div>
-        <div v-else class="farm-card hidden overflow-hidden border border-gray-200 rounded-2xl shadow-sm sm:block dark:border-gray-700">
+        <div v-else-if="isDesktop" class="overflow-hidden border farm-card border-gray-200 rounded-2xl shadow-sm dark:border-gray-700">
           <div class="overflow-x-auto">
             <table class="w-full whitespace-nowrap text-left text-sm">
               <thead class="border-b bg-gray-50 text-xs text-gray-500 uppercase dark:border-gray-700 dark:bg-gray-700/50 dark:text-gray-400">
@@ -501,18 +444,34 @@ function formatPrice(price: number, priceId?: number): string {
                   <th class="sticky left-0 z-10 bg-gray-50 px-4 py-3 font-medium shadow-[1px_0_0_0_rgba(0,0,0,0.05)] dark:bg-gray-800">
                     种子
                   </th>
-                  <th class="px-4 py-3 font-medium">种子ID</th>
-                  <th class="px-4 py-3 font-medium">等级</th>
-                  <th class="px-4 py-3 font-medium">季节</th>
-                  <th class="px-4 py-3 font-medium">生长时间</th>
-                  <th class="px-4 py-3 font-medium">收获数</th>
-                  <th class="px-4 py-3 font-medium">经验</th>
-                  <th class="px-4 py-3 font-medium">价格</th>
-                  <th class="px-4 py-3 text-center font-medium">操作</th>
+                  <th class="px-4 py-3 font-medium">
+                    种子ID
+                  </th>
+                  <th class="px-4 py-3 font-medium">
+                    等级
+                  </th>
+                  <th class="px-4 py-3 font-medium">
+                    季节
+                  </th>
+                  <th class="px-4 py-3 font-medium">
+                    生长时间
+                  </th>
+                  <th class="px-4 py-3 font-medium">
+                    收获数
+                  </th>
+                  <th class="px-4 py-3 font-medium">
+                    经验
+                  </th>
+                  <th class="px-4 py-3 font-medium">
+                    价格
+                  </th>
+                  <th class="px-4 py-3 text-center font-medium">
+                    操作
+                  </th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
-                <tr v-for="item in filteredSeeds" :key="item.seedId" class="group transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                <tr v-for="item in paginatedSeeds" :key="item.seedId" class="group transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/50">
                   <td class="sticky left-0 bg-white px-4 py-2 shadow-[1px_0_0_0_rgba(0,0,0,0.05)] dark:bg-gray-800 dark:group-hover:bg-gray-700/50">
                     <div class="flex items-center gap-3">
                       <div class="relative h-10 w-10 flex shrink-0 items-center justify-center overflow-hidden border border-gray-200 rounded-lg bg-gray-100 dark:border-gray-600 dark:bg-gray-700">
@@ -528,8 +487,12 @@ function formatPrice(price: number, priceId?: number): string {
                       <span class="text-gray-900 font-bold dark:text-gray-100">{{ item.name }}</span>
                     </div>
                   </td>
-                  <td class="px-4 py-2 text-gray-500 dark:text-gray-400">{{ item.seedId }}</td>
-                  <td class="px-4 py-2 text-gray-500 dark:text-gray-400">Lv.{{ item.requiredLevel }}</td>
+                  <td class="px-4 py-2 text-gray-500 dark:text-gray-400">
+                    {{ item.seedId }}
+                  </td>
+                  <td class="px-4 py-2 text-gray-500 dark:text-gray-400">
+                    Lv.{{ item.requiredLevel }}
+                  </td>
                   <td class="px-4 py-2">
                     <span
                       class="rounded-full px-2 py-0.5 text-xs font-medium"
@@ -540,33 +503,31 @@ function formatPrice(price: number, priceId?: number): string {
                       {{ item.seasons === 2 ? '双季' : '单季' }}
                     </span>
                   </td>
-                  <td class="px-4 py-2 text-gray-500 dark:text-gray-400">{{ formatGrowTime(item.growTime) }}</td>
-                  <td class="px-4 py-2 text-gray-500 dark:text-gray-400">{{ item.harvestCount || '-' }}</td>
-                  <td class="px-4 py-2 text-gray-500 dark:text-gray-400">{{ item.exp || '-' }}</td>
-                  <td class="px-4 py-2 text-amber-600 font-medium dark:text-amber-400">{{ formatPrice(item.price, item.priceId) }}</td>
+                  <td class="px-4 py-2 text-gray-500 dark:text-gray-400">
+                    {{ formatGrowTime(item.growTime) }}
+                  </td>
+                  <td class="px-4 py-2 text-gray-500 dark:text-gray-400">
+                    {{ item.harvestCount || '-' }}
+                  </td>
+                  <td class="px-4 py-2 text-gray-500 dark:text-gray-400">
+                    {{ item.exp || '-' }}
+                  </td>
+                  <td class="px-4 py-2 text-amber-600 font-medium dark:text-amber-400">
+                    {{ formatPrice(item.price, item.priceId) }}
+                  </td>
                   <td class="px-4 py-2 text-center">
                     <div class="flex items-center justify-center gap-1">
-                      <button
-                        class="rounded-lg px-2 py-1 text-xs text-orange-600 transition hover:bg-orange-50 dark:text-orange-400 dark:hover:bg-orange-900/20"
+                      <NButton
+                        quaternary
+                        circle
+                        size="small"
+                        type="warning"
                         title="加入/移出黑名单"
+                        aria-label="加入或移出黑名单"
                         @click="handleToggleBlacklist(item.seedId)"
                       >
                         🚫
-                      </button>
-                      <button
-                        class="rounded-lg px-2 py-1 text-xs text-blue-600 transition hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/20"
-                        title="编辑"
-                        @click="editSeedData = { ...item }"
-                      >
-                        ✏️
-                      </button>
-                      <button
-                        class="rounded-lg px-2 py-1 text-xs text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
-                        title="删除"
-                        @click="handleDeleteSeed(item.seedId, item.name)"
-                      >
-                        🗑️
-                      </button>
+                      </NButton>
                     </div>
                   </td>
                 </tr>
@@ -575,8 +536,8 @@ function formatPrice(price: number, priceId?: number): string {
           </div>
         </div>
         <!-- 移动端卡片 -->
-        <div class="block space-y-3 sm:hidden">
-          <div v-for="item in filteredSeeds" :key="item.seedId" class="border border-gray-200 rounded-xl bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+        <div v-else class="space-y-3">
+          <div v-for="item in paginatedSeeds" :key="item.seedId" class="border border-gray-200 rounded-xl bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
             <div class="flex items-center gap-3">
               <div class="relative h-12 w-12 flex shrink-0 items-center justify-center overflow-hidden border border-gray-200 rounded-lg bg-gray-100 dark:border-gray-600 dark:bg-gray-700">
                 <img
@@ -615,7 +576,7 @@ function formatPrice(price: number, priceId?: number): string {
         <div v-if="filteredFruits.length === 0" class="py-16 text-center text-gray-400">
           {{ searchKeyword ? '没有匹配的果实' : '暂无果实数据' }}
         </div>
-        <div v-else class="farm-card hidden overflow-hidden border border-gray-200 rounded-2xl shadow-sm sm:block dark:border-gray-700">
+        <div v-else-if="isDesktop" class="overflow-hidden border farm-card border-gray-200 rounded-2xl shadow-sm dark:border-gray-700">
           <div class="overflow-x-auto">
             <table class="w-full whitespace-nowrap text-left text-sm">
               <thead class="border-b bg-gray-50 text-xs text-gray-500 uppercase dark:border-gray-700 dark:bg-gray-700/50 dark:text-gray-400">
@@ -623,17 +584,28 @@ function formatPrice(price: number, priceId?: number): string {
                   <th class="sticky left-0 z-10 bg-gray-50 px-4 py-3 font-medium shadow-[1px_0_0_0_rgba(0,0,0,0.05)] dark:bg-gray-800">
                     果实
                   </th>
-                  <th class="px-4 py-3 font-medium">果实ID</th>
-                  <th class="px-4 py-3 font-medium">关联植物</th>
-                  <th class="px-4 py-3 font-medium">种子ID</th>
-                  <th class="px-4 py-3 font-medium">售价</th>
-                  <th class="px-4 py-3 font-medium">等级</th>
-                  <th class="px-4 py-3 font-medium">稀有度</th>
-                  <th class="px-4 py-3 text-center font-medium">操作</th>
+                  <th class="px-4 py-3 font-medium">
+                    果实ID
+                  </th>
+                  <th class="px-4 py-3 font-medium">
+                    关联植物
+                  </th>
+                  <th class="px-4 py-3 font-medium">
+                    种子ID
+                  </th>
+                  <th class="px-4 py-3 font-medium">
+                    售价
+                  </th>
+                  <th class="px-4 py-3 font-medium">
+                    等级
+                  </th>
+                  <th class="px-4 py-3 font-medium">
+                    稀有度
+                  </th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
-                <tr v-for="item in filteredFruits" :key="item.id" class="group transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                <tr v-for="item in paginatedFruits" :key="item.id" class="group transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/50">
                   <td class="sticky left-0 bg-white px-4 py-2 shadow-[1px_0_0_0_rgba(0,0,0,0.05)] dark:bg-gray-800 dark:group-hover:bg-gray-700/50">
                     <div class="flex items-center gap-3">
                       <div class="relative h-10 w-10 flex shrink-0 items-center justify-center overflow-hidden border border-gray-200 rounded-lg bg-gray-100 dark:border-gray-600 dark:bg-gray-700">
@@ -649,11 +621,21 @@ function formatPrice(price: number, priceId?: number): string {
                       <span class="text-gray-900 font-bold dark:text-gray-100">{{ item.name }}</span>
                     </div>
                   </td>
-                  <td class="px-4 py-2 text-gray-500 dark:text-gray-400">{{ item.id }}</td>
-                  <td class="px-4 py-2 text-gray-500 dark:text-gray-400">{{ item.plantName || '-' }}</td>
-                  <td class="px-4 py-2 text-gray-500 dark:text-gray-400">{{ item.seedId || '-' }}</td>
-                  <td class="px-4 py-2 text-amber-600 font-medium dark:text-amber-400">{{ formatPrice(item.price, item.priceId) }}</td>
-                  <td class="px-4 py-2 text-gray-500 dark:text-gray-400">Lv.{{ item.level }}</td>
+                  <td class="px-4 py-2 text-gray-500 dark:text-gray-400">
+                    {{ item.id }}
+                  </td>
+                  <td class="px-4 py-2 text-gray-500 dark:text-gray-400">
+                    {{ item.plantName || '-' }}
+                  </td>
+                  <td class="px-4 py-2 text-gray-500 dark:text-gray-400">
+                    {{ item.seedId || '-' }}
+                  </td>
+                  <td class="px-4 py-2 text-amber-600 font-medium dark:text-amber-400">
+                    {{ formatPrice(item.price, item.priceId) }}
+                  </td>
+                  <td class="px-4 py-2 text-gray-500 dark:text-gray-400">
+                    Lv.{{ item.level }}
+                  </td>
                   <td class="px-4 py-2">
                     <span
                       class="rounded-full px-2 py-0.5 text-xs font-medium"
@@ -662,32 +644,13 @@ function formatPrice(price: number, priceId?: number): string {
                       {{ rarityLabelMap[item.rarity] || '普通' }}
                     </span>
                   </td>
-                  <td class="px-4 py-2 text-center">
-                    <div class="flex items-center justify-center gap-1">
-                      <button
-                        class="rounded-lg px-2 py-1 text-xs text-blue-600 transition hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/20"
-                        title="编辑"
-                        @click="editFruitData = { ...item }"
-                      >
-                        ✏️
-                      </button>
-                      <button
-                        class="rounded-lg px-2 py-1 text-xs text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
-                        title="删除"
-                        @click="handleDeleteFruit(item.id, item.name)"
-                      >
-                        🗑️
-                      </button>
-                    </div>
-                  </td>
                 </tr>
               </tbody>
             </table>
           </div>
         </div>
-        <!-- 移动端卡片 -->
-        <div class="block space-y-3 sm:hidden">
-          <div v-for="item in filteredFruits" :key="item.id" class="border border-gray-200 rounded-xl bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+        <div v-else class="space-y-3">
+          <div v-for="item in paginatedFruits" :key="item.id" class="border border-gray-200 rounded-xl bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
             <div class="flex items-center gap-3">
               <div class="relative h-12 w-12 flex shrink-0 items-center justify-center overflow-hidden border border-gray-200 rounded-lg bg-gray-100 dark:border-gray-600 dark:bg-gray-700">
                 <img
@@ -725,7 +688,7 @@ function formatPrice(price: number, priceId?: number): string {
         <div v-if="filteredItems.length === 0" class="py-16 text-center text-gray-400">
           {{ searchKeyword || itemTypeFilter ? '没有匹配的道具' : '暂无道具数据' }}
         </div>
-        <div v-else class="farm-card hidden overflow-hidden border border-gray-200 rounded-2xl shadow-sm sm:block dark:border-gray-700">
+        <div v-else-if="isDesktop" class="overflow-hidden border farm-card border-gray-200 rounded-2xl shadow-sm dark:border-gray-700">
           <div class="overflow-x-auto">
             <table class="w-full whitespace-nowrap text-left text-sm">
               <thead class="border-b bg-gray-50 text-xs text-gray-500 uppercase dark:border-gray-700 dark:bg-gray-700/50 dark:text-gray-400">
@@ -733,18 +696,31 @@ function formatPrice(price: number, priceId?: number): string {
                   <th class="sticky left-0 z-10 bg-gray-50 px-4 py-3 font-medium shadow-[1px_0_0_0_rgba(0,0,0,0.05)] dark:bg-gray-800">
                     道具
                   </th>
-                  <th class="px-4 py-3 font-medium">物品ID</th>
-                  <th class="px-4 py-3 font-medium">类型</th>
-                  <th class="px-4 py-3 font-medium">价格</th>
-                  <th class="px-4 py-3 font-medium">可使用</th>
-                  <th class="px-4 py-3 font-medium">等级</th>
-                  <th class="px-4 py-3 font-medium">稀有度</th>
-                  <th class="px-4 py-3 font-medium">描述</th>
-                  <th class="px-4 py-3 text-center font-medium">操作</th>
+                  <th class="px-4 py-3 font-medium">
+                    物品ID
+                  </th>
+                  <th class="px-4 py-3 font-medium">
+                    类型
+                  </th>
+                  <th class="px-4 py-3 font-medium">
+                    价格
+                  </th>
+                  <th class="px-4 py-3 font-medium">
+                    可使用
+                  </th>
+                  <th class="px-4 py-3 font-medium">
+                    等级
+                  </th>
+                  <th class="px-4 py-3 font-medium">
+                    稀有度
+                  </th>
+                  <th class="px-4 py-3 font-medium">
+                    描述
+                  </th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
-                <tr v-for="item in filteredItems" :key="item.id" class="group transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                <tr v-for="item in paginatedItems" :key="item.id" class="group transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/50">
                   <td class="sticky left-0 bg-white px-4 py-2 shadow-[1px_0_0_0_rgba(0,0,0,0.05)] dark:bg-gray-800 dark:group-hover:bg-gray-700/50">
                     <div class="flex items-center gap-3">
                       <div class="relative h-10 w-10 flex shrink-0 items-center justify-center overflow-hidden border border-gray-200 rounded-lg bg-gray-100 dark:border-gray-600 dark:bg-gray-700">
@@ -760,9 +736,11 @@ function formatPrice(price: number, priceId?: number): string {
                       <span class="text-gray-900 font-bold dark:text-gray-100">{{ item.name }}</span>
                     </div>
                   </td>
-                  <td class="px-4 py-2 text-gray-500 dark:text-gray-400">{{ item.id }}</td>
+                  <td class="px-4 py-2 text-gray-500 dark:text-gray-400">
+                    {{ item.id }}
+                  </td>
                   <td class="px-4 py-2">
-                    <span class="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
+                    <span class="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-600 font-medium dark:bg-blue-900/30 dark:text-blue-400">
                       {{ itemTypeLabelMap[item.type] || `类型${item.type}` }}
                     </span>
                   </td>
@@ -791,32 +769,14 @@ function formatPrice(price: number, priceId?: number): string {
                   <td class="max-w-[200px] truncate px-4 py-2 text-xs text-gray-400">
                     {{ item.desc || item.effectDesc || '-' }}
                   </td>
-                  <td class="px-4 py-2 text-center">
-                    <div class="flex items-center justify-center gap-1">
-                      <button
-                        class="rounded-lg px-2 py-1 text-xs text-blue-600 transition hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/20"
-                        title="编辑"
-                        @click="editItemData = { ...item }"
-                      >
-                        ✏️
-                      </button>
-                      <button
-                        class="rounded-lg px-2 py-1 text-xs text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
-                        title="删除"
-                        @click="handleDeleteItem(item.id, item.name)"
-                      >
-                        🗑️
-                      </button>
-                    </div>
-                  </td>
                 </tr>
               </tbody>
             </table>
           </div>
         </div>
         <!-- 移动端卡片 -->
-        <div class="block space-y-3 sm:hidden">
-          <div v-for="item in filteredItems" :key="item.id" class="border border-gray-200 rounded-xl bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+        <div v-else class="space-y-3">
+          <div v-for="item in paginatedItems" :key="item.id" class="w-full overflow-hidden border border-gray-200 rounded-lg bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
             <div class="flex items-center gap-3">
               <div class="relative h-12 w-12 flex shrink-0 items-center justify-center overflow-hidden border border-gray-200 rounded-lg bg-gray-100 dark:border-gray-600 dark:bg-gray-700">
                 <img
@@ -828,10 +788,10 @@ function formatPrice(price: number, priceId?: number): string {
                 >
                 <div v-else class="i-carbon-box text-xl text-gray-400" />
               </div>
-              <div class="flex-1">
-                <div class="flex items-center gap-2">
-                  <span class="text-gray-900 font-bold dark:text-gray-100">{{ item.name }}</span>
-                  <span class="rounded-full bg-blue-100 px-1.5 py-0.5 text-xs text-blue-600">
+              <div class="min-w-0 flex-1 overflow-hidden">
+                <div class="min-w-0 flex items-center gap-2">
+                  <span class="min-w-0 flex-1 truncate text-gray-900 font-bold dark:text-gray-100" :title="item.name">{{ item.name }}</span>
+                  <span class="shrink-0 rounded-full bg-blue-100 px-1.5 py-0.5 text-xs text-blue-600">
                     {{ itemTypeLabelMap[item.type] || `类型${item.type}` }}
                   </span>
                 </div>
@@ -840,7 +800,11 @@ function formatPrice(price: number, priceId?: number): string {
                   <span v-if="item.price > 0" class="text-amber-600">{{ formatPrice(item.price, item.priceId) }}</span>
                   <span v-if="item.canUse" class="text-green-600">可使用</span>
                 </div>
-                <div v-if="item.desc || item.effectDesc" class="mt-1 truncate text-xs text-gray-400">
+                <div
+                  v-if="item.desc || item.effectDesc"
+                  class="mt-1 block max-w-full min-w-0 w-full overflow-hidden text-ellipsis whitespace-nowrap text-xs text-gray-400"
+                  :title="item.desc || item.effectDesc"
+                >
                   {{ item.desc || item.effectDesc }}
                 </div>
               </div>
@@ -848,52 +812,18 @@ function formatPrice(price: number, priceId?: number): string {
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- 弹窗 -->
-    <SeedModal
-      :show="showSeedModal || !!editSeedData"
-      :edit-data="editSeedData"
-      @close="showSeedModal = false; editSeedData = null"
-      @saved="handleSeedSaved(); editSeedData = null"
-    />
-    <FruitModal
-      :show="showFruitModal || !!editFruitData"
-      :edit-data="editFruitData"
-      @close="showFruitModal = false; editFruitData = null"
-      @saved="handleFruitSaved(); editFruitData = null"
-    />
-    <ItemModal
-      :show="showItemModal || !!editItemData"
-      :edit-data="editItemData"
-      @close="showItemModal = false; editItemData = null"
-      @saved="handleItemSaved(); editItemData = null"
-    />
-
-    <!-- 删除确认 -->
-    <div v-if="confirmVisible" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div class="mx-4 max-w-sm w-full rounded-2xl bg-white p-6 shadow-xl dark:bg-gray-800">
-        <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
-          {{ confirmTitle }}
-        </h3>
-        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
-          {{ confirmMessage }}
-        </p>
-        <div class="mt-4 flex justify-end gap-2">
-          <button
-            class="rounded-lg px-4 py-2 text-sm text-gray-600 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
-            @click="confirmVisible = false"
-          >
-            取消
-          </button>
-          <button
-            class="rounded-lg bg-red-500 px-4 py-2 text-sm text-white transition hover:bg-red-600"
-            @click="executeConfirm"
-          >
-            确认删除
-          </button>
-        </div>
+      <div v-if="!loading && totalPages > 1" class="flex items-center justify-center border-t border-gray-100 px-4 py-3 dark:border-gray-700">
+        <NPagination v-model:page="currentPage" :page-count="totalPages" :page-slot="5" />
       </div>
     </div>
+
+    <ConfirmModal
+      :show="confirmVisible"
+      :title="confirmTitle"
+      :message="confirmMessage"
+      @confirm="executeConfirm"
+      @cancel="confirmVisible = false"
+    />
   </div>
 </template>
