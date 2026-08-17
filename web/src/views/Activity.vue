@@ -5,7 +5,6 @@ import { computed, onMounted, ref, watch } from 'vue'
 import HeluExchangePanel from '@/components/activity/HeluExchangePanel.vue'
 import HeluPassportPanel from '@/components/activity/HeluPassportPanel.vue'
 import HeluSolarTermsPanel from '@/components/activity/HeluSolarTermsPanel.vue'
-import QingmeiActivityPanel from '@/components/activity/QingmeiActivityPanel.vue'
 import StarRecordPanel from '@/components/activity/StarRecordPanel.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import { useAccountStore } from '@/stores/account'
@@ -75,8 +74,6 @@ const {
   passportClaimLoading,
   solarClaimLoading,
   starRecordClaimLoading,
-  qingmeiClaimLoading,
-  qingmeiSellLoading,
   exchangeLoading,
   heluError,
 } = storeToRefs(activityStore)
@@ -87,7 +84,6 @@ const sections = computed<ActivitySection[]>(() => [
   { key: 'records', label: '观星礼录', icon: 'i-carbon-star', count: activity.value?.starRecord?.claimableCount || 0 },
   { key: 'shop', label: '星砂兑换商店', icon: 'i-carbon-store', count: activity.value?.exchangeShop?.length || 0 },
   { key: 'notes', label: '节令小札', icon: 'i-carbon-notebook', count: activity.value?.solarTerms?.claimableCount || 0 },
-  { key: 'qingmei', label: '青酿换万金', icon: 'i-carbon-fruit-bowl', count: activity.value?.qingmei?.claimable ? 1 : 0 },
 ])
 
 async function refreshAll() {
@@ -122,24 +118,6 @@ async function claimSolar(term: { id: number, title?: string }) {
   result?.ok
     ? toast.success(`节令小札领取完成：${term.title || term.id}`)
     : toast.error(result?.error || '节令小札领取失败')
-}
-
-async function claimQingmei() {
-  if (!currentAccountId.value)
-    return
-  const result = await activityStore.claimQingmeiSeeds(currentAccountId.value)
-  result?.ok
-    ? toast.success(result.alreadyClaimed ? '今日青梅种子已领取' : `已领取青梅种子 ×${result.claimedCount || 24}`)
-    : toast.error(result?.error || '青梅种子领取失败')
-}
-
-async function sellQingmeiWine() {
-  if (!currentAccountId.value)
-    return
-  const result = await activityStore.brewAndSellQingmeiWine(currentAccountId.value)
-  result?.ok
-    ? toast.success(`青梅酿售卖完成，获得金币 ${Number(result.sell?.gold || 0).toLocaleString()}`)
-    : toast.error(result?.error || '青梅酿售卖失败')
 }
 
 async function exchangeStarSand(item: { id: number, itemName?: string, name?: string }, count: number) {
@@ -252,19 +230,11 @@ onMounted(refreshAll)
         @claim="claimPassport"
       />
       <HeluSolarTermsPanel
-        v-else-if="activeSection === 'notes'"
+        v-else
         :solar-terms="activity?.solarTerms"
         :loading="solarClaimLoading"
         :labels="L"
         @claim="claimSolar"
-      />
-      <QingmeiActivityPanel
-        v-else
-        :activity="activity?.qingmei"
-        :loading="qingmeiClaimLoading"
-        :sell-loading="qingmeiSellLoading"
-        @claim="claimQingmei"
-        @sell-wine="sellQingmeiWine"
       />
     </template>
   </section>

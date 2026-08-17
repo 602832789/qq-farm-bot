@@ -84,6 +84,8 @@ export interface HeluSolarTerm {
   statusLabel: string
   claimable: boolean
   claimStatusKnown?: boolean
+  claimActive?: boolean
+  wineActive?: boolean
   startTime: number
   endTime: number
   rewards: HeluDrawReward[]

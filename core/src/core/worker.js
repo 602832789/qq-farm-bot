@@ -321,7 +321,7 @@ async function runStarActivityAutoClaims() {
 
         // 青梅领取节点不稳定地下发每日 status，不能依赖页面用的 claimable
         // 字段决定是否调用；服务端“已领取”响应会在 service 内标记当天状态。
-        if (claimQingmeiSeedsEnabled && activity?.qingmei?.claimed !== true) {
+        if (claimQingmeiSeedsEnabled && activity?.qingmei?.claimActive !== false && activity?.qingmei?.claimed !== true) {
             try {
                 const result = await claimQingmeiSeeds();
                 const alreadyClaimed = result?.alreadyClaimed === true;
@@ -342,7 +342,7 @@ async function runStarActivityAutoClaims() {
                 });
             }
         }
-        if (brewQingmeiWineEnabled && Number(activity?.qingmei?.material?.itemCount || 0) > 0) {
+        if (brewQingmeiWineEnabled && activity?.qingmei?.wineActive !== false && Number(activity?.qingmei?.material?.itemCount || 0) > 0) {
             try {
                 const result = await brewAndSellQingmeiWine({ share: true });
                 const sellOption = Math.max(1, Number(result?.sell?.multiple || (result?.share?.shared ? 2 : 1)) || 1);

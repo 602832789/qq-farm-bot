@@ -89,6 +89,8 @@ const QINGMEI_SEED_ITEM_ID = 21221;
 const QINGMEI_FRUIT_ITEM_ID = 41221;
 const QINGMEI_SEED_REWARD_COUNT = 24;
 const QINGMEI_FINE_BREW_STEPS = 3;
+const QINGMEI_SEED_CLAIM_END_TIME = 1786809599;
+const QINGMEI_WINE_END_TIME = 1786895999;
 const HELU_PASSPORT_UID = 'SAIJI_PASSPORT';
 const HELU_TITLE = '荷风十里蝉初鸣';
 const HELU_SUB_ACTIVITY_KEYS = {
@@ -1100,6 +1102,11 @@ function normalizeQingmeiActivity(reply) {
   const claimedToday = isQingmeiClaimedToday();
   const hasServerClaimStatus = claim?.status !== undefined && claim?.status !== null;
   const materialInfo = getItemById(QINGMEI_FRUIT_ITEM_ID);
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const claimEndTime = toNum(claim?.end_time ?? claim?.endTime) || QINGMEI_SEED_CLAIM_END_TIME;
+  const wineEndTime = toNum(wine?.end_time ?? wine?.endTime ?? root?.end_time ?? root?.endTime) || QINGMEI_WINE_END_TIME;
+  const claimActive = nowSeconds <= claimEndTime;
+  const wineActive = nowSeconds <= wineEndTime;
 
   return {
     uid: reply?.__activityUid || QINGMEI_ACTIVITY_UID,
@@ -1118,8 +1125,10 @@ function normalizeQingmeiActivity(reply) {
     claimed: claimedToday || (hasServerClaimStatus && status === 3),
     // 领取节点通常不下发每日领取状态；未知时允许用户点击，由 Operate
     // 的“已领取”响应校准本进程当天状态。
-    claimable: !claimedToday && (!hasServerClaimStatus || status !== 3) && claim?.enabled !== false,
+    claimable: claimActive && !claimedToday && (!hasServerClaimStatus || status !== 3) && claim?.enabled !== false,
     claimStatusKnown: claimedToday || hasServerClaimStatus,
+    claimActive,
+    wineActive,
     reward: {
       itemId: QINGMEI_SEED_ITEM_ID,
       itemCount: QINGMEI_SEED_REWARD_COUNT,
@@ -1144,6 +1153,7 @@ async function getQingmeiActivity() {
     return activity;
   } catch (err) {
     const materialInfo = getItemById(QINGMEI_FRUIT_ITEM_ID);
+    const nowSeconds = Math.floor(Date.now() / 1000);
     return {
       uid: QINGMEI_ACTIVITY_UID,
       title: '青酿换万金',
@@ -1155,6 +1165,8 @@ async function getQingmeiActivity() {
       winePreviewCommand: QINGMEI_WINE_PREVIEW_CMD,
       wineBrewCommand: QINGMEI_WINE_BREW_CMD,
       wineSellCommand: QINGMEI_WINE_SELL_CMD,
+      claimActive: nowSeconds <= QINGMEI_SEED_CLAIM_END_TIME,
+      wineActive: nowSeconds <= QINGMEI_WINE_END_TIME,
       claimed: false,
       claimable: false,
       reward: {
