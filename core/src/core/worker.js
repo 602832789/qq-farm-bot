@@ -271,7 +271,13 @@ async function runStarActivityAutoClaims() {
     const claimRecords = automation.star_record_claim === true;
     const claimQingmeiSeedsEnabled = automation.qingmei_seed_claim === true;
     const brewQingmeiWineEnabled = automation.qingmei_wine_brew === true;
-    if (!claimPassport && !claimRecords && !claimQingmeiSeedsEnabled && !brewQingmeiWineEnabled) return;
+    const useQixiDewEnabled = automation.qixi_dew_use === true;
+    const buildQixiBridgeEnabled = automation.qixi_bridge_build === true;
+    const giftQixiSachetEnabled = automation.qixi_sachet_gift === true;
+    const qixiFriendPriority = Array.isArray(automation.qixi_friend_priority)
+        ? automation.qixi_friend_priority.map(Number).filter(gid => gid > 0) : [];
+    if (!claimPassport && !claimRecords && !claimQingmeiSeedsEnabled && !brewQingmeiWineEnabled
+        && !useQixiDewEnabled && !buildQixiBridgeEnabled && !giftQixiSachetEnabled) return;
 
     starActivityClaimRunning = true;
     try {
@@ -282,7 +288,8 @@ async function runStarActivityAutoClaims() {
             claimQingmeiSeeds,
             brewAndSellQingmeiWine
         } = require('../services/activity');
-        const activity = await getStarActivity();
+        const needsStarActivity = claimPassport || claimRecords || claimQingmeiSeedsEnabled || brewQingmeiWineEnabled;
+        const activity = needsStarActivity ? await getStarActivity() : {};
         if (claimPassport && Number(activity?.passport?.claimableLevels || 0) > 0) {
             try {
                 const result = await claimSeasonPassportRewards();
@@ -372,6 +379,49 @@ async function runStarActivityAutoClaims() {
                     result: 'error',
                     stage: err?.stage || ''
                 });
+            }
+        }
+
+        if (useQixiDewEnabled || buildQixiBridgeEnabled || giftQixiSachetEnabled) {
+            const { getQixiActivity, useQixiDew, buildQixiBridge, sendQixiSachet } = require('../services/activity');
+            let qixi = await getQixiActivity();
+            if (useQixiDewEnabled && !qixi?.dewUsage?.limitReached && Number(qixi?.items?.dew?.itemCount || 0) > 0) {
+                const result = await useQixiDew();
+                qixi = result.activity || qixi;
+                log('活动', `自动使用鹊羽灵露完成：${Number(result.usedCount || 0)} 个`, { module: 'activity', event: '鹊羽灵露自动使用', result: result.usedCount ? 'success' : 'none' });
+            }
+            if (buildQixiBridgeEnabled) {
+                let built = 0;
+                try {
+                    while (qixi?.bridge?.canBuild && built < 20) {
+                        const result = await buildQixiBridge();
+                        if (!result.built) break;
+                        built++;
+                        qixi = result.activity || qixi;
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                    }
+                    log('活动', `自动驻建鹊桥完成：${built} 阶段`, { module: 'activity', event: '鹊桥自动驻建', result: built ? 'success' : 'none', count: built });
+                } catch (err) {
+                    log('活动', `自动驻建鹊桥失败: ${err.message}`, { module: 'activity', event: '鹊桥自动驻建', result: 'error', count: built });
+                }
+            }
+            if (giftQixiSachetEnabled && qixiFriendPriority.length > 0 && Number(qixi?.gift?.remainingCount || 0) > 0) {
+                let sent = 0;
+                for (const gid of qixiFriendPriority) {
+                    if (Number(qixi?.gift?.remainingCount || 0) <= 0 || Number(qixi?.items?.sachet?.itemCount || 0) <= 0) break;
+                    try {
+                        const sendCount = Math.min(
+                            Number(qixi.gift.remainingCount || 0),
+                            Number(qixi.items.sachet.itemCount || 0)
+                        );
+                        const result = await sendQixiSachet(gid, sendCount);
+                        sent += Number(result.sentCount || 0);
+                        qixi = result.activity || qixi;
+                    } catch (err) {
+                        log('活动', `向好友 ${gid} 赠送香囊失败: ${err.message}`, { module: 'activity', event: '香囊自动赠送', result: 'error', friendGid: gid });
+                    }
+                }
+                log('活动', `自动赠送鹊羽香囊完成：${sent} 个`, { module: 'activity', event: '香囊自动赠送', result: sent ? 'success' : 'none', count: sent });
             }
         }
     } catch (err) {
@@ -661,6 +711,12 @@ function applyRuntimeConfig(config, syncStatusAfter = false) {
                 !prevAuto?.qingmei_seed_claim && newAuto?.qingmei_seed_claim
             ) || (
                 !prevAuto?.qingmei_wine_brew && newAuto?.qingmei_wine_brew
+            ) || (
+                !prevAuto?.qixi_dew_use && newAuto?.qixi_dew_use
+            ) || (
+                !prevAuto?.qixi_bridge_build && newAuto?.qixi_bridge_build
+            ) || (
+                !prevAuto?.qixi_sachet_gift && newAuto?.qixi_sachet_gift
             );
             if (starClaimBecameEnabled) {
                 workerScheduler.setTimeoutTask('star_activity_claim_after_save', 2000, () => {
@@ -1157,6 +1213,26 @@ async function handleApiCall(msg) {
             case 'exchangeStarShopItem': {
                 const { exchangeStarShopItem } = require('../services/activity');
                 result = await exchangeStarShopItem(args[0], args[1]);
+                break;
+            }
+            case 'getQixiActivity': {
+                const { getQixiActivity } = require('../services/activity');
+                result = await getQixiActivity();
+                break;
+            }
+            case 'buildQixiBridge': {
+                const { buildQixiBridge } = require('../services/activity');
+                result = await buildQixiBridge();
+                break;
+            }
+            case 'sendQixiSachet': {
+                const { sendQixiSachet } = require('../services/activity');
+                result = await sendQixiSachet(args[0], args[1]);
+                break;
+            }
+            case 'useQixiDew': {
+                const { useQixiDew } = require('../services/activity');
+                result = await useQixiDew(args[0] || {});
                 break;
             }
             case 'exchangeHeluShopItem': {

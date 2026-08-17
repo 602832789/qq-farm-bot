@@ -139,6 +139,34 @@ export interface StarActivityData {
   warning?: string
 }
 
+export interface QixiItem { itemId: number, itemCount: number, itemName: string, image?: string }
+export interface QixiFriend { gid: number, name: string, avatar?: string, level?: number }
+export interface QixiActivityData {
+  uid: string
+  title: string
+  activityId: number
+  startTime: number
+  endTime: number
+  active: boolean
+  items: { feather: QixiItem, dew: QixiItem, sachet: QixiItem }
+  dewUsage: { dailyLimit: number, limitReached: boolean }
+  bridge: {
+    stages: Array<{ id: number, status: number, claimed: boolean, cost: QixiItem, rewards: QixiItem[] }>
+    completedCount: number
+    nextStage?: { id: number, status: number, claimed: boolean, cost: QixiItem, rewards: QixiItem[] } | null
+    canBuild: boolean
+  }
+  gift: {
+    sentCount: number
+    receivedCount: number
+    maxCount: number
+    remainingCount: number
+    cost: QixiItem
+    reward: QixiItem
+    enabled: boolean
+  }
+}
+
 export type HeluSubActivityKey = 'giftLotus' | 'shop' | 'journey' | 'notes'
 
 export interface QingmeiActivity {
@@ -246,6 +274,12 @@ export interface HeluActivityData {
 
 export const useActivityStore = defineStore('activity', () => {
   const heluActivity = ref<StarActivityData | null>(null)
+  const qixiActivity = ref<QixiActivityData | null>(null)
+  const qixiFriends = ref<QixiFriend[]>([])
+  const qixiLoading = ref(false)
+  const qixiBuildLoading = ref(false)
+  const qixiGiftLoading = ref(false)
+  const qixiDewLoading = ref(false)
 
   const heluLoading = ref(false)
   const drawLoading = ref(false)
@@ -262,6 +296,8 @@ export const useActivityStore = defineStore('activity', () => {
 
   function clearActivityData() {
     heluActivity.value = null
+    qixiActivity.value = null
+    qixiFriends.value = []
     heluLoading.value = false
     drawLoading.value = false
     exchangeLoading.value = false
@@ -271,6 +307,51 @@ export const useActivityStore = defineStore('activity', () => {
     qingmeiClaimLoading.value = false
     qingmeiSellLoading.value = false
     heluError.value = ''
+  }
+
+  async function fetchQixiActivity(accountId: string) {
+    qixiLoading.value = true
+    try {
+      const { data } = await api.get('/api/activity/qixi', { headers: { 'x-account-id': accountId } })
+      if (data.ok && isCurrentAccount(String(accountId))) {
+        qixiActivity.value = data.activity || null
+        qixiFriends.value = data.friends || []
+      }
+      return data
+    }
+    finally { qixiLoading.value = false }
+  }
+
+  async function buildQixiBridge(accountId: string) {
+    qixiBuildLoading.value = true
+    try {
+      const { data } = await api.post('/api/activity/qixi/bridge/build', {}, { headers: { 'x-account-id': accountId } })
+      if (data.ok && data.activity && isCurrentAccount(String(accountId)))
+        qixiActivity.value = data.activity
+      return data
+    }
+    finally { qixiBuildLoading.value = false }
+  }
+  async function useQixiDew(accountId: string) {
+    qixiDewLoading.value = true
+    try {
+      const { data } = await api.post('/api/activity/qixi/dew/use', {}, { headers: { 'x-account-id': accountId } })
+      if (data.ok && data.activity && isCurrentAccount(String(accountId)))
+        qixiActivity.value = data.activity
+      return data
+    }
+    finally { qixiDewLoading.value = false }
+  }
+
+  async function sendQixiSachet(accountId: string, friendGid: number, count: number) {
+    qixiGiftLoading.value = true
+    try {
+      const { data } = await api.post('/api/activity/qixi/gift', { friendGid, count }, { headers: { 'x-account-id': accountId } })
+      if (data.ok && data.activity && isCurrentAccount(String(accountId)))
+        qixiActivity.value = data.activity
+      return data
+    }
+    finally { qixiGiftLoading.value = false }
   }
 
   function isCurrentAccount(accountId: string) {
@@ -448,6 +529,12 @@ export const useActivityStore = defineStore('activity', () => {
 
   return {
     heluActivity,
+    qixiActivity,
+    qixiFriends,
+    qixiLoading,
+    qixiBuildLoading,
+    qixiGiftLoading,
+    qixiDewLoading,
     heluLoading,
     drawLoading,
     exchangeLoading,
@@ -459,6 +546,10 @@ export const useActivityStore = defineStore('activity', () => {
     heluError,
     clearActivityData,
     fetchHeluActivity,
+    fetchQixiActivity,
+    buildQixiBridge,
+    useQixiDew,
+    sendQixiSachet,
     claimStarRecords,
     drawHelu,
     exchangeHelu,

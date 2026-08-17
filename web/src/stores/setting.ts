@@ -13,6 +13,10 @@ export interface AutomationConfig {
   star_record_claim?: boolean
   qingmei_seed_claim?: boolean
   qingmei_wine_brew?: boolean
+  qixi_dew_use?: boolean
+  qixi_bridge_build?: boolean
+  qixi_sachet_gift?: boolean
+  qixi_friend_priority?: number[]
   sell?: boolean
   fertilizer_gift?: boolean
   fertilizer_buy_organic?: boolean

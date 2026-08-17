@@ -287,6 +287,69 @@ function registerAdminHeluActivityRoutes({
       sendProviderError(res, err);
     }
   });
+
+  app.get("/api/activity/qixi", async (req, res) => {
+    const accountId = getAuthorizedAccountId(req, res, routeContext);
+    if (!accountId) return;
+    try {
+      if (!requireConnectedAccount(res, provider, accountId, "获取鹊桥寄情失败: 账号未运行")) return;
+      const [activity, friendReply] = await Promise.all([
+        provider.getQixiActivity(accountId),
+        provider.getFriends(accountId, false).catch(() => ({ friends: [] })),
+      ]);
+      const friends = Array.isArray(friendReply) ? friendReply
+        : Array.isArray(friendReply?.friends) ? friendReply.friends
+        : Array.isArray(friendReply?.game_friends) ? friendReply.game_friends : [];
+      res.json({
+        ok: true,
+        activity,
+        friends: friends.map(friend => ({
+          gid: Number(friend?.gid) || 0,
+          name: String(friend?.name || friend?.nickname || `好友${friend?.gid || ""}`),
+          avatar: String(friend?.avatarUrl || friend?.avatar_url || friend?.avatar || ""),
+          level: Number(friend?.level) || 0,
+        })).filter(friend => friend.gid > 0),
+      });
+    } catch (err) {
+      sendProviderError(res, err);
+    }
+  });
+
+  app.post("/api/activity/qixi/bridge/build", async (req, res) => {
+    const accountId = getAuthorizedAccountId(req, res, routeContext);
+    if (!accountId) return;
+    try {
+      if (!requireConnectedAccount(res, provider, accountId, "驻建鹊桥失败: 账号未运行")) return;
+      res.json(await provider.buildQixiBridge(accountId));
+    } catch (err) {
+      sendProviderError(res, err);
+    }
+  });
+
+  app.post("/api/activity/qixi/dew/use", async (req, res) => {
+    const accountId = getAuthorizedAccountId(req, res, routeContext);
+    if (!accountId) return;
+    try {
+      if (!requireConnectedAccount(res, provider, accountId, "使用鹊羽灵露失败: 账号未运行")) return;
+      res.json(await provider.useQixiDew(accountId, { limit: Number(req.body?.limit) || 0 }));
+    } catch (err) {
+      sendProviderError(res, err);
+    }
+  });
+
+  app.post("/api/activity/qixi/gift", async (req, res) => {
+    const accountId = getAuthorizedAccountId(req, res, routeContext);
+    if (!accountId) return;
+    const friendGid = Number(req.body?.friendGid) || 0;
+    const count = Math.max(1, Math.floor(Number(req.body?.count) || 1));
+    if (!friendGid) return res.status(400).json({ ok: false, error: "请选择有效好友" });
+    try {
+      if (!requireConnectedAccount(res, provider, accountId, "香囊赠送失败: 账号未运行")) return;
+      res.json(await provider.sendQixiSachet(accountId, friendGid, count));
+    } catch (err) {
+      sendProviderError(res, err);
+    }
+  });
 }
 
 module.exports = { registerAdminHeluActivityRoutes };

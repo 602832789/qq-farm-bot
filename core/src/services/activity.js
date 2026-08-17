@@ -21,6 +21,8 @@ const HELU_DRAW_REQUEST_GAP_MS = 450;
 const HELU_DRAW_REFRESH_DELAY_MS = 350;
 const QINGMEI_WINE_STEP_DELAY_MS = 1000;
 const qingmeiClaimedDateByAccount = new Map();
+const qixiDewLimitDateByAccount = new Map();
+const QIXI_DEW_DAILY_LIMIT = 15;
 
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
@@ -37,6 +39,27 @@ function getLocalDateKey() {
 function getQingmeiClaimStateKey() {
   const state = getUserState();
   return String(state?.gid || state?.openid || 'current');
+}
+
+function getQixiDewLimitStateKey() {
+  const state = getUserState();
+  return String(state?.gid || state?.openid || 'current');
+}
+
+function isQixiDewLimitReachedToday() {
+  return qixiDewLimitDateByAccount.get(getQixiDewLimitStateKey()) === getLocalDateKey();
+}
+
+function markQixiDewLimitReachedToday() {
+  qixiDewLimitDateByAccount.set(getQixiDewLimitStateKey(), getLocalDateKey());
+}
+
+function isQixiDewDailyLimitError(err) {
+  const message = String(err?.message || '');
+  return Number(err?.code) === 1003008
+    || message.includes('1003008')
+    || message.includes('item use daily limit')
+    || message.includes('今日使用次数已达上限');
 }
 
 function markQingmeiClaimedToday() {
@@ -91,6 +114,16 @@ const QINGMEI_SEED_REWARD_COUNT = 24;
 const QINGMEI_FINE_BREW_STEPS = 3;
 const QINGMEI_SEED_CLAIM_END_TIME = 1786809599;
 const QINGMEI_WINE_END_TIME = 1786895999;
+const QIXI_ACTIVITY_UID = 'QiXiActivity';
+const QIXI_ACTIVITY_ID = 2026081800;
+const QIXI_BRIDGE_ACTIVITY_ID = 2026081801;
+const QIXI_GIFT_ACTIVITY_ID = 2026081802;
+const QIXI_BRIDGE_CMD = 25;
+const QIXI_GIFT_OPEN_CMD = 7;
+const QIXI_GIFT_SEND_CMD = 26;
+const QIXI_FEATHER_ITEM_ID = 1024;
+const QIXI_SACHET_ITEM_ID = 1025;
+const QIXI_DEW_ITEM_ID = 301103;
 const HELU_PASSPORT_UID = 'SAIJI_PASSPORT';
 const HELU_TITLE = '荷风十里蝉初鸣';
 const HELU_SUB_ACTIVITY_KEYS = {
@@ -245,6 +278,12 @@ async function operateActivity(activityId, cmd, options = {}) {
       multiple: Math.max(1, toNum(options.qingmeiWineSell.multiple) || 1),
     };
   }
+  if (options?.qixiGift && typeof options.qixiGift === 'object') {
+    payload.qixi_gift = {
+      friend_gid: toNum(options.qixiGift.friendGid),
+      gift_id: Math.max(1, toNum(options.qixiGift.giftId)),
+    };
+  }
 
   activityLogger.info('活动操作请求', {
     activityId: payload.id,
@@ -257,6 +296,7 @@ async function operateActivity(activityId, cmd, options = {}) {
     qingmeiWineStartCount: payload.qingmei_wine_start?.items?.length || 0,
     qingmeiWineBrew: !!payload.qingmei_wine_brew,
     qingmeiWineSell: payload.qingmei_wine_sell,
+    qixiGift: payload.qixi_gift,
   });
 
   const request = types.ActivityOperateRequest.encode(
@@ -265,6 +305,190 @@ async function operateActivity(activityId, cmd, options = {}) {
 
   const { body } = await sendMsgAsync('gamepb.activitypb.ActivityService', 'Operate', request);
   return body;
+}
+
+function normalizeQixiItem(item, fallbackId = 0, fallbackName = '') {
+  const normalized = normalizeCoreItem(item || { id: fallbackId, count: 0 });
+  if (fallbackName && (!normalized.itemName || normalized.itemName.startsWith('物品#'))) {
+    normalized.itemName = fallbackName;
+  }
+  return normalized;
+}
+
+function findActivityNodeById(nodes, id) {
+  for (const node of nodes || []) {
+    if (toNum(node?.activity?.id) === id) return node;
+    const found = findActivityNodeById(node?.children, id);
+    if (found) return found;
+  }
+  return null;
+}
+
+function normalizeQixiActivity(reply) {
+  const root = reply?.group || null;
+  const bridgeNode = findActivityNodeById([root], QIXI_BRIDGE_ACTIVITY_ID);
+  const giftNode = findActivityNodeById([root], QIXI_GIFT_ACTIVITY_ID);
+  const bridge = bridgeNode?.qixi_bridge || bridgeNode?.qixiBridge || {};
+  const gift = giftNode?.qixi_gift || giftNode?.qixiGift || {};
+  const balances = (bridge?.balances || []).map(item => normalizeQixiItem(item));
+  const balanceById = new Map(balances.map(item => [item.itemId, item.itemCount]));
+  const stages = (bridge?.stages || []).map(stage => ({
+    id: toNum(stage?.id),
+    status: toNum(stage?.status),
+    claimed: toNum(stage?.status) >= 2,
+    cost: normalizeQixiItem(stage?.cost, QIXI_FEATHER_ITEM_ID, '鹊羽'),
+    rewards: (stage?.rewards || []).map(item => normalizeQixiItem(item)),
+  }));
+  const nextStage = stages.find(stage => !stage.claimed) || null;
+  const giftRule = gift?.rule || {};
+  return {
+    uid: QIXI_ACTIVITY_UID,
+    title: String(root?.activity?.title || bridgeNode?.activity?.title || '鹊桥寄情'),
+    activityId: QIXI_ACTIVITY_ID,
+    startTime: toNum(root?.activity?.start_time || bridgeNode?.activity?.start_time),
+    endTime: toNum(root?.activity?.end_time || bridgeNode?.activity?.end_time),
+    active: !!bridgeNode?.activity?.visible && bridgeNode?.activity?.enabled !== false,
+    items: {
+      feather: normalizeQixiItem({ id: QIXI_FEATHER_ITEM_ID, count: balanceById.get(QIXI_FEATHER_ITEM_ID) || 0 }, QIXI_FEATHER_ITEM_ID, '鹊羽'),
+      sachet: normalizeQixiItem({ id: QIXI_SACHET_ITEM_ID, count: balanceById.get(QIXI_SACHET_ITEM_ID) || 0 }, QIXI_SACHET_ITEM_ID, '鹊羽香囊'),
+      dew: normalizeQixiItem({ id: QIXI_DEW_ITEM_ID, count: balanceById.get(QIXI_DEW_ITEM_ID) || 0 }, QIXI_DEW_ITEM_ID, '鹊羽灵露'),
+    },
+    bridge: {
+      activityId: QIXI_BRIDGE_ACTIVITY_ID,
+      command: QIXI_BRIDGE_CMD,
+      stages,
+      completedCount: stages.filter(stage => stage.claimed).length,
+      lastBuiltStageId: toNum(bridge?.last_built_stage_id),
+      nextStage,
+      canBuild: !!nextStage && nextStage.cost.itemCount > 0
+        && (balanceById.get(nextStage.cost.itemId) || 0) >= nextStage.cost.itemCount,
+    },
+    gift: {
+      activityId: QIXI_GIFT_ACTIVITY_ID,
+      command: QIXI_GIFT_SEND_CMD,
+      sentCount: toNum(gift?.sent_count),
+      receivedCount: toNum(gift?.received_count),
+      maxCount: toNum(gift?.max_count),
+      remainingCount: Math.max(0, toNum(gift?.max_count) - toNum(gift?.sent_count)),
+      cost: normalizeQixiItem(giftRule?.cost, QIXI_SACHET_ITEM_ID, '鹊羽香囊'),
+      reward: normalizeQixiItem(giftRule?.reward, 0, '获赠香囊'),
+      enabled: giftRule?.enabled !== false,
+    },
+  };
+}
+
+async function getQixiActivity() {
+  const activity = normalizeQixiActivity(await getActivityGroup(QIXI_ACTIVITY_ID, QIXI_ACTIVITY_UID));
+  const counts = await Promise.all([
+    getBagItemCount(QIXI_FEATHER_ITEM_ID),
+    getBagItemCount(QIXI_SACHET_ITEM_ID),
+    getBagItemCount(QIXI_DEW_ITEM_ID),
+  ]);
+  // 活动节点中的 balances 会保留阶段奖励/配置值，真实可用库存以背包为准。
+  activity.items.feather.itemCount = counts[0];
+  activity.items.sachet.itemCount = counts[1];
+  activity.items.dew.itemCount = counts[2];
+  activity.dewUsage = {
+    dailyLimit: QIXI_DEW_DAILY_LIMIT,
+    limitReached: isQixiDewLimitReachedToday(),
+  };
+  if (activity.bridge.nextStage) {
+    activity.bridge.canBuild = activity.bridge.nextStage.cost.itemCount > 0
+      && activity.items.feather.itemCount >= activity.bridge.nextStage.cost.itemCount;
+  }
+  return activity;
+}
+
+async function useQixiDew(options = {}) {
+  const activity = await getQixiActivity();
+  if (activity.dewUsage.limitReached) {
+    return { ok: true, usedCount: 0, reason: 'daily_limit', activity };
+  }
+  const available = activity.items.dew.itemCount;
+  if (available <= 0) return { ok: true, usedCount: 0, reason: 'no_dew', activity };
+  const { getLandsDetail } = require('./farm-land-analyzer');
+  const lands = (await getLandsDetail())?.lands || [];
+  const candidates = lands.filter(land => land?.plantId && ['growing', 'harvestable'].includes(land.status));
+  const limit = Math.min(available, Math.max(1, toNum(options.limit) || available), candidates.length);
+  if (limit <= 0) return { ok: true, usedCount: 0, reason: 'no_eligible_land', activity };
+  let usedCount = 0;
+  let dailyLimitReached = false;
+  for (const land of candidates.slice(0, limit)) {
+    try {
+      await useQixiDewOnLand(land.id);
+      usedCount++;
+    } catch (err) {
+      if (isQixiDewDailyLimitError(err)) {
+        markQixiDewLimitReachedToday();
+        dailyLimitReached = true;
+        activityLogger.info('鹊羽灵露今日使用次数已达上限', {
+          itemId: QIXI_DEW_ITEM_ID,
+          dailyLimit: QIXI_DEW_DAILY_LIMIT,
+        });
+        break;
+      }
+      activityLogger.warn('鹊羽灵露使用失败', { landId: land.id, error: err.message });
+      break;
+    }
+    if (usedCount < limit) await delay(450);
+  }
+  return {
+    ok: true,
+    usedCount,
+    reason: dailyLimitReached ? 'daily_limit' : undefined,
+    activity: await getQixiActivity(),
+  };
+}
+
+async function useQixiDewOnLand(landId) {
+  const bag = await getBag();
+  const dew = (getBagItems(bag) || []).find(item =>
+    toNum(item?.id) === QIXI_DEW_ITEM_ID && toNum(item?.count) > 0
+  );
+  if (!dew) throw new Error('鹊羽灵露不足');
+  const gid = toNum(getUserState()?.gid);
+  if (!gid) throw new Error('尚未获取当前账号 GID');
+
+  // 官方 UseRequest：field 1 为带 UID 的物品，field 2 为账号及目标土地。
+  const writer = protobuf.Writer.create();
+  writer.uint32(10).fork()
+    .uint32(8).int64(QIXI_DEW_ITEM_ID)
+    .uint32(16).int64(1)
+    .uint32(48).int64(toNum(dew.uid))
+    .ldelim();
+  writer.uint32(18).fork()
+    .uint32(8).int64(gid)
+    .uint32(18).fork().int64(toNum(landId)).ldelim()
+    .ldelim();
+  const { body } = await sendMsgAsync('gamepb.itempb.ItemService', 'Use', writer.finish());
+  return types.UseReply.decode(body);
+}
+
+async function buildQixiBridge() {
+  const before = await getQixiActivity();
+  if (!before.bridge.nextStage) return { ok: true, completed: true, built: false, activity: before };
+  if (!before.bridge.canBuild) throw new Error('鹊羽不足，暂时无法驻建鹊桥');
+  await operateActivityReply(QIXI_BRIDGE_ACTIVITY_ID, QIXI_BRIDGE_CMD);
+  return { ok: true, built: true, stageId: before.bridge.nextStage.id, activity: await getQixiActivity() };
+}
+
+async function sendQixiSachet(friendGid, count = 1) {
+  const gid = toNum(friendGid);
+  const sendCount = Math.max(1, Math.floor(toNum(count) || 1));
+  if (!gid) throw new Error('请选择有效好友');
+  const before = await getQixiActivity();
+  if (!before.gift.enabled || before.gift.remainingCount <= 0) throw new Error('今日香囊赠送次数已用完');
+  const actual = Math.min(sendCount, before.gift.remainingCount, before.items.sachet.itemCount || sendCount);
+  if (actual <= 0) throw new Error('鹊羽香囊不足');
+  for (let i = 0; i < actual; i++) {
+    // 官方界面没有款式选项，抓包中该内部编号由客户端在 1-13 间自动选择。
+    const giftId = 1 + Math.floor(Math.random() * 13);
+    await operateActivityReply(QIXI_GIFT_ACTIVITY_ID, QIXI_GIFT_SEND_CMD, {
+      qixiGift: { friendGid: gid, giftId },
+    });
+    if (i + 1 < actual) await delay(450);
+  }
+  return { ok: true, friendGid: gid, sentCount: actual, activity: await getQixiActivity() };
 }
 
 async function operateActivityReply(activityId, cmd, options = {}) {
@@ -2272,6 +2496,7 @@ module.exports = {
   HELU_ACTIVITY_UID,
   STAR_ACTIVITY_UID,
   QINGMEI_ACTIVITY_UID,
+  QIXI_ACTIVITY_UID,
   NANGUA_SHOP_ACTIVITY_ID,
   NANGUA_RANDOM_SHOP_ACTIVITY_ID,
   HELU_ACTIVITY_ID,
@@ -2284,6 +2509,9 @@ module.exports = {
   QINGMEI_ACTIVITY_ID,
   QINGMEI_SEED_CLAIM_ACTIVITY_ID,
   QINGMEI_WINE_ACTIVITY_ID,
+  QIXI_ACTIVITY_ID,
+  QIXI_BRIDGE_ACTIVITY_ID,
+  QIXI_GIFT_ACTIVITY_ID,
   HELU_SUB_ACTIVITY_KEYS,
   NANGUA_SHOP_BUY_CMD,
   NANGUA_SHOP_REFRESH_CMD,
@@ -2300,6 +2528,11 @@ module.exports = {
   getQingmeiActivity,
   claimQingmeiSeeds,
   brewAndSellQingmeiWine,
+  getQixiActivity,
+  buildQixiBridge,
+  sendQixiSachet,
+  useQixiDew,
+  normalizeQixiActivity,
   getSeasonPassport,
   claimSeasonPassportRewards,
   getSolarTermsInfo,

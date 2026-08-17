@@ -53,6 +53,11 @@ message QingmeiWineSellParams {
     int32 multiple = 1;
 }
 
+message QixiGiftParams {
+    int64 friend_gid = 1;
+    int32 gift_id = 2;
+}
+
 message OperateRequest {
     int64 id = 1;
     int64 cmd = 2;
@@ -64,6 +69,7 @@ message OperateRequest {
     QingmeiWineStartParams qingmei_wine_start = 112;
     QingmeiWineBrewParams qingmei_wine_brew = 113;
     QingmeiWineSellParams qingmei_wine_sell = 114;
+    QixiGiftParams qixi_gift = 124;
 }
 
 message RandomShopItem {
@@ -170,6 +176,33 @@ message ActivityInfo {
     DrawInfo draw_info = 105;
 }
 
+message QixiBridgeStage {
+    int32 id = 1;
+    corepb.Item cost = 2;
+    repeated corepb.Item rewards = 3;
+    int32 status = 4;
+}
+
+message QixiBridgeInfo {
+    repeated corepb.Item balances = 1;
+    repeated QixiBridgeStage stages = 2;
+    int32 last_built_stage_id = 3;
+}
+
+message QixiGiftRule {
+    corepb.Item cost = 1;
+    corepb.Item reward = 2;
+    bool enabled = 3;
+    bool visible = 4;
+}
+
+message QixiGiftInfo {
+    int32 sent_count = 1;
+    int32 received_count = 2;
+    int32 max_count = 3;
+    QixiGiftRule rule = 4;
+}
+
 message ActivityNode {
     ActivityInfo activity = 1;
     repeated ActivityNode children = 2;
@@ -177,6 +210,8 @@ message ActivityNode {
     ExchangeShopInfo exchange_shop = 102;
     DrawInfo draw_info = 105;
     StarRecordInfo star_record = 110;
+    QixiBridgeInfo qixi_bridge = 112;
+    QixiGiftInfo qixi_gift = 113;
 }
 
 message ListReply {
@@ -224,4 +259,5 @@ message OperateReply {
     QingmeiSellResult qingmei_sell = 115;
     QingmeiClaimResult qingmei_claim = 104;
     StarRecordClaimResult star_record_claim = 120;
+    corepb.Item qixi_gift_result = 125;
 }
