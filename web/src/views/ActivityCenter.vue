@@ -190,7 +190,7 @@ onUnmounted(() => {
 <template>
   <section v-if="!selectedActivity" class="activity-picker">
     <button type="button" class="picker-back" aria-label="返回" @click="goBack">
-      ‹
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 5-7 7 7 7" /></svg>
     </button>
     <header class="picker-heading">
       <span>活动中心</span>
@@ -321,13 +321,24 @@ onUnmounted(() => {
   left: 30px;
   width: 40px;
   height: 40px;
+  display: grid;
+  place-items: center;
+  padding: 0;
   border: 1px solid #aec7b8;
   border-radius: 50%;
   color: #315d4c;
   background: #fff;
-  font-size: 30px;
-  line-height: 1;
+  line-height: 0;
   cursor: pointer;
+}
+.picker-back svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .picker-heading {
   width: 100%;
