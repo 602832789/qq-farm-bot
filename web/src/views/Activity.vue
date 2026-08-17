@@ -6,10 +6,12 @@ import HeluExchangePanel from '@/components/activity/HeluExchangePanel.vue'
 import HeluPassportPanel from '@/components/activity/HeluPassportPanel.vue'
 import HeluSolarTermsPanel from '@/components/activity/HeluSolarTermsPanel.vue'
 import StarRecordPanel from '@/components/activity/StarRecordPanel.vue'
+import AdminActivityUpdatePanel from '@/components/admin/AdminActivityUpdatePanel.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import { useAccountStore } from '@/stores/account'
 import { useActivityStore } from '@/stores/activity'
 import { useToastStore } from '@/stores/toast'
+import { useUserStore } from '@/stores/user'
 
 const L: ActivityLabels = {
   title: '活动中心',
@@ -67,6 +69,7 @@ const L: ActivityLabels = {
 const accountStore = useAccountStore()
 const activityStore = useActivityStore()
 const toast = useToastStore()
+const userStore = useUserStore()
 const { currentAccountId, currentAccount } = storeToRefs(accountStore)
 const {
   heluActivity: activity,
@@ -79,6 +82,7 @@ const {
 } = storeToRefs(activityStore)
 
 const activeSection = ref<ActivitySectionKey>('journey')
+const showActivityAnalysis = ref(false)
 const sections = computed<ActivitySection[]>(() => [
   { key: 'journey', label: '千星游记', icon: 'i-carbon-map', count: activity.value?.passport?.claimableLevels || 0 },
   { key: 'records', label: '观星礼录', icon: 'i-carbon-star', count: activity.value?.starRecord?.claimableCount || 0 },
@@ -185,6 +189,10 @@ onMounted(refreshAll)
           <BaseButton variant="primary" :loading="heluLoading" :disabled="!currentAccountId" @click="refreshAll">
             {{ L.refresh }}
           </BaseButton>
+          <BaseButton v-if="userStore.isAdmin" variant="secondary" @click="showActivityAnalysis = true">
+            <span class="i-carbon-analytics mr-1.5" />
+            活动分析
+          </BaseButton>
         </div>
       </div>
     </header>
@@ -237,5 +245,35 @@ onMounted(refreshAll)
         @claim="claimSolar"
       />
     </template>
+
+    <Teleport to="body">
+      <div
+        v-if="showActivityAnalysis"
+        class="fixed inset-0 z-60 flex items-center justify-center bg-black/55 p-3 sm:p-6"
+        role="dialog"
+        aria-modal="true"
+        aria-label="活动分析"
+        @click.self="showActivityAnalysis = false"
+      >
+        <div class="flex max-h-[92vh] w-full max-w-7xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl dark:bg-gray-800">
+          <header class="flex shrink-0 items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-700">
+            <div>
+              <h2 class="font-semibold text-gray-900 dark:text-white">活动分析</h2>
+              <p class="mt-0.5 text-xs text-gray-500">在线发现未适配活动并读取只读活动树</p>
+            </div>
+            <button
+              class="grid h-9 w-9 place-items-center rounded-lg text-gray-500 transition hover:bg-gray-100 dark:hover:bg-gray-700"
+              aria-label="关闭活动分析"
+              @click="showActivityAnalysis = false"
+            >
+              <span class="i-carbon-close text-xl" />
+            </button>
+          </header>
+          <div class="min-h-0 flex-1 overflow-y-auto p-4">
+            <AdminActivityUpdatePanel />
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </section>
 </template>

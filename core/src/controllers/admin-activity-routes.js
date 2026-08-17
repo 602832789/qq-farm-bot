@@ -24,7 +24,7 @@ function registerAdminActivityRoutes({
 
   registerAdminNanguaActivityRoutes(routeContext);
   registerAdminHeluActivityRoutes(routeContext);
-  registerAdminActivityUpdateRoutes({ app, requireAdminToken });
+  registerAdminActivityUpdateRoutes({ app, provider, requireAdminToken });
 }
 
 module.exports = { registerAdminActivityRoutes };

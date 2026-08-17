@@ -12,6 +12,23 @@ let report = null;
 let knownActivityIds = [];
 let intervalMs = DEFAULT_INTERVAL_MS;
 let nextScanAt = 0;
+let onlineScanner = null;
+let localScanEnabled = false;
+
+function emptyLocalReport() {
+  return {
+    scannedAt: Date.now(),
+    appId: '1112386029',
+    source: null,
+    candidateCount: 0,
+    incompleteCandidates: [],
+    detectedActivityIds: [],
+    unknownActivityIds: [],
+    caches: [],
+    warnings: [],
+    localScanEnabled: false,
+  };
+}
 
 function readSavedReport() {
   try {
@@ -30,9 +47,12 @@ function writeSavedReport(value) {
   }
 }
 
-function analyzeReport(scanned, previous) {
+function analyzeReport(scanned, previous, online = null) {
+  // 正式候选必须得到在线接口确认。本机源码/缓存仅作为辅助证据展示。
+  const candidateIds = [...new Set(online?.unknownActivityIds || [])]
+    .sort((a, b) => b - a);
   const groups = new Map();
-  for (const id of scanned.unknownActivityIds) {
+  for (const id of candidateIds) {
     const date = String(id).slice(0, 8);
     const items = groups.get(date) || [];
     items.push(id);
@@ -41,15 +61,30 @@ function analyzeReport(scanned, previous) {
   const previousVersion = previous?.source?.version || '';
   return {
     ...scanned,
+    status: !scanned.source && !online?.available
+      ? 'unavailable'
+      : candidateIds.length ? 'update-found' : 'up-to-date',
+    unknownActivityIds: candidateIds,
+    online,
+    localEvidence: {
+      enabled: scanned.localScanEnabled === true,
+      unknownActivityIds: scanned.unknownActivityIds || [],
+      detectedActivityIds: scanned.detectedActivityIds || [],
+      source: scanned.source || null,
+      caches: scanned.caches || [],
+      warnings: scanned.warnings || [],
+    },
     sourceChanged: !!previousVersion && previousVersion !== scanned.source?.version,
     previousSourceVersion: previousVersion || null,
     analysis: {
       candidateGroups: [...groups.entries()].map(([date, ids]) => ({ date, ids })),
-      requiresProtocolSample: scanned.unknownActivityIds.length > 0,
+      requiresProtocolSample: candidateIds.length > 0,
       safeToAutoApply: false,
-      summary: scanned.unknownActivityIds.length
-        ? `发现 ${scanned.unknownActivityIds.length} 个候选活动 ID，已按活动日期归类，等待协议样本确认`
-        : '未发现当前代码尚未登记的新活动 ID',
+      summary: candidateIds.length
+        ? `发现 ${candidateIds.length} 个候选活动 ID，已自动读取在线活动列表和只读活动分组`
+        : online?.available
+          ? '在线活动列表未发现尚未登记的新活动'
+          : '在线分析等待已连接账号',
     },
   };
 }
@@ -59,7 +94,18 @@ async function runActivityUpdateScan() {
   running = true;
   try {
     const previous = report || readSavedReport();
-    report = analyzeReport(scanActivityUpdates({ knownActivityIds }), previous);
+    const scanned = localScanEnabled
+      ? { ...scanActivityUpdates({ knownActivityIds }), localScanEnabled: true }
+      : emptyLocalReport();
+    let online = null;
+    if (typeof onlineScanner === 'function') {
+      try {
+        online = await onlineScanner(knownActivityIds, scanned);
+      } catch (error) {
+        online = { available: false, error: error.message || String(error), activities: [], groups: [], unknownActivityIds: [] };
+      }
+    }
+    report = analyzeReport(scanned, previous, online);
     writeSavedReport(report);
     return report;
   } finally {
@@ -85,6 +131,9 @@ function scheduleNextScan() {
 
 function startActivityUpdateMonitor(options = {}) {
   knownActivityIds = (options.knownActivityIds || []).map(Number);
+  onlineScanner = typeof options.onlineScanner === 'function' ? options.onlineScanner : null;
+  localScanEnabled = options.localScanEnabled === true
+    || String(process.env.ACTIVITY_LOCAL_SCAN_ENABLED || '').toLowerCase() === 'true';
   intervalMs = Math.max(MIN_INTERVAL_MS, Number(options.intervalMs) || Number(process.env.ACTIVITY_UPDATE_INTERVAL_MS) || DEFAULT_INTERVAL_MS);
   report = report || readSavedReport();
   scheduleNextScan();

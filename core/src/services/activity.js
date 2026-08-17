@@ -145,6 +145,58 @@ async function listActivityGroups() {
   return types.ActivityListReply.decode(body);
 }
 
+function normalizeDiscoveryActivity(node) {
+  const raw = node?.activity || node || {};
+  const payloadText = String(raw.payload || '').trim();
+  let payload = null;
+  if (payloadText) {
+    try {
+      payload = JSON.parse(payloadText);
+    } catch {
+      payload = { text: payloadText.slice(0, 2000) };
+    }
+  }
+  return {
+    id: toNum(raw.id),
+    parentId: toNum(raw.parent_id),
+    type: toNum(raw.type),
+    title: String(raw.title || ''),
+    startTime: toNum(raw.start_time),
+    endTime: toNum(raw.end_time),
+    sort: toNum(raw.sort),
+    visible: !!raw.visible,
+    enabled: !!raw.enabled,
+    status: toNum(raw.status),
+    payload,
+    features: {
+      randomShop: !!(node?.random_shop || raw.random_shop),
+      exchangeShop: !!(node?.exchange_shop || raw.exchange_shop),
+      draw: !!(node?.draw_info || raw.draw_info),
+      starRecord: !!node?.star_record,
+    },
+    children: (node?.children || []).map(normalizeDiscoveryActivity),
+  };
+}
+
+function flattenDiscoveryActivities(nodes, output = []) {
+  for (const node of nodes || []) {
+    const activity = normalizeDiscoveryActivity(node);
+    if (activity.id > 0) output.push({ ...activity, children: undefined });
+    flattenDiscoveryActivities(node?.children, output);
+  }
+  return output;
+}
+
+async function getActivityDiscoveryList() {
+  const reply = await listActivityGroups();
+  return flattenDiscoveryActivities(reply?.groups).sort((a, b) => b.id - a.id);
+}
+
+async function getActivityGroupSnapshot(activityId, uid = '') {
+  const reply = await getActivityGroup(activityId, uid);
+  return normalizeDiscoveryActivity(reply?.group);
+}
+
 /**
  * 操作活动
  */
@@ -2238,6 +2290,8 @@ module.exports = {
   HELU_EXCHANGE_CMD,
   HELU_DRAW_CMD,
   getActivityGroup,
+  getActivityDiscoveryList,
+  getActivityGroupSnapshot,
   getNanguaShop,
   getHeluActivity,
   getStarActivity,

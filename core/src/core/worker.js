@@ -1119,6 +1119,16 @@ async function handleApiCall(msg) {
                 result = await getNanguaShop();
                 break;
             }
+            case 'getActivityDiscoveryList': {
+                const { getActivityDiscoveryList } = require('../services/activity');
+                result = await getActivityDiscoveryList();
+                break;
+            }
+            case 'getActivityGroupSnapshot': {
+                const { getActivityGroupSnapshot } = require('../services/activity');
+                result = await getActivityGroupSnapshot(args[0], args[1]);
+                break;
+            }
             case 'buyActivityShopItem': {
                 const { buyNanguaShopItem } = require('../services/activity');
                 result = await buyNanguaShopItem(args[0], args[1]);

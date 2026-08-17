@@ -180,6 +180,8 @@ function createDataProvider(deps) {
 
         // ========== Activity ==========
         getActivityShop: (ref) => callWorkerApi(resolveAccountId(ref), 'getActivityShop'),
+        getActivityDiscoveryList: (ref) => callWorkerApi(resolveAccountId(ref), 'getActivityDiscoveryList'),
+        getActivityGroupSnapshot: (ref, activityId, uid = '') => callWorkerApi(resolveAccountId(ref), 'getActivityGroupSnapshot', activityId, uid),
         buyActivityShopItem: (ref, itemId, count) => callWorkerApi(resolveAccountId(ref), 'buyActivityShopItem', itemId, count),
         refreshActivityShop: (ref) => callWorkerApi(resolveAccountId(ref), 'refreshActivityShop'),
         getHeluActivity: (ref) => callWorkerApi(resolveAccountId(ref), 'getHeluActivity'),
