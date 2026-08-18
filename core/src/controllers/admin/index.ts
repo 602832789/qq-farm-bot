@@ -1,5 +1,5 @@
-export {};
 import type { AdminContext } from './context';
+export {};
 
 /**
  * Admin panel HTTP server orchestrator.

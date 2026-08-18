@@ -6,7 +6,7 @@ export {};
 const protobuf = require('protobufjs');
 const { sendMsgAsync, getUserState } = require('../../utils/network');
 const { types } = require('../../utils/proto');
-const { toLong, toNum, getServerTimeSec, sleep, randomDelay, log, logWarn } = require('../../utils/utils');
+const { toLong, sleep, randomDelay, logWarn } = require('../../utils/utils');
 
 // 操作限制更新回调 (由 friend.js 设置)
 let onOperationLimitsUpdate: ((limits: any) => void) | null = null;
@@ -68,6 +68,8 @@ async function farming(landIds: number[]): Promise<any> {
 const NORMAL_FERTILIZER_ID: number = 1011;
 // 有机肥料 ID
 const ORGANIC_FERTILIZER_ID: number = 1012;
+const MAX_ORGANIC_FERTILIZE_OPERATIONS: number = 240;
+const MAX_ORGANIC_FERTILIZE_ROUNDS: number = 20;
 
 /**
  * 施肥 - 必须逐块进行，服务器不支持批量
@@ -94,7 +96,7 @@ async function fertilize(landIds: number[], fertilizerId: number = NORMAL_FERTIL
 
 /**
  * 有机肥循环施肥:
- * 按地块顺序 1-2-3-...-1 持续施肥，直到出现失败即停止。
+ * 按地块顺序循环施肥，失败或达到单次操作上限时停止。
  */
 async function fertilizeOrganicLoop(landIds: number[] | any[]): Promise<number> {
     const ids: number[] = (Array.isArray(landIds) ? landIds : []).filter(Boolean);
@@ -102,8 +104,12 @@ async function fertilizeOrganicLoop(landIds: number[] | any[]): Promise<number> 
 
     let successCount: number = 0;
     let idx: number = 0;
+    const operationLimit = Math.min(
+        MAX_ORGANIC_FERTILIZE_OPERATIONS,
+        ids.length * MAX_ORGANIC_FERTILIZE_ROUNDS,
+    );
 
-    while (true) {
+    while (successCount < operationLimit) {
         const landId = ids[idx];
         try {
             const body = types.FertilizeRequest.encode(types.FertilizeRequest.create({
@@ -119,6 +125,10 @@ async function fertilizeOrganicLoop(landIds: number[] | any[]): Promise<number> 
 
         idx = (idx + 1) % ids.length;
         await randomDelay(1000, 1500);
+    }
+
+    if (successCount >= operationLimit) {
+        logWarn('施肥', `有机肥循环达到单次上限 ${operationLimit}，已停止继续请求`);
     }
 
     return successCount;

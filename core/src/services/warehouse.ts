@@ -31,13 +31,24 @@ const ORGANIC_FERTILIZER_ITEM_HOURS: Map<number, number> = new Map([
 ]);
 let fertilizerGiftDoneDateKey: string = '';
 let fertilizerGiftLastOpenAt: number = 0;
+let pendingBagRequest: Promise<any> | null = null;
 
 // ============ API ============
 
 async function getBag(): Promise<any> {
-    const body: Uint8Array = types.BagRequest.encode(types.BagRequest.create({})).finish();
-    const { body: replyBody } = await sendMsgAsync('gamepb.itempb.ItemService', 'Bag', body);
-    return types.BagReply.decode(replyBody);
+    if (pendingBagRequest) return pendingBagRequest;
+
+    const request = (async () => {
+        const body: Uint8Array = types.BagRequest.encode(types.BagRequest.create({})).finish();
+        const { body: replyBody } = await sendMsgAsync('gamepb.itempb.ItemService', 'Bag', body);
+        return types.BagReply.decode(replyBody);
+    })();
+    pendingBagRequest = request;
+    try {
+        return await request;
+    } finally {
+        if (pendingBagRequest === request) pendingBagRequest = null;
+    }
 }
 
 function toSellItem(item: any): any {

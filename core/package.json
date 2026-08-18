@@ -18,7 +18,7 @@
     "build:linux": "tsc && tsc -p tsconfig.client.json && pkg . --no-bytecode --targets node18-linux-x64 --out-path dist/bin",
     "build:mac": "tsc && tsc -p tsconfig.client.json && pkg . --no-bytecode --targets node18-macos-x64,node18-macos-arm64 --out-path dist/bin",
     "lint": "eslint . --fix",
-    "test": "pnpm run build:ts && node --test --test-isolation=none tests/sell-conditions.test.js tests/activity-directory.test.js"
+    "test": "pnpm run build:ts && node --test --test-isolation=none tests/*.test.js"
   },
   "dependencies": {
     "axios": "^1.6.0",

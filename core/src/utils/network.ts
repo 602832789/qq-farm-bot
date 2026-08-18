@@ -12,15 +12,6 @@ const cryptoWasm = require('./crypto-wasm');
 const { createGatewayToken } = require('./gateway-token');
 const { startAceRuntime, stopAceRuntime } = require('../services/ace');
 
-// 延迟加载 warehouse 模块避免循环依赖
-let warehouseModule: any = null;
-function getWarehouseModule(): any {
-    if (!warehouseModule) {
-        warehouseModule = require('../services/warehouse');
-    }
-    return warehouseModule;
-}
-
 // ============ 事件发射器 (用于推送通知) ============
 const networkEvents = new EventEmitter();
 
@@ -33,6 +24,7 @@ interface ConnectionContext {
     phase: ConnectionPhase;
     intentionalClose: boolean;
     finalized: boolean;
+    loginInitialized: boolean;
 }
 
 interface SendMsgOptions {
@@ -43,6 +35,22 @@ interface SendMsgOptions {
 interface PendingRequest {
     callback: (err: Error | null, body?: Buffer, meta?: any) => void;
     expectedErrorCodes: Set<number>;
+    serviceName?: string;
+    methodName?: string;
+    startedAt?: number;
+}
+
+interface QueuedRequest {
+    context: ConnectionContext;
+    serviceName: string;
+    methodName: string;
+    bodyBytes: Buffer;
+    expectedErrorCodes: Set<number>;
+    resolve: (value: { body: Buffer; meta: any }) => void;
+    reject: (reason: Error) => void;
+    timeoutKey: string;
+    seq: number | null;
+    settled: boolean;
 }
 
 class GatewayError extends Error {
@@ -73,8 +81,62 @@ let nextConnectionId = 1;
 let clientSeq: number = 1;
 let serverSeq: number = 0;
 const pendingCallbacks = new Map<number, PendingRequest>();
+const requestQueue: QueuedRequest[] = [];
+const MAX_IN_FLIGHT_REQUESTS = 5;
+const MAX_QUEUED_REQUESTS = 100;
+let nextRequestId = 1;
 let wsErrorState = { code: 0, at: 0, message: '' };
+let lastRequestPressureLogAt = 0;
 const networkScheduler = createScheduler('network');
+
+function settleQueuedRequest(request: QueuedRequest, error?: Error, value?: { body: Buffer; meta: any }): void {
+    if (request.settled) return;
+    request.settled = true;
+    networkScheduler.clear(request.timeoutKey);
+    if (error) request.reject(error);
+    else request.resolve(value!);
+}
+
+function drainRequestQueue(): void {
+    while (requestQueue.length > 0 && pendingCallbacks.size < MAX_IN_FLIGHT_REQUESTS) {
+        const request = requestQueue.shift()!;
+        if (request.settled) continue;
+
+        if (!isCurrentConnection(request.context) || request.context.phase !== 'online') {
+            settleQueuedRequest(request, new Error(`连接未打开: ${request.methodName}`));
+            continue;
+        }
+
+        const seq = clientSeq;
+        request.seq = seq;
+        sendMsg(request.context, request.serviceName, request.methodName, request.bodyBytes, {
+            serviceName: request.serviceName,
+            methodName: request.methodName,
+            startedAt: Date.now(),
+            expectedErrorCodes: request.expectedErrorCodes,
+            callback: (err, body, meta) => {
+                if (err) settleQueuedRequest(request, err);
+                else settleQueuedRequest(request, undefined, { body: body!, meta });
+                drainRequestQueue();
+            },
+        }).then((sent) => {
+            if (sent) return;
+            pendingCallbacks.delete(seq);
+            settleQueuedRequest(request, new Error(`发送失败: ${request.methodName}`));
+            drainRequestQueue();
+        }).catch((error: any) => {
+            pendingCallbacks.delete(seq);
+            settleQueuedRequest(request, error instanceof Error ? error : new Error(String(error)));
+            drainRequestQueue();
+        });
+    }
+}
+
+function rejectAllQueuedRequests(reason: string): number {
+    const entries = requestQueue.splice(0);
+    for (const request of entries) settleQueuedRequest(request, new Error(reason));
+    return entries.length;
+}
 
 function rejectAllPendingRequests(reason = '请求被中断'): number {
     const entries = Array.from(pendingCallbacks.entries());
@@ -87,6 +149,35 @@ function rejectAllPendingRequests(reason = '请求被中断'): number {
         }
     }
     return entries.length;
+}
+
+function describePendingRequests(): string {
+    if (pendingCallbacks.size === 0) return 'none';
+    const now = Date.now();
+    return Array.from(pendingCallbacks.entries())
+        .slice(0, MAX_IN_FLIGHT_REQUESTS)
+        .map(([seq, pending]) => {
+            const method = pending.methodName || 'unknown';
+            const ageMs = pending.startedAt ? Math.max(0, now - pending.startedAt) : 0;
+            return `${method}#${seq}:${ageMs}ms`;
+        })
+        .join(',');
+}
+
+function describeQueuedRequests(): string {
+    if (requestQueue.length === 0) return 'none';
+    return requestQueue
+        .slice(0, 8)
+        .map((request) => request.methodName || 'unknown')
+        .join(',');
+}
+
+function logRequestPressure(): void {
+    const now = Date.now();
+    if (now - lastRequestPressureLogAt < 1000) return;
+    if (pendingCallbacks.size < MAX_IN_FLIGHT_REQUESTS && requestQueue.length === 0) return;
+    lastRequestPressureLogAt = now;
+    logWarn('绯荤粺', `Gateway 请求压力: pending=${pendingCallbacks.size}, queued=${requestQueue.length}, active=${describePendingRequests()}, queuedMethods=${describeQueuedRequests()}`);
 }
 
 // ============ 用户状态 (登录后设置) ============
@@ -111,26 +202,6 @@ function clearWsErrorState(): void {
     wsErrorState = { code: 0, at: 0, message: '' };
 }
 
-// 登录后从背包获取金豆豆数量
-async function fetchGoldBeanFromBag(): Promise<void> {
-    try {
-        const warehouse = getWarehouseModule();
-        const bagReply = await warehouse.getBag();
-        const items = warehouse.getBagItems(bagReply);
-        for (const item of (items || [])) {
-            const id = toNum(item && item.id);
-            const count = toNum(item && item.count);
-            if (id === 1005 && count > 0) {
-                userState.goldBean = count;
-                log('系统', `金豆豆数量: ${count}`);
-                break;
-            }
-        }
-    } catch (e) {
-        // 忽略获取失败
-    }
-}
-
 function hasOwn(obj: any, key: string): boolean {
     return !!obj && Object.prototype.hasOwnProperty.call(obj, key);
 }
@@ -144,7 +215,7 @@ async function fetchUserSettings(): Promise<void> {
         if (reply.settings) {
             log('系统', `用户设置已同步`);
         }
-    } catch (e) {
+    } catch {
         // 忽略获取失败
     }
 }
@@ -180,11 +251,17 @@ async function sendMsg(context: ConnectionContext, serviceName: string, methodNa
     }
     const seq = clientSeq;
     clientSeq += 1;
+    // 加密前登记在途请求，确保排队器能准确计算并发槽位。
+    if (pending) pendingCallbacks.set(seq, pending);
     const encoded = await encodeMsg(serviceName, methodName, bodyBytes, seq);
+    if (pending && pendingCallbacks.get(seq) !== pending) return false;
     if (!isCurrentConnection(context) || context.socket.readyState !== WebSocket.OPEN) {
+        if (pending) {
+            pendingCallbacks.delete(seq);
+            pending.callback(new Error(`连接未打开: ${methodName}`));
+        }
         return false;
     }
-    if (pending) pendingCallbacks.set(seq, pending);
     try {
         context.socket.send(encoded);
     } catch (err: any) {
@@ -215,36 +292,35 @@ function sendMsgAsync(serviceName: string, methodName: string, bodyBytes: Buffer
             return;
         }
 
-        if (pendingCallbacks.size >= 5) {
-            reject(new Error(`请求队列已满: ${methodName} (pending=${pendingCallbacks.size})`));
+        if (requestQueue.length >= MAX_QUEUED_REQUESTS) {
+            reject(new Error(`请求等待队列已满: ${methodName} (queued=${requestQueue.length}, pending=${pendingCallbacks.size})`));
             return;
         }
 
-        const seq = clientSeq;
-        const timeoutKey = `request_timeout_${seq}`;
-        networkScheduler.setTimeoutTask(timeoutKey, timeoutMs, () => {
-            pendingCallbacks.delete(seq);
-            const pending = pendingCallbacks.size;
-            reject(new Error(`请求超时: ${methodName} (seq=${seq}, pending=${pending})`));
-        });
-
-        sendMsg(context, serviceName, methodName, bodyBytes, {
+        const requestId = nextRequestId++;
+        const request: QueuedRequest = {
+            context,
+            serviceName,
+            methodName,
+            bodyBytes,
             expectedErrorCodes,
-            callback: (err, body, meta) => {
-                networkScheduler.clear(timeoutKey);
-                if (err) reject(err);
-                else resolve({ body: body!, meta });
-            },
-        }).then((sent) => {
-            if (sent) return;
-            networkScheduler.clear(timeoutKey);
-            pendingCallbacks.delete(seq);
-            reject(new Error(`发送失败: ${methodName}`));
-        }).catch((e: any) => {
-            networkScheduler.clear(timeoutKey);
-            pendingCallbacks.delete(seq);
-            reject(e);
+            resolve,
+            reject,
+            timeoutKey: `request_timeout_${requestId}`,
+            seq: null,
+            settled: false,
+        };
+        requestQueue.push(request);
+        networkScheduler.setTimeoutTask(request.timeoutKey, timeoutMs, () => {
+            if (request.seq !== null) pendingCallbacks.delete(request.seq);
+            const index = requestQueue.indexOf(request);
+            if (index >= 0) requestQueue.splice(index, 1);
+            const stage = request.seq === null ? 'queued' : 'pending';
+            settleQueuedRequest(request, new Error(`请求超时: ${methodName} (stage=${stage}, pending=${pendingCallbacks.size}, queued=${requestQueue.length}, active=${describePendingRequests()})`));
+            drainRequestQueue();
         });
+        drainRequestQueue();
+        logRequestPressure();
     });
 }
 
@@ -300,7 +376,7 @@ function handleMessage(data: Buffer): void {
                 } else {
                     pending.callback(null, msg.body, meta);
                 }
-                return;
+                
             }
         }
     } catch (err: any) {
@@ -545,7 +621,7 @@ function handleNotify(msg: any): void {
                 const notify = types.SkinChangeNotify.decode(eventBody);
                 networkEvents.emit('skinChanged', notify);
             } catch {}
-            return;
+            
         }
     } catch (e: any) {
         logWarn('推送', `解码失败: ${e.message}`);
@@ -615,6 +691,9 @@ async function sendLogin(context: ConnectionContext, onLoginSuccess?: () => void
 
         log('系统', `登录成功: ${userState.name} (Lv${userState.level})`);
 
+        if (context.loginInitialized) return;
+        context.loginInitialized = true;
+
         console.warn('');
         console.warn('========== 登录成功 ==========');
         console.warn(`  GID:    ${userState.gid}`);
@@ -636,10 +715,9 @@ async function sendLogin(context: ConnectionContext, onLoginSuccess?: () => void
             networkScheduler.clear('login_timeout');
             context.phase = 'online';
             startAceRuntime(sendMsgAsync);
-            fetchGoldBeanFromBag();
             fetchUserSettings();
             startHeartbeat(context);
-            if (onLoginSuccess) onLoginSuccess();
+            if (onLoginSuccess) await onLoginSuccess();
         } catch (e: any) {
             logWarn('登录', `登录初始化失败: ${e.message}`);
             finalizeConnection(context, {
@@ -669,7 +747,7 @@ function startHeartbeat(context: ConnectionContext): void {
         const timeSinceLastResponse = Date.now() - lastHeartbeatResponse;
         if (timeSinceLastResponse > HEARTBEAT_TIMEOUT) {
             heartbeatMissCount++;
-            logWarn('心跳', `连接可能已断开 (${Math.round(timeSinceLastResponse / 1000)}s 无响应, pending=${pendingCallbacks.size})`);
+            logWarn('心跳', `连接可能已断开 (${Math.round(timeSinceLastResponse / 1000)}s 无响应, pending=${pendingCallbacks.size}, queued=${requestQueue.length}, active=${describePendingRequests()})`);
             if (heartbeatMissCount >= MAX_HEARTBEAT_MISS) {
                 log('心跳', '心跳超时，账号将停止运行...');
                 finalizeConnection(context, {
@@ -704,6 +782,7 @@ interface DisconnectDetails {
 }
 
 function clearNetworkRuntime(reason: string): void {
+    rejectAllQueuedRequests(`请求已中断: ${reason}`);
     rejectAllPendingRequests(`请求已中断: ${reason}`);
     networkScheduler.clearAll();
     stopAceRuntime(true);
@@ -761,6 +840,7 @@ function connect(code: string | null, onLoginSuccess?: () => void): void {
         phase: 'connecting',
         intentionalClose: false,
         finalized: false,
+        loginInitialized: false,
     };
     currentConnection = context;
     ws = socket;

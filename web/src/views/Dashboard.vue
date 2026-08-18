@@ -523,8 +523,8 @@ useIntervalFn(updateCountdowns, 1000)
 
       <!-- Assets & Status -->
       <div class="flex flex-col justify-between farm-card rounded-2xl bg-white p-5 shadow-md dark:bg-gray-800">
-        <div class="grid grid-cols-2 gap-x-4 gap-y-3">
-          <div class="border-b border-r border-gray-100 pb-3 pr-3 dark:border-gray-700">
+        <div class="grid grid-cols-2 gap-px bg-gray-100 dark:bg-gray-700">
+          <div class="bg-white pb-3 pr-3 dark:bg-gray-800">
             <div class="flex items-center gap-1.5 text-xs text-gray-500">
               <div class="i-fas-coins text-yellow-500" />
               金币
@@ -540,7 +540,7 @@ useIntervalFn(updateCountdowns, 1000)
               {{ (status?.sessionGoldGained || 0) > 0 ? '+' : '' }}{{ status?.sessionGoldGained || 0 }}
             </div>
           </div>
-          <div class="border-b border-gray-100 pb-3 pl-3 text-right dark:border-gray-700">
+          <div class="bg-white pb-3 pl-3 text-right dark:bg-gray-800">
             <div class="flex items-center justify-end gap-1.5 text-xs text-gray-500">
               <div class="i-fas-ticket-alt text-emerald-400" />
               点券
@@ -556,7 +556,7 @@ useIntervalFn(updateCountdowns, 1000)
               {{ (status?.sessionCouponGained || 0) > 0 ? '+' : '' }}{{ status?.sessionCouponGained || 0 }}
             </div>
           </div>
-          <div class="border-r border-gray-100 pr-3 pt-3 dark:border-gray-700">
+          <div class="bg-white pr-3 pt-3 dark:bg-gray-800">
             <div class="flex items-center gap-1.5 text-xs text-gray-500">
               <div class="i-fas-seedling text-amber-500" />
               金豆豆
@@ -565,7 +565,7 @@ useIntervalFn(updateCountdowns, 1000)
               {{ formatAssetAmount(status?.status?.goldBean) }}
             </div>
           </div>
-          <div class="pl-3 pt-3 text-right">
+          <div class="bg-white pl-3 pt-3 text-right dark:bg-gray-800">
             <div class="flex items-center justify-end gap-1.5 text-xs text-gray-500">
               <div class="i-fas-gem text-cyan-500" />
               钻石

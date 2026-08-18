@@ -193,7 +193,7 @@ class TsdkRuntime {
                 p: (filePtr: number) => {
                     try {
                         const stat = fs.statSync(this.resolveDataPath(this.readCString(filePtr)));
-                        return this.exports?.y(stat.mode, Math.min(0x7fffffff, stat.size), Math.floor(stat.atimeMs), Math.floor(stat.mtimeMs)) || 0;
+                        return this.exports?.y(stat.mode, Math.min(0x7FFFFFFF, stat.size), Math.floor(stat.atimeMs), Math.floor(stat.mtimeMs)) || 0;
                     } catch {
                         return 0;
                     }

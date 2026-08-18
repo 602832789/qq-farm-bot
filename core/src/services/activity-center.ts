@@ -40,6 +40,14 @@ const QINGMEI_SHARE_SOURCE = 11;
 const QINGMEI_SHARE_SCENE = 215;
 const QINGMEI_SHARED_SETTLEMENT_MODE = 2;
 const QINGMEI_DAILY_ALREADY_CLAIMED_CODE = 1034014;
+const QIXI_GROUP_ID = '2026081800';
+const QIXI_BRIDGE_ACTIVITY_ID = '2026081801';
+const QIXI_GIFT_ACTIVITY_ID = '2026081802';
+const QIXI_BRIDGE_OPERATE_TYPE = 25;
+const QIXI_GIFT_OPERATE_TYPE = 26;
+const QIXI_FEATHER_ITEM_ID = '1024';
+const QIXI_SACHET_ITEM_ID = '1025';
+const QIXI_RECEIVED_SACHET_ITEM_ID = '1026';
 const MAX_SIGNED_INT64 = 9223372036854775807n;
 const SECONDS_PER_DAY = 86400;
 const BEIJING_UTC_OFFSET_SECONDS = 8 * 60 * 60;
@@ -75,6 +83,7 @@ function positiveDecimal(value: unknown, code: string, fieldName: string): strin
 }
 
 let mutationTail: Promise<void> = Promise.resolve();
+let pendingSnapshotRequest: Promise<any> | null = null;
 let qingMeiSeedClaimedDateKey = '';
 const lastConstellationState = new Map<string, any>();
 const lastConstellationDynamicState = new Map<string, any>();
@@ -571,6 +580,131 @@ async function getCurrentQingMeiActivity() {
     return qingMeiDto(reply, ingredients);
 }
 
+async function queryQixiGroupReply(): Promise<any> {
+    const body = Buffer.from(types.GetGroupRequest.encode(types.GetGroupRequest.create({
+        group_id: QIXI_GROUP_ID,
+    })).finish());
+    const { body: replyBody } = await sendMsgAsync(
+        'gamepb.activitypb.ActivityService',
+        'GetGroup',
+        body,
+    );
+    return types.GetGroupReply.decode(replyBody);
+}
+
+function findQixiChild(groupReply: any, activityId: string): any | null {
+    const children = Array.isArray(groupReply?.group?.children) ? groupReply.group.children : [];
+    return children.find((child: any) => int64String(child?.activity?.activity_id) === activityId) || null;
+}
+
+function qixiActivityIsActive(activity: any, serverTime = getServerTimeSec()): boolean {
+    const beginTime = int64Number(activity?.begin_time);
+    const endTime = int64Number(activity?.end_time);
+    return (beginTime <= 0 || serverTime >= beginTime) && (endTime <= 0 || serverTime <= endTime);
+}
+
+function qixiDto(groupReply: any, balances: Map<string, string> | null = null) {
+    const bridgeChild = findQixiChild(groupReply, QIXI_BRIDGE_ACTIVITY_ID);
+    const giftChild = findQixiChild(groupReply, QIXI_GIFT_ACTIVITY_ID);
+    const bridgeActivity = bridgeChild?.activity || null;
+    const giftActivity = giftChild?.activity || bridgeActivity;
+    if (!bridgeActivity || !giftActivity) {
+        throw businessError('QIXI_UNAVAILABLE', '服务端未发现鹊桥寄情活动');
+    }
+
+    const config = bridgeChild?.qixi_bridge || {};
+    const gift = giftChild?.qixi_gift || {};
+    const currentStage = int64Number(config.current_stage);
+    const bridgeClaimable = int64String(bridgeActivity.field_23) !== '0';
+    const stages = (Array.isArray(config.stages) ? config.stages : []).map((stage: any) => {
+        const stageNumber = int64Number(stage?.stage);
+        const statusCode = int64String(stage?.status);
+        const completed = statusCode === '2' || (currentStage > 0 && stageNumber > 0 && stageNumber <= currentStage);
+        const claimable = bridgeClaimable && stageNumber === currentStage;
+        return {
+            id: String(stageNumber),
+            stage: stageNumber,
+            statusCode,
+            completed,
+            claimed: completed && !claimable,
+            claimable,
+            current: stageNumber === currentStage,
+            cost: itemDto(stage?.cost),
+            rewards: (Array.isArray(stage?.rewards) ? stage.rewards : []).map(itemDto),
+        };
+    });
+
+    const readBalance = (itemId: string): string => balances?.get(itemId) || '0';
+    const featherBalance = balances ? readBalance(QIXI_FEATHER_ITEM_ID) : null;
+    const sachetBalance = balances ? readBalance(QIXI_SACHET_ITEM_ID) : null;
+    const receivedSachetBalance = balances ? readBalance(QIXI_RECEIVED_SACHET_ITEM_ID) : null;
+    const active = qixiActivityIsActive(bridgeActivity);
+    const rules = textContent(bridgeActivity.extra);
+    const exchange = gift?.exchange || {};
+
+    return {
+        groupId: QIXI_GROUP_ID,
+        bridgeActivityId: QIXI_BRIDGE_ACTIVITY_ID,
+        giftActivityId: QIXI_GIFT_ACTIVITY_ID,
+        activityId: QIXI_BRIDGE_ACTIVITY_ID,
+        name: bytesToText(bridgeActivity.name) || '鹊桥寄情',
+        title: bytesToText(bridgeActivity.name) || '鹊桥寄情',
+        startTime: int64String(bridgeActivity.begin_time),
+        endTime: int64String(bridgeActivity.end_time),
+        serverTime: String(getServerTimeSec()),
+        active,
+        rules,
+        feather: itemDto({ item_id: QIXI_FEATHER_ITEM_ID, count: featherBalance || '0' }),
+        sachet: itemDto({ item_id: QIXI_SACHET_ITEM_ID, count: sachetBalance || '0' }),
+        receivedSachet: itemDto({ item_id: QIXI_RECEIVED_SACHET_ITEM_ID, count: receivedSachetBalance || '0' }),
+        balances: {
+            feather: featherBalance,
+            sachet: sachetBalance,
+            receivedSachet: receivedSachetBalance,
+            known: balances !== null,
+        },
+        bridge: {
+            currentStage,
+            stages,
+            claimable: bridgeClaimable,
+            rewardRedDot: bridgeClaimable,
+            displayItems: (Array.isArray(config.display_items) ? config.display_items : []).map(itemDto),
+        },
+        gift: {
+            sentCount: int64String(gift.sent_count),
+            field2Code: int64String(gift.field_2),
+            field3Code: int64String(gift.field_3),
+            exchange: {
+                sentItem: itemDto(exchange.sent_item),
+                receivedItem: itemDto(exchange.received_item),
+                field3: !!exchange.field_3,
+                enabled: !!exchange.enabled,
+            },
+        },
+        actions: {
+            bridge: {
+                enabled: active && bridgeClaimable,
+                available: active && bridgeClaimable,
+                availabilityKnown: true,
+            },
+            gift: {
+                enabled: active && (balances === null || BigInt(sachetBalance || '0') > 0n),
+                available: active && (balances === null || BigInt(sachetBalance || '0') > 0n),
+                availabilityKnown: balances !== null,
+            },
+        },
+    };
+}
+
+async function getCurrentQixiActivity() {
+    const groupReply = await queryQixiGroupReply();
+    let balances: Map<string, string> | null = null;
+    try {
+        balances = readBagBalances(await getBag(), [QIXI_FEATHER_ITEM_ID, QIXI_SACHET_ITEM_ID, QIXI_RECEIVED_SACHET_ITEM_ID]);
+    } catch {}
+    return qixiDto(groupReply, balances);
+}
+
 function findSeasonActivity(seasonReply: any, typeCode: string): any | null {
     const activities = Array.isArray(seasonReply?.season_info?.activities) ? seasonReply.season_info.activities : [];
     return activities.find((activity: any) => int64String(activity?.type) === typeCode) || null;
@@ -758,6 +892,14 @@ function settledError(entry: SettledEntry): string | null {
     return String(entry.reason?.message || entry.reason || '未知错误');
 }
 
+async function settleRequest(operation: () => Promise<any>): Promise<SettledEntry> {
+    try {
+        return { status: 'fulfilled', value: await operation() };
+    } catch (reason) {
+        return { status: 'rejected', reason };
+    }
+}
+
 function buildActions(season: any, solarTerms: any, constellation: any = null, shop: any = null) {
     const hasPass = !!season?.pass;
     const claimablePassCount = hasPass
@@ -809,8 +951,8 @@ function buildActions(season: any, solarTerms: any, constellation: any = null, s
     };
 }
 
-function buildActivityDirectory(windows: any[], season: any, shop: any, solarTerms: any, constellation: any) {
-    const gameplayBindings = buildActivityGameplayBindings({ season, shop, solarTerms, constellation });
+function buildActivityDirectory(windows: any[], season: any, shop: any, solarTerms: any, constellation: any, qixi: any = null) {
+    const gameplayBindings = buildActivityGameplayBindings({ season, shop, solarTerms, constellation, qixi });
     const groups: any[] = [];
     for (const window of windows) {
         const id = String(window?.id || '').trim();
@@ -844,25 +986,24 @@ function buildActivityDirectory(windows: any[], season: any, shop: any, solarTer
     }));
 }
 
-async function getActivityCenterSnapshot(shopOverride: any = null) {
+async function buildActivityCenterSnapshot(shopOverride: any = null) {
     // 星座 type=21 是写操作，读取快照只能使用赛季发现信息和最近一次写操作回包。
-    // 青梅活动已下线；保留独立接口和实现，但不再随活动中心快照自动查询。
-    const [seasonResult, solarResult, activityListResult] = await Promise.allSettled([
-        querySeason(),
-        querySolarTerms(),
-        getActivityWindows(),
-    ]);
-    const qingMeiResult: SettledEntry = { status: 'fulfilled', value: null };
+    // Gateway calls are intentionally serial. The game connection can stop
+    // responding when activity metadata and bag reads are sent as one burst.
+    const seasonResult = await settleRequest(querySeason);
+    const solarResult = await settleRequest(querySolarTerms);
+    const activityListResult = await settleRequest(getActivityWindows);
+    const qixiResult = await settleRequest(getCurrentQixiActivity);
     const rawSeason = settledValue(seasonResult);
     const season = rawSeason ? normalizeSeason(rawSeason) : null;
     const solarTerms = solarResult.status === 'fulfilled' ? normalizeSolarTerms(solarResult.value) : null;
-    const qingMei = settledValue(qingMeiResult);
+    const qixi = settledValue(qixiResult);
 
     let shopResult: SettledEntry;
     if (shopOverride) {
         shopResult = { status: 'fulfilled', value: shopOverride };
     } else if (rawSeason) {
-        [shopResult] = await Promise.allSettled([queryShopFromSeason(rawSeason)]);
+        shopResult = await settleRequest(() => queryShopFromSeason(rawSeason));
     } else {
         shopResult = { status: 'rejected', reason: new Error('赛季查询失败，无法发现活动商店 ID') };
     }
@@ -879,31 +1020,51 @@ async function getActivityCenterSnapshot(shopOverride: any = null) {
             loadMergedConstellationState(rawSeason, constellationActivity)
         )
         : null;
-    const actions = buildActions(season, solarTerms, constellation, shop);
+    const actions = {
+        ...buildActions(season, solarTerms, constellation, shop),
+        qixiBridge: qixi?.actions?.bridge || { enabled: false, available: false, availabilityKnown: false },
+        qixiGift: qixi?.actions?.gift || { enabled: false, available: false, availabilityKnown: false },
+    };
     const activityWindows = settledValue(activityListResult) || [];
     return {
         serverTime: getServerTimeSec(),
-        activities: buildActivityDirectory(activityWindows, season, shop, solarTerms, constellation),
+        activities: buildActivityDirectory(activityWindows, season, shop, solarTerms, constellation, qixi),
         season,
         constellation,
         shop,
         solarTerms,
-        qingMei,
+        qixi,
         capabilities: {
             claimPass: actions.claimPass.supported,
             lightConstellation: actions.lightConstellation.supported,
             claimSolar: actions.claimSolar.supported,
             exchange: actions.exchange.supported,
+            qixiBridge: !!qixi,
+            qixiGift: !!qixi,
         },
         actions,
         errors: {
             season: settledError(seasonResult),
             shop: settledError(shopResult),
             solarTerms: settledError(solarResult),
-            qingMei: settledError(qingMeiResult),
+            qixi: settledError(qixiResult),
             activities: settledError(activityListResult),
         },
     };
+}
+
+function getActivityCenterSnapshot(shopOverride: any = null) {
+    if (shopOverride) return buildActivityCenterSnapshot(shopOverride);
+    if (pendingSnapshotRequest) return pendingSnapshotRequest;
+
+    const request = buildActivityCenterSnapshot();
+    pendingSnapshotRequest = request;
+    request.then(() => {
+        if (pendingSnapshotRequest === request) pendingSnapshotRequest = null;
+    }, () => {
+        if (pendingSnapshotRequest === request) pendingSnapshotRequest = null;
+    });
+    return request;
 }
 
 async function claimQingMeiDailySeed() {
@@ -1010,6 +1171,92 @@ async function settleQingMeiBrew() {
             message: settlement
                 ? `分享出售成功（1.5倍），获得 ${int64String(settlement.total_gold)} 金币`
                 : '青梅酿已按分享奖励出售（1.5倍）',
+            snapshot: await getActivityCenterSnapshot(),
+        };
+    });
+}
+
+async function claimQixiBridgeRewards() {
+    return serializeMutation(async () => {
+        const activity = await getCurrentQixiActivity();
+        if (!activity.actions.bridge.enabled) {
+            throw businessError('QIXI_BRIDGE_UNAVAILABLE', '当前没有可领取的鹊桥奖励');
+        }
+
+        const request = types.ClaimQixiBridgeRewardsRequest.create({
+            activity_id: activity.bridgeActivityId,
+            operate_type: QIXI_BRIDGE_OPERATE_TYPE,
+            params: { claim_mode: 0 },
+        });
+        const body = Buffer.from(types.ClaimQixiBridgeRewardsRequest.encode(request).finish());
+        const { body: replyBody } = await sendMsgAsync(
+            'gamepb.activitypb.ActivityService',
+            'Operate',
+            body,
+        );
+        const reply = types.ActivityOperateReply.decode(replyBody);
+        if (int64String(reply.activity_id) !== activity.bridgeActivityId) {
+            throw businessError('QIXI_RESPONSE_INVALID', '鹊桥奖励回包的活动 ID 不匹配');
+        }
+        if (int64String(reply.operate_type) !== String(QIXI_BRIDGE_OPERATE_TYPE)) {
+            throw businessError('QIXI_RESPONSE_INVALID', '鹊桥奖励回包的操作类型不匹配');
+        }
+        const result = reply.qixi_bridge_result;
+        const rewards = (Array.isArray(result?.rewards) ? result.rewards : (Array.isArray(reply.rewards) ? reply.rewards : []))
+            .map(itemDto);
+        const claimedStages = (Array.isArray(result?.claimed_stages) ? result.claimed_stages : []).map(int64String);
+        return {
+            claimedStages,
+            rewards,
+            message: claimedStages.length > 0
+                ? `已完成第 ${claimedStages.join('、')} 阶段鹊桥并领取奖励`
+                : '鹊桥奖励领取成功',
+            snapshot: await getActivityCenterSnapshot(),
+        };
+    });
+}
+
+async function giftQixiSachet(friendGidInput: unknown, countInput: unknown) {
+    const friendGid = positiveDecimal(friendGidInput, 'INVALID_QIXI_FRIEND_GID', 'friendGid');
+    const count = positiveDecimal(countInput, 'INVALID_QIXI_SACHET_COUNT', 'count');
+
+    return serializeMutation(async () => {
+        const activity = await getCurrentQixiActivity();
+        if (!activity.actions.gift.enabled) {
+            throw businessError('QIXI_GIFT_UNAVAILABLE', '当前无法赠送鹊羽香囊');
+        }
+        if (activity.balances.known && BigInt(activity.balances.sachet || '0') < BigInt(count)) {
+            throw businessError('INSUFFICIENT_QIXI_SACHET', '鹊羽香囊数量不足');
+        }
+
+        const request = types.GiftQixiSachetRequest.create({
+            activity_id: activity.giftActivityId,
+            operate_type: QIXI_GIFT_OPERATE_TYPE,
+            params: {
+                friend_gid: friendGid,
+                count,
+            },
+        });
+        const body = Buffer.from(types.GiftQixiSachetRequest.encode(request).finish());
+        const { body: replyBody } = await sendMsgAsync(
+            'gamepb.activitypb.ActivityService',
+            'Operate',
+            body,
+        );
+        const reply = types.ActivityOperateReply.decode(replyBody);
+        if (int64String(reply.activity_id) !== activity.giftActivityId) {
+            throw businessError('QIXI_RESPONSE_INVALID', '鹊羽香囊回包的活动 ID 不匹配');
+        }
+        if (int64String(reply.operate_type) !== String(QIXI_GIFT_OPERATE_TYPE)) {
+            throw businessError('QIXI_RESPONSE_INVALID', '鹊羽香囊回包的操作类型不匹配');
+        }
+        if (reply.qixi_gift_result && !reply.qixi_gift_result.success) {
+            throw businessError('QIXI_GIFT_FAILED', '鹊羽香囊赠送未成功');
+        }
+        return {
+            friendGid,
+            count,
+            message: `已向好友 ${friendGid} 赠送 ${count} 个鹊羽香囊`,
             snapshot: await getActivityCenterSnapshot(),
         };
     });
@@ -1300,6 +1547,7 @@ module.exports = {
     getCurrentSeasonEvent,
     getCurrentStarSandShop,
     getCurrentSolarTerms,
+    getCurrentQixiActivity,
     claimBattlePassRewards,
     exchangeStarSandGoods,
     lightConstellation,
@@ -1309,4 +1557,6 @@ module.exports = {
     startQingMeiBrew,
     continueQingMeiBrew,
     settleQingMeiBrew,
+    claimQixiBridgeRewards,
+    giftQixiSachet,
 };

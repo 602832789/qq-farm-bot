@@ -1,5 +1,5 @@
-export {};
 import type { Account, AccountsData } from '../../types/account';
+export {};
 
 const fs = require('node:fs');
 const { ensureDataDir } = require('../../config/runtime-paths');

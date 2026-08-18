@@ -3,25 +3,25 @@
  */
 
 export {
+    removeKnownFriendGid,
+    syncKnownFriendGidsFromFriends,
+    syncKnownFriendGidsFromRecentVisitors,
+} from './gid-manager';
+
+export {
     checkFriends,
-    startFriendCheckLoop,
-    stopFriendCheckLoop,
-    refreshFriendCheckLoop,
+    getOperationLimits,
     isHelpExpLimitReached,
     onFriendApplicationReceived,
+    refreshFriendCheckLoop,
     runBadOnceOnStartup,
-    getOperationLimits,
+    startFriendCheckLoop,
+    stopFriendCheckLoop,
 } from './scheduler';
 
 export {
-    getFriendsList,
-    getFriendLandsDetail,
-    doFriendOperation,
     clearFriendsListCache,
+    doFriendOperation,
+    getFriendLandsDetail,
+    getFriendsList,
 } from './visit-strategy';
-
-export {
-    syncKnownFriendGidsFromFriends,
-    syncKnownFriendGidsFromRecentVisitors,
-    removeKnownFriendGid,
-} from './gid-manager';

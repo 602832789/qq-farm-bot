@@ -391,3 +391,35 @@ function claim() {
   }
 }
 </style>
+
+<style scoped>
+/* Keep the term selector and reward panel; the oversized seasonal title is intentionally omitted. */
+.solar-hero {
+  display: none;
+}
+.solar-reward {
+  grid-column: 1 / -1;
+}
+.solar-reward__items {
+  justify-content: center;
+}
+@media (max-width: 760px) {
+  .solar-reward {
+    min-height: auto;
+    padding: 16px;
+    text-align: center;
+  }
+  .solar-reward__items :deep(.reward-item) {
+    width: 46px;
+    height: 46px;
+  }
+  .solar-reward button {
+    width: 96px;
+    min-height: 34px;
+    margin: 12px auto 0;
+    padding: 7px 10px;
+    border-radius: 8px;
+    font-size: 13px;
+  }
+}
+</style>

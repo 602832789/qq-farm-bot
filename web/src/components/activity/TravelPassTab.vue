@@ -55,7 +55,7 @@ const canClaim = computed(() => Boolean(props.enabled && hasClaimableNode.value 
           <b>{{ node.level || '--' }}</b><small>等级</small>
         </div>
         <div class="reward-group">
-          <RewardItem v-for="(item, index) in node.rewards" :key="item.id || index" :name="item.name" :count="item.count" :image="item.image" :rarity="item.rarity" :locked="item.locked || node.locked" />
+          <RewardItem v-for="(item, index) in node.rewards" :key="item.id || index" :name="item.name" :count="item.count" :image="item.image" :rarity="item.rarity" :locked="item.locked || node.locked" compact />
         </div>
         <span v-if="node.claimed" class="state">已领取</span>
       </article>
@@ -477,26 +477,83 @@ const canClaim = computed(() => Boolean(props.enabled && hasClaimableNode.value 
 }
 @media (max-width: 760px) {
   .travel-tab {
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
     padding: 14px;
   }
   .travel-list {
+    min-height: 0;
+    flex: 1;
     grid-template-columns: 1fr;
+    align-content: start;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
   }
   .travel-progress {
-    grid-template-columns: 64px minmax(0, 1fr);
-    gap: 10px;
-    padding: 13px;
+    min-height: 68px;
+    grid-template-columns: 48px minmax(0, 1fr);
+    gap: 8px;
+    padding: 9px 10px;
+    border-radius: 12px;
   }
   .travel-progress__badge {
-    width: 60px;
-    height: 60px;
+    width: 46px;
+    height: 46px;
+    border-radius: 10px;
   }
   .travel-progress__badge b {
-    font-size: 24px;
+    font-size: 19px;
+  }
+  .travel-progress__badge small {
+    font-size: 9px;
+  }
+  .travel-progress__main strong {
+    font-size: 12px;
+  }
+  .score {
+    margin-top: 3px;
+    font-size: 12px;
+  }
+  .progress {
+    height: 6px;
+    margin-top: 5px;
+  }
+  .travel-row {
+    min-height: 72px;
+    grid-template-columns: 52px minmax(0, 1fr);
+  }
+  .level-medal {
+    width: 44px;
+    height: 50px;
+    margin-left: 4px;
+  }
+  .level-medal b {
+    font-size: 18px;
+  }
+  .level-medal small {
+    font-size: 8px;
+  }
+  .reward-group {
+    gap: 4px;
+    padding: 5px 3px;
+  }
+  .travel-row :deep(.reward-item) {
+    width: 46px;
+    height: 46px;
   }
   .claim-action {
-    margin: 14px -14px -14px;
-    padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+    position: static;
+    flex: none;
+    margin: 8px -14px -14px;
+    padding: 8px 14px;
+  }
+  .travel-empty {
+    min-height: 0;
+    flex: 1;
   }
 }
 </style>

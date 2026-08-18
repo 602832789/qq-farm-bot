@@ -44,6 +44,8 @@
 - 观星礼录：查看星座进度、点亮星座并领取奖励
 - 星砂商店：查看星砂余额和活动商品，执行兑换
 - 节令活动：查看当前节令并领取开放奖励
+- 鹊桥寄情：查看筑桥阶段、领取鹊桥奖励，并向好友赠送鹊羽香囊
+- 活动快照请求采用串行和重复请求合并，避免登录或切换账号时占满游戏网关请求队列
 - 青梅酿酒活动已下线，前端不再提供入口；相关协议和实现暂时保留用于兼容
 
 ### Web 控制面板
@@ -115,18 +117,18 @@ pnpm dev:core
 git clone https://github.com/liyangpengs/qq-farm-bot.git
 cd qq-farm-bot
 corepack enable
-pnpm start
+bash ./start.sh
 
 # 查看日志
 tail -f app_dev.log
 
 # 停止服务
-pnpm stop
+bash ./stop.sh
 ```
 
-`pnpm start` 会检查当前操作系统所需的依赖入口；依赖未安装或来自其他操作系统时会自动重建工作区依赖。前端源码有变化时使用低内存模式构建，构建完成后在后台启动后端，进程号记录在 `app_dev.pid`。没有代码变化的普通重启会直接复用 `web/dist/`，不会重复构建。依赖更新后也可以手动执行 `pnpm install`。
+`start.sh` 会先执行 `pnpm run install:all`，再后台运行 `pnpm dev`；前端构建产物写入 `web/dist/`，后端日志写入 `app_dev.log`，进程号记录在 `app_dev.pid`。依赖更新后也可以手动执行 `pnpm install`。停止服务使用 `stop.sh`；根目录没有 `pnpm start` 或 `pnpm stop` 命令。
 
-在 2 核 2GB 等低配置服务器上，启动构建默认将 Node.js 堆内存限制为 768MB。前端类型检查已与生产构建拆分，需要单独检查时执行 `pnpm typecheck:web`。
+前端类型检查已与生产构建拆分，需要单独检查时执行 `pnpm typecheck:web`。
 
 ### Docker Compose
 
@@ -138,6 +140,9 @@ docker compose up -d --build
 # 查看状态和日志
 docker compose ps
 docker compose logs -f
+
+# 检查 Compose 配置展开结果
+docker compose config
 
 # 停止并移除容器
 docker compose down
@@ -151,6 +156,8 @@ TZ=Asia/Shanghai
 ```
 
 Docker 数据保存在 `qq-farm-data` 和 `qq-farm-logs` 命名卷中。执行 `docker compose down` 不会删除这些卷；不要使用 `docker compose down -v`，除非确认要删除运行数据。
+
+Compose 使用根目录作为构建上下文，Dockerfile 位于 `core/Dockerfile`。镜像构建阶段会先构建 Web 前端和 Core 后端，运行阶段只保留生产依赖、编译产物、协议定义、游戏配置和 TSDK WASM。容器内部固定监听 `3007`，根目录 `.env` 中的 `PORT` 只用于宿主机端口映射。
 
 ### 二进制发布版
 
@@ -216,6 +223,8 @@ Code 具有时效性；登录失败时应先重新获取 Code 或重新扫码。
 | `organic` | 仅有机化肥 | 只使用有机化肥 |
 | `none` | 不施肥 | 关闭自动施肥 |
 
+`smart` 模式施加有机肥后会重新检查一次自有土地，并立即收获本轮因施肥进入成熟状态的作物；该追收最多执行一次，不会形成循环请求。
+
 ## 数据与备份
 
 | 运行方式 | 数据位置 |
@@ -267,6 +276,29 @@ qq-farm-bot/
 | `pnpm build:core` | 编译后端 TypeScript |
 | `pnpm build` | 依次构建前端和后端 |
 | `pnpm package:release` | 构建四个平台的独立二进制文件 |
+| `pnpm -C core test` | 编译 Core 并运行抓包协议、活动和请求并发测试 |
+
+### 清理构建产物
+
+```bash
+# Linux/macOS
+bash ./clean.sh
+
+# Windows
+clean-for-pack.bat
+```
+
+两个脚本默认只删除依赖、构建产物、测试缓存和运行日志，保留 `core/data/` 中的账号与配置。确认要删除运行数据时使用 `--data`；无人值守场景追加 `--yes`。
+
+### 抓包协议分析
+
+```bash
+# 解码指定抓包目录中的协议帧
+pnpm -C core exec tsx ../tools/decode-latest-protocols.js <capture-dir>
+
+# 检查抓包 RPC 与本地 Protobuf 定义的兼容性
+pnpm -C core exec tsx ../tools/audit-capture-compatibility.js <capture-dir>
+```
 
 ## 项目文档
 

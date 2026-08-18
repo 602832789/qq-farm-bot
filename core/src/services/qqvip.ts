@@ -45,29 +45,22 @@ function isAlreadyClaimedError(err: any): boolean {
     return msg.includes('code=1021002') || msg.includes('今日已领取') || msg.includes('已领取');
 }
 
-async function refreshVipInfo(): Promise<any> {
-    const body: Uint8Array = types.RefreshVipInfoRequest.encode(types.RefreshVipInfoRequest.create({})).finish();
-    const { body: replyBody } = await sendMsgAsync('gamepb.qqvippb.QQVipService', 'RefreshVipInfo', body);
-    return types.RefreshVipInfoReply.decode(replyBody);
-}
-
-async function getDailyGiftStatus(): Promise<any> {
+async function getQQVipRewardsStatus(): Promise<any> {
     const body: Uint8Array = types.GetQQVipRewardsStatusRequest.encode(types.GetQQVipRewardsStatusRequest.create({})).finish();
     const { body: replyBody } = await sendMsgAsync('gamepb.qqvippb.QQVipService', 'GetQQVipRewardsStatus', body);
     return types.GetQQVipRewardsStatusReply.decode(replyBody);
 }
 
-function getAvailableVipTypes(status: any): number[] {
-    const configs: any[] = Array.isArray(status && status.reward_configs) ? status.reward_configs : [];
-    return configs
-        .map(config => toNum(config && config.vip_type))
-        .filter((vipType, index, list) => (vipType === 1 || vipType === 2) && list.indexOf(vipType) === index);
+async function refreshVipInfo(): Promise<void> {
+    const body: Uint8Array = types.RefreshVipInfoRequest.encode(types.RefreshVipInfoRequest.create({})).finish();
+    const { body: replyBody } = await sendMsgAsync('gamepb.qqvippb.QQVipService', 'RefreshVipInfo', body);
+    types.RefreshVipInfoReply.decode(replyBody);
 }
 
-async function claimDailyGift(vipTypes: number[]): Promise<any> {
-    const body: Uint8Array = types.ClaimQQVipRewardsRequest.encode(
-        types.ClaimQQVipRewardsRequest.create({ vip_types: vipTypes }),
-    ).finish();
+async function claimQQVipRewards(rewardTypes: number[]): Promise<any> {
+    const body: Uint8Array = types.ClaimQQVipRewardsRequest.encode(types.ClaimQQVipRewardsRequest.create({
+        reward_types: rewardTypes,
+    })).finish();
     const { body: replyBody } = await sendMsgAsync('gamepb.qqvippb.QQVipService', 'ClaimQQVipRewards', body);
     return types.ClaimQQVipRewardsReply.decode(replyBody);
 }
@@ -80,11 +73,17 @@ async function performDailyVipGift(force: boolean = false): Promise<boolean> {
 
     try {
         await refreshVipInfo();
-        const status: any = await getDailyGiftStatus();
-        const availableVipTypes: number[] = getAvailableVipTypes(status);
-        lastHasGift = availableVipTypes.length > 0;
-        lastCanClaim = availableVipTypes.length > 0;
-        if (!availableVipTypes.length) {
+        const status: any = await getQQVipRewardsStatus();
+        const rewardStatuses: any[] = Array.isArray(status && status.reward_statuses)
+            ? status.reward_statuses
+            : [];
+        const rewardTypes: number[] = rewardStatuses
+            .filter((item: any) => item && item.enabled === true && item.can_claim === true)
+            .map((item: any) => toNum(item.reward_type))
+            .filter((rewardType: number) => rewardType > 0);
+        lastHasGift = rewardStatuses.some((item: any) => item && item.enabled === true);
+        lastCanClaim = rewardTypes.length > 0;
+        if (rewardTypes.length === 0) {
             markDoneToday();
             lastResult = 'none';
             log('会员', '今日暂无可领取会员礼包', {
@@ -94,7 +93,7 @@ async function performDailyVipGift(force: boolean = false): Promise<boolean> {
             });
             return false;
         }
-        const rep: any = await claimDailyGift(availableVipTypes);
+        const rep: any = await claimQQVipRewards(rewardTypes);
         const items: any[] = Array.isArray(rep && rep.items) ? rep.items : [];
         const reward: string = getRewardSummary(items);
         log('会员', reward ? `领取成功 → ${reward}` : '领取成功', {
@@ -102,7 +101,7 @@ async function performDailyVipGift(force: boolean = false): Promise<boolean> {
             event: DAILY_KEY,
             result: 'ok',
             count: items.length,
-            vipTypes: availableVipTypes,
+            rewardTypes,
         });
         lastClaimAt = Date.now();
         markDoneToday();

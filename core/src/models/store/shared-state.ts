@@ -1,5 +1,5 @@
+import type { AccountConfig, AutomationConfig, BagSeedFallbackStrategy, FertilizerLandType, GlobalConfig, IntervalConfig, OfflineReminder, PlantingStrategy, QuietHoursConfig } from '../../types/config';
 export {};
-import type { AccountConfig, PlantingStrategy, BagSeedFallbackStrategy, FertilizerLandType, IntervalConfig, OfflineReminder, AutomationConfig, QuietHoursConfig, GlobalConfig } from '../../types/config';
 
 const fs = require('node:fs');
 const path = require('node:path');

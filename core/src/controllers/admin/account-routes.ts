@@ -1,6 +1,6 @@
-export {};
 import type { Application, Request, Response } from 'express';
 import type { AdminContext } from './context';
+export {};
 
 /**
  * Account CRUD routes, account-logs, logs, and settings routes.

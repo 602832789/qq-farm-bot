@@ -926,9 +926,9 @@ export async function visitFriendForSteal(friend: any, totalActions: any, myGid:
         // steal_num 为 bytes 类型，手动解析 varint
         let maxSteal = 2;
         if (plant.steal_num && plant.steal_num.length > 0) {
-            let v = 0, s = 0;
+            let v = 0; let s = 0;
             for (let i = 0; i < plant.steal_num.length && i < 10; i++) {
-                v |= (plant.steal_num[i] & 0x7f) << s;
+                v |= (plant.steal_num[i] & 0x7F) << s;
                 if ((plant.steal_num[i] & 0x80) === 0) break;
                 s += 7;
             }

@@ -137,9 +137,9 @@ button[data-active] {
     width: auto;
     grid-template-columns: none;
     grid-auto-flow: column;
-    grid-auto-columns: 132px;
-    grid-auto-rows: 54px;
-    gap: 10px;
+    grid-auto-columns: 108px;
+    grid-auto-rows: 44px;
+    gap: 7px;
     overflow-x: auto;
     padding: 4px 8px 10px;
     border: 0;
@@ -153,20 +153,20 @@ button[data-active] {
     display: none;
   }
   button {
-    min-width: 132px;
-    min-height: 54px;
+    min-width: 108px;
+    min-height: 44px;
     justify-content: flex-start;
-    gap: 8px;
-    padding: 9px 12px;
-    border-radius: 12px;
+    gap: 6px;
+    padding: 7px 9px;
+    border-radius: 9px;
     scroll-snap-align: start;
   }
   .activity-nav__icon {
-    width: 18px;
-    font-size: 18px;
+    width: 16px;
+    font-size: 16px;
   }
   .activity-nav__copy strong {
-    font-size: 12px;
+    font-size: 11px;
   }
   .activity-nav__copy small {
     display: none;

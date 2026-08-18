@@ -386,3 +386,9 @@ h3 {
   }
 }
 </style>
+
+<style scoped>
+.shop-banner {
+  display: none;
+}
+</style>

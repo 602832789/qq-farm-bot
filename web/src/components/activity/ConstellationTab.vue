@@ -755,3 +755,20 @@ watch(() => props.constellation, (value) => {
   }
 }
 </style>
+
+<style scoped>
+/* The mobile-friendly reward view keeps the selectable star groups and rewards, without the decorative chart panel. */
+.constellation-scene {
+  display: none;
+}
+.star-reward,
+.light-action {
+  grid-column: 1 / -1;
+}
+.star-reward {
+  width: auto;
+}
+.star-reward__items {
+  justify-content: center;
+}
+</style>

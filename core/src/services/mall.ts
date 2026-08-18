@@ -17,7 +17,7 @@ const BUY_PER_ROUND: number = 10;
 const FREE_GIFTS_DAILY_KEY: string = 'mall_free_gifts';
 
 let lastBuyAt: number = 0;
-let lastCheckBuyAt: number = 0;
+const lastCheckBuyAt: number = 0;
 let buyDoneDateKey: string = '';
 let buyLastSuccessAt: number = 0;
 let buyPausedNoGoldDateKey: string = '';

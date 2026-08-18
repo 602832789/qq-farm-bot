@@ -1,5 +1,5 @@
+import type { AccountConfig, OfflineReminder, SystemConfig, UIConfig } from '../../types/config';
 export {};
-import type { AccountConfig, OfflineReminder, UIConfig, SystemConfig } from '../../types/config';
 
 const fs = require('node:fs');
 const { readTextFile, writeJsonFileAtomic } = require('../../services/json-db');

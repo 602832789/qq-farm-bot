@@ -1,13 +1,15 @@
 import type { ActivityGameplayModule, ResolvedActivityGameplay } from './types'
 import type { ActivityDirectoryItemDto, ActivityGameplayKey } from '@/stores/activity-center'
+import { qixiGameplay } from './qixi'
 import { stellarGameplay } from './stellar'
 
 const gameplayModules: Record<ActivityGameplayKey, ActivityGameplayModule> = {
   stellar: stellarGameplay,
+  qixi: qixiGameplay,
 }
 
 export function resolveActivityGameplay(activity: ActivityDirectoryItemDto): ResolvedActivityGameplay | null {
-  const gameplayKey = activity.gameplayKey || (activity.detailTarget ? 'stellar' : null)
+  const gameplayKey = activity.gameplayKey || (activity.detailTarget === 'qixi' ? 'qixi' : activity.detailTarget ? 'stellar' : null)
   if (!gameplayKey)
     return null
   const module = gameplayModules[gameplayKey]

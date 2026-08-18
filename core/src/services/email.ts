@@ -3,7 +3,7 @@ export {};
  * 邮箱系统 - 自动领取邮箱奖励
  */
 
-const { sendMsgAsync } = require('../utils/network');
+const { sendMsgAsync, sendMsgNoReply } = require('../utils/network');
 const { types } = require('../utils/proto');
 const { log, toNum, getSystemDateKey } = require('../utils/utils');
 
@@ -22,7 +22,7 @@ function isDoneToday(): boolean {
 
 async function getEmailList(boxType: number = 1): Promise<any> {
     const body: Uint8Array = types.GetEmailListRequest.encode(types.GetEmailListRequest.create({
-        box_type: Number(boxType) || 1,
+        box_type: normalizeBoxType(boxType),
     })).finish();
     const { body: replyBody } = await sendMsgAsync('gamepb.emailpb.EmailService', 'GetEmailList', body);
     return types.GetEmailListReply.decode(replyBody);
@@ -30,20 +30,19 @@ async function getEmailList(boxType: number = 1): Promise<any> {
 
 async function claimEmail(boxType: number = 1, emailId: string = ''): Promise<any> {
     const body: Uint8Array = types.ClaimEmailRequest.encode(types.ClaimEmailRequest.create({
-        box_type: Number(boxType) || 1,
+        box_type: normalizeBoxType(boxType),
         email_id: String(emailId || ''),
     })).finish();
     const { body: replyBody } = await sendMsgAsync('gamepb.emailpb.EmailService', 'ClaimEmail', body);
     return types.ClaimEmailReply.decode(replyBody);
 }
 
-async function batchClaimEmail(boxType: number = 1, emailId: string = ''): Promise<any> {
+async function batchClaimEmail(boxType: number = 1, emailIds: string[] = []): Promise<void> {
     const body: Uint8Array = types.BatchClaimEmailRequest.encode(types.BatchClaimEmailRequest.create({
-        box_type: Number(boxType) || 1,
-        email_id: String(emailId || ''),
+        box_type: normalizeBoxType(boxType),
+        email_ids: emailIds.map(String).filter(Boolean),
     })).finish();
-    const { body: replyBody } = await sendMsgAsync('gamepb.emailpb.EmailService', 'BatchClaimEmail', body);
-    return types.BatchClaimEmailReply.decode(replyBody);
+    await sendMsgNoReply('gamepb.emailpb.EmailService', 'BatchClaimEmail', body);
 }
 
 function collectClaimableEmails(reply: any): any[] {
@@ -83,23 +82,9 @@ async function checkAndClaimEmails(force: boolean = false): Promise<{ claimed: n
             getEmailList(2).catch(() => ({ emails: [] })),
         ]);
 
-        const merged: Map<string, any> = new Map();
         const fromBox1: any[] = (box1.emails || []).map((x: any) => ({ ...x, __boxType: 1 }));
         const fromBox2: any[] = (box2.emails || []).map((x: any) => ({ ...x, __boxType: 2 }));
-        for (const x of [...fromBox1, ...fromBox2]) {
-            if (!x || !x.id) continue;
-            // 优先保留"有奖励且未领取"的版本
-            if (!merged.has(x.id)) {
-                merged.set(x.id, x);
-                continue;
-            }
-            const old: any = merged.get(x.id);
-            const oldClaimable: boolean = !!(old && old.has_reward === true && old.claimed !== true);
-            const nowClaimable: boolean = !!(x && x.has_reward === true && x.claimed !== true);
-            if (!oldClaimable && nowClaimable) merged.set(x.id, x);
-        }
-
-        const claimable: any[] = collectClaimableEmails({ emails: [...merged.values()] });
+        const claimable: any[] = collectClaimableEmails({ emails: [...fromBox1, ...fromBox2] });
         if (claimable.length === 0) {
             markDoneToday();
             log('邮箱', '今日暂无可领取邮箱奖励', {
@@ -115,6 +100,7 @@ async function checkAndClaimEmails(force: boolean = false): Promise<{ claimed: n
 
         // 先按邮箱类型尝试批量领取，失败则继续单领
         const byBox: Map<number, any[]> = new Map();
+        const batchClaimed: Set<string> = new Set();
         for (const m of claimable) {
             const boxType: number = normalizeBoxType(m && m.__boxType);
             if (!byBox.has(boxType)) byBox.set(boxType, []);
@@ -122,13 +108,11 @@ async function checkAndClaimEmails(force: boolean = false): Promise<{ claimed: n
         }
         for (const [boxType, list] of byBox.entries()) {
             try {
-                const firstId: string = String((list[0] && list[0].id) || '');
-                if (firstId) {
-                    const br: any = await batchClaimEmail(boxType, firstId);
-                    if (Array.isArray(br.items) && br.items.length > 0) {
-                        rewards.push(...br.items);
-                    }
-                    claimed += 1;
+                const emailIds: string[] = list.map((item: any) => String((item && item.id) || '')).filter(Boolean);
+                if (emailIds.length > 0) {
+                    await batchClaimEmail(boxType, emailIds);
+                    for (const emailId of emailIds) batchClaimed.add(`${boxType}:${emailId}`);
+                    claimed += emailIds.length;
                 }
             } catch {
                 // 批量失败静默，继续单领
@@ -137,6 +121,7 @@ async function checkAndClaimEmails(force: boolean = false): Promise<{ claimed: n
 
         for (const m of claimable) {
             const boxType: number = normalizeBoxType(m && m.__boxType);
+            if (batchClaimed.has(`${boxType}:${String(m.id || '')}`)) continue;
             try {
                 const rep: any = await claimEmail(boxType, String(m.id || ''));
                 if (Array.isArray(rep.items) && rep.items.length > 0) {
@@ -172,7 +157,7 @@ async function checkAndClaimEmails(force: boolean = false): Promise<{ claimed: n
 
 async function batchDeleteEmail(boxType: number = 1, emailIds: string[] = []): Promise<any> {
     const body: Uint8Array = types.BatchDeleteEmailRequest.encode(types.BatchDeleteEmailRequest.create({
-        box_type: Number(boxType) || 1,
+        box_type: normalizeBoxType(boxType),
         email_ids: emailIds.map(String),
     })).finish();
     const { body: replyBody } = await sendMsgAsync('gamepb.emailpb.EmailService', 'BatchDeleteEmail', body);
