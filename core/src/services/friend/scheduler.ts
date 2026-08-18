@@ -443,7 +443,7 @@ export async function checkFriends(options: CheckFriendsOptions = {}): Promise<b
 
                     try {
                         await visitFriend(friend, totalActions, state.gid, state.accountId);
-                    } catch (e: any) {
+                    } catch {
                         // 单个好友失败不影响整体
                     }
                     if (isBadOperationLimitReached()) break;
@@ -580,13 +580,11 @@ async function acceptFriendsWithRetry(gids: number[]): Promise<void> {
 
 export async function runBadOnceOnStartup(): Promise<void> {
     if (badExecutedOnStartup) {
-       // log('好友', '启动时放虫放草已执行过，跳过', { module: 'friend', event: '启动放虫放草跳过' });
         return;
     }
 
     const autoBadEnabled: boolean = isAutomationOn('friend_bad');
     if (!autoBadEnabled) {
-      //  log('好友', '放虫放草功能未开启，跳过', { module: 'friend', event: '放虫放草未开启' });
         return;
     }
 
@@ -598,6 +596,12 @@ export async function runBadOnceOnStartup(): Promise<void> {
 
     const accountId: string = process.env.FARM_ACCOUNT_ID || '';
     if (isBadOperationLimitReached()) return;
+
+    if (isCheckingFriends) {
+        friendScheduler.setTimeoutTask('bad_startup_once_retry', 5000, () => runBadOnceOnStartup());
+        return;
+    }
+    isCheckingFriends = true;
 
     log('好友', '========== 启动时放虫放草开始 ==========', { module: 'friend', event: '启动放虫放草开始' });
 
@@ -680,6 +684,8 @@ export async function runBadOnceOnStartup(): Promise<void> {
 
     } catch (err: any) {
         logWarn('好友', `启动时放虫放草异常: ${err.message}`);
+    } finally {
+        isCheckingFriends = false;
     }
 }
 

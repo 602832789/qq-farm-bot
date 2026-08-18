@@ -1,6 +1,6 @@
-export {};
 import type { Application, Request, Response } from 'express';
 import type { AdminContext } from './context';
+export {};
 
 const { version } = require('../../../package.json');
 const { getRuntimeConfig } = require('../../config/config');

@@ -1,5 +1,5 @@
+import type { AccountConfig, AutomationConfig, BagSeedFallbackStrategy, IntervalConfig, PlantingStrategy, QuietHoursConfig } from '../../types/config';
 export {};
-import type { AccountConfig, PlantingStrategy, BagSeedFallbackStrategy, IntervalConfig, QuietHoursConfig, AutomationConfig } from '../../types/config';
 
 const sharedState = require('./shared-state');
 const { readKnownFriendGidsCache, writeKnownFriendGidsCache } = require('./gid-cache');

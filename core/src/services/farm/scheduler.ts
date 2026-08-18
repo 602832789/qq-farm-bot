@@ -24,7 +24,7 @@ let isFirstFarmCheck: boolean = true;
 let farmLoopRunning: boolean = false;
 let externalSchedulerMode: boolean = false;
 let fertilizerBuyCheckTimer: ReturnType<typeof setInterval> | null = null;
-let lastFertilizerBuyCheckAt: number = 0;
+const lastFertilizerBuyCheckAt: number = 0;
 const farmScheduler = createScheduler('farm');
 let lastPushTime: number = 0;
 
@@ -46,6 +46,52 @@ async function checkFarm(): Promise<boolean> {
         return false;
     } finally {
         isCheckingFarm = false;
+    }
+}
+
+/**
+ * smart 有机肥可能让作物在本轮成熟。施肥后只重查并收获一次，避免形成请求循环。
+ */
+async function harvestMatureOwnLandsOnce(actions: string[]): Promise<number> {
+    let latest: any;
+    try {
+        latest = await getAllLands();
+    } catch (e: any) {
+        logWarn('收获', `施肥后刷新土地失败: ${e.message}`);
+        return 0;
+    }
+
+    const lands = Array.isArray(latest && latest.lands) ? latest.lands : [];
+    if (lands.length === 0) return 0;
+
+    const ownGid = toNum(getUserState().gid);
+    const harvestable = analyzeLands(lands, false, ownGid).harvestable;
+    if (harvestable.length === 0) return 0;
+
+    try {
+        await harvest(harvestable);
+        actions.push(`施肥后收获${harvestable.length}`);
+        recordOperation('harvest', harvestable.length);
+        networkEvents.emit('farmHarvested', {
+            count: harvestable.length,
+            landIds: [...harvestable],
+            opType: 'fertilizer_followup',
+        });
+        log('收获', `施肥后立即收获 ${harvestable.length} 块土地`, {
+            module: 'farm',
+            event: '施肥后收获作物',
+            result: 'ok',
+            count: harvestable.length,
+            landIds: [...harvestable],
+        });
+        return harvestable.length;
+    } catch (e: any) {
+        logWarn('收获', `施肥后立即收获失败: ${e.message}`, {
+            module: 'farm',
+            event: '施肥后收获作物',
+            result: 'error',
+        });
+        return 0;
     }
 }
 
@@ -232,6 +278,7 @@ async function runFarmOperation(opType: string): Promise<{ hadWork: boolean; act
                 const result = await runFertilizerByConfig([], { skipNormal: true });
                 if (result.organic > 0) {
                     actions.push(`有机肥${result.organic}`);
+                    await harvestMatureOwnLandsOnce(actions);
                 }
             } catch (e: any) {
                 logWarn('施肥', `巡田时施肥失败: ${e.message}`);

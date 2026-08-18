@@ -1,12 +1,13 @@
 export {};
 
-type ActivityDetailTarget = 'travel' | 'constellation' | 'shop' | 'solar';
+type ActivityDetailTarget = 'travel' | 'constellation' | 'shop' | 'solar' | 'qixi';
 
 interface ActivityGameplayContext {
     season?: any;
     shop?: any;
     solarTerms?: any;
     constellation?: any;
+    qixi?: any;
 }
 
 interface ActivityGameplayAdapter {
@@ -50,6 +51,16 @@ const GAMEPLAY_ADAPTERS: readonly ActivityGameplayAdapter[] = [
             ...(Array.isArray(context.solarTerms?.configs)
                 ? context.solarTerms.configs.map((config: any) => config?.activityId)
                 : []),
+        ],
+    },
+    {
+        gameplayKey: 'qixi',
+        detailTarget: 'qixi',
+        priority: 50,
+        activityIds: context => [
+            context.qixi?.groupId,
+            context.qixi?.bridgeActivityId,
+            context.qixi?.giftActivityId,
         ],
     },
 ];

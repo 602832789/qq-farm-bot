@@ -37,10 +37,10 @@ defineProps<{ theme?: 'night' | 'day' }>()
     var(--ui-shadow-sm),
     inset 0 1px rgba(255, 255, 255, 0.92);
 }
-@media (max-width: 900px) {
+@media (max-width: 1023px) {
   .activity-shell {
-    height: calc(100dvh - 72px);
-    min-height: 580px;
+    height: calc(100dvh - 166px - env(safe-area-inset-bottom));
+    min-height: 0;
   }
   .activity-shell__frame {
     border-radius: var(--ui-radius-card);

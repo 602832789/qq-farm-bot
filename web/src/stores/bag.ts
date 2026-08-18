@@ -8,6 +8,8 @@ export const useBagStore = defineStore('bag', () => {
   const originalItems = ref<any[]>([])
   const systemItems = ref<any[]>([])
   const loading = ref(false)
+  let pendingFetch: Promise<void> | null = null
+  let pendingAccountId = ''
 
   function clearBag() {
     allItems.value = []
@@ -25,39 +27,53 @@ export const useBagStore = defineStore('bag', () => {
   async function fetchBag(accountId: string) {
     if (!accountId)
       return
-    const requestedId = accountId
+    const requestedId = String(accountId)
+    if (pendingFetch && pendingAccountId === requestedId)
+      return pendingFetch
+
     loading.value = true
+    const request = (async () => {
+      try {
+        const res = await api.get('/api/bag', {
+          headers: { 'x-account-id': requestedId },
+        })
+        const acc = useAccountStore()
+        const curId = String((acc.currentAccountId as { value?: string })?.value ?? acc.currentAccountId ?? '')
+        if (curId !== requestedId)
+          return
+        if (res.data.ok && res.data.data) {
+          allItems.value = Array.isArray(res.data.data.items) ? res.data.data.items : []
+          originalItems.value = Array.isArray(res.data.data.originalItems) ? res.data.data.originalItems : []
+          systemItems.value = Array.isArray(res.data.data.systemItems) ? res.data.data.systemItems : []
+        }
+        else if (res.data && res.data.ok === false && res.data.error) {
+          allItems.value = []
+          originalItems.value = []
+          systemItems.value = []
+        }
+      }
+      catch (e) {
+        const acc = useAccountStore()
+        const curId = String((acc.currentAccountId as { value?: string })?.value ?? acc.currentAccountId ?? '')
+        if (curId === requestedId) {
+          allItems.value = []
+          originalItems.value = []
+          systemItems.value = []
+        }
+        console.error(e)
+      }
+    })()
+    pendingFetch = request
+    pendingAccountId = requestedId
     try {
-      const res = await api.get('/api/bag', {
-        headers: { 'x-account-id': accountId },
-      })
-      const acc = useAccountStore()
-      const curId = String((acc.currentAccountId as { value?: string })?.value ?? acc.currentAccountId ?? '')
-      if (curId !== requestedId)
-        return
-      if (res.data.ok && res.data.data) {
-        allItems.value = Array.isArray(res.data.data.items) ? res.data.data.items : []
-        originalItems.value = Array.isArray(res.data.data.originalItems) ? res.data.data.originalItems : []
-        systemItems.value = Array.isArray(res.data.data.systemItems) ? res.data.data.systemItems : []
-      }
-      else if (res.data && res.data.ok === false && res.data.error) {
-        allItems.value = []
-        originalItems.value = []
-        systemItems.value = []
-      }
-    }
-    catch (e) {
-      const acc = useAccountStore()
-      const curId = String((acc.currentAccountId as { value?: string })?.value ?? acc.currentAccountId ?? '')
-      if (curId === requestedId) {
-        allItems.value = []
-        originalItems.value = []
-        systemItems.value = []
-      }
-      console.error(e)
+      await request
     }
     finally {
-      loading.value = false
+      if (pendingFetch === request) {
+        pendingFetch = null
+        pendingAccountId = ''
+        loading.value = false
+      }
     }
   }
 

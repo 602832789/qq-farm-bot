@@ -1,6 +1,6 @@
-export {};
 import type { Application, Request, Response } from 'express';
 import type { AdminContext } from './context';
+export {};
 
 const { getAccId } = require('./middleware');
 
@@ -17,6 +17,14 @@ const ACTIVITY_ERROR_MESSAGES: Record<string, string> = {
     INSUFFICIENT_STAR_SAND: '星砂余额不足，无法完成本次兑换',
     SHOP_RESPONSE_INVALID: '商店数据已经变化，请刷新页面后重试',
     SHOP_UNAVAILABLE: '星砂商店暂未开放，请稍后再来看看',
+    QIXI_UNAVAILABLE: '鹊桥寄情活动暂未开放或已经结束',
+    QIXI_BRIDGE_UNAVAILABLE: '当前没有可领取的鹊桥奖励',
+    QIXI_GIFT_UNAVAILABLE: '当前无法赠送鹊羽香囊',
+    INSUFFICIENT_QIXI_SACHET: '鹊羽香囊数量不足',
+    INVALID_QIXI_FRIEND_GID: '好友 GID 必须是正十进制整数',
+    INVALID_QIXI_SACHET_COUNT: '赠送数量必须是正十进制整数',
+    QIXI_RESPONSE_INVALID: '鹊桥活动数据已经变化，请刷新页面后重试',
+    QIXI_GIFT_FAILED: '鹊羽香囊赠送失败，请刷新后重试',
 };
 
 function activityErrorResponse(error: any): { code: string; message: string } {
@@ -99,6 +107,7 @@ function mountActivityCenterRoutes(app: Application, ctx: AdminContext): void {
     mountGet('/api/activity-center/shop', 'getCurrentStarSandShop');
     mountGet('/api/activity-center/solar-terms', 'getCurrentSolarTerms');
     mountGet('/api/activity-center/qingmei', 'getCurrentQingMeiActivity');
+    mountGet('/api/activity-center/qixi', 'getCurrentQixiActivity');
 
     app.post('/api/activity-center/pass/claim', withAccount((accountId: string) => (
         ctx.provider.claimBattlePassRewards(accountId)
@@ -135,6 +144,14 @@ function mountActivityCenterRoutes(app: Application, ctx: AdminContext): void {
 
     app.post('/api/activity-center/qingmei/brew/settle', withAccount((accountId: string) => (
         ctx.provider.settleQingMeiBrew(accountId)
+    )));
+
+    app.post('/api/activity-center/qixi/bridge/claim', withAccount((accountId: string) => (
+        ctx.provider.claimQixiBridgeRewards(accountId)
+    )));
+
+    app.post('/api/activity-center/qixi/gift', withAccount((accountId: string, req: Request) => (
+        ctx.provider.giftQixiSachet(accountId, req.body?.friendGid, req.body?.count)
     )));
 }
 

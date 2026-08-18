@@ -53,16 +53,24 @@ function isAlreadyClaimedError(err: any): boolean {
     return msg.includes('code=1021002') || msg.includes('今日已领取') || msg.includes('已领取');
 }
 
-async function getDailyGiftStatus(): Promise<any> {
-    const body: Uint8Array = types.GetDailyGiftStatusRequest.encode(types.GetDailyGiftStatusRequest.create({})).finish();
-    const { body: replyBody } = await sendMsgAsync('gamepb.qqvippb.QQVipService', 'GetDailyGiftStatus', body);
-    return types.GetDailyGiftStatusReply.decode(replyBody);
+async function getQQVipRewardsStatus(): Promise<any> {
+    const body: Uint8Array = types.GetQQVipRewardsStatusRequest.encode(types.GetQQVipRewardsStatusRequest.create({})).finish();
+    const { body: replyBody } = await sendMsgAsync('gamepb.qqvippb.QQVipService', 'GetQQVipRewardsStatus', body);
+    return types.GetQQVipRewardsStatusReply.decode(replyBody);
 }
 
-async function claimDailyGift(): Promise<any> {
-    const body: Uint8Array = types.ClaimDailyGiftRequest.encode(types.ClaimDailyGiftRequest.create({})).finish();
-    const { body: replyBody } = await sendMsgAsync('gamepb.qqvippb.QQVipService', 'ClaimDailyGift', body);
-    return types.ClaimDailyGiftReply.decode(replyBody);
+async function refreshVipInfo(): Promise<void> {
+    const body: Uint8Array = types.RefreshVipInfoRequest.encode(types.RefreshVipInfoRequest.create({})).finish();
+    const { body: replyBody } = await sendMsgAsync('gamepb.qqvippb.QQVipService', 'RefreshVipInfo', body);
+    types.RefreshVipInfoReply.decode(replyBody);
+}
+
+async function claimQQVipRewards(rewardTypes: number[]): Promise<any> {
+    const body: Uint8Array = types.ClaimQQVipRewardsRequest.encode(types.ClaimQQVipRewardsRequest.create({
+        reward_types: rewardTypes,
+    })).finish();
+    const { body: replyBody } = await sendMsgAsync('gamepb.qqvippb.QQVipService', 'ClaimQQVipRewards', body);
+    return types.ClaimQQVipRewardsReply.decode(replyBody);
 }
 
 async function performDailyVipGift(force: boolean = false): Promise<boolean> {
@@ -72,10 +80,18 @@ async function performDailyVipGift(force: boolean = false): Promise<boolean> {
     lastCheckAt = now;
 
     try {
-        const status: any = await getDailyGiftStatus();
-        lastHasGift = !!(status && status.has_gift);
-        lastCanClaim = !!(status && status.can_claim);
-        if (!status || !status.can_claim) {
+        await refreshVipInfo();
+        const status: any = await getQQVipRewardsStatus();
+        const rewardStatuses: any[] = Array.isArray(status && status.reward_statuses)
+            ? status.reward_statuses
+            : [];
+        const rewardTypes: number[] = rewardStatuses
+            .filter((item: any) => item && item.enabled === true && item.can_claim === true)
+            .map((item: any) => toNum(item.reward_type))
+            .filter((rewardType: number) => rewardType > 0);
+        lastHasGift = rewardStatuses.some((item: any) => item && item.enabled === true);
+        lastCanClaim = rewardTypes.length > 0;
+        if (rewardTypes.length === 0) {
             markDoneToday();
             lastResult = 'none';
             log('会员', '今日暂无可领取会员礼包', {
@@ -85,7 +101,7 @@ async function performDailyVipGift(force: boolean = false): Promise<boolean> {
             });
             return false;
         }
-        const rep: any = await claimDailyGift();
+        const rep: any = await claimQQVipRewards(rewardTypes);
         const items: any[] = Array.isArray(rep && rep.items) ? rep.items : [];
         const reward: string = getRewardSummary(items);
         log('会员', reward ? `领取成功 → ${reward}` : '领取成功', {

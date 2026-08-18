@@ -467,7 +467,7 @@ async function copyToken() {
               暂无账号
             </div>
           </div>
-          <div class="mt-1 border-t border-gray-100/60 pt-1 dark:border-gray-700/60">
+          <div class="mt-1 border-t border-gray-100/60 px-1 pt-1 dark:border-gray-700/60">
             <NButton
               class="sidebar-menu-button"
 
@@ -479,9 +479,8 @@ async function copyToken() {
               <span>添加账号</span>
             </NButton>
             <router-link
-              to="/settings"
-              class="mx-1 w-full flex items-center gap-2 rounded-xl px-4 py-2 text-sm transition-colors hover:bg-gray-100/50 dark:hover:bg-gray-700/50"
-              :style="{ color: 'var(--theme-primary)' }"
+              :to="{ path: '/settings', query: { tab: 'account' } }"
+              class="account-dropdown-action"
               @click="showAccountDropdown = false"
             >
               <div class="i-carbon-add-alt" />
@@ -745,9 +744,34 @@ nav a:hover {
   background: var(--ui-warning-soft);
 }
 
+.sidebar-menu-button {
+  width: 100%;
+  min-height: 34px;
+  padding: 8px 12px;
+  border-radius: 10px;
+}
+
 .sidebar-menu-button :deep(.n-button__content) {
   width: 100%;
   justify-content: flex-start;
   gap: 8px;
+}
+
+.account-dropdown-action {
+  width: 100%;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  color: var(--theme-primary);
+  font-size: 14px;
+  text-align: left;
+  transition: background-color 0.15s ease;
+}
+
+.account-dropdown-action:hover {
+  background: rgba(107, 114, 128, 0.08);
 }
 </style>

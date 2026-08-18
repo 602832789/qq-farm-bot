@@ -137,7 +137,7 @@ function validatePasswordStrength(password: string): PasswordStrengthResult {
     if (/[a-z]/.test(password)) typeCount++;
     if (/[A-Z]/.test(password)) typeCount++;
     if (/\d/.test(password)) typeCount++;
-    if (/[!@#$%^&*(),.?\":{}|<>_\-+=[\]\\;'/`~]/.test(password)) typeCount++;
+    if (/[!@#$%^&*(),.?":{}|<>_\-+=[\]\\;'/`~]/.test(password)) typeCount++;
     if (typeCount < 2) errors.push('密码必须包含大写字母、小写字母、数字、特殊符号中的至少两种');
     if (['password', '123456', 'qwerty', 'abc123', '111111', '000000'].includes(password.toLowerCase())) {
         errors.push('密码过于简单，请使用更复杂的密码');

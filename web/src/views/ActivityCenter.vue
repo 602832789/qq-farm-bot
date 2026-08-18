@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { ActivityTab } from '@/components/activity/BottomNav.vue'
 import type { ActivityDirectoryItemDto, ActivityGameplayKey, ShopGoodsDto } from '@/stores/activity-center'
+import { useNotification } from 'naive-ui'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -8,18 +9,22 @@ import ActivityHeader from '@/components/activity/ActivityHeader.vue'
 import ActivityShell from '@/components/activity/ActivityShell.vue'
 import BottomNav from '@/components/activity/BottomNav.vue'
 import { activityHasGameplay, resolveActivityGameplay } from '@/components/activity/gameplays'
+import QixiActivityView from '@/components/activity/gameplays/qixi/QixiActivityView.vue'
 import { ConstellationTab, SolarTermsTab, StarSandExchangeDialog, StarSandShopTab, TravelPassTab } from '@/components/activity/gameplays/stellar'
-import QingMeiBrewTab from '@/components/activity/QingMeiBrewTab.vue'
 import { useAccountStore } from '@/stores/account'
 import { useActivityCenterStore } from '@/stores/activity-center'
+import { useFriendStore } from '@/stores/friend'
 
 const router = useRouter()
+const notification = useNotification()
 const accountStore = useAccountStore()
 const activityStore = useActivityCenterStore()
+const friendStore = useFriendStore()
 const { currentAccountId } = storeToRefs(accountStore)
-const { activities, season, shop, solarTerms, constellation, qingMei, actions, tabBadges, loading, error, actionError, notice, loadedAccountId, serverClockOffset, pendingActions } = storeToRefs(activityStore)
+const { activities, season, shop, solarTerms, constellation, qixi, actions, tabBadges, loading, error, actionError, notice, loadedAccountId, serverClockOffset, pendingActions } = storeToRefs(activityStore)
+const { friends, loading: friendsLoading } = storeToRefs(friendStore)
 const activeTab = ref<ActivityTab>('travel')
-const selectedActivity = ref<ActivityGameplayKey | 'qingmei' | null>(null)
+const selectedActivity = ref<ActivityGameplayKey | null>(null)
 const selectedShopGoods = ref<ShopGoodsDto | null>(null)
 const clockNow = ref(Date.now())
 let clockTimer: number | undefined
@@ -69,8 +74,8 @@ const theme = computed(() => activeTab.value === 'solar' ? 'day' : 'night')
 const endTime = computed(() => {
   if (activeTab.value === 'shop')
     return shop.value?.endTime
-  if (selectedActivity.value === 'qingmei')
-    return qingMei.value?.endTime
+  if (selectedActivity.value === 'qixi')
+    return qixi.value?.endTime
   if (activeTab.value === 'constellation')
     return constellation.value?.endTime || season.value?.endTime
   if (activeTab.value === 'solar')
@@ -121,8 +126,11 @@ function openActivity(activity: ActivityDirectoryItemDto) {
   const gameplay = resolveActivityGameplay(activity)
   if (!gameplay)
     return
-  activeTab.value = gameplay.entryTab
+  if (gameplay.module.key === 'stellar')
+    activeTab.value = gameplay.entryTab as ActivityTab
   selectedActivity.value = gameplay.module.key
+  if (gameplay.module.key === 'qixi' && currentAccountId.value)
+    friendStore.fetchFriends(String(currentAccountId.value))
 }
 function goBack() {
   if (selectedActivity.value) {
@@ -140,17 +148,15 @@ function lightConstellation() {
 function claimSolar(termId: string) {
   activityStore.claimSolarTerm(accountId(), termId)
 }
-function claimQingMeiSeed() {
-  activityStore.claimQingMeiDailySeed(accountId())
+function claimQixiBridge() {
+  activityStore.claimQixiBridgeRewards(accountId())
 }
-function startQingMei(ingredients: Array<{ uid: string, count: number }>) {
-  activityStore.startQingMeiBrew(accountId(), ingredients)
+function giftQixiSachet(friendGid: string, count: number) {
+  activityStore.giftQixiSachet(accountId(), friendGid, count)
 }
-function continueQingMei() {
-  activityStore.continueQingMeiBrew(accountId())
-}
-function settleQingMei() {
-  activityStore.settleQingMeiBrew(accountId())
+function refreshQixiFriends() {
+  if (currentAccountId.value)
+    friendStore.fetchFriends(String(currentAccountId.value), true)
 }
 function selectShopGoods(goods: ShopGoodsDto) {
   selectedShopGoods.value = goods
@@ -173,8 +179,38 @@ watch(activeTab, (tab) => {
   if (tab !== 'shop' && !pendingActions.value.exchange)
     selectedShopGoods.value = null
 })
+watch([notice, actionError], ([successMessage, failureMessage]) => {
+  if (!selectedActivity.value)
+    return
+
+  if (failureMessage) {
+    notification.error({
+      title: '操作失败',
+      content: failureMessage,
+      duration: 5000,
+      keepAliveOnHover: true,
+    })
+  }
+  else if (successMessage) {
+    notification.success({
+      title: '操作成功',
+      content: successMessage,
+      duration: 3500,
+      keepAliveOnHover: true,
+    })
+  }
+  else {
+    return
+  }
+
+  activityStore.clearActionMessages()
+})
 watch(stellarDetailsAvailable, (available) => {
   if (selectedActivity.value === 'stellar' && !available)
+    selectedActivity.value = null
+})
+watch(qixi, (activity) => {
+  if (selectedActivity.value === 'qixi' && !activity && !loading.value)
     selectedActivity.value = null
 })
 onMounted(() => {
@@ -256,12 +292,12 @@ onUnmounted(() => {
         <div class="activity-spinner" /><strong>正在加载活动</strong>
       </div>
       <template v-else>
-        <div v-if="error || actionError || notice" class="activity-message" :class="{ success: notice && !error && !actionError }" role="status">
-          <span>{{ actionError || error || notice }}</span><button v-if="error" type="button" :disabled="loading" @click="load(true)">
+        <div v-if="error" class="activity-message" role="status">
+          <span>{{ error }}</span><button type="button" :disabled="loading" @click="load(true)">
             重试
           </button>
         </div>
-        <main class="activity-content">
+        <main class="activity-content" :class="{ 'activity-content--travel': activeTab === 'travel' }">
           <TravelPassTab v-if="activeTab === 'travel'" :season="season" :enabled="actions.claimPass.enabled" :pending="pendingActions.claimPass" @claim="claimPass" />
           <ConstellationTab v-else-if="activeTab === 'constellation'" :constellation="constellation" :enabled="actions.lightConstellation.enabled" :pending="pendingActions.lightConstellation" @light="lightConstellation" />
           <StarSandShopTab v-else-if="activeTab === 'shop'" :shop="shop" :enabled="actions.exchange.enabled" :pending="pendingActions.exchange" @select="selectShopGoods" />
@@ -280,14 +316,24 @@ onUnmounted(() => {
     </div>
   </ActivityShell>
 
-  <ActivityShell v-else theme="day">
+  <ActivityShell v-else-if="selectedActivity === 'qixi'" theme="day">
     <div class="activity-center">
-      <ActivityHeader :title="qingMei?.title || '青酿换万金'" :remaining="remaining" :loading="loading" @back="goBack" @refresh="load(true)" />
-      <div v-if="!currentAccountId" class="activity-state qingmei-state">
+      <ActivityHeader
+        :title="qixi?.title || '鹊桥寄情'"
+        :remaining="remaining"
+        :balance="qixi?.balances.known ? (qixi.balances.feather || '0') : '--'"
+        :currency-image="qixi?.feather.image"
+        :currency-name="qixi?.feather.name || '鹊羽'"
+        :loading="loading"
+        show-refresh
+        @back="goBack"
+        @refresh="load(true)"
+      />
+      <div v-if="!currentAccountId" class="activity-state qixi-state">
         <strong>请先选择账号</strong><span>活动数据按当前账号加载</span>
       </div>
-      <div v-else-if="loading && !qingMei" class="activity-state qingmei-state">
-        <div class="activity-spinner" /><strong>正在加载青酿活动</strong>
+      <div v-else-if="loading && !qixi" class="activity-state qixi-state">
+        <div class="activity-spinner" /><strong>正在加载鹊桥活动</strong>
       </div>
       <template v-else>
         <div v-if="error || actionError || notice" class="activity-message" :class="{ success: notice && !error && !actionError }" role="status">
@@ -295,8 +341,17 @@ onUnmounted(() => {
             重试
           </button>
         </div>
-        <main class="activity-content qingmei-content">
-          <QingMeiBrewTab :activity="qingMei" :pending-seed="pendingActions.claimQingMeiSeed" :pending-start="pendingActions.startQingMeiBrew" :pending-continue="pendingActions.continueQingMeiBrew" :pending-sell="pendingActions.settleQingMeiBrew" @claim-seed="claimQingMeiSeed" @start="startQingMei" @continue="continueQingMei" @settle="settleQingMei" />
+        <main class="activity-content qixi-content">
+          <QixiActivityView
+            :activity="qixi"
+            :friends="friends"
+            :friends-loading="friendsLoading"
+            :pending-bridge="pendingActions.claimQixiBridge"
+            :pending-gift="pendingActions.giftQixiSachet"
+            @claim-bridge="claimQixiBridge"
+            @gift="giftQixiSachet"
+            @refresh-friends="refreshQixiFriends"
+          />
         </main>
       </template>
     </div>
@@ -349,9 +404,6 @@ onUnmounted(() => {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
   margin: 0;
-}
-.picker-list.single {
-  grid-template-columns: minmax(0, 373px);
 }
 .picker-state {
   width: 100%;
@@ -445,14 +497,6 @@ onUnmounted(() => {
   color: rgba(255, 255, 255, 0.82);
   font-size: 11px;
 }
-.qingmei-entry {
-  background: linear-gradient(145deg, #76ad6c, #d9cb79);
-}
-.qingmei-entry img {
-  inset: 24px auto auto 50%;
-  width: 145px;
-  transform: translateX(-50%);
-}
 .activity-center {
   position: relative;
   height: 100%;
@@ -536,15 +580,19 @@ onUnmounted(() => {
     transform: rotate(360deg);
   }
 }
-.qingmei-content {
-  inset: calc(86px + env(safe-area-inset-top)) 0 0;
+.qixi-content {
+  inset: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
 }
-.qingmei-state {
+.qixi-state {
   inset: calc(86px + env(safe-area-inset-top)) 0 0;
-  color: #315d4c;
-}
-.qingmei-state span {
-  color: #668375;
 }
 @media (max-width: 1100px) and (min-width: 901px) {
   .picker-list {
@@ -582,16 +630,22 @@ onUnmounted(() => {
   }
   .activity-content,
   .activity-state {
-    inset: calc(146px + env(safe-area-inset-top)) 10px 10px;
+    inset: calc(136px + env(safe-area-inset-top)) 10px 10px;
     border-radius: 12px;
   }
+  .activity-content--travel {
+    overflow: hidden;
+  }
   .activity-message {
-    top: calc(138px + env(safe-area-inset-top));
+    top: calc(128px + env(safe-area-inset-top));
     right: 18px;
     left: 18px;
   }
-  .qingmei-content,
-  .qingmei-state {
+  .qixi-content {
+    inset: 0;
+    border-radius: 0;
+  }
+  .qixi-state {
     inset: calc(72px + env(safe-area-inset-top)) 0 0;
   }
 }
@@ -782,7 +836,6 @@ onUnmounted(() => {
   }
 }
 
-/* Unified application surface */
 .activity-picker {
   min-height: calc(100dvh - 72px);
   padding: 24px;
@@ -912,5 +965,13 @@ onUnmounted(() => {
   .picker-list {
     grid-template-columns: 1fr;
   }
+}
+.qixi-content {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+.qixi-state {
+  border-radius: 0 !important;
 }
 </style>

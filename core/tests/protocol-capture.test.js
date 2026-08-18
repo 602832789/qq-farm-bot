@@ -1,0 +1,235 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { before, test } = require('node:test');
+const protobuf = require('protobufjs');
+
+let root;
+
+before(async () => {
+    const protoDir = path.resolve(__dirname, '../src/proto');
+    const protoFiles = fs.readdirSync(protoDir)
+        .filter((name) => name.endsWith('.proto'))
+        .map((name) => path.join(protoDir, name));
+    root = new protobuf.Root();
+    await root.load(protoFiles, { keepCase: true });
+});
+
+function type(name) {
+    return root.lookupType(name);
+}
+
+function hex(value) {
+    return Buffer.from(value, 'hex');
+}
+
+function number(value) {
+    return Number(value && typeof value.toString === 'function' ? value.toString() : value);
+}
+
+test('all RPCs observed in the latest capture have request and reply types', () => {
+    const pairs = [
+        ['gamepb.userpb.LoginRequest', 'gamepb.userpb.LoginReply'],
+        ['gamepb.userpb.GetUserSettingsRequest', 'gamepb.userpb.GetUserSettingsReply'],
+        ['gamepb.userpb.SetDisplayInfoRequest', 'gamepb.userpb.SetDisplayInfoReply'],
+        ['gamepb.userpb.BatchClientReportFlowRequest', 'gamepb.userpb.BatchClientReportFlowReply'],
+        ['gamepb.userpb.HeartbeatRequest', 'gamepb.userpb.HeartbeatReply'],
+        ['gamepb.mysteryshoppb.GetActiveNPCRequest', 'gamepb.mysteryshoppb.GetActiveNPCReply'],
+        ['gamepb.friendpb.GetShareKeyRequest', 'gamepb.friendpb.GetShareKeyReply'],
+        ['gamepb.friendpb.SyncAllRequest', 'gamepb.friendpb.SyncAllReply'],
+        ['gamepb.qqvippb.GetQQVipRewardsStatusRequest', 'gamepb.qqvippb.GetQQVipRewardsStatusReply'],
+        ['gamepb.qqvippb.RefreshVipInfoRequest', 'gamepb.qqvippb.RefreshVipInfoReply'],
+        ['gamepb.qqvippb.ClaimQQVipRewardsRequest', 'gamepb.qqvippb.ClaimQQVipRewardsReply'],
+        ['gamepb.uicproxypb.BatchModerateTextRequest', 'gamepb.uicproxypb.BatchModerateTextReply'],
+        ['gamepb.acepb.AntiDataRequest', 'gamepb.acepb.AntiDataReply'],
+        ['gamepb.plantpb.AllLandsRequest', 'gamepb.plantpb.AllLandsReply'],
+        ['gamepb.dogpb.GetDogInfoRequest', 'gamepb.dogpb.GetDogInfoReply'],
+        ['gamepb.taskpb.TaskInfoRequest', 'gamepb.taskpb.TaskInfoReply'],
+        ['gamepb.skinpb.SkinsOwnedRequest', 'gamepb.skinpb.SkinsOwnedReply'],
+        ['gamepb.skinpb.SkinsEquippedRequest', 'gamepb.skinpb.SkinsEquippedReply'],
+        ['gamepb.skinpb.GetSkinEffectTypeParamsRequest', 'gamepb.skinpb.GetSkinEffectTypeParamsReply'],
+        ['gamepb.activitypb.ActivityListRequest', 'gamepb.activitypb.ActivityListReply'],
+        ['gamepb.activitypb.SetSplashedRequest', 'gamepb.activitypb.SetSplashedReply'],
+        ['gamepb.activitypb.GetGroupRequest', 'gamepb.activitypb.GetGroupReply'],
+        ['gamepb.seasonpb.GetSeasonInfoRequest', 'gamepb.seasonpb.GetSeasonInfoReply'],
+        ['gamepb.solartermspb.GetSolarTermsRedDotRequest', 'gamepb.solartermspb.GetSolarTermsRedDotReply'],
+        ['gamepb.emailpb.GetEmailListRequest', 'gamepb.emailpb.GetEmailListReply'],
+        ['gamepb.emailpb.BatchClaimEmailRequest', 'gamepb.emailpb.BatchClaimEmailReply'],
+        ['gamepb.emailpb.BatchDeleteEmailRequest', 'gamepb.emailpb.BatchDeleteEmailReply'],
+        ['gamepb.sharepb.GetInviteInfoRequest', 'gamepb.sharepb.GetInviteInfoReply'],
+        ['gamepb.paypb.GetRechargeInfoRequest', 'gamepb.paypb.GetRechargeInfoReply'],
+        ['gamepb.bulletinboardpb.GetBulletinListRequest', 'gamepb.bulletinboardpb.GetBulletinListReply'],
+        ['gamepb.bulletinboardpb.GetBulletinDetailRequest', 'gamepb.bulletinboardpb.GetBulletinDetailReply'],
+        ['gamepb.redpacketpb.GetTodayClaimStatusRequest', 'gamepb.redpacketpb.GetTodayClaimStatusReply'],
+        ['gamepb.marqueepb.GetMarqueeRequest', 'gamepb.marqueepb.GetMarqueeReply'],
+        ['gamepb.avatarframepb.AvatarFramesOwnedRequest', 'gamepb.avatarframepb.AvatarFramesOwnedReply'],
+        ['gamepb.rechargebonuspb.GetConfigRequest', 'gamepb.rechargebonuspb.GetConfigReply'],
+        ['gamepb.miscpb.GetFollowGiftStatusRequest', 'gamepb.miscpb.GetFollowGiftStatusReply'],
+        ['gamepb.mallpb.GetMallListBySlotTypeRequest', 'gamepb.mallpb.GetMallListBySlotTypeResponse'],
+        ['gamepb.shoppb.ShopInfoRequest', 'gamepb.shoppb.ShopInfoReply'],
+        ['gamepb.itempb.BagRequest', 'gamepb.itempb.BagReply'],
+        ['gamepb.interactpb.GetInteractInfoRequest', 'gamepb.interactpb.GetInteractInfoReply'],
+    ];
+
+    for (const [request, reply] of pairs) {
+        assert.ok(type(request), request);
+        assert.ok(type(reply), reply);
+    }
+});
+
+test('QQ VIP status and claim messages match captured wire data', () => {
+    const statusHex = '080110012a2408011206088bf1041005120608b59706100118012801300138808bbfd20640ffb0f2d3062a220801120608b897061001180120fcd48dc6072802300138808bbfd20640ffb0f2d306';
+    const status = type('gamepb.qqvippb.GetQQVipRewardsStatusReply').decode(hex(statusHex));
+    assert.equal(status.is_qq_vip, true);
+    assert.equal(status.is_super_vip, true);
+    assert.deepEqual(status.reward_statuses.map((item) => item.reward_type), [1, 2]);
+    assert.deepEqual(status.reward_statuses.map((item) => item.can_claim), [true, true]);
+
+    const claimType = type('gamepb.qqvippb.ClaimQQVipRewardsRequest');
+    const encoded = claimType.encode(claimType.create({ reward_types: [1, 2] })).finish();
+    assert.equal(Buffer.from(encoded).toString('hex'), '0a020102');
+
+    const replyHex = '1a14088bf1041005188092b8c398feffffff0130d83d1a1608b597061001188092b8c398feffffff0130943e38011a1608b897061001188092b8c398feffffff0130953e3801';
+    const reply = type('gamepb.qqvippb.ClaimQQVipRewardsReply').decode(hex(replyHex));
+    assert.equal(reply.items.length, 3);
+
+    const notify = type('gamepb.qqvippb.VipInfoUpdatedNTF').decode(hex('08011009'));
+    assert.equal(number(notify.vip_type), 1);
+    assert.equal(number(notify.vip_level), 9);
+});
+
+test('system and daily email requests remain separate and batch all IDs', () => {
+    const listType = type('gamepb.emailpb.GetEmailListRequest');
+    assert.equal(Buffer.from(listType.encode({ box_type: 1 }).finish()).toString('hex'), '0801');
+    assert.equal(Buffer.from(listType.encode({ box_type: 2 }).finish()).toString('hex'), '0802');
+
+    const captured = '080212276d63353030345f313030313232373330325f313036303331323035355f3137383639383339323812276d63353030345f313030313232373330325f313036303331323035355f3137383639383339343412276d63353030345f313030313232373330325f313036303331323035355f31373837303139363038';
+    const batchType = type('gamepb.emailpb.BatchClaimEmailRequest');
+    const request = batchType.decode(hex(captured));
+    assert.equal(request.box_type, 2);
+    assert.equal(request.email_ids.length, 3);
+    assert.equal(Buffer.from(batchType.encode(request).finish()).toString('hex'), captured);
+});
+
+test('email timestamps decode from the captured response fields', () => {
+    const captured = '0a690a276d63353030345f313030313232373330325f313036303331323035355f3137383639383339323810021a12e6b4bbe58aa8e5a5bde58f8be8b5a0e7a4bc2001280130f8eb8cd4063a18e6b4bbe58aa8e5a5bde58f8be8b5a0e98081e7a4bce789a94087ab94d406';
+    const reply = type('gamepb.emailpb.GetEmailListReply').decode(hex(captured));
+    assert.equal(reply.emails.length, 1);
+    assert.equal(reply.emails[0].claimed, true);
+    assert.equal(reply.emails[0].has_reward, true);
+    assert.equal(number(reply.emails[0].sent_at), 1786983928);
+    assert.equal(number(reply.emails[0].status_time), 1787106695);
+});
+
+test('captured client report and text moderation fields decode correctly', () => {
+    const reportHex = '0a77080210021a20434434354535313443343130433345323034384633413433453138463236453120f7a7ccf9032a04f09f8c9930ec878fd4063871b2060c4d41494e5f544f505f504f53e206106d61696e5769646765744368616e6765ea06023130f206013082070f5b6f626a656374204f626a6563745d';
+    const report = type('gamepb.userpb.BatchClientReportFlowRequest').decode(hex(reportHex));
+    assert.equal(report.items.length, 1);
+    assert.equal(report.items[0].field_1, 2);
+    assert.equal(report.items[0].event_name, 'MAIN_TOP_POS');
+    assert.equal(report.items[0].action, 'mainWidgetChange');
+
+    const accepted = type('gamepb.userpb.BatchClientReportFlowReply').decode(hex('0802'));
+    assert.equal(accepted.accepted_count, 2);
+
+    const moderateHex = '0a1a0a0ce6989fe890bde69e95e79594120a31303032323938393237';
+    const moderate = type('gamepb.uicproxypb.BatchModerateTextRequest').decode(hex(moderateHex));
+    assert.equal(Buffer.from(moderate.items[0].text).toString('hex'), 'e6989fe890bde69e95e79594');
+    assert.equal(moderate.items[0].uid, '1002298927');
+});
+
+test('new capture fields decode without falling through as unknown data', () => {
+    const settings = type('gamepb.userpb.GetUserSettingsReply').decode(hex('0a021801'));
+    assert.equal(settings.settings.field_3, true);
+
+    const avatar = type('gamepb.avatarframepb.AvatarFramesOwnedRequest').decode(hex('0802'));
+    assert.equal(avatar.frame_type, 2);
+
+    const bulletin = type('gamepb.bulletinboardpb.GetBulletinDetailReply')
+        .decode(hex('0a064e6f746963651204426f64791a04323032362204323032372a03696d67'));
+    assert.equal(bulletin.title, 'Notice');
+    assert.equal(bulletin.image_url, 'img');
+
+    const group = type('gamepb.activitypb.GetGroupReply').decode(hex('0a060a0208011200'));
+    assert.equal(number(group.group.activity.activity_id), 1);
+    assert.equal(group.group.children.length, 1);
+
+    const skinParams = type('gamepb.skinpb.GetSkinEffectTypeParamsReply').decode(hex('0a06080112020801'));
+    assert.equal(number(skinParams.params[0].effect_type), 1);
+    assert.equal(number(skinParams.params[0].params.value), 1);
+
+    const interact = type('gamepb.interactpb.GetInteractInfoReply').decode(hex('10cb858fd406'));
+    assert.equal(number(interact.server_time), 1787019979);
+
+    const follow = type('gamepb.miscpb.GetFollowGiftStatusReply').decode(hex('08011001'));
+    assert.equal(follow.followed, true);
+    assert.equal(follow.can_claim, true);
+});
+
+test('bag, item display, task and season additions use the captured wire types', () => {
+    const bag = type('corepb.ItemBag').decode(hex('10d2011841'));
+    assert.equal(number(bag.capacity), 210);
+    assert.equal(number(bag.used_slots), 65);
+
+    const show = type('corepb.ItemShow').decode(hex('1a060a01411201422a0508e9071002'));
+    assert.equal(show.restriction.text, 'A');
+    assert.equal(show.restriction.activity_id, 'B');
+    assert.equal(number(show.exchange_price.id), 1001);
+    assert.equal(number(show.exchange_price.count), 2);
+
+    const task = type('gamepb.taskpb.Task').decode(hex('720508e9071002'));
+    assert.equal(task.extra_rewards.length, 1);
+    assert.equal(number(task.extra_rewards[0].id), 1001);
+
+    const pass = type('gamepb.seasonpb.SeasonPass').decode(hex('18076008'));
+    assert.equal(number(pass.total_progress), 7);
+    assert.equal(number(pass.field_12), 8);
+});
+
+test('Qixi bridge and gifting messages match the captured activity frames', () => {
+    const bridge = type('gamepb.activitypb.QixiBridgeConfig').decode(hex(
+        '0a0508810810010a0508ea071001121a08011205088008101e1a0508810810051a0608cd970610012002'
+        + '121a0802120508800810321a0608ce970610011a0508810810052001121308031205088008104d1a0608ecbc18100120011801',
+    ));
+    assert.equal(number(bridge.current_stage), 1);
+    assert.equal(number(bridge.stages[0].stage), 1);
+    assert.equal(number(bridge.stages[0].cost.item_id), 1024);
+    assert.equal(number(bridge.stages[0].status), 2);
+
+    const gift = type('gamepb.activitypb.QixiGiftProgress').decode(hex(
+        '0801100c183222120a0508810810011205088208100118012001',
+    ));
+    assert.equal(number(gift.sent_count), 1);
+    assert.equal(number(gift.field_2), 12);
+    assert.equal(number(gift.field_3), 50);
+    assert.equal(number(gift.exchange.sent_item.item_id), 1025);
+
+    const giftRequestType = type('gamepb.activitypb.GiftQixiSachetRequest');
+    const giftRequest = giftRequestType.create({
+        activity_id: '2026081802',
+        operate_type: 26,
+        params: { friend_gid: '1142601927', count: 15 },
+    });
+    assert.equal(
+        Buffer.from(giftRequestType.encode(giftRequest).finish()).toString('hex'),
+        '088a9c8ec607101ae2070808c7f1eaa004100f',
+    );
+
+    const claimRequestType = type('gamepb.activitypb.ClaimQixiBridgeRewardsRequest');
+    const claimRequest = claimRequestType.create({
+        activity_id: '2026081801',
+        operate_type: 25,
+        params: { claim_mode: 0 },
+    });
+    assert.equal(
+        Buffer.from(claimRequestType.encode(claimRequest).finish()).toString('hex'),
+        '08899c8ec6071019ea07020800',
+    );
+
+    const rewardResult = type('gamepb.activitypb.QixiBridgeRewardResult').decode(hex(
+        '0a010112130881081005188092b8c398feffffff0130962712160883f1041004188092b8c398feffffff0130ea263801'
+        + '121108ea0710c801188092b8c398feffffff01',
+    ));
+    assert.deepEqual(rewardResult.claimed_stages.map(number), [1]);
+    assert.deepEqual(rewardResult.rewards.map(item => number(item.id)), [1025, 80003, 1002]);
+});

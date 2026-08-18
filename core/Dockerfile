@@ -28,6 +28,7 @@ COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY core/package.json ./core/
 COPY web/package.json ./web/
 
+RUN pnpm config set registry https://registry.npmmirror.com/
 RUN pnpm -C core install --prod --frozen-lockfile
 
 # ==========================================
@@ -48,10 +49,15 @@ COPY --from=prod-deps /app/node_modules ../node_modules/
 COPY --from=prod-deps /app/core/node_modules ./node_modules/
 COPY --from=prod-deps /app/package.json ../package.json
 
-COPY --from=builder /app/core ./
+COPY --from=builder /app/core/client.js ./client.js
+COPY --from=builder /app/core/dist ./dist
+COPY --from=builder /app/core/src/gameConfig ./src/gameConfig
+COPY --from=builder /app/core/src/proto ./src/proto
+RUN mkdir -p src/utils data/logs
+COPY --from=builder /app/core/src/utils/tsdk.wasm ./src/utils/tsdk.wasm
 COPY --from=builder /app/web/dist ../web/dist
 
-RUN mkdir -p data/logs && chmod -R 755 data
+RUN chmod -R 755 data
 
 VOLUME ["/app/core/data"]
 

@@ -1,21 +1,14 @@
 <script setup lang="ts">
 import { NButton } from 'naive-ui'
 import { storeToRefs } from 'pinia'
-import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import MobileBottomNav from '@/components/MobileBottomNav.vue'
 import Sidebar from '@/components/Sidebar.vue'
-import { menuRoutes } from '@/router/menu'
 import { useAppStore } from '@/stores/app'
 
 const appStore = useAppStore()
 const route = useRoute()
 const { sidebarOpen } = storeToRefs(appStore)
-
-const pageTitle = computed(() => {
-  const segment = route.path.split('/').filter(Boolean)[0] || ''
-  return menuRoutes.find(item => item.path === segment)?.label || '概览'
-})
 </script>
 
 <template>
@@ -35,7 +28,6 @@ const pageTitle = computed(() => {
             <span class="i-carbon-sprout" />
             QQ农场智能助手
           </span>
-          <strong>{{ pageTitle }}</strong>
         </div>
         <NButton quaternary circle aria-label="打开全部导航" @click="appStore.toggleSidebar">
           <div class="i-carbon-menu text-xl" />
@@ -104,15 +96,6 @@ const pageTitle = computed(() => {
   color: var(--ui-primary);
   font-size: 11px;
   line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.mobile-heading strong {
-  overflow: hidden;
-  color: var(--ui-ink);
-  font-size: 14px;
-  line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

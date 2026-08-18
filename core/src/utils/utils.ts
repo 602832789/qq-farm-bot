@@ -1,8 +1,8 @@
-export {};
 /**
  * 通用工具函数
  */
 import type Long from 'long';
+export {};
 
 const LongModule = require('long');
 const { createModuleLogger, sanitizeMeta } = require('../services/logger');

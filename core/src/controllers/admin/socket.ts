@@ -1,8 +1,8 @@
-export {};
 /**
  * Socket.IO setup and realtime emit functions.
  */
 import type { AdminContext } from './context';
+export {};
 
 const { Server } = require('socket.io');
 const SocketIOServer = Server;

@@ -1,6 +1,6 @@
-export {};
 import type { Application, Request, Response } from 'express';
 import type { AdminContext } from './context';
+export {};
 
 /**
  * Friend-related routes: friends list, friend lands, friend ops,

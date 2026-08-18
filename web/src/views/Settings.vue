@@ -2,7 +2,7 @@
 import { NButton, NCheckbox, NCheckboxGroup, NTab, NTabs, NTimePicker } from 'naive-ui'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import api from '@/api'
 import AccountModal from '@/components/AccountModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
@@ -16,6 +16,7 @@ import { useStatusStore } from '@/stores/status'
 import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
+const route = useRoute()
 const accountStore = useAccountStore()
 const userStore = useUserStore()
 const settingStore = useSettingStore()
@@ -23,12 +24,28 @@ const statusStore = useStatusStore()
 
 type SettingsTab = 'account' | 'strategy' | 'automation' | 'system'
 const storedTab = localStorage.getItem('settings-active-tab')
-const activeTab = ref<SettingsTab>(storedTab === 'user' ? 'system' : (storedTab as SettingsTab) || 'account')
+const settingsTabKeys: SettingsTab[] = ['account', 'strategy', 'automation', 'system']
+const queryTab = String(route.query.tab || '')
+const initialTab = settingsTabKeys.includes(queryTab as SettingsTab)
+  ? queryTab as SettingsTab
+  : storedTab === 'user' ? 'system' : (storedTab as SettingsTab) || 'account'
+const activeTab = ref<SettingsTab>(initialTab)
 const chevronUpIconClass = 'i-carbon-chevron-up'
 const chevronDownIconClass = 'i-carbon-chevron-down'
 
 watch(activeTab, (newTab) => {
   localStorage.setItem('settings-active-tab', newTab)
+  if (String(route.query.tab || '') !== newTab) {
+    router.replace({
+      query: { ...route.query, tab: newTab },
+    })
+  }
+})
+
+watch(() => route.query.tab, (value) => {
+  const nextTab = String(value || '')
+  if (settingsTabKeys.includes(nextTab as SettingsTab) && nextTab !== activeTab.value)
+    activeTab.value = nextTab as SettingsTab
 })
 
 const tabs = [
