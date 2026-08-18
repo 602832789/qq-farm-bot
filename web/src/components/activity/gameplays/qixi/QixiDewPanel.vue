@@ -1,18 +1,10 @@
 <script setup lang="ts">
 import type { QixiActivityDto, QixiDewLandTargetDto, QixiDewTargetsDto } from '@/stores/activity-center'
 import { computed, ref, watch } from 'vue'
-
-interface FriendOption {
-  gid?: string | number
-  name?: string
-  remark?: string
-  level?: string | number
-}
+import { RouterLink } from 'vue-router'
 
 const props = defineProps<{
   activity: QixiActivityDto
-  friends: FriendOption[]
-  friendsLoading: boolean
   targets: QixiDewTargetsDto | null
   loading: boolean
   pending: boolean
@@ -23,17 +15,9 @@ const props = defineProps<{
 const emit = defineEmits<{
   loadTargets: [hostGid: string]
   use: [payload: { hostGid: string, landIds: string[] }]
-  refreshFriends: []
 }>()
 
-const farmMode = ref<'self' | 'friend'>('self')
-const selectedFriendGid = ref('')
 const selectedLandIds = ref(new Set<string>())
-
-const friendOptions = computed(() => props.friends
-  .filter(friend => Number(friend.gid) > 0)
-  .slice()
-  .sort((left, right) => friendName(left).localeCompare(friendName(right), 'zh-CN')))
 
 const usedLandIdSet = computed(() => new Set(props.usedLandIds.map(String)))
 const dewBalance = computed(() => {
@@ -77,38 +61,8 @@ watch([() => props.targets?.lands, usedLandIdSet], () => {
   selectedLandIds.value = new Set([...selectedLandIds.value].filter(landId => available.has(landId)))
 })
 
-watch(friendOptions, (friends) => {
-  if (selectedFriendGid.value && !friends.some(friend => String(friend.gid) === selectedFriendGid.value))
-    selectedFriendGid.value = ''
-})
-
-function friendName(friend: FriendOption) {
-  return String(friend.remark || friend.name || `好友 ${friend.gid || ''}`)
-}
-
-function selectFarmMode(mode: 'self' | 'friend') {
-  farmMode.value = mode
-  selectedLandIds.value = new Set()
-  if (mode === 'self') {
-    emit('loadTargets', '')
-    return
-  }
-  if (selectedFriendGid.value)
-    emit('loadTargets', selectedFriendGid.value)
-}
-
-function selectFriend(value: unknown) {
-  selectedFriendGid.value = String(value || '')
-  selectedLandIds.value = new Set()
-  if (selectedFriendGid.value)
-    emit('loadTargets', selectedFriendGid.value)
-}
-
 function reloadTargets() {
-  const hostGid = farmMode.value === 'friend' ? selectedFriendGid.value : ''
-  if (farmMode.value === 'friend' && !hostGid)
-    return
-  emit('loadTargets', hostGid)
+  emit('loadTargets', '')
 }
 
 function chooseLand(target: QixiDewLandTargetDto) {
@@ -149,7 +103,7 @@ function useDew() {
         <div>
           <small>限时交互道具</small>
           <h2>{{ activity.dew.name || '鹊羽灵露' }}</h2>
-          <p>可多选已种作物的土地，一键操作会按地块编号依次使用</p>
+          <p>活动页操作自己的土地；好友土地与其他特殊道具统一在好友页使用</p>
         </div>
       </div>
       <div class="dew-balance">
@@ -171,35 +125,28 @@ function useDew() {
     <div v-if="activity.active" class="dew-workbench">
       <aside class="dew-protocol">
         <span class="protocol-index">01</span>
-        <h3>选择农场</h3>
-        <div class="farm-switch" role="group" aria-label="农场范围">
-          <button type="button" :class="{ active: farmMode === 'self' }" @click="selectFarmMode('self')">
-            <span class="i-carbon-home" />我的农场
-          </button>
-          <button type="button" :class="{ active: farmMode === 'friend' }" @click="selectFarmMode('friend')">
-            <span class="i-carbon-user-multiple" />好友农场
-          </button>
+        <h3>使用范围</h3>
+        <div class="farm-scope">
+          <div class="farm-scope__current">
+            <span class="i-carbon-home" />
+            <div>
+              <strong>我的农场</strong>
+              <small>在这里选择自己的地块</small>
+            </div>
+          </div>
+          <RouterLink class="friend-entry" :to="{ name: 'friends' }">
+            <span class="i-carbon-user-multiple" />
+            <span>
+              <strong>前往好友页使用</strong>
+              <small>灵露、黄金虫、足球等统一入口</small>
+            </span>
+            <span class="i-carbon-arrow-right" />
+          </RouterLink>
         </div>
-
-        <label v-if="farmMode === 'friend'" class="friend-select">
-          <span>农场主人</span>
-          <select :value="selectedFriendGid" :disabled="friendsLoading" @change="selectFriend(($event.target as HTMLSelectElement).value)">
-            <option value="">请选择好友</option>
-            <option v-for="friend in friendOptions" :key="String(friend.gid)" :value="String(friend.gid)">
-              {{ friendName(friend) }} · {{ friend.gid }}
-            </option>
-          </select>
-        </label>
-
-        <button v-if="farmMode === 'friend'" type="button" class="refresh-friends" :disabled="friendsLoading" @click="emit('refreshFriends')">
-          <span v-if="friendsLoading" class="i-carbon-circle-dash animate-spin" />
-          <span v-else class="i-carbon-renew" />
-          {{ friendsLoading ? '同步中' : '同步好友列表' }}
-        </button>
 
         <div class="server-note">
           <span class="i-carbon-security" />
-          <p>这里只筛选“已有作物”的候选地块。作物品级（2 品及以下不可用）与重复使用状态由服务器在提交时最终校验。</p>
+          <p>这里只筛选自己农场中“已有作物”的候选地块。作物品级（2 品及以下不可用）与重复使用状态由服务器在提交时最终校验。</p>
         </div>
       </aside>
 
@@ -217,22 +164,17 @@ function useDew() {
             <button type="button" :disabled="selectedTargets.length === 0" @click="clearSelection">
               清空
             </button>
-            <button type="button" class="reload-command" :disabled="loading || (farmMode === 'friend' && !selectedFriendGid)" title="重新读取当前农场" @click="reloadTargets">
+            <button type="button" class="reload-command" :disabled="loading" title="重新读取我的农场" @click="reloadTargets">
               <span v-if="loading" class="i-carbon-circle-dash animate-spin" />
               <span v-else class="i-carbon-renew" />
             </button>
           </div>
         </div>
 
-        <div v-if="farmMode === 'friend' && !selectedFriendGid" class="land-state">
-          <span class="i-carbon-location-person" />
-          <strong>先选择一位好友</strong>
-          <small>读取好友农场不会使用灵露</small>
-        </div>
-        <div v-else-if="loading" class="land-state">
+        <div v-if="loading" class="land-state">
           <span class="i-svg-spinners-90-ring-with-bg" />
           <strong>正在读取最新地块</strong>
-          <small>好友农场会完成一次进入与离开</small>
+          <small>正在同步我的农场土地状态</small>
         </div>
         <div v-else-if="error" class="land-state land-state--error">
           <span class="i-carbon-warning-alt" />
@@ -284,8 +226,8 @@ function useDew() {
     <div v-else class="dew-archive">
       <span class="i-carbon-archive" />
       <div>
-        <strong>农场互动入口已收起</strong>
-        <p>限时互动只在活动期间注入到土地卡片。剩余材料不会自动出售；服务端开放出售后，可在仓库中手动处理。活动若再次开放，会按新的活动实例重新启用。</p>
+        <strong>活动专属入口已收起</strong>
+        <p>好友页仍会列出背包中可提交的特殊互动道具，能否继续使用由服务端回包判断。剩余材料不会自动出售；满足出售条件后可在仓库中手动处理。</p>
       </div>
     </div>
   </section>
@@ -438,14 +380,12 @@ function useDew() {
 .land-toolbar h3 {
   font-size: 15px;
 }
-.farm-switch {
+.farm-scope {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 5px;
+  gap: 8px;
   margin-top: 13px;
 }
-.farm-switch button,
-.refresh-friends,
+.friend-entry,
 .reload-command,
 .land-state button {
   border: 1px solid #c9d7d1;
@@ -453,50 +393,52 @@ function useDew() {
   background: #f7faf8;
   cursor: pointer;
 }
-.farm-switch button {
-  min-height: 42px;
-  display: grid;
-  place-items: center;
-  gap: 2px;
+.farm-scope__current,
+.friend-entry {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
   border-radius: 4px;
-  font-size: 9px;
 }
-.farm-switch button > span {
-  font-size: 16px;
-}
-.farm-switch button.active {
-  border-color: var(--dew-green);
+.farm-scope__current {
   color: #fff;
   background: var(--dew-green);
 }
-.friend-select {
-  display: grid;
-  gap: 5px;
-  margin-top: 12px;
-  color: #6d7b78;
-  font-size: 9px;
+.farm-scope__current > span,
+.friend-entry > span:first-child {
+  flex: 0 0 auto;
+  font-size: 18px;
 }
-.friend-select select {
-  width: 100%;
-  height: 38px;
+.farm-scope__current div,
+.friend-entry > span:nth-child(2) {
   min-width: 0;
-  padding: 0 8px;
-  border: 1px solid #c9d7d1;
-  border-radius: 4px;
-  outline: 0;
-  color: var(--dew-ink);
-  background: #fff;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+.farm-scope strong {
   font-size: 10px;
 }
-.friend-select select:focus {
-  border-color: var(--dew-green);
+.farm-scope small {
+  margin-top: 2px;
+  font-size: 8px;
+  opacity: 0.78;
 }
-.refresh-friends {
-  width: 100%;
-  height: 34px;
-  margin-top: 7px;
-  border-radius: 4px;
-  font-size: 9px;
+.friend-entry {
+  text-decoration: none;
+  transition:
+    border-color 0.16s ease,
+    background-color 0.16s ease;
+}
+.friend-entry:hover {
+  border-color: var(--dew-green);
+  background: #eff7f2;
+}
+.friend-entry > span:last-child {
+  flex: 0 0 auto;
+  font-size: 14px;
 }
 .server-note {
   display: flex;
@@ -719,8 +661,7 @@ function useDew() {
   cursor: pointer;
 }
 .dew-submit button:disabled,
-.reload-command:disabled,
-.refresh-friends:disabled {
+.reload-command:disabled {
   opacity: 0.46;
   cursor: not-allowed;
 }

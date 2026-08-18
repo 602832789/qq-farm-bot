@@ -125,8 +125,6 @@ function stageState(stage: QixiActivityDto['bridge']['stages'][number]) {
     <template v-if="activity">
       <QixiDewPanel
         :activity="activity"
-        :friends="friends"
-        :friends-loading="friendsLoading"
         :targets="dewTargets"
         :loading="dewTargetsLoading"
         :pending="pendingDew"
@@ -134,7 +132,6 @@ function stageState(stage: QixiActivityDto['bridge']['stages'][number]) {
         :used-land-ids="dewUsedLandIds"
         @load-targets="emit('loadDewTargets', $event)"
         @use="emit('useDew', $event.hostGid, $event.landIds)"
-        @refresh-friends="emit('refreshFriends')"
       />
 
       <section class="qixi-section bridge-section">

@@ -3,7 +3,7 @@ import type { FriendInteractionItemDto } from '@/stores/friend'
 import { useIntervalFn } from '@vueuse/core'
 import { NButton, NButtonGroup, NCard, NModal, NPagination, NSpin, NTab, NTabs } from 'naive-ui'
 import { storeToRefs } from 'pinia'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import api from '@/api'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import LandCard from '@/components/LandCard.vue'
@@ -13,13 +13,11 @@ import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 import { useAccountStore } from '@/stores/account'
 import { useActivityCenterStore } from '@/stores/activity-center'
 import { useFriendStore } from '@/stores/friend'
-import { useStatusStore } from '@/stores/status'
 import { useToastStore } from '@/stores/toast'
 
 const accountStore = useAccountStore()
 const activityStore = useActivityCenterStore()
 const friendStore = useFriendStore()
-const statusStore = useStatusStore()
 const toast = useToastStore()
 const { currentAccountId, currentAccount } = storeToRefs(accountStore)
 const {
@@ -28,6 +26,7 @@ const {
   friendLands,
   friendLandsLoading,
   friendLandsError,
+  friendLandsLoaded,
   blacklist,
   interactRecords,
   interactLoading,
@@ -49,8 +48,6 @@ const {
   actionError: activityActionError,
   notice: activityNotice,
 } = storeToRefs(activityStore)
-const { status, loading: statusLoading, realtimeConnected } = storeToRefs(statusStore)
-
 const isQqAccount = computed(() => {
   const acc = currentAccount.value
   if (!acc)
@@ -282,8 +279,6 @@ function interactionLandSelectionLabel(friendId: unknown, land: any) {
     return '成熟不可放'
   if (!isInteractionLandCandidate(land))
     return '不可用'
-  if (isInteractionLandSelected(friendId, land))
-    return '已选择'
   return ''
 }
 
@@ -388,27 +383,22 @@ function giftQixiSachetToFriend(friend: any, event: Event) {
 }
 
 async function loadData() {
-  if (currentAccountId.value) {
-    const acc = currentAccount.value
-    if (!acc)
-      return
+  const accountId = currentAccountId.value
+  const acc = currentAccount.value
+  if (!accountId || !acc?.running)
+    return
 
-    if (!realtimeConnected.value) {
-      await statusStore.fetchStatus(currentAccountId.value)
-    }
-
-    if (acc.running && status.value?.connection?.connected) {
-      avatarErrorKeys.value.clear()
-      friendStore.fetchFriends(currentAccountId.value)
-      friendStore.fetchBlacklist(currentAccountId.value)
-      friendStore.fetchInteractRecords(currentAccountId.value)
-      friendStore.fetchInteractionItems(currentAccountId.value)
-      activityStore.lazyLoad(currentAccountId.value)
-      if (isQqAccount.value) {
-        friendStore.fetchKnownFriendSettings(currentAccountId.value)
-      }
-    }
-  }
+  avatarErrorKeys.value.clear()
+  const requests = [
+    friendStore.fetchFriends(accountId),
+    friendStore.fetchBlacklist(accountId),
+    friendStore.fetchInteractRecords(accountId),
+    friendStore.fetchInteractionItems(accountId),
+    activityStore.lazyLoad(accountId),
+  ]
+  if (isQqAccount.value)
+    requests.push(friendStore.fetchKnownFriendSettings(accountId))
+  await Promise.allSettled(requests)
 }
 
 useIntervalFn(() => {
@@ -421,18 +411,18 @@ useIntervalFn(() => {
   }
 }, 1000)
 
-onMounted(() => {
-  loadData()
-})
-
 watch(currentAccountId, () => {
   expandedFriends.value.clear()
   selectedInteractionItemId.value = ''
   selectedInteractionLandIds.value = {}
   lastInteractionResults.value = {}
   friendStore.resetInteractionState()
-  loadData()
+  friendStore.resetFriendLandState()
 })
+
+watch([currentAccountId, () => currentAccount.value?.running], () => {
+  void loadData()
+}, { immediate: true })
 
 watch(interactionItems, (items) => {
   if (!items.some(item => String(item.itemId) === selectedInteractionItemId.value))
@@ -468,8 +458,11 @@ function toggleFriend(friendId: string) {
     expandedFriends.value.clear()
     selectedInteractionLandIds.value = {}
     expandedFriends.value.add(key)
-    if (currentAccountId.value && currentAccount.value?.running && status.value?.connection?.connected) {
-      friendStore.fetchFriendLands(currentAccountId.value, key)
+    if (currentAccountId.value && currentAccount.value?.running) {
+      void Promise.allSettled([
+        friendStore.fetchFriendLands(currentAccountId.value, key),
+        friendStore.fetchInteractionItems(currentAccountId.value),
+      ])
     }
   }
 }
@@ -791,7 +784,7 @@ async function handleBatchAddKnownFriendGids() {
       </NTab>
     </NTabs>
 
-    <div v-if="loading || statusLoading || interactLoading" class="flex justify-center py-12">
+    <div v-if="loading || interactLoading" class="flex justify-center py-12">
       <NSpin size="large" />
     </div>
 
@@ -807,14 +800,14 @@ async function handleBatchAddKnownFriendGids() {
       </div>
     </div>
 
-    <div v-else-if="!status?.connection?.connected" class="flex flex-col items-center justify-center gap-4 farm-card rounded-2xl bg-white p-12 text-center text-gray-500 shadow-md dark:bg-gray-800">
+    <div v-else-if="!currentAccount?.running" class="flex flex-col items-center justify-center gap-4 farm-card rounded-2xl bg-white p-12 text-center text-gray-500 shadow-md dark:bg-gray-800">
       <span class="i-carbon-network-4 text-4xl text-gray-400" />
       <div>
         <div class="text-lg text-gray-700 font-medium dark:text-gray-300">
-          账号未登录
+          账号未运行
         </div>
         <div class="mt-1 text-sm text-gray-400">
-          请先运行账号或检查网络连接
+          请先启动账号；启动后土地请求的具体连接错误会在好友卡片中显示
         </div>
       </div>
     </div>
@@ -1016,6 +1009,13 @@ async function handleBatchAddKnownFriendGids() {
                 <span>{{ friendLandsError[friend.gid] }}</span>
                 <NButton size="small" secondary type="error" @click="currentAccountId && friendStore.fetchFriendLands(currentAccountId, String(friend.gid))">
                   重新读取
+                </NButton>
+              </div>
+              <div v-else-if="!friendLandsLoaded[friend.gid]" class="flex flex-col items-center gap-2 py-5 text-center text-gray-500 dark:text-gray-400">
+                <span class="i-carbon-data-view-alt text-2xl" />
+                <span>尚未读取该好友土地</span>
+                <NButton size="small" secondary @click="currentAccountId && friendStore.fetchFriendLands(currentAccountId, String(friend.gid))">
+                  读取土地
                 </NButton>
               </div>
               <template v-else>

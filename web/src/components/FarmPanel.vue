@@ -7,14 +7,11 @@ import ConfirmModal from '@/components/ConfirmModal.vue'
 import LandCard from '@/components/LandCard.vue'
 import { useAccountStore } from '@/stores/account'
 import { useFarmStore } from '@/stores/farm'
-import { useStatusStore } from '@/stores/status'
 
 const farmStore = useFarmStore()
 const accountStore = useAccountStore()
-const statusStore = useStatusStore()
-const { lands, summary, loading } = storeToRefs(farmStore)
+const { lands, summary, loading, loaded, error } = storeToRefs(farmStore)
 const { currentAccountId, currentAccount } = storeToRefs(accountStore)
-const { status, loading: statusLoading, realtimeConnected } = storeToRefs(statusStore)
 
 const operating = ref(false)
 const confirmVisible = ref(false)
@@ -66,24 +63,23 @@ const operations = [
 ] as const
 
 async function refresh() {
-  if (currentAccountId.value) {
-    const acc = currentAccount.value
-    if (!acc)
-      return
-
-    if (!realtimeConnected.value) {
-      await statusStore.fetchStatus(currentAccountId.value)
-    }
-
-    if (acc.running && status.value?.connection?.connected) {
-      farmStore.fetchLands(currentAccountId.value)
-    }
-  }
+  const accountId = currentAccountId.value
+  if (!accountId || !currentAccount.value?.running)
+    return
+  await farmStore.fetchLands(accountId)
 }
 
 watch(currentAccountId, () => {
-  refresh()
+  farmStore.resetLandState()
 })
+
+watch([currentAccountId, () => currentAccount.value?.running], () => {
+  if (!currentAccount.value?.running) {
+    farmStore.resetLandState()
+    return
+  }
+  void refresh()
+}, { immediate: true })
 
 const { pause, resume } = useIntervalFn(() => {
   for (const land of lands.value || []) {
@@ -95,7 +91,6 @@ const { pause, resume } = useIntervalFn(() => {
 const { pause: pauseRefresh, resume: resumeRefresh } = useIntervalFn(refresh, 60000)
 
 onMounted(() => {
-  refresh()
   resume()
   resumeRefresh()
 })
@@ -119,7 +114,7 @@ onUnmounted(() => {
             v-for="op in operations"
             :key="op.type"
             :type="op.buttonType"
-            :disabled="operating"
+            :disabled="operating || !currentAccount?.running"
             @click="handleOperate(op.type)"
           >
             <span :class="op.icon" />
@@ -132,25 +127,25 @@ onUnmounted(() => {
       <div class="flex flex-wrap gap-x-5 gap-y-2 border-b border-gray-100 px-5 py-3 text-sm dark:border-gray-700">
         <div class="flex items-center gap-1.5 text-amber-700 dark:text-amber-300">
           <div class="i-carbon-clean" />
-          <span class="font-body font-semibold">可收: {{ summary?.harvestable || 0 }}</span>
+          <span class="font-body font-semibold">可收: {{ loaded && !error ? (summary?.harvestable || 0) : '--' }}</span>
         </div>
         <div class="flex items-center gap-1.5 text-green-700 dark:text-green-300">
           <div class="i-carbon-sprout" />
-          <span class="font-body font-semibold">生长: {{ summary?.growing || 0 }}</span>
+          <span class="font-body font-semibold">生长: {{ loaded && !error ? (summary?.growing || 0) : '--' }}</span>
         </div>
         <div class="flex items-center gap-1.5 text-gray-600 dark:text-gray-300">
           <div class="i-carbon-checkbox" />
-          <span class="font-body font-semibold">空闲: {{ summary?.empty || 0 }}</span>
+          <span class="font-body font-semibold">空闲: {{ loaded && !error ? (summary?.empty || 0) : '--' }}</span>
         </div>
         <div class="flex items-center gap-1.5 text-red-700 dark:text-red-300">
           <div class="i-carbon-warning" />
-          <span class="font-body font-semibold">枯萎: {{ summary?.dead || 0 }}</span>
+          <span class="font-body font-semibold">枯萎: {{ loaded && !error ? (summary?.dead || 0) : '--' }}</span>
         </div>
       </div>
 
       <!-- Grid -->
       <div class="p-5">
-        <div v-if="loading || statusLoading" class="flex justify-center py-12">
+        <div v-if="loading" class="flex justify-center py-12">
           <div class="i-svg-spinners-90-ring-with-bg text-4xl text-green-500" />
         </div>
 
@@ -166,26 +161,49 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div v-else-if="!status?.connection?.connected" class="flex flex-col items-center justify-center gap-4 farm-card rounded-2xl bg-white p-12 text-center text-gray-500 shadow-md dark:bg-gray-800">
+        <div v-else-if="!currentAccount?.running" class="flex flex-col items-center justify-center gap-4 farm-card rounded-2xl bg-white p-12 text-center text-gray-500 shadow-md dark:bg-gray-800">
           <div class="i-carbon-network-4 text-5xl" />
           <div>
             <div class="text-lg text-gray-700 font-medium font-display dark:text-gray-300">
-              账号未登录
+              账号未运行
             </div>
             <div class="font-body mt-1 text-sm text-gray-400">
-              请先运行账号或检查网络连接
+              请先启动账号；启动后会立即读取土地
             </div>
           </div>
         </div>
 
-        <div v-else-if="!lands || lands.length === 0" class="flex flex-col items-center justify-center gap-4 py-16">
-          <div class="i-carbon-sprout text-6xl text-green-500" />
-          <div class="text-lg text-gray-500 font-display">
-            还没有种下作物哦~
+        <div v-else-if="error" class="flex flex-col items-center justify-center gap-3 py-16 text-center text-red-600 dark:text-red-300">
+          <div class="i-carbon-warning-alt text-5xl" />
+          <div class="max-w-xl text-sm">
+            {{ error }}
+          </div>
+          <NButton secondary type="error" @click="refresh">
+            重新读取
+          </NButton>
+        </div>
+
+        <div v-else-if="!loaded" class="flex flex-col items-center justify-center gap-3 py-16 text-center text-gray-500">
+          <div class="i-carbon-data-view-alt text-5xl" />
+          <div class="text-lg font-display">
+            尚未读取土地详情
+          </div>
+          <NButton secondary @click="refresh">
+            立即读取
+          </NButton>
+        </div>
+
+        <div v-else-if="!lands || lands.length === 0" class="flex flex-col items-center justify-center gap-3 py-16 text-center text-gray-500">
+          <div class="i-carbon-sprout text-5xl text-green-500" />
+          <div class="text-lg font-display">
+            当前没有可展示的土地
           </div>
           <div class="font-body text-sm text-gray-400">
-            快去种下第一棵种子吧
+            这不是“尚未种植”的判断，可重新读取确认协议数据
           </div>
+          <NButton secondary @click="refresh">
+            重新读取
+          </NButton>
         </div>
 
         <div v-else class="grid grid-cols-2 gap-4 lg:grid-cols-6 md:grid-cols-4 sm:grid-cols-3">

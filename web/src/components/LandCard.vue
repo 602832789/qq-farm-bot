@@ -156,13 +156,15 @@ function activateSelection() {
 
     <div
       v-if="selectable"
-      class="selection-cue absolute right-2 top-2 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold"
+      class="selection-cue absolute right-2 top-2"
       :class="selected ? 'selection-cue--selected' : selectionDisabled ? 'selection-cue--disabled' : 'selection-cue--ready'"
+      :title="selectionLabel || (selected ? '已选择' : selectionDisabled ? '不可选择' : '点击选择')"
     >
-      <span v-if="selected" class="i-carbon-checkmark-filled" />
-      <span v-else-if="selectionDisabled" class="i-carbon-checkmark-outline" />
-      <span v-else class="i-carbon-radio-button" />
-      <span v-if="selectionLabel">{{ selectionLabel }}</span>
+      <span class="selection-cue__mark">
+        <span v-if="selected" class="i-carbon-checkmark" />
+        <span v-else-if="selectionDisabled" class="i-carbon-subtract" />
+      </span>
+      <span v-if="selectionLabel" class="selection-cue__label">{{ selectionLabel }}</span>
     </div>
 
     <!-- Plant size badge (joint planting) -->
@@ -292,24 +294,63 @@ function activateSelection() {
 }
 .selection-cue {
   z-index: 2;
-  border: 1px solid currentColor;
+  min-height: 22px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  pointer-events: none;
   line-height: 1.1;
-  box-shadow: 0 2px 7px rgba(40, 62, 53, 0.12);
 }
 .selection-cue--ready {
-  color: #2f6f58;
-  background: rgba(244, 252, 247, 0.94);
+  color: #257458;
 }
 .selection-cue--selected {
-  color: #fff;
-  background: #257458;
+  color: #257458;
 }
 .selection-cue--disabled {
-  color: #6d7772;
-  background: rgba(239, 242, 240, 0.94);
+  color: #7d8782;
+}
+.selection-cue__mark {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid currentColor;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 2px 7px rgba(40, 62, 53, 0.14);
+}
+.selection-cue__mark > span {
+  font-size: 15px;
+}
+.selection-cue--selected .selection-cue__mark {
+  color: #fff;
+  border-color: #257458;
+  background: #257458;
+}
+.selection-cue--disabled .selection-cue__mark {
+  color: #7d8782;
+  border-color: #aab2ae;
+  background: rgba(239, 242, 240, 0.96);
+}
+.selection-cue__label {
+  padding: 4px 7px;
+  border: 1px solid rgba(37, 116, 88, 0.24);
+  border-radius: 999px;
+  color: #245f4b;
+  background: rgba(244, 252, 247, 0.96);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 2px 7px rgba(40, 62, 53, 0.1);
+}
+.selection-cue--disabled .selection-cue__label {
+  border-color: rgba(109, 119, 114, 0.22);
+  color: #69736e;
+  background: rgba(239, 242, 240, 0.96);
 }
 
-.land-card:hover {
+.land-card:hover:not(.land-card--selection-disabled):not(.land-card--selected) {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.45),
     0 12px 26px rgba(40, 48, 44, 0.16);

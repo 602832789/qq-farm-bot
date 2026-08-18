@@ -58,6 +58,7 @@ export const useFriendStore = defineStore('friend', () => {
   const friendLands = ref<Record<string, any[]>>({})
   const friendLandsLoading = ref<Record<string, boolean>>({})
   const friendLandsError = ref<Record<string, string>>({})
+  const friendLandsLoaded = ref<Record<string, boolean>>({})
   const blacklist = ref<BlacklistItem[]>([])
   const interactRecords = ref<any[]>([])
   const interactLoading = ref(false)
@@ -69,6 +70,8 @@ export const useFriendStore = defineStore('friend', () => {
   const interactionUseError = ref('')
   const interactionItemsAccountId = ref('')
   const interactionUsedLandIds = ref<Record<string, string[]>>({})
+  let friendLandRequestSequence = 0
+  let interactionItemsRequestSequence = 0
 
   const knownFriendGids = ref<number[]>([])
   const knownFriendGidSyncCooldownSec = ref(600)
@@ -196,35 +199,53 @@ export const useFriendStore = defineStore('friend', () => {
   async function fetchFriendLands(accountId: string, friendId: string) {
     if (!accountId || !friendId)
       return false
-    friendLandsLoading.value[friendId] = true
-    friendLandsError.value[friendId] = ''
+    const sequence = ++friendLandRequestSequence
+    const key = String(friendId)
+    friendLandsLoading.value[key] = true
+    friendLandsError.value[key] = ''
+    friendLandsLoaded.value[key] = false
     try {
-      const res = await api.get(`/api/friend/${friendId}/lands`, {
+      const res = await api.get(`/api/friend/${key}/lands`, {
         headers: { 'x-account-id': accountId },
         skipErrorToast: true,
       } as any)
+      if (sequence !== friendLandRequestSequence)
+        return false
       if (res.data.ok) {
         const lands = res.data.data.lands || []
         const summary = res.data.data.summary || null
-        friendLands.value[friendId] = lands
-        syncFriendPlantSummary(friendId, lands, summary)
+        friendLands.value[key] = lands
+        syncFriendPlantSummary(key, lands, summary)
         return true
       }
-      friendLands.value[friendId] = []
-      friendLandsError.value[friendId] = String(res.data?.error || '无法读取好友土地')
+      friendLands.value[key] = []
+      friendLandsError.value[key] = String(res.data?.error || '无法读取好友土地')
       return false
     }
     catch (error: any) {
-      friendLands.value[friendId] = []
+      if (sequence !== friendLandRequestSequence)
+        return false
+      friendLands.value[key] = []
       const rawMessage = String(error?.response?.data?.error || error?.message || '')
-      friendLandsError.value[friendId] = /gamepb\.|code=\d+|GatewayError/.test(rawMessage)
+      friendLandsError.value[key] = /gamepb\.|code=\d+|GatewayError/.test(rawMessage)
         ? '无法进入该好友农场，好友状态可能已变化，请刷新后重试'
         : (rawMessage || '无法读取好友土地，请稍后重试')
       return false
     }
     finally {
-      friendLandsLoading.value[friendId] = false
+      if (sequence === friendLandRequestSequence) {
+        friendLandsLoaded.value[key] = true
+        friendLandsLoading.value[key] = false
+      }
     }
+  }
+
+  function resetFriendLandState() {
+    friendLandRequestSequence++
+    friendLands.value = {}
+    friendLandsLoading.value = {}
+    friendLandsError.value = {}
+    friendLandsLoaded.value = {}
   }
 
   async function operate(accountId: string, friendId: string, opType: string) {
@@ -269,6 +290,7 @@ export const useFriendStore = defineStore('friend', () => {
     const requestedAccountId = String(accountId || '').trim()
     if (!requestedAccountId)
       return false
+    const sequence = ++interactionItemsRequestSequence
     if (interactionItemsAccountId.value !== requestedAccountId) {
       interactionItems.value = []
       interactionItemsAccountId.value = requestedAccountId
@@ -280,6 +302,8 @@ export const useFriendStore = defineStore('friend', () => {
         headers: { 'x-account-id': requestedAccountId },
         skipErrorToast: true,
       } as any)
+      if (sequence !== interactionItemsRequestSequence)
+        return false
       if (!res.data?.ok) {
         interactionItems.value = []
         interactionItemsError.value = String(res.data?.error || '无法读取特殊互动道具')
@@ -289,12 +313,15 @@ export const useFriendStore = defineStore('friend', () => {
       return true
     }
     catch (error: any) {
+      if (sequence !== interactionItemsRequestSequence)
+        return false
       interactionItems.value = []
       interactionItemsError.value = String(error?.response?.data?.error || error?.message || '无法读取特殊互动道具')
       return false
     }
     finally {
-      interactionItemsLoading.value = false
+      if (sequence === interactionItemsRequestSequence)
+        interactionItemsLoading.value = false
     }
   }
 
@@ -333,7 +360,9 @@ export const useFriendStore = defineStore('friend', () => {
   }
 
   function resetInteractionState() {
+    interactionItemsRequestSequence++
     interactionItems.value = []
+    interactionItemsLoading.value = false
     interactionItemsError.value = ''
     interactionUseError.value = ''
     interactionItemsAccountId.value = ''
@@ -445,6 +474,7 @@ export const useFriendStore = defineStore('friend', () => {
     friendLands,
     friendLandsLoading,
     friendLandsError,
+    friendLandsLoaded,
     blacklist,
     interactRecords,
     interactLoading,
@@ -464,6 +494,7 @@ export const useFriendStore = defineStore('friend', () => {
     toggleBlacklist,
     fetchInteractRecords,
     fetchFriendLands,
+    resetFriendLandState,
     operate,
     fetchInteractionItems,
     useInteractionItemBatch,

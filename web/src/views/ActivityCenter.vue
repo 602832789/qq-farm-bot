@@ -173,9 +173,8 @@ function refreshQixiFriends() {
     friendStore.fetchFriends(String(currentAccountId.value), true)
 }
 async function refreshQixiActivity() {
-  const hostGid = dewTargets.value?.host.isSelf ? '' : (dewTargets.value?.host.gid || '')
   await load(true)
-  await activityStore.fetchQixiDewTargets(accountId(), hostGid)
+  await activityStore.fetchQixiDewTargets(accountId(), '')
 }
 function selectShopGoods(goods: ShopGoodsDto) {
   selectedShopGoods.value = goods
