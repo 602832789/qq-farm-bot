@@ -186,6 +186,31 @@ test('bag, item display, task and season additions use the captured wire types',
     assert.equal(number(pass.field_12), 8);
 });
 
+test('land unlock and upgrade conditions match captured field meanings', () => {
+    const unlock = type('gamepb.plantpb.LandUnlockCondition').decode(hex('08061005188827'));
+    assert.equal(number(unlock.preceding_land_id), 6);
+    assert.equal(number(unlock.need_level), 5);
+    assert.equal(number(unlock.need_gold), 5000);
+
+    const upgrade = type('gamepb.plantpb.LandUpgradeCondition').decode(hex(
+        '08011093011a0908e90710808f85cd011a0608ed0710c879',
+    ));
+    assert.equal(number(upgrade.condition_type), 1);
+    assert.equal(number(upgrade.condition_value), 147);
+    assert.deepEqual(upgrade.required_items.map(item => ({
+        id: number(item.id),
+        count: number(item.count),
+    })), [
+        { id: 1001, count: 430000000 },
+        { id: 1005, count: 15560 },
+    ]);
+
+    const jointPlantMaster = type('gamepb.plantpb.LandInfo').decode(hex('080572030106027802'));
+    assert.equal(number(jointPlantMaster.id), 5);
+    assert.deepEqual(jointPlantMaster.slave_land_ids.map(number), [1, 6, 2]);
+    assert.equal(number(jointPlantMaster.land_size), 2);
+});
+
 test('Qixi bridge and gifting messages match the captured activity frames', () => {
     const bridge = type('gamepb.activitypb.QixiBridgeConfig').decode(hex(
         '0a0508810810010a0508ea071001121a08011205088008101e1a0508810810051a0608cd970610012002'
@@ -237,20 +262,18 @@ test('Qixi bridge and gifting messages match the captured activity frames', () =
     assert.deepEqual(rewardResult.awards.map(item => number(item.id)), [1025, 80003, 1002]);
 });
 
-test('Qixi dew targets the selected farm and land without changing the captured item payload', () => {
+test('Qixi dew targets only the captured 2x2 master land', () => {
     const requestType = type('gamepb.itempb.UseRequest');
-    const encoded = requestType.encode(requestType.create({
-        item: { id: 301103, count: 1, uid: 77 },
-        target: { host_gid: '1142601927', land_ids: [3], use_config_id: 0 },
-    })).finish();
-    const decoded = requestType.decode(encoded);
+    const capturedRequest = '0a0908afb012100130a0641209089082b7e103120105';
+    const decoded = requestType.decode(hex(capturedRequest));
 
     assert.equal(number(decoded.item.id), 301103);
     assert.equal(number(decoded.item.count), 1);
-    assert.equal(number(decoded.item.uid), 77);
-    assert.equal(number(decoded.target.host_gid), 1142601927);
-    assert.deepEqual(decoded.target.land_ids.map(number), [3]);
+    assert.equal(number(decoded.item.uid), 12832);
+    assert.equal(number(decoded.target.host_gid), 1009631504);
+    assert.deepEqual(decoded.target.land_ids.map(number), [5]);
     assert.equal(number(decoded.target.use_config_id), 0);
+    assert.equal(Buffer.from(requestType.encode(decoded).finish()).toString('hex'), capturedRequest);
 
     const reply = type('gamepb.itempb.UseReply').decode(hex(
         '0a0908afb012100130816322bc0108051001180520054a1008b0ea0110d00f18c41320e05d28a01f'
@@ -265,4 +288,35 @@ test('Qixi dew targets the selected farm and land without changing the captured 
     assert.equal(number(reply.land_reward.land_id), 5);
     assert.deepEqual(reply.land_reward.items.map(item => number(item.id)), [1024]);
     assert.deepEqual(reply.land_reward.items.map(item => number(item.count)), [1]);
+});
+
+test('football and golden insect use the captured generic item target protocol', () => {
+    const requestType = type('gamepb.itempb.UseRequest');
+    const captures = [
+        {
+            hex: '0a0908aeb012100130f452120908db93dcdd03120106',
+            itemId: 301102,
+            uid: 10612,
+            hostGid: 1001851355,
+            landId: 6,
+        },
+        {
+            hex: '0a0908adb012100130ba3d120908db93dcdd03120114',
+            itemId: 301101,
+            uid: 7866,
+            hostGid: 1001851355,
+            landId: 20,
+        },
+    ];
+
+    for (const capture of captures) {
+        const decoded = requestType.decode(hex(capture.hex));
+        assert.equal(number(decoded.item.id), capture.itemId);
+        assert.equal(number(decoded.item.count), 1);
+        assert.equal(number(decoded.item.uid), capture.uid);
+        assert.equal(number(decoded.target.host_gid), capture.hostGid);
+        assert.deepEqual(decoded.target.land_ids.map(number), [capture.landId]);
+        assert.equal(number(decoded.target.use_config_id), 0);
+        assert.equal(Buffer.from(requestType.encode(decoded).finish()).toString('hex'), capture.hex);
+    }
 });

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { FriendInteractionItemDto } from '@/stores/friend'
 import { useIntervalFn } from '@vueuse/core'
 import { NButton, NButtonGroup, NCard, NModal, NPagination, NSpin, NTab, NTabs } from 'naive-ui'
 import { storeToRefs } from 'pinia'
@@ -10,11 +11,13 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 import { useAccountStore } from '@/stores/account'
+import { useActivityCenterStore } from '@/stores/activity-center'
 import { useFriendStore } from '@/stores/friend'
 import { useStatusStore } from '@/stores/status'
 import { useToastStore } from '@/stores/toast'
 
 const accountStore = useAccountStore()
+const activityStore = useActivityCenterStore()
 const friendStore = useFriendStore()
 const statusStore = useStatusStore()
 const toast = useToastStore()
@@ -24,16 +27,28 @@ const {
   loading,
   friendLands,
   friendLandsLoading,
+  friendLandsError,
   blacklist,
   interactRecords,
   interactLoading,
   interactError,
+  interactionItems,
+  interactionItemsLoading,
+  interactionItemsError,
+  interactionUsePending,
+  interactionUseError,
   knownFriendGids,
   knownFriendGidSyncCooldownSec,
   friendsListCacheTtlSec,
   knownFriendSettingsLoading,
   knownFriendSettingsSaving,
 } = storeToRefs(friendStore)
+const {
+  qixi,
+  pendingActions: activityPendingActions,
+  actionError: activityActionError,
+  notice: activityNotice,
+} = storeToRefs(activityStore)
 const { status, loading: statusLoading, realtimeConnected } = storeToRefs(statusStore)
 
 const isQqAccount = computed(() => {
@@ -150,8 +165,27 @@ async function onConfirm() {
 }
 
 const expandedFriends = ref<Set<string>>(new Set())
+const selectedInteractionItemId = ref('')
+const selectedInteractionLandIds = ref<Record<string, string[]>>({})
+const lastInteractionResults = ref<Record<string, Array<{ landId: string, ok: boolean, message: string }>>>({})
+const clockNow = ref(Date.now())
 const currentPage = ref(1)
 const pageSize = 25
+
+const qixiGiftActive = computed(() => {
+  const activity = qixi.value
+  if (!activity?.active)
+    return false
+  return !activity.endTime || clockNow.value < activity.endTime
+})
+const qixiSachetBalance = computed(() => {
+  const value = Number(qixi.value?.balances.sachet || 0)
+  return Number.isSafeInteger(value) && value > 0 ? value : 0
+})
+
+const selectedInteractionItem = computed<FriendInteractionItemDto | null>(() => {
+  return interactionItems.value.find(item => String(item.itemId) === selectedInteractionItemId.value) || null
+})
 
 const sortedFriends = computed(() => {
   return [...friends.value].sort((a: any, b: any) => {
@@ -202,6 +236,157 @@ const filteredInteractRecords = computed(() => {
 
 const visibleInteractRecords = computed(() => filteredInteractRecords.value.slice(0, 50))
 
+function friendKey(friendId: unknown) {
+  return String(friendId || '')
+}
+
+function interactionSelectionKey(friendId: unknown, itemId: unknown = selectedInteractionItemId.value) {
+  return `${String(itemId || '')}:${friendKey(friendId)}`
+}
+
+function selectedInteractionIds(friendId: unknown, itemId: unknown = selectedInteractionItemId.value) {
+  return selectedInteractionLandIds.value[interactionSelectionKey(friendId, itemId)] || []
+}
+
+function usedInteractionIdSet(friendId: unknown, itemId: unknown = selectedInteractionItemId.value) {
+  if (!currentAccountId.value || !itemId)
+    return new Set<string>()
+  return new Set(friendStore.getInteractionUsedLandIds(currentAccountId.value, itemId, friendKey(friendId)))
+}
+
+function isInteractionLandCandidate(land: any) {
+  return !!land?.unlocked
+    && !land?.occupiedByMaster
+    && !!String(land?.plantName || '').trim()
+    && !['locked', 'empty', 'dead', 'stealable', 'harvested'].includes(String(land?.status || ''))
+}
+
+function isInteractionLandSelected(friendId: unknown, land: any) {
+  return selectedInteractionIds(friendId).includes(String(land?.id || ''))
+}
+
+function isInteractionLandDisabled(friendId: unknown, land: any) {
+  const item = selectedInteractionItem.value
+  return !item
+    || item.count < 1
+    || interactionUsePending.value
+    || !isInteractionLandCandidate(land)
+    || usedInteractionIdSet(friendId, item.itemId).has(String(land?.id || ''))
+}
+
+function interactionLandSelectionLabel(friendId: unknown, land: any) {
+  const landId = String(land?.id || '')
+  if (usedInteractionIdSet(friendId).has(landId))
+    return '本次已用'
+  if (['stealable', 'harvested'].includes(String(land?.status || '')))
+    return '成熟不可放'
+  if (!isInteractionLandCandidate(land))
+    return '不可用'
+  if (isInteractionLandSelected(friendId, land))
+    return '已选择'
+  return ''
+}
+
+function setSelectedInteractionIds(friendId: unknown, ids: string[], itemId: unknown = selectedInteractionItemId.value) {
+  const key = interactionSelectionKey(friendId, itemId)
+  selectedInteractionLandIds.value = {
+    ...selectedInteractionLandIds.value,
+    [key]: [...new Set(ids.map(String))].sort((left, right) => Number(left) - Number(right)),
+  }
+}
+
+function toggleInteractionLand(friendId: unknown, land: any) {
+  const item = selectedInteractionItem.value
+  if (!item || isInteractionLandDisabled(friendId, land))
+    return
+  const landId = String(land?.id || '')
+  const next = new Set(selectedInteractionIds(friendId, item.itemId))
+  if (next.has(landId)) {
+    next.delete(landId)
+  }
+  else {
+    if (next.size >= item.count) {
+      toast.info(`当前只有 ${item.count} 个${item.name}`)
+      return
+    }
+    next.add(landId)
+  }
+  setSelectedInteractionIds(friendId, [...next], item.itemId)
+}
+
+function selectAllInteractionLands(friendId: unknown) {
+  const item = selectedInteractionItem.value
+  if (!item)
+    return
+  const key = friendKey(friendId)
+  const used = usedInteractionIdSet(key, item.itemId)
+  const candidates = (friendLands.value[key] || [])
+    .filter(land => isInteractionLandCandidate(land) && !used.has(String(land.id)))
+    .sort((left, right) => Number(left.id) - Number(right.id))
+    .slice(0, item.count)
+    .map(land => String(land.id))
+  setSelectedInteractionIds(key, candidates, item.itemId)
+}
+
+function requestUseInteractionItem(friend: any) {
+  const accountId = currentAccountId.value
+  const item = selectedInteractionItem.value
+  if (!accountId || !item)
+    return
+  const key = friendKey(friend?.gid)
+  const landIds = selectedInteractionIds(key, item.itemId)
+  if (landIds.length === 0)
+    return
+  const friendName = String(friend?.name || `GID ${key}`)
+  const saleConditionWarning = item.saleConditionSatisfiedCount > 0
+    ? `该道具库存中有 ${item.saleConditionSatisfiedCount} 个已满足游戏配置的出售条件，可能已过活动或有效期，`
+    : ''
+  confirmAction(
+    `${saleConditionWarning}将在 ${friendName} 的 ${landIds.length} 块土地上按编号依次使用“${item.name}”。作物状态、地块限制及道具时效由服务端最终校验，部分地块可能失败；是否继续？`,
+    async () => {
+      const result = await friendStore.useInteractionItemBatch(accountId, key, item.itemId, landIds)
+      if (!result)
+        throw new Error(interactionUseError.value || `${item.name}使用失败`)
+      lastInteractionResults.value = {
+        ...lastInteractionResults.value,
+        [interactionSelectionKey(key, item.itemId)]: result.results || [],
+      }
+      const used = new Set(result.usedLandIds || [])
+      setSelectedInteractionIds(key, landIds.filter(landId => !used.has(landId)), item.itemId)
+      await friendStore.fetchFriendLands(accountId, key)
+      const successCount = Number(result.successCount || 0)
+      const failureCount = Number(result.failureCount || 0)
+      if (successCount > 0 && failureCount === 0)
+        toast.success(result.message || `已按顺序使用 ${successCount} 个${item.name}`)
+      else if (successCount > 0)
+        toast.warning(result.message || `成功 ${successCount} 块，跳过 ${failureCount} 块`)
+      else
+        toast.warning(result.message || `所选地块当前均不可使用${item.name}`)
+      return result
+    },
+  )
+}
+
+function interactionFailures(friendId: unknown) {
+  const results = lastInteractionResults.value[interactionSelectionKey(friendId)] || []
+  return results.filter(result => !result.ok)
+}
+
+function giftQixiSachetToFriend(friend: any, event: Event) {
+  event.stopPropagation()
+  if (!currentAccountId.value || !qixiGiftActive.value || qixiSachetBalance.value < 1)
+    return
+  const gid = friendKey(friend?.gid)
+  const name = String(friend?.name || `GID ${gid}`)
+  confirmAction(`确定向 ${name} 赠送 1 个鹊羽香囊吗？`, async () => {
+    const result = await activityStore.giftQixiSachet(currentAccountId.value!, gid)
+    if (!result)
+      throw new Error(activityActionError.value || '鹊羽香囊赠送失败')
+    toast.success(activityNotice.value || `已向 ${name} 赠送 1 个鹊羽香囊`)
+    return result
+  })
+}
+
 async function loadData() {
   if (currentAccountId.value) {
     const acc = currentAccount.value
@@ -217,6 +402,8 @@ async function loadData() {
       friendStore.fetchFriends(currentAccountId.value)
       friendStore.fetchBlacklist(currentAccountId.value)
       friendStore.fetchInteractRecords(currentAccountId.value)
+      friendStore.fetchInteractionItems(currentAccountId.value)
+      activityStore.lazyLoad(currentAccountId.value)
       if (isQqAccount.value) {
         friendStore.fetchKnownFriendSettings(currentAccountId.value)
       }
@@ -225,6 +412,7 @@ async function loadData() {
 }
 
 useIntervalFn(() => {
+  clockNow.value = Date.now()
   for (const gid of expandedFriends.value) {
     for (const land of friendLands.value[gid] || []) {
       if (land.matureInSec > 0)
@@ -239,7 +427,21 @@ onMounted(() => {
 
 watch(currentAccountId, () => {
   expandedFriends.value.clear()
+  selectedInteractionItemId.value = ''
+  selectedInteractionLandIds.value = {}
+  lastInteractionResults.value = {}
+  friendStore.resetInteractionState()
   loadData()
+})
+
+watch(interactionItems, (items) => {
+  if (!items.some(item => String(item.itemId) === selectedInteractionItemId.value))
+    selectedInteractionItemId.value = String(items[0]?.itemId || '')
+}, { immediate: true })
+
+watch(qixiGiftActive, (active) => {
+  if (!active)
+    activityActionError.value = ''
 })
 
 async function handleRefreshFriends() {
@@ -257,14 +459,17 @@ async function handleRefreshFriends() {
 }
 
 function toggleFriend(friendId: string) {
-  if (expandedFriends.value.has(friendId)) {
-    expandedFriends.value.delete(friendId)
+  const key = friendKey(friendId)
+  if (expandedFriends.value.has(key)) {
+    expandedFriends.value.delete(key)
+    setSelectedInteractionIds(key, [])
   }
   else {
     expandedFriends.value.clear()
-    expandedFriends.value.add(friendId)
+    selectedInteractionLandIds.value = {}
+    expandedFriends.value.add(key)
     if (currentAccountId.value && currentAccount.value?.running && status.value?.connection?.connected) {
-      friendStore.fetchFriendLands(currentAccountId.value, friendId)
+      friendStore.fetchFriendLands(currentAccountId.value, key)
     }
   }
 }
@@ -749,6 +954,17 @@ async function handleBatchAddKnownFriendGids() {
 
               <div class="flex flex-wrap gap-2">
                 <NButton
+                  v-if="qixiGiftActive"
+                  type="warning"
+                  secondary
+                  size="small"
+                  :disabled="activityPendingActions.giftQixiSachet || qixiSachetBalance < 1"
+                  @click="giftQixiSachetToFriend(friend, $event)"
+                >
+                  <span class="i-carbon-gift mr-1" />
+                  赠香囊 {{ qixiSachetBalance }}
+                </NButton>
+                <NButton
                   type="info"
                   secondary
                   size="small"
@@ -791,20 +1007,110 @@ async function handleBatchAddKnownFriendGids() {
               </div>
             </div>
 
-            <div v-if="expandedFriends.has(friend.gid)" class="border-t bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/50">
+            <div v-if="expandedFriends.has(String(friend.gid))" class="border-t bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/50">
               <div v-if="friendLandsLoading[friend.gid]" class="flex justify-center py-4">
                 <div class="i-svg-spinners-90-ring-with-bg text-2xl text-blue-500" />
               </div>
-              <div v-else-if="!friendLands[friend.gid] || friendLands[friend.gid]?.length === 0" class="py-4 text-center text-gray-500">
-                无土地数据
+              <div v-else-if="friendLandsError[friend.gid]" class="flex flex-col items-center gap-2 py-5 text-center text-red-600 dark:text-red-300">
+                <span class="i-carbon-warning-alt text-2xl" />
+                <span>{{ friendLandsError[friend.gid] }}</span>
+                <NButton size="small" secondary type="error" @click="currentAccountId && friendStore.fetchFriendLands(currentAccountId, String(friend.gid))">
+                  重新读取
+                </NButton>
               </div>
-              <div v-else class="grid grid-cols-2 gap-2 lg:grid-cols-8 md:grid-cols-5 sm:grid-cols-4">
-                <LandCard
-                  v-for="land in friendLands[friend.gid]"
-                  :key="land.id"
-                  :land="land"
-                />
-              </div>
+              <template v-else>
+                <div class="mb-3 border border-amber-200 rounded-xl bg-amber-50/80 p-3 dark:border-amber-800 dark:bg-amber-950/25">
+                  <div v-if="interactionItemsLoading" class="flex items-center justify-center gap-2 py-2 text-sm text-amber-700 dark:text-amber-300">
+                    <span class="i-svg-spinners-90-ring-with-bg" />
+                    正在读取特殊互动道具
+                  </div>
+                  <div v-else-if="interactionItemsError" class="flex flex-wrap items-center justify-between gap-2 text-sm text-red-600 dark:text-red-300">
+                    <span>{{ interactionItemsError }}</span>
+                    <NButton size="small" secondary type="error" @click="currentAccountId && friendStore.fetchInteractionItems(currentAccountId)">
+                      重新读取
+                    </NButton>
+                  </div>
+                  <template v-else-if="interactionItems.length > 0">
+                    <div class="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                      <div class="min-w-0 flex-1">
+                        <div class="mb-2 flex items-center gap-2 text-sm text-amber-950 font-bold dark:text-amber-100">
+                          <span class="i-carbon-game-console" />
+                          特殊互动道具
+                          <span class="text-xs text-amber-700 font-normal dark:text-amber-300">普通种草、放虫仍由“捣乱”自动化处理</span>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                          <button
+                            v-for="item in interactionItems"
+                            :key="item.itemId"
+                            type="button"
+                            class="flex items-center gap-2 border rounded-lg bg-white px-2.5 py-2 text-left transition dark:bg-gray-900"
+                            :class="selectedInteractionItemId === item.itemId
+                              ? 'border-amber-500 ring-2 ring-amber-200 dark:ring-amber-800'
+                              : 'border-amber-200 hover:border-amber-400 dark:border-amber-800'"
+                            :aria-pressed="selectedInteractionItemId === item.itemId"
+                            @click="selectedInteractionItemId = item.itemId"
+                          >
+                            <img :src="item.image" alt="" class="h-8 w-8 object-contain">
+                            <span>
+                              <span class="block text-sm text-gray-800 font-semibold dark:text-gray-100">{{ item.name }}</span>
+                              <span class="block text-xs text-amber-700 dark:text-amber-300">库存 {{ item.count }}</span>
+                            </span>
+                          </button>
+                        </div>
+                        <div v-if="selectedInteractionItem" class="mt-2 text-xs text-amber-800 dark:text-amber-200">
+                          {{ selectedInteractionItem.description || '选择土地后按编号依次使用。' }}
+                          <span class="font-medium">是否可用以服务端回包为准。</span>
+                          <div v-if="selectedInteractionItem.saleConditionSatisfiedCount > 0" class="mt-1 text-red-700 font-medium dark:text-red-300">
+                            其中 {{ selectedInteractionItem.saleConditionSatisfiedCount }} 个已满足游戏配置中的出售条件，可能已过活动或有效期；仍会保留供提交，是否可用由服务端判断。
+                          </div>
+                          <div class="mt-1 text-gray-600 dark:text-gray-300">
+                            当前仅选择生长期作物；实测官方客户端点击成熟作物只进入收获/偷取，不会发出道具使用请求。
+                          </div>
+                        </div>
+                      </div>
+                      <div class="flex shrink-0 flex-wrap gap-2 xl:max-w-72 xl:justify-end">
+                        <NButton size="small" secondary :disabled="!selectedInteractionItem || interactionUsePending" @click="selectAllInteractionLands(friend.gid)">
+                          全选可用
+                        </NButton>
+                        <NButton size="small" secondary :disabled="selectedInteractionIds(friend.gid).length === 0 || interactionUsePending" @click="setSelectedInteractionIds(friend.gid, [])">
+                          清空
+                        </NButton>
+                        <NButton type="warning" size="small" :loading="interactionUsePending" :disabled="!selectedInteractionItem || selectedInteractionIds(friend.gid).length === 0" @click="requestUseInteractionItem(friend)">
+                          按顺序使用 {{ selectedInteractionIds(friend.gid).length || '' }} 个
+                        </NButton>
+                      </div>
+                    </div>
+                    <div v-if="interactionFailures(friend.gid).length > 0" class="mt-3 rounded-lg bg-white/75 px-3 py-2 text-xs text-red-700 dark:bg-gray-900/60 dark:text-red-300">
+                      <div class="mb-1 font-semibold">
+                        未成功的地块
+                      </div>
+                      <div v-for="result in interactionFailures(friend.gid)" :key="`${result.landId}:${result.message}`">
+                        第 {{ result.landId }} 块：{{ result.message }}
+                      </div>
+                    </div>
+                  </template>
+                  <div v-else class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                    <span class="i-carbon-information" />
+                    背包中暂无可用于好友土地的特殊互动道具。
+                  </div>
+                </div>
+
+                <div v-if="!friendLands[friend.gid] || friendLands[friend.gid]?.length === 0" class="py-4 text-center text-gray-500">
+                  该好友当前没有可展示的土地
+                </div>
+                <div v-else class="grid grid-cols-2 gap-2 lg:grid-cols-8 md:grid-cols-5 sm:grid-cols-4">
+                  <LandCard
+                    v-for="land in friendLands[friend.gid]"
+                    :key="land.id"
+                    :land="land"
+                    :selectable="!!selectedInteractionItem"
+                    :selected="isInteractionLandSelected(friend.gid, land)"
+                    :selection-disabled="isInteractionLandDisabled(friend.gid, land)"
+                    :selection-label="interactionLandSelectionLabel(friend.gid, land)"
+                    @select="toggleInteractionLand(friend.gid, land)"
+                  />
+                </div>
+              </template>
             </div>
           </div>
 

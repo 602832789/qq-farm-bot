@@ -12,7 +12,6 @@ const store = require('../../models/store');
 const {
     getAccId,
     handleApiError,
-    getAccountList,
     buildKnownFriendGidSettings,
 } = require('./middleware');
 
@@ -71,6 +70,37 @@ function mountFriendRoutes(app: Application, ctx: AdminContext): void {
         }
     });
 
+    // API: 背包中当前可用于好友土地的特殊互动道具。
+    app.get('/api/friend-interaction-items', async (req: Request, res: Response) => {
+        const id = getAccId(ctx, req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+
+        try {
+            const data = await ctx.provider.getFriendInteractionItems(id);
+            res.json({ ok: true, data });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    });
+
+    // API: 在同一次好友访问会话内，按地块编号顺序使用特殊互动道具。
+    app.post('/api/friend/:gid/interaction-items/use-batch', async (req: Request, res: Response) => {
+        const id = getAccId(ctx, req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+
+        try {
+            const data = await ctx.provider.useFriendInteractionItemBatch(
+                id,
+                req.params.gid,
+                req.body?.itemId,
+                req.body?.landIds,
+            );
+            res.json({ ok: true, data });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    });
+
     // API: 对指定好友执行单次操作（偷菜/浇水/除草/捣乱）
     app.post('/api/friend/:gid/op', async (req: Request, res: Response) => {
         const id = getAccId(ctx, req);
@@ -98,7 +128,7 @@ function mountFriendRoutes(app: Application, ctx: AdminContext): void {
             if (ctx.provider && typeof ctx.provider.getFriends === 'function') {
                 friendsList = await ctx.provider.getFriends(id) || [];
             }
-        } catch (e) {
+        } catch {
             // 忽略获取好友列表失败
         }
 
@@ -153,7 +183,7 @@ function mountFriendRoutes(app: Application, ctx: AdminContext): void {
             if (ctx.provider && typeof ctx.provider.getFriends === 'function') {
                 friendsList = await ctx.provider.getFriends(id) || [];
             }
-        } catch (e) {
+        } catch {
             // 忽略获取好友列表失败
         }
 

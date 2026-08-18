@@ -267,6 +267,8 @@ export interface QixiDewLandTargetDto {
   plantName: string
   seedId: string
   seedImage: string
+  landLevel: number
+  landTypeName: string
   phaseCode: number
   phaseName: string
   mature: boolean
@@ -906,6 +908,8 @@ function normalizeQixiDewTargets(value: unknown): QixiDewTargetsDto | null {
       plantName: text(land.plantName, land.plant_name, '未知作物'),
       seedId: text(land.seedId, land.seed_id),
       seedImage: text(land.seedImage, land.seed_image),
+      landLevel: finiteNumber(first(land.landLevel, land.land_level)) || 0,
+      landTypeName: text(land.landTypeName, land.land_type_name, '普通土地'),
       phaseCode: finiteNumber(first(land.phaseCode, land.phase_code)) || 0,
       phaseName: text(land.phaseName, land.phase_name),
       mature: bool(land.mature),
@@ -1084,8 +1088,10 @@ const activityErrorMessages: Record<string, string> = {
   QIXI_DEW_ACCOUNT_UNAVAILABLE: '当前账号尚未就绪，请稍后重试',
   INVALID_QIXI_DEW_HOST_GID: '农场主人信息无效，请重新选择',
   INVALID_QIXI_DEW_LAND_ID: '地块信息无效，请刷新后重选',
+  INVALID_QIXI_DEW_LAND_IDS: '请选择有效地块，单次最多选择 48 块',
   QIXI_DEW_UNAVAILABLE: '活动未进行，鹊羽灵露当前不可使用',
   INSUFFICIENT_QIXI_DEW: '背包中没有可用的鹊羽灵露',
+  QIXI_DEW_SELECTION_EXCEEDS_BALANCE: '所选地块数量超过当前鹊羽灵露余额',
   QIXI_DEW_HOST_MISMATCH: '进入的农场与所选好友不一致，请刷新后重试',
   QIXI_DEW_TARGET_UNAVAILABLE: '所选地块已不再可用，请刷新后重选',
   SEASON_UNAVAILABLE: '当前活动数据暂未开放，请稍后刷新重试',
@@ -1138,6 +1144,7 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
   const dewTargets = ref<QixiDewTargetsDto | null>(null)
   const dewTargetsLoading = ref(false)
   const dewTargetsError = ref('')
+  const dewUsedLandIdsByInstance = ref<Record<string, string[]>>({})
   let dewTargetsRequestVersion = 0
   const pendingLoads = new Map<string, Promise<boolean>>()
   const pendingActions = ref<Record<ActivityMutationKey, boolean>>({
@@ -1183,6 +1190,7 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     dewTargets.value = null
     dewTargetsLoading.value = false
     dewTargetsError.value = ''
+    dewUsedLandIdsByInstance.value = {}
     pendingActions.value = { claimPass: false, lightConstellation: false, claimSolar: false, exchange: false, claimQixiBridge: false, giftQixiSachet: false, useQixiDew: false, claimQingMeiSeed: false, startQingMeiBrew: false, continueQingMeiBrew: false, settleQingMeiBrew: false }
   }
 
@@ -1291,6 +1299,34 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     dewTargetsError.value = ''
   }
 
+  function qixiDewUsageKey(hostGid: string) {
+    const activity = qixi.value
+    return [
+      loadedAccountId.value,
+      activity?.activityId || activity?.groupId || '',
+      activity?.startTime || '',
+      String(hostGid || ''),
+    ].join(':')
+  }
+
+  function getQixiDewUsedLandIds(hostGid: string) {
+    return dewUsedLandIdsByInstance.value[qixiDewUsageKey(hostGid)] || []
+  }
+
+  function recordQixiDewUsage(result: ActivityRecord) {
+    const hostGid = text(result.hostGid, result.host_gid)
+    const rawIds = first(result.usedLandIds, result.used_land_ids)
+    const usedLandIds = Array.isArray(rawIds) ? rawIds.map(value => text(value)).filter(Boolean) : []
+    if (!hostGid || usedLandIds.length === 0)
+      return
+    const key = qixiDewUsageKey(hostGid)
+    const merged = new Set([...(dewUsedLandIdsByInstance.value[key] || []), ...usedLandIds])
+    dewUsedLandIdsByInstance.value = {
+      ...dewUsedLandIdsByInstance.value,
+      [key]: [...merged],
+    }
+  }
+
   async function fetchQixiDewTargets(accountId: string, hostGid = '') {
     const requestedAccountId = String(accountId || '').trim()
     if (!requestedAccountId) {
@@ -1354,7 +1390,7 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
       const rewards = records(resultRecord.rewards).map(normalizeItem).filter(item => item.id || item.name)
       const rewardSummary = rewards.map(item => `${item.name || item.id}${item.count ? ` ×${item.count}` : ''}`).join('、')
       notice.value = text(resultRecord.message, record(response.data).message, rewardSummary ? `获得 ${rewardSummary}` : '操作成功')
-      return true
+      return resultRecord
     }
     catch (mutationError) {
       if (isCurrent(version, requestedAccountId))
@@ -1390,11 +1426,18 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     return mutate('giftQixiSachet', '/qixi/gift', accountId, { friendGid, messageTextId })
   }
 
-  async function useQixiDew(accountId: string, hostGid: string, landId: string) {
-    const succeeded = await mutate('useQixiDew', '/qixi/dew/use', accountId, { hostGid, landId })
-    if (succeeded)
-      await fetchQixiDewTargets(accountId, hostGid)
-    return succeeded
+  async function useQixiDewBatch(accountId: string, hostGid: string, landIds: string[], refreshTargets = true) {
+    const result = await mutate('useQixiDew', '/qixi/dew/use-batch', accountId, { hostGid, landIds })
+    if (result) {
+      recordQixiDewUsage(result)
+      if (refreshTargets)
+        await fetchQixiDewTargets(accountId, hostGid)
+    }
+    return result
+  }
+
+  function useQixiDew(accountId: string, hostGid: string, landId: string) {
+    return useQixiDewBatch(accountId, hostGid, [landId])
   }
 
   function claimQingMeiDailySeed(accountId: string) {
@@ -1444,6 +1487,7 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     dewTargets,
     dewTargetsLoading,
     dewTargetsError,
+    dewUsedLandIdsByInstance,
     lazyLoad,
     refresh,
     claimPass,
@@ -1454,7 +1498,9 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     giftQixiSachet,
     fetchQixiDewTargets,
     clearQixiDewTargets,
+    getQixiDewUsedLandIds,
     useQixiDew,
+    useQixiDewBatch,
     claimQingMeiDailySeed,
     startQingMeiBrew,
     continueQingMeiBrew,

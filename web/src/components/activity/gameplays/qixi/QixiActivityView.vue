@@ -22,13 +22,14 @@ const props = defineProps<{
   dewTargets: QixiDewTargetsDto | null
   dewTargetsLoading: boolean
   dewTargetsError: string
+  dewUsedLandIds: string[]
 }>()
 
 const emit = defineEmits<{
   claimBridge: []
   gift: [friendGid: string]
   loadDewTargets: [hostGid: string]
-  useDew: [hostGid: string, landId: string]
+  useDew: [hostGid: string, landIds: string[]]
   refreshFriends: []
 }>()
 
@@ -130,8 +131,9 @@ function stageState(stage: QixiActivityDto['bridge']['stages'][number]) {
         :loading="dewTargetsLoading"
         :pending="pendingDew"
         :error="dewTargetsError"
+        :used-land-ids="dewUsedLandIds"
         @load-targets="emit('loadDewTargets', $event)"
-        @use="emit('useDew', $event.hostGid, $event.landId)"
+        @use="emit('useDew', $event.hostGid, $event.landIds)"
         @refresh-friends="emit('refreshFriends')"
       />
 
@@ -188,7 +190,7 @@ function stageState(stage: QixiActivityDto['bridge']['stages'][number]) {
         </div>
       </section>
 
-      <section class="qixi-section gift-section">
+      <section v-if="activity.active" class="qixi-section gift-section">
         <div class="section-heading">
           <div>
             <small>佳节情谊</small>

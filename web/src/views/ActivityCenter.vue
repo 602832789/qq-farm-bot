@@ -93,6 +93,10 @@ const remaining = computed(() => {
   const minutes = Math.floor(diff % 3600000 / 60000)
   return days > 0 ? `剩余：${days}天${hours}小时` : `剩余：${hours}小时${minutes}分钟`
 })
+const dewUsedLandIds = computed(() => {
+  const hostGid = dewTargets.value?.host.gid || ''
+  return hostGid ? activityStore.getQixiDewUsedLandIds(hostGid) : []
+})
 const balanceVisible = computed(() => activeTab.value === 'travel' || activeTab.value === 'shop')
 
 function accountId() {
@@ -161,8 +165,8 @@ function giftQixiSachet(friendGid: string) {
 function loadQixiDewTargets(hostGid: string) {
   activityStore.fetchQixiDewTargets(accountId(), hostGid)
 }
-function useQixiDew(hostGid: string, landId: string) {
-  activityStore.useQixiDew(accountId(), hostGid, landId)
+function useQixiDew(hostGid: string, landIds: string[]) {
+  activityStore.useQixiDewBatch(accountId(), hostGid, landIds)
 }
 function refreshQixiFriends() {
   if (currentAccountId.value)
@@ -367,6 +371,7 @@ onUnmounted(() => {
             :dew-targets="dewTargets"
             :dew-targets-loading="dewTargetsLoading"
             :dew-targets-error="dewTargetsError"
+            :dew-used-land-ids="dewUsedLandIds"
             @claim-bridge="claimQixiBridge"
             @gift="giftQixiSachet"
             @load-dew-targets="loadQixiDewTargets"

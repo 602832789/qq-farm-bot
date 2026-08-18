@@ -28,8 +28,10 @@ const ACTIVITY_ERROR_MESSAGES: Record<string, string> = {
     QIXI_DEW_ACCOUNT_UNAVAILABLE: '当前账号 GID 尚未就绪，请稍后重试',
     INVALID_QIXI_DEW_HOST_GID: '农场主人 GID 无效，请重新选择',
     INVALID_QIXI_DEW_LAND_ID: '地块信息无效，请刷新后重选',
+    INVALID_QIXI_DEW_LAND_IDS: '请选择有效地块，单次最多选择 48 块',
     QIXI_DEW_UNAVAILABLE: '活动未进行，鹊羽灵露当前不可使用',
     INSUFFICIENT_QIXI_DEW: '背包中没有可用的鹊羽灵露',
+    QIXI_DEW_SELECTION_EXCEEDS_BALANCE: '所选地块数量超过当前鹊羽灵露余额',
     QIXI_DEW_HOST_MISMATCH: '进入的农场与所选好友不一致，请刷新后重试',
     QIXI_DEW_TARGET_UNAVAILABLE: '所选地块已不再可用，请刷新后重选',
 };
@@ -167,6 +169,10 @@ function mountActivityCenterRoutes(app: Application, ctx: AdminContext): void {
 
     app.post('/api/activity-center/qixi/dew/use', withAccount((accountId: string, req: Request) => (
         ctx.provider.useQixiDew(accountId, req.body?.hostGid, req.body?.landId)
+    )));
+
+    app.post('/api/activity-center/qixi/dew/use-batch', withAccount((accountId: string, req: Request) => (
+        ctx.provider.useQixiDewBatch(accountId, req.body?.hostGid, req.body?.landIds)
     )));
 }
 

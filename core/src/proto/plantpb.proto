@@ -44,18 +44,18 @@ message LandInfo {
     }
 }
 
-// 土地解锁条件 (简化)
+// 土地解锁条件
 message LandUnlockCondition {
-    int64 need_level = 1;
-    int64 need_gold = 2;
-    // ... 其他条件字段
+    int64 preceding_land_id = 1;
+    int64 need_level = 2;
+    int64 need_gold = 3;
 }
 
 // 土地升级条件 (简化)
 message LandUpgradeCondition {
-    int64 need_level = 1;
-    int64 need_gold = 2;
-    // ... 其他条件字段
+    int64 condition_type = 1;
+    int64 condition_value = 2; // condition_type=1 时已确认代表所需角色等级
+    repeated corepb.Item required_items = 3;
 }
 
 // ============ 偷菜玩家信息 ============

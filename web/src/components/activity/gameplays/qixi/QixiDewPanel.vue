@@ -17,24 +17,33 @@ const props = defineProps<{
   loading: boolean
   pending: boolean
   error: string
+  usedLandIds: string[]
 }>()
 
 const emit = defineEmits<{
   loadTargets: [hostGid: string]
-  use: [payload: { hostGid: string, landId: string }]
+  use: [payload: { hostGid: string, landIds: string[] }]
   refreshFriends: []
 }>()
 
 const farmMode = ref<'self' | 'friend'>('self')
 const selectedFriendGid = ref('')
-const selectedLandId = ref('')
+const selectedLandIds = ref(new Set<string>())
 
 const friendOptions = computed(() => props.friends
   .filter(friend => Number(friend.gid) > 0)
   .slice()
   .sort((left, right) => friendName(left).localeCompare(friendName(right), 'zh-CN')))
 
-const selectedTarget = computed(() => props.targets?.lands.find(target => target.landId === selectedLandId.value) || null)
+const usedLandIdSet = computed(() => new Set(props.usedLandIds.map(String)))
+const dewBalance = computed(() => {
+  const value = Number(props.activity.dew.balance || 0)
+  return Number.isSafeInteger(value) && value > 0 ? value : 0
+})
+const selectableTargets = computed(() => (props.targets?.lands || []).filter(target => !usedLandIdSet.value.has(target.landId)))
+const selectedTargets = computed(() => (props.targets?.lands || [])
+  .filter(target => selectedLandIds.value.has(target.landId) && !usedLandIdSet.value.has(target.landId))
+  .sort((left, right) => Number(left.landId) - Number(right.landId)))
 const lifecycle = computed(() => {
   const now = props.activity.serverTime || Date.now()
   if (props.activity.startTime && now < props.activity.startTime)
@@ -52,7 +61,7 @@ const sellPriceText = computed(() => {
   return `${price.amount} ${price.currencyName || '金币'}/份`
 })
 const useDisabled = computed(() => (
-  !selectedTarget.value
+  selectedTargets.value.length === 0
   || props.pending
   || props.loading
   || !props.activity.actions.dew.enabled
@@ -60,7 +69,12 @@ const useDisabled = computed(() => (
 ))
 
 watch(() => props.targets?.host.gid, () => {
-  selectedLandId.value = ''
+  selectedLandIds.value = new Set()
+})
+
+watch([() => props.targets?.lands, usedLandIdSet], () => {
+  const available = new Set(selectableTargets.value.map(target => target.landId))
+  selectedLandIds.value = new Set([...selectedLandIds.value].filter(landId => available.has(landId)))
 })
 
 watch(friendOptions, (friends) => {
@@ -74,7 +88,7 @@ function friendName(friend: FriendOption) {
 
 function selectFarmMode(mode: 'self' | 'friend') {
   farmMode.value = mode
-  selectedLandId.value = ''
+  selectedLandIds.value = new Set()
   if (mode === 'self') {
     emit('loadTargets', '')
     return
@@ -85,7 +99,7 @@ function selectFarmMode(mode: 'self' | 'friend') {
 
 function selectFriend(value: unknown) {
   selectedFriendGid.value = String(value || '')
-  selectedLandId.value = ''
+  selectedLandIds.value = new Set()
   if (selectedFriendGid.value)
     emit('loadTargets', selectedFriendGid.value)
 }
@@ -98,14 +112,32 @@ function reloadTargets() {
 }
 
 function chooseLand(target: QixiDewLandTargetDto) {
-  selectedLandId.value = target.landId
+  if (usedLandIdSet.value.has(target.landId))
+    return
+  const next = new Set(selectedLandIds.value)
+  if (next.has(target.landId)) {
+    next.delete(target.landId)
+  }
+  else if (!props.activity.dew.balanceKnown || next.size < dewBalance.value) {
+    next.add(target.landId)
+  }
+  selectedLandIds.value = next
+}
+
+function selectAllAvailable() {
+  const limit = props.activity.dew.balanceKnown ? dewBalance.value : selectableTargets.value.length
+  selectedLandIds.value = new Set(selectableTargets.value.slice(0, limit).map(target => target.landId))
+}
+
+function clearSelection() {
+  selectedLandIds.value = new Set()
 }
 
 function useDew() {
-  const target = selectedTarget.value
-  if (!target || useDisabled.value)
+  const targets = selectedTargets.value
+  if (targets.length === 0 || useDisabled.value)
     return
-  emit('use', { hostGid: target.hostGid, landId: target.landId })
+  emit('use', { hostGid: targets[0]!.hostGid, landIds: targets.map(target => target.landId) })
 }
 </script>
 
@@ -117,7 +149,7 @@ function useDew() {
         <div>
           <small>限时交互道具</small>
           <h2>{{ activity.dew.name || '鹊羽灵露' }}</h2>
-          <p>选择一块已种作物的土地，每次使用 1 份</p>
+          <p>可多选已种作物的土地，一键操作会按地块编号依次使用</p>
         </div>
       </div>
       <div class="dew-balance">
@@ -136,7 +168,7 @@ function useDew() {
       <span v-if="sellPriceText" class="sell-price">活动后 {{ sellPriceText }}</span>
     </div>
 
-    <div class="dew-workbench">
+    <div v-if="activity.active" class="dew-workbench">
       <aside class="dew-protocol">
         <span class="protocol-index">01</span>
         <h3>选择农场</h3>
@@ -178,10 +210,18 @@ function useDew() {
             <h3>选择地块</h3>
             <small v-if="targets">{{ targets.host.name || (targets.host.isSelf ? '我的农场' : targets.host.gid) }} · {{ targets.count }} 块候选地</small>
           </div>
-          <button type="button" class="reload-command" :disabled="loading || (farmMode === 'friend' && !selectedFriendGid)" title="重新读取当前农场" @click="reloadTargets">
-            <span v-if="loading" class="i-carbon-circle-dash animate-spin" />
-            <span v-else class="i-carbon-renew" />
-          </button>
+          <div class="land-toolbar-actions">
+            <button type="button" :disabled="loading || selectableTargets.length === 0" @click="selectAllAvailable">
+              全选可用
+            </button>
+            <button type="button" :disabled="selectedTargets.length === 0" @click="clearSelection">
+              清空
+            </button>
+            <button type="button" class="reload-command" :disabled="loading || (farmMode === 'friend' && !selectedFriendGid)" title="重新读取当前农场" @click="reloadTargets">
+              <span v-if="loading" class="i-carbon-circle-dash animate-spin" />
+              <span v-else class="i-carbon-renew" />
+            </button>
+          </div>
         </div>
 
         <div v-if="farmMode === 'friend' && !selectedFriendGid" class="land-state">
@@ -197,7 +237,9 @@ function useDew() {
         <div v-else-if="error" class="land-state land-state--error">
           <span class="i-carbon-warning-alt" />
           <strong>{{ error }}</strong>
-          <button type="button" @click="reloadTargets">重新读取</button>
+          <button type="button" @click="reloadTargets">
+            重新读取
+          </button>
         </div>
         <div v-else-if="targets && targets.lands.length === 0" class="land-state">
           <span class="i-carbon-sprout" />
@@ -210,15 +252,17 @@ function useDew() {
             :key="`${target.hostGid}-${target.landId}`"
             type="button"
             class="land-card"
-            :class="{ selected: selectedLandId === target.landId }"
+            :class="{ selected: selectedLandIds.has(target.landId), used: usedLandIdSet.has(target.landId) }"
+            :disabled="usedLandIdSet.has(target.landId)"
             @click="chooseLand(target)"
           >
             <span class="land-number">#{{ target.landId }}</span>
             <img v-if="target.seedImage" :src="target.seedImage" alt="">
             <span v-else class="seed-fallback i-carbon-sprout" />
             <strong>{{ target.plantName }}</strong>
-            <small>{{ target.phaseName || (target.mature ? '成熟' : '生长中') }}</small>
-            <span v-if="selectedLandId === target.landId" class="land-check i-carbon-checkmark-filled" />
+            <small>{{ target.landTypeName }} · {{ target.phaseName || (target.mature ? '成熟' : '生长中') }}</small>
+            <span v-if="usedLandIdSet.has(target.landId)" class="land-used">本次已使用</span>
+            <span v-else-if="selectedLandIds.has(target.landId)" class="land-check i-carbon-checkmark-filled" />
             <span v-else class="land-check i-carbon-radio-button" />
           </button>
         </div>
@@ -226,15 +270,22 @@ function useDew() {
         <footer class="dew-submit">
           <div>
             <span>即将操作</span>
-            <strong v-if="selectedTarget">{{ selectedTarget.ownerName }} · 第 {{ selectedTarget.landId }} 块地 · {{ selectedTarget.plantName }}</strong>
+            <strong v-if="selectedTargets.length">已选 {{ selectedTargets.length }} 块，将按 #{{ selectedTargets.map(target => target.landId).join(' → #') }} 顺序使用</strong>
             <strong v-else>尚未选择地块</strong>
           </div>
           <button type="button" :disabled="useDisabled" @click="useDew">
             <span v-if="pending" class="i-carbon-circle-dash animate-spin" />
             <span v-else class="i-carbon-rain-drop" />
-            {{ pending ? '正在使用' : activity.active ? '使用 1 份灵露' : '活动外不可使用' }}
+            {{ pending ? '正在按顺序使用' : `一键使用 ${selectedTargets.length || ''} 份灵露` }}
           </button>
         </footer>
+      </div>
+    </div>
+    <div v-else class="dew-archive">
+      <span class="i-carbon-archive" />
+      <div>
+        <strong>农场互动入口已收起</strong>
+        <p>限时互动只在活动期间注入到土地卡片。剩余材料不会自动出售；服务端开放出售后，可在仓库中手动处理。活动若再次开放，会按新的活动实例重新启用。</p>
       </div>
     </div>
   </section>
@@ -342,11 +393,11 @@ function useDew() {
   border-radius: 50%;
   background: #83928f;
 }
-.dew-lifecycle[data-state="active"] .lifecycle-mark {
+.dew-lifecycle[data-state='active'] .lifecycle-mark {
   background: #2d8d70;
   box-shadow: 0 0 0 4px rgba(45, 141, 112, 0.13);
 }
-.dew-lifecycle[data-state="sellable"] .lifecycle-mark {
+.dew-lifecycle[data-state='sellable'] .lifecycle-mark {
   background: var(--dew-gold);
 }
 .dew-lifecycle div {
@@ -490,6 +541,25 @@ function useDew() {
   place-items: center;
   border-radius: 4px;
 }
+.land-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.land-toolbar-actions > button:not(.reload-command) {
+  min-height: 30px;
+  padding: 0 9px;
+  border: 1px solid #c9d7d1;
+  border-radius: 4px;
+  color: #496360;
+  background: #f7faf8;
+  font-size: 9px;
+  cursor: pointer;
+}
+.land-toolbar-actions > button:disabled {
+  opacity: 0.46;
+  cursor: not-allowed;
+}
 .land-grid {
   min-height: 164px;
   max-height: 258px;
@@ -521,6 +591,13 @@ function useDew() {
 }
 .land-card.selected {
   box-shadow: inset 0 0 0 1px var(--dew-green);
+}
+.land-card.used {
+  border-style: dashed;
+  color: #74817d;
+  background: #edf0ee;
+  cursor: not-allowed;
+  filter: saturate(0.55);
 }
 .land-card img,
 .seed-fallback {
@@ -561,6 +638,17 @@ function useDew() {
   right: 7px;
   color: var(--dew-green);
   font-size: 13px;
+}
+.land-used {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  padding: 2px 5px;
+  border-radius: 8px;
+  color: #5d6b67;
+  background: #dfe5e2;
+  font-size: 7px;
+  font-weight: 700;
 }
 .land-state {
   min-height: 164px;
@@ -636,6 +724,31 @@ function useDew() {
   opacity: 0.46;
   cursor: not-allowed;
 }
+.dew-archive {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px dashed #c6d2cd;
+  border-radius: 6px;
+  color: #5f6f6b;
+  background: rgba(255, 255, 255, 0.58);
+}
+.dew-archive > span {
+  flex: 0 0 auto;
+  color: #8b6d3c;
+  font-size: 22px;
+}
+.dew-archive strong {
+  color: var(--dew-ink);
+  font-size: 12px;
+}
+.dew-archive p {
+  margin: 4px 0 0;
+  font-size: 9px;
+  line-height: 1.6;
+}
 @media (max-width: 900px) {
   .dew-panel {
     padding: 22px 16px;
@@ -645,6 +758,13 @@ function useDew() {
   }
   .land-grid {
     grid-template-columns: repeat(3, minmax(86px, 1fr));
+  }
+  .land-toolbar {
+    align-items: flex-start;
+  }
+  .land-toolbar-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
 }
 @media (max-width: 520px) {

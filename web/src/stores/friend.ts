@@ -14,15 +14,61 @@ export interface KnownFriendSettings {
   friendsListCacheTtlSec: number
 }
 
+export interface FriendInteractionItemDto {
+  id: string
+  itemId: string
+  name: string
+  image: string
+  count: number
+  saleConditionSatisfiedCount: number
+  interactionType: string
+  protocol: 'item-use'
+  description: string
+  activityId: string
+  sellCondition: string
+  nearestExpireTime: number
+  serverValidationRequired: boolean
+}
+
+export interface FriendInteractionResultDto {
+  landId: string
+  ok: boolean
+  code: string
+  message: string
+}
+
+export interface FriendInteractionBatchDto {
+  hostGid: string
+  ownerName: string
+  itemId: string
+  itemName: string
+  requestedLandIds: string[]
+  usedLandIds: string[]
+  failedLandIds: string[]
+  successCount: number
+  failureCount: number
+  results: FriendInteractionResultDto[]
+  items: FriendInteractionItemDto[]
+  message: string
+}
+
 export const useFriendStore = defineStore('friend', () => {
   const friends = ref<any[]>([])
   const loading = ref(false)
   const friendLands = ref<Record<string, any[]>>({})
   const friendLandsLoading = ref<Record<string, boolean>>({})
+  const friendLandsError = ref<Record<string, string>>({})
   const blacklist = ref<BlacklistItem[]>([])
   const interactRecords = ref<any[]>([])
   const interactLoading = ref(false)
   const interactError = ref('')
+  const interactionItems = ref<FriendInteractionItemDto[]>([])
+  const interactionItemsLoading = ref(false)
+  const interactionItemsError = ref('')
+  const interactionUsePending = ref(false)
+  const interactionUseError = ref('')
+  const interactionItemsAccountId = ref('')
+  const interactionUsedLandIds = ref<Record<string, string[]>>({})
 
   const knownFriendGids = ref<number[]>([])
   const knownFriendGidSyncCooldownSec = ref(600)
@@ -149,18 +195,32 @@ export const useFriendStore = defineStore('friend', () => {
 
   async function fetchFriendLands(accountId: string, friendId: string) {
     if (!accountId || !friendId)
-      return
+      return false
     friendLandsLoading.value[friendId] = true
+    friendLandsError.value[friendId] = ''
     try {
       const res = await api.get(`/api/friend/${friendId}/lands`, {
         headers: { 'x-account-id': accountId },
-      })
+        skipErrorToast: true,
+      } as any)
       if (res.data.ok) {
         const lands = res.data.data.lands || []
         const summary = res.data.data.summary || null
         friendLands.value[friendId] = lands
         syncFriendPlantSummary(friendId, lands, summary)
+        return true
       }
+      friendLands.value[friendId] = []
+      friendLandsError.value[friendId] = String(res.data?.error || '无法读取好友土地')
+      return false
+    }
+    catch (error: any) {
+      friendLands.value[friendId] = []
+      const rawMessage = String(error?.response?.data?.error || error?.message || '')
+      friendLandsError.value[friendId] = /gamepb\.|code=\d+|GatewayError/.test(rawMessage)
+        ? '无法进入该好友农场，好友状态可能已变化，请刷新后重试'
+        : (rawMessage || '无法读取好友土地，请稍后重试')
+      return false
     }
     finally {
       friendLandsLoading.value[friendId] = false
@@ -184,6 +244,100 @@ export const useFriendStore = defineStore('friend', () => {
     catch (e: any) {
       return { ok: false, message: e?.response?.data?.error || e?.message || '操作失败' }
     }
+  }
+
+  function interactionUsageKey(accountId: string, itemId: unknown, friendId: unknown) {
+    return `${String(accountId || '')}:${String(itemId || '')}:${String(friendId || '')}`
+  }
+
+  function getInteractionUsedLandIds(accountId: string, itemId: unknown, friendId: unknown) {
+    return interactionUsedLandIds.value[interactionUsageKey(accountId, itemId, friendId)] || []
+  }
+
+  function recordInteractionUsage(accountId: string, result: FriendInteractionBatchDto) {
+    const key = interactionUsageKey(accountId, result.itemId, result.hostGid)
+    const used = new Set(interactionUsedLandIds.value[key] || [])
+    for (const landId of result.usedLandIds || [])
+      used.add(String(landId))
+    interactionUsedLandIds.value = {
+      ...interactionUsedLandIds.value,
+      [key]: [...used].sort((left, right) => Number(left) - Number(right)),
+    }
+  }
+
+  async function fetchInteractionItems(accountId: string) {
+    const requestedAccountId = String(accountId || '').trim()
+    if (!requestedAccountId)
+      return false
+    if (interactionItemsAccountId.value !== requestedAccountId) {
+      interactionItems.value = []
+      interactionItemsAccountId.value = requestedAccountId
+    }
+    interactionItemsLoading.value = true
+    interactionItemsError.value = ''
+    try {
+      const res = await api.get('/api/friend-interaction-items', {
+        headers: { 'x-account-id': requestedAccountId },
+        skipErrorToast: true,
+      } as any)
+      if (!res.data?.ok) {
+        interactionItems.value = []
+        interactionItemsError.value = String(res.data?.error || '无法读取特殊互动道具')
+        return false
+      }
+      interactionItems.value = Array.isArray(res.data?.data?.items) ? res.data.data.items : []
+      return true
+    }
+    catch (error: any) {
+      interactionItems.value = []
+      interactionItemsError.value = String(error?.response?.data?.error || error?.message || '无法读取特殊互动道具')
+      return false
+    }
+    finally {
+      interactionItemsLoading.value = false
+    }
+  }
+
+  async function useInteractionItemBatch(accountId: string, friendId: string, itemId: string, landIds: string[]) {
+    if (!accountId || !friendId || !itemId || !Array.isArray(landIds) || landIds.length === 0)
+      return false
+    if (interactionUsePending.value)
+      return false
+    interactionUsePending.value = true
+    interactionUseError.value = ''
+    try {
+      const res = await api.post(`/api/friend/${encodeURIComponent(friendId)}/interaction-items/use-batch`, {
+        itemId,
+        landIds,
+      }, {
+        headers: { 'x-account-id': accountId },
+        skipErrorToast: true,
+      } as any)
+      if (!res.data?.ok) {
+        interactionUseError.value = String(res.data?.error || '特殊互动道具使用失败')
+        return false
+      }
+      const result = res.data.data as FriendInteractionBatchDto
+      if (Array.isArray(result?.items))
+        interactionItems.value = result.items
+      recordInteractionUsage(accountId, result)
+      return result
+    }
+    catch (error: any) {
+      interactionUseError.value = String(error?.response?.data?.error || error?.message || '特殊互动道具使用失败')
+      return false
+    }
+    finally {
+      interactionUsePending.value = false
+    }
+  }
+
+  function resetInteractionState() {
+    interactionItems.value = []
+    interactionItemsError.value = ''
+    interactionUseError.value = ''
+    interactionItemsAccountId.value = ''
+    interactionUsedLandIds.value = {}
   }
 
   function applyKnownFriendSettings(data: KnownFriendSettings | null | undefined) {
@@ -290,10 +444,16 @@ export const useFriendStore = defineStore('friend', () => {
     loading,
     friendLands,
     friendLandsLoading,
+    friendLandsError,
     blacklist,
     interactRecords,
     interactLoading,
     interactError,
+    interactionItems,
+    interactionItemsLoading,
+    interactionItemsError,
+    interactionUsePending,
+    interactionUseError,
     knownFriendGids,
     knownFriendGidSyncCooldownSec,
     friendsListCacheTtlSec,
@@ -305,6 +465,10 @@ export const useFriendStore = defineStore('friend', () => {
     fetchInteractRecords,
     fetchFriendLands,
     operate,
+    fetchInteractionItems,
+    useInteractionItemBatch,
+    getInteractionUsedLandIds,
+    resetInteractionState,
     fetchKnownFriendSettings,
     saveKnownFriendSettings,
     removeKnownFriendGid,

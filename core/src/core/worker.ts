@@ -678,6 +678,12 @@ async function handleApiCall(msg: any): Promise<void> {
             case 'getFriendLands':
                 result = await getFriendLandsDetail(args[0]);
                 break;
+            case 'getFriendInteractionItems':
+                result = await require('../services/friend-interaction-items').getFriendInteractionItems();
+                break;
+            case 'useFriendInteractionItemBatch':
+                result = await require('../services/friend-interaction-items').useFriendInteractionItemBatch(args[0], args[1], args[2]);
+                break;
             case 'doFriendOp':
                 result = await doFriendOperation(args[0], args[1]);
                 break;
@@ -793,6 +799,9 @@ async function handleApiCall(msg: any): Promise<void> {
                 break;
             case 'useQixiDew':
                 result = await require('../services/qixi-dew').useQixiDew(args[0], args[1]);
+                break;
+            case 'useQixiDewBatch':
+                result = await require('../services/qixi-dew').useQixiDewBatch(args[0], args[1]);
                 break;
             case 'getMallCatalog':
                 result = await require('../services/commerce').getMallCatalog(args[0], args[1]);
