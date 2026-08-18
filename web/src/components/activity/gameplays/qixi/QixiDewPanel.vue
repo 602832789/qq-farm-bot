@@ -1,0 +1,669 @@
+<script setup lang="ts">
+import type { QixiActivityDto, QixiDewLandTargetDto, QixiDewTargetsDto } from '@/stores/activity-center'
+import { computed, ref, watch } from 'vue'
+
+interface FriendOption {
+  gid?: string | number
+  name?: string
+  remark?: string
+  level?: string | number
+}
+
+const props = defineProps<{
+  activity: QixiActivityDto
+  friends: FriendOption[]
+  friendsLoading: boolean
+  targets: QixiDewTargetsDto | null
+  loading: boolean
+  pending: boolean
+  error: string
+}>()
+
+const emit = defineEmits<{
+  loadTargets: [hostGid: string]
+  use: [payload: { hostGid: string, landId: string }]
+  refreshFriends: []
+}>()
+
+const farmMode = ref<'self' | 'friend'>('self')
+const selectedFriendGid = ref('')
+const selectedLandId = ref('')
+
+const friendOptions = computed(() => props.friends
+  .filter(friend => Number(friend.gid) > 0)
+  .slice()
+  .sort((left, right) => friendName(left).localeCompare(friendName(right), 'zh-CN')))
+
+const selectedTarget = computed(() => props.targets?.lands.find(target => target.landId === selectedLandId.value) || null)
+const lifecycle = computed(() => {
+  const now = props.activity.serverTime || Date.now()
+  if (props.activity.startTime && now < props.activity.startTime)
+    return { key: 'upcoming', label: '活动尚未开始', detail: '灵露使用入口暂时关闭' }
+  if (props.activity.active)
+    return { key: 'active', label: '活动期间可使用', detail: '仓库会阻止误售灵露' }
+  if (props.activity.dew.sellable)
+    return { key: 'sellable', label: '活动已结束 · 可手动出售', detail: '不会自动出售，便于保留验证样本' }
+  return { key: 'waiting', label: '活动已结束 · 等待售卖条件', detail: '以服务端 sell_cond 状态为准' }
+})
+const sellPriceText = computed(() => {
+  const price = props.activity.dew.sellPrice
+  if (!price)
+    return ''
+  return `${price.amount} ${price.currencyName || '金币'}/份`
+})
+const useDisabled = computed(() => (
+  !selectedTarget.value
+  || props.pending
+  || props.loading
+  || !props.activity.actions.dew.enabled
+  || !props.activity.dew.usable
+))
+
+watch(() => props.targets?.host.gid, () => {
+  selectedLandId.value = ''
+})
+
+watch(friendOptions, (friends) => {
+  if (selectedFriendGid.value && !friends.some(friend => String(friend.gid) === selectedFriendGid.value))
+    selectedFriendGid.value = ''
+})
+
+function friendName(friend: FriendOption) {
+  return String(friend.remark || friend.name || `好友 ${friend.gid || ''}`)
+}
+
+function selectFarmMode(mode: 'self' | 'friend') {
+  farmMode.value = mode
+  selectedLandId.value = ''
+  if (mode === 'self') {
+    emit('loadTargets', '')
+    return
+  }
+  if (selectedFriendGid.value)
+    emit('loadTargets', selectedFriendGid.value)
+}
+
+function selectFriend(value: unknown) {
+  selectedFriendGid.value = String(value || '')
+  selectedLandId.value = ''
+  if (selectedFriendGid.value)
+    emit('loadTargets', selectedFriendGid.value)
+}
+
+function reloadTargets() {
+  const hostGid = farmMode.value === 'friend' ? selectedFriendGid.value : ''
+  if (farmMode.value === 'friend' && !hostGid)
+    return
+  emit('loadTargets', hostGid)
+}
+
+function chooseLand(target: QixiDewLandTargetDto) {
+  selectedLandId.value = target.landId
+}
+
+function useDew() {
+  const target = selectedTarget.value
+  if (!target || useDisabled.value)
+    return
+  emit('use', { hostGid: target.hostGid, landId: target.landId })
+}
+</script>
+
+<template>
+  <section class="dew-panel">
+    <header class="dew-heading">
+      <div class="dew-title">
+        <span class="dew-orb"><img :src="activity.dew.image" alt=""></span>
+        <div>
+          <small>限时交互道具</small>
+          <h2>{{ activity.dew.name || '鹊羽灵露' }}</h2>
+          <p>选择一块已种作物的土地，每次使用 1 份</p>
+        </div>
+      </div>
+      <div class="dew-balance">
+        <span>当前持有</span>
+        <strong>{{ activity.dew.balanceKnown ? (activity.dew.balance || '0') : '--' }}</strong>
+        <small>份</small>
+      </div>
+    </header>
+
+    <div class="dew-lifecycle" :data-state="lifecycle.key">
+      <span class="lifecycle-mark" />
+      <div>
+        <strong>{{ lifecycle.label }}</strong>
+        <small>{{ lifecycle.detail }}</small>
+      </div>
+      <span v-if="sellPriceText" class="sell-price">活动后 {{ sellPriceText }}</span>
+    </div>
+
+    <div class="dew-workbench">
+      <aside class="dew-protocol">
+        <span class="protocol-index">01</span>
+        <h3>选择农场</h3>
+        <div class="farm-switch" role="group" aria-label="农场范围">
+          <button type="button" :class="{ active: farmMode === 'self' }" @click="selectFarmMode('self')">
+            <span class="i-carbon-home" />我的农场
+          </button>
+          <button type="button" :class="{ active: farmMode === 'friend' }" @click="selectFarmMode('friend')">
+            <span class="i-carbon-user-multiple" />好友农场
+          </button>
+        </div>
+
+        <label v-if="farmMode === 'friend'" class="friend-select">
+          <span>农场主人</span>
+          <select :value="selectedFriendGid" :disabled="friendsLoading" @change="selectFriend(($event.target as HTMLSelectElement).value)">
+            <option value="">请选择好友</option>
+            <option v-for="friend in friendOptions" :key="String(friend.gid)" :value="String(friend.gid)">
+              {{ friendName(friend) }} · {{ friend.gid }}
+            </option>
+          </select>
+        </label>
+
+        <button v-if="farmMode === 'friend'" type="button" class="refresh-friends" :disabled="friendsLoading" @click="emit('refreshFriends')">
+          <span v-if="friendsLoading" class="i-carbon-circle-dash animate-spin" />
+          <span v-else class="i-carbon-renew" />
+          {{ friendsLoading ? '同步中' : '同步好友列表' }}
+        </button>
+
+        <div class="server-note">
+          <span class="i-carbon-security" />
+          <p>这里只筛选“已有作物”的候选地块。作物品级（2 品及以下不可用）与重复使用状态由服务器在提交时最终校验。</p>
+        </div>
+      </aside>
+
+      <div class="land-stage">
+        <div class="land-toolbar">
+          <div>
+            <span class="protocol-index">02</span>
+            <h3>选择地块</h3>
+            <small v-if="targets">{{ targets.host.name || (targets.host.isSelf ? '我的农场' : targets.host.gid) }} · {{ targets.count }} 块候选地</small>
+          </div>
+          <button type="button" class="reload-command" :disabled="loading || (farmMode === 'friend' && !selectedFriendGid)" title="重新读取当前农场" @click="reloadTargets">
+            <span v-if="loading" class="i-carbon-circle-dash animate-spin" />
+            <span v-else class="i-carbon-renew" />
+          </button>
+        </div>
+
+        <div v-if="farmMode === 'friend' && !selectedFriendGid" class="land-state">
+          <span class="i-carbon-location-person" />
+          <strong>先选择一位好友</strong>
+          <small>读取好友农场不会使用灵露</small>
+        </div>
+        <div v-else-if="loading" class="land-state">
+          <span class="i-svg-spinners-90-ring-with-bg" />
+          <strong>正在读取最新地块</strong>
+          <small>好友农场会完成一次进入与离开</small>
+        </div>
+        <div v-else-if="error" class="land-state land-state--error">
+          <span class="i-carbon-warning-alt" />
+          <strong>{{ error }}</strong>
+          <button type="button" @click="reloadTargets">重新读取</button>
+        </div>
+        <div v-else-if="targets && targets.lands.length === 0" class="land-state">
+          <span class="i-carbon-sprout" />
+          <strong>当前没有已种作物的候选地块</strong>
+          <small>种植后刷新，最终可用性仍以服务器为准</small>
+        </div>
+        <div v-else-if="targets" class="land-grid">
+          <button
+            v-for="target in targets.lands"
+            :key="`${target.hostGid}-${target.landId}`"
+            type="button"
+            class="land-card"
+            :class="{ selected: selectedLandId === target.landId }"
+            @click="chooseLand(target)"
+          >
+            <span class="land-number">#{{ target.landId }}</span>
+            <img v-if="target.seedImage" :src="target.seedImage" alt="">
+            <span v-else class="seed-fallback i-carbon-sprout" />
+            <strong>{{ target.plantName }}</strong>
+            <small>{{ target.phaseName || (target.mature ? '成熟' : '生长中') }}</small>
+            <span v-if="selectedLandId === target.landId" class="land-check i-carbon-checkmark-filled" />
+            <span v-else class="land-check i-carbon-radio-button" />
+          </button>
+        </div>
+
+        <footer class="dew-submit">
+          <div>
+            <span>即将操作</span>
+            <strong v-if="selectedTarget">{{ selectedTarget.ownerName }} · 第 {{ selectedTarget.landId }} 块地 · {{ selectedTarget.plantName }}</strong>
+            <strong v-else>尚未选择地块</strong>
+          </div>
+          <button type="button" :disabled="useDisabled" @click="useDew">
+            <span v-if="pending" class="i-carbon-circle-dash animate-spin" />
+            <span v-else class="i-carbon-rain-drop" />
+            {{ pending ? '正在使用' : activity.active ? '使用 1 份灵露' : '活动外不可使用' }}
+          </button>
+        </footer>
+      </div>
+    </div>
+  </section>
+</template>
+
+<style scoped>
+.dew-panel {
+  --dew-ink: #243f41;
+  --dew-green: #2c6663;
+  --dew-pale: #edf5ef;
+  --dew-gold: #c8923b;
+  padding: 26px 28px 28px;
+  border-bottom: 1px solid #cad8d2;
+  color: var(--dew-ink);
+  background:
+    radial-gradient(circle at 90% 0%, rgba(124, 184, 163, 0.2), transparent 27%),
+    linear-gradient(135deg, #f8fbf7 0%, #edf4ee 100%);
+}
+.dew-heading,
+.dew-title,
+.dew-lifecycle,
+.land-toolbar,
+.dew-submit {
+  display: flex;
+  align-items: center;
+}
+.dew-heading {
+  justify-content: space-between;
+  gap: 18px;
+}
+.dew-title {
+  min-width: 0;
+  gap: 14px;
+}
+.dew-orb {
+  width: 64px;
+  height: 64px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(44, 102, 99, 0.24);
+  border-radius: 50% 50% 46% 54%;
+  background: rgba(255, 255, 255, 0.74);
+  box-shadow: 0 10px 24px rgba(44, 102, 99, 0.12);
+}
+.dew-orb img {
+  width: 50px;
+  height: 50px;
+  object-fit: contain;
+}
+.dew-title small,
+.protocol-index {
+  color: #8b6152;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+.dew-title h2,
+.dew-protocol h3,
+.land-toolbar h3 {
+  margin: 2px 0 0;
+  font-size: 20px;
+}
+.dew-title p {
+  margin: 4px 0 0;
+  color: #6e7d79;
+  font-size: 11px;
+}
+.dew-balance {
+  min-width: 104px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  padding: 10px 14px;
+  border-left: 2px solid var(--dew-gold);
+  background: rgba(255, 255, 255, 0.66);
+}
+.dew-balance span {
+  grid-column: 1 / -1;
+  color: #71807d;
+  font-size: 9px;
+}
+.dew-balance strong {
+  color: var(--dew-green);
+  font-size: 25px;
+  line-height: 1;
+}
+.dew-balance small {
+  margin-left: 4px;
+  color: #71807d;
+  font-size: 9px;
+}
+.dew-lifecycle {
+  gap: 9px;
+  margin-top: 16px;
+  padding: 9px 12px;
+  border: 1px solid rgba(44, 102, 99, 0.17);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.68);
+}
+.lifecycle-mark {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #83928f;
+}
+.dew-lifecycle[data-state="active"] .lifecycle-mark {
+  background: #2d8d70;
+  box-shadow: 0 0 0 4px rgba(45, 141, 112, 0.13);
+}
+.dew-lifecycle[data-state="sellable"] .lifecycle-mark {
+  background: var(--dew-gold);
+}
+.dew-lifecycle div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.dew-lifecycle strong {
+  font-size: 11px;
+}
+.dew-lifecycle small {
+  margin-top: 1px;
+  color: #71807d;
+  font-size: 9px;
+}
+.sell-price {
+  margin-left: auto;
+  color: #805f29;
+  font-size: 10px;
+  font-weight: 700;
+}
+.dew-workbench {
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  gap: 18px;
+  margin-top: 16px;
+}
+.dew-protocol,
+.land-stage {
+  min-width: 0;
+  border: 1px solid #d4dfda;
+  background: rgba(255, 255, 255, 0.82);
+}
+.dew-protocol {
+  padding: 15px;
+}
+.dew-protocol h3,
+.land-toolbar h3 {
+  font-size: 15px;
+}
+.farm-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  margin-top: 13px;
+}
+.farm-switch button,
+.refresh-friends,
+.reload-command,
+.land-state button {
+  border: 1px solid #c9d7d1;
+  color: #496360;
+  background: #f7faf8;
+  cursor: pointer;
+}
+.farm-switch button {
+  min-height: 42px;
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  border-radius: 4px;
+  font-size: 9px;
+}
+.farm-switch button > span {
+  font-size: 16px;
+}
+.farm-switch button.active {
+  border-color: var(--dew-green);
+  color: #fff;
+  background: var(--dew-green);
+}
+.friend-select {
+  display: grid;
+  gap: 5px;
+  margin-top: 12px;
+  color: #6d7b78;
+  font-size: 9px;
+}
+.friend-select select {
+  width: 100%;
+  height: 38px;
+  min-width: 0;
+  padding: 0 8px;
+  border: 1px solid #c9d7d1;
+  border-radius: 4px;
+  outline: 0;
+  color: var(--dew-ink);
+  background: #fff;
+  font-size: 10px;
+}
+.friend-select select:focus {
+  border-color: var(--dew-green);
+}
+.refresh-friends {
+  width: 100%;
+  height: 34px;
+  margin-top: 7px;
+  border-radius: 4px;
+  font-size: 9px;
+}
+.server-note {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed #cbd8d2;
+  color: #687975;
+}
+.server-note > span {
+  flex: 0 0 auto;
+  color: var(--dew-green);
+  font-size: 16px;
+}
+.server-note p {
+  margin: 0;
+  font-size: 9px;
+  line-height: 1.55;
+}
+.land-stage {
+  display: flex;
+  flex-direction: column;
+}
+.land-toolbar {
+  min-height: 64px;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #d8e1dd;
+}
+.land-toolbar small {
+  display: block;
+  margin-top: 3px;
+  color: #778682;
+  font-size: 9px;
+}
+.reload-command {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+}
+.land-grid {
+  min-height: 164px;
+  max-height: 258px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(92px, 1fr));
+  gap: 7px;
+  overflow: auto;
+  padding: 12px;
+}
+.land-card {
+  position: relative;
+  min-width: 0;
+  min-height: 116px;
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  justify-content: center;
+  padding: 14px 8px 9px;
+  border: 1px solid #d4dfda;
+  border-radius: 5px;
+  color: var(--dew-ink);
+  background: #f8faf8;
+  cursor: pointer;
+}
+.land-card:hover,
+.land-card.selected {
+  border-color: var(--dew-green);
+  background: #eff7f2;
+}
+.land-card.selected {
+  box-shadow: inset 0 0 0 1px var(--dew-green);
+}
+.land-card img,
+.seed-fallback {
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+}
+.seed-fallback {
+  display: grid;
+  place-items: center;
+  color: #79a38f;
+  font-size: 29px;
+}
+.land-card strong {
+  max-width: 100%;
+  margin-top: 5px;
+  overflow: hidden;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.land-card small {
+  margin-top: 2px;
+  color: #788783;
+  font-size: 8px;
+}
+.land-number {
+  position: absolute;
+  top: 6px;
+  left: 7px;
+  color: #7c8a87;
+  font-size: 8px;
+  font-weight: 700;
+}
+.land-check {
+  position: absolute;
+  top: 6px;
+  right: 7px;
+  color: var(--dew-green);
+  font-size: 13px;
+}
+.land-state {
+  min-height: 164px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 5px;
+  padding: 18px;
+  color: #71807d;
+  text-align: center;
+}
+.land-state > span {
+  color: #79a38f;
+  font-size: 25px;
+}
+.land-state strong {
+  max-width: 420px;
+  font-size: 11px;
+}
+.land-state small {
+  font-size: 9px;
+}
+.land-state--error > span {
+  color: #b55f54;
+}
+.land-state button {
+  margin-top: 5px;
+  padding: 5px 10px;
+  border-radius: 4px;
+  font-size: 9px;
+}
+.dew-submit {
+  min-height: 62px;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: auto;
+  padding: 10px 12px;
+  border-top: 1px solid #d8e1dd;
+  background: #f4f7f5;
+}
+.dew-submit div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.dew-submit div span {
+  color: #778682;
+  font-size: 8px;
+}
+.dew-submit div strong {
+  max-width: 100%;
+  margin-top: 3px;
+  overflow: hidden;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dew-submit button {
+  min-width: 132px;
+  height: 38px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 4px;
+  color: #fff;
+  background: var(--dew-green);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.dew-submit button:disabled,
+.reload-command:disabled,
+.refresh-friends:disabled {
+  opacity: 0.46;
+  cursor: not-allowed;
+}
+@media (max-width: 900px) {
+  .dew-panel {
+    padding: 22px 16px;
+  }
+  .dew-workbench {
+    grid-template-columns: 1fr;
+  }
+  .land-grid {
+    grid-template-columns: repeat(3, minmax(86px, 1fr));
+  }
+}
+@media (max-width: 520px) {
+  .dew-heading,
+  .dew-submit {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .dew-balance {
+    width: 100%;
+  }
+  .sell-price {
+    display: none;
+  }
+  .land-grid {
+    grid-template-columns: repeat(2, minmax(86px, 1fr));
+  }
+  .dew-submit button {
+    width: 100%;
+  }
+}
+</style>

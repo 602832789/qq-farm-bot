@@ -21,7 +21,7 @@ const accountStore = useAccountStore()
 const activityStore = useActivityCenterStore()
 const friendStore = useFriendStore()
 const { currentAccountId } = storeToRefs(accountStore)
-const { activities, season, shop, solarTerms, constellation, qixi, actions, tabBadges, loading, error, actionError, notice, loadedAccountId, serverClockOffset, pendingActions } = storeToRefs(activityStore)
+const { activities, season, shop, solarTerms, constellation, qixi, actions, tabBadges, loading, error, actionError, notice, loadedAccountId, serverClockOffset, pendingActions, dewTargets, dewTargetsLoading, dewTargetsError } = storeToRefs(activityStore)
 const { friends, loading: friendsLoading } = storeToRefs(friendStore)
 const activeTab = ref<ActivityTab>('travel')
 const selectedActivity = ref<ActivityGameplayKey | null>(null)
@@ -122,18 +122,22 @@ function formatActivityPeriod(activity: ActivityDirectoryItemDto) {
     return `${end} 结束`
   return '活动时间待定'
 }
-function openActivity(activity: ActivityDirectoryItemDto) {
+async function openActivity(activity: ActivityDirectoryItemDto) {
   const gameplay = resolveActivityGameplay(activity)
   if (!gameplay)
     return
   if (gameplay.module.key === 'stellar')
     activeTab.value = gameplay.entryTab as ActivityTab
   selectedActivity.value = gameplay.module.key
-  if (gameplay.module.key === 'qixi' && currentAccountId.value)
-    friendStore.fetchFriends(String(currentAccountId.value))
+  if (gameplay.module.key === 'qixi' && currentAccountId.value) {
+    await activityStore.fetchQixiDewTargets(String(currentAccountId.value), '')
+    await friendStore.fetchFriends(String(currentAccountId.value))
+  }
 }
 function goBack() {
   if (selectedActivity.value) {
+    if (selectedActivity.value === 'qixi')
+      activityStore.clearQixiDewTargets()
     selectedActivity.value = null
     return
   }
@@ -151,12 +155,23 @@ function claimSolar(termId: string) {
 function claimQixiBridge() {
   activityStore.claimQixiBridgeRewards(accountId())
 }
-function giftQixiSachet(friendGid: string, count: number) {
-  activityStore.giftQixiSachet(accountId(), friendGid, count)
+function giftQixiSachet(friendGid: string) {
+  activityStore.giftQixiSachet(accountId(), friendGid)
+}
+function loadQixiDewTargets(hostGid: string) {
+  activityStore.fetchQixiDewTargets(accountId(), hostGid)
+}
+function useQixiDew(hostGid: string, landId: string) {
+  activityStore.useQixiDew(accountId(), hostGid, landId)
 }
 function refreshQixiFriends() {
   if (currentAccountId.value)
     friendStore.fetchFriends(String(currentAccountId.value), true)
+}
+async function refreshQixiActivity() {
+  const hostGid = dewTargets.value?.host.isSelf ? '' : (dewTargets.value?.host.gid || '')
+  await load(true)
+  await activityStore.fetchQixiDewTargets(accountId(), hostGid)
 }
 function selectShopGoods(goods: ShopGoodsDto) {
   selectedShopGoods.value = goods
@@ -327,7 +342,7 @@ onUnmounted(() => {
         :loading="loading"
         show-refresh
         @back="goBack"
-        @refresh="load(true)"
+        @refresh="refreshQixiActivity"
       />
       <div v-if="!currentAccountId" class="activity-state qixi-state">
         <strong>请先选择账号</strong><span>活动数据按当前账号加载</span>
@@ -348,8 +363,14 @@ onUnmounted(() => {
             :friends-loading="friendsLoading"
             :pending-bridge="pendingActions.claimQixiBridge"
             :pending-gift="pendingActions.giftQixiSachet"
+            :pending-dew="pendingActions.useQixiDew"
+            :dew-targets="dewTargets"
+            :dew-targets-loading="dewTargetsLoading"
+            :dew-targets-error="dewTargetsError"
             @claim-bridge="claimQixiBridge"
             @gift="giftQixiSachet"
+            @load-dew-targets="loadQixiDewTargets"
+            @use-dew="useQixiDew"
             @refresh-friends="refreshQixiFriends"
           />
         </main>

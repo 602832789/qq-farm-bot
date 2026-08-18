@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import type { QixiActivityDto } from '@/stores/activity-center'
-import { computed, ref, watch } from 'vue'
+import type { QixiActivityDto, QixiDewTargetsDto } from '@/stores/activity-center'
+import { computed, ref } from 'vue'
+import QixiDewPanel from './QixiDewPanel.vue'
 
 interface FriendOption {
   gid?: string | number
@@ -17,17 +18,22 @@ const props = defineProps<{
   friendsLoading: boolean
   pendingBridge: boolean
   pendingGift: boolean
+  pendingDew: boolean
+  dewTargets: QixiDewTargetsDto | null
+  dewTargetsLoading: boolean
+  dewTargetsError: string
 }>()
 
 const emit = defineEmits<{
   claimBridge: []
-  gift: [friendGid: string, count: number]
+  gift: [friendGid: string]
+  loadDewTargets: [hostGid: string]
+  useDew: [hostGid: string, landId: string]
   refreshFriends: []
 }>()
 
 const search = ref('')
 const selectedFriendGid = ref('')
-const giftCount = ref(1)
 const failedAvatars = ref(new Set<string>())
 
 const sachetBalance = computed(() => {
@@ -47,14 +53,7 @@ const filteredFriends = computed(() => {
 })
 
 const selectedFriend = computed(() => props.friends.find(friend => String(friend.gid || '') === selectedFriendGid.value) || null)
-const giftDisabled = computed(() => !selectedFriend.value || giftCount.value < 1 || giftCount.value > sachetBalance.value || props.pendingGift || !props.activity?.actions.gift.enabled)
-
-watch(sachetBalance, (balance) => {
-  if (balance <= 0)
-    giftCount.value = 1
-  else if (giftCount.value > balance)
-    giftCount.value = balance
-}, { immediate: true })
+const giftDisabled = computed(() => !selectedFriend.value || sachetBalance.value < 1 || props.pendingGift || !props.activity?.actions.gift.enabled)
 
 function friendName(friend: FriendOption) {
   return String(friend.remark || friend.name || `好友 ${friend.gid || ''}`)
@@ -68,14 +67,9 @@ function chooseFriend(friend: FriendOption) {
   selectedFriendGid.value = String(friend.gid || '')
 }
 
-function setGiftCount(value: unknown) {
-  const parsed = Math.trunc(Number(value))
-  giftCount.value = Math.max(1, Math.min(sachetBalance.value || 1, Number.isFinite(parsed) ? parsed : 1))
-}
-
 function submitGift() {
   if (!giftDisabled.value)
-    emit('gift', selectedFriendGid.value, giftCount.value)
+    emit('gift', selectedFriendGid.value)
 }
 
 function markAvatarFailed(friend: FriendOption) {
@@ -128,6 +122,19 @@ function stageState(stage: QixiActivityDto['bridge']['stages'][number]) {
     </section>
 
     <template v-if="activity">
+      <QixiDewPanel
+        :activity="activity"
+        :friends="friends"
+        :friends-loading="friendsLoading"
+        :targets="dewTargets"
+        :loading="dewTargetsLoading"
+        :pending="pendingDew"
+        :error="dewTargetsError"
+        @load-targets="emit('loadDewTargets', $event)"
+        @use="emit('useDew', $event.hostGid, $event.landId)"
+        @refresh-friends="emit('refreshFriends')"
+      />
+
       <section class="qixi-section bridge-section">
         <div class="section-heading">
           <div>
@@ -140,7 +147,8 @@ function stageState(stage: QixiActivityDto['bridge']['stages'][number]) {
             :disabled="pendingBridge || !activity.actions.bridge.enabled"
             @click="emit('claimBridge')"
           >
-            <span :class="pendingBridge ? 'i-carbon-circle-dash' : 'i-carbon-gift'" />
+            <span v-if="pendingBridge" class="i-carbon-circle-dash animate-spin" />
+            <span v-else class="i-carbon-gift" />
             {{ pendingBridge ? '领取中' : activity.bridge.claimable ? '筑桥并领取' : '暂无奖励' }}
           </button>
         </div>
@@ -187,7 +195,8 @@ function stageState(stage: QixiActivityDto['bridge']['stages'][number]) {
             <h2>赠送鹊羽香囊</h2>
           </div>
           <button type="button" class="icon-command" :disabled="friendsLoading" title="刷新好友" @click="emit('refreshFriends')">
-            <span :class="friendsLoading ? 'i-carbon-circle-dash' : 'i-carbon-renew'" />
+            <span v-if="friendsLoading" class="i-carbon-circle-dash animate-spin" />
+            <span v-else class="i-carbon-renew" />
           </button>
         </div>
 
@@ -223,7 +232,8 @@ function stageState(stage: QixiActivityDto['bridge']['stages'][number]) {
                   <strong>{{ friendName(friend) }}</strong>
                   <small>GID {{ friend.gid }}<template v-if="friend.level"> · Lv.{{ friend.level }}</template></small>
                 </span>
-                <span class="friend-option__mark" :class="selectedFriendGid === String(friend.gid) ? 'i-carbon-checkmark-filled' : 'i-carbon-chevron-right'" />
+                <span v-if="selectedFriendGid === String(friend.gid)" class="friend-option__mark i-carbon-checkmark-filled" />
+                <span v-else class="friend-option__mark i-carbon-chevron-right" />
               </button>
             </div>
           </div>
@@ -247,22 +257,18 @@ function stageState(stage: QixiActivityDto['bridge']['stages'][number]) {
               </div>
             </div>
 
-            <div class="count-stepper">
-              <button type="button" aria-label="减少赠送数量" :disabled="giftCount <= 1 || pendingGift" @click="setGiftCount(giftCount - 1)">
-                <span class="i-carbon-subtract" />
-              </button>
-              <input :value="giftCount" type="number" inputmode="numeric" min="1" :max="sachetBalance" :disabled="pendingGift" @input="setGiftCount(($event.target as HTMLInputElement).value)">
-              <button type="button" aria-label="增加赠送数量" :disabled="giftCount >= sachetBalance || pendingGift" @click="setGiftCount(giftCount + 1)">
-                <span class="i-carbon-add" />
-              </button>
-              <button type="button" class="max-command" :disabled="sachetBalance <= 0 || giftCount >= sachetBalance || pendingGift" @click="setGiftCount(sachetBalance)">
-                全部
-              </button>
+            <div class="gift-protocol-note">
+              <span class="i-carbon-information" />
+              <div>
+                <strong>每次固定赠送 1 个</strong>
+                <small>使用官方默认祝福文案（ID 15）</small>
+              </div>
             </div>
 
             <button type="button" class="gift-command" :disabled="giftDisabled" @click="submitGift">
-              <span :class="pendingGift ? 'i-carbon-circle-dash' : 'i-carbon-send-alt'" />
-              {{ pendingGift ? '赠送中' : '赠送香囊' }}
+              <span v-if="pendingGift" class="i-carbon-circle-dash animate-spin" />
+              <span v-else class="i-carbon-send-alt" />
+              {{ pendingGift ? '赠送中' : '赠送 1 个香囊' }}
             </button>
           </div>
         </div>
@@ -397,8 +403,7 @@ function stageState(stage: QixiActivityDto['bridge']['stages'][number]) {
 }
 .primary-command:disabled,
 .gift-command:disabled,
-.icon-command:disabled,
-.count-stepper button:disabled {
+.icon-command:disabled {
   opacity: 0.48;
   cursor: not-allowed;
 }
@@ -664,30 +669,32 @@ function stageState(stage: QixiActivityDto['bridge']['stages'][number]) {
   margin-top: 3px;
   font-size: 14px;
 }
-.count-stepper {
-  display: grid;
-  grid-template-columns: 38px minmax(60px, 1fr) 38px 48px;
-  gap: 5px;
-}
-.count-stepper button,
-.count-stepper input {
-  height: 38px;
-  min-width: 0;
-  border: 1px solid #cbd6d1;
+.gift-protocol-note {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 11px;
+  border: 1px solid #d8dfdc;
   border-radius: 6px;
   color: #315d63;
-  background: #f5f8f6;
+  background: #f4f8f6;
 }
-.count-stepper input {
-  width: 100%;
-  padding: 0 6px;
-  background: #fff;
-  font-size: 15px;
-  text-align: center;
+.gift-protocol-note > span {
+  flex: 0 0 auto;
+  font-size: 18px;
 }
-.max-command {
-  font-size: 10px;
-  font-weight: 700;
+.gift-protocol-note div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.gift-protocol-note strong {
+  font-size: 11px;
+}
+.gift-protocol-note small {
+  margin-top: 2px;
+  color: #72817f;
+  font-size: 9px;
 }
 .gift-command {
   width: 100%;

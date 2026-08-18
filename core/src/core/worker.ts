@@ -788,6 +788,12 @@ async function handleApiCall(msg: any): Promise<void> {
             case 'giftQixiSachet':
                 result = await require('../services/activity-center').giftQixiSachet(args[0], args[1]);
                 break;
+            case 'getQixiDewTargets':
+                result = await require('../services/qixi-dew').getQixiDewTargets(args[0]);
+                break;
+            case 'useQixiDew':
+                result = await require('../services/qixi-dew').useQixiDew(args[0], args[1]);
+                break;
             case 'getMallCatalog':
                 result = await require('../services/commerce').getMallCatalog(args[0], args[1]);
                 break;

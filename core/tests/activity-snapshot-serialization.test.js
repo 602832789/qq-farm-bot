@@ -92,6 +92,7 @@ test('activity snapshots are single-flight and serialize gateway reads', async (
     });
     require.cache[windowsPath] = loadedModule(windowsPath, {
         getActivityWindows: () => tracked('ActivityList', []),
+        getSellConditionContext: async () => ({ nowSec: 1, activityWindows: new Map(), activityWindowsLoaded: true }),
     });
     require.cache[registryPath] = loadedModule(registryPath, {
         buildActivityGameplayBindings: () => ({}),
@@ -109,6 +110,7 @@ test('activity snapshots are single-flight and serialize gateway reads', async (
     require.cache[gameConfigPath] = loadedModule(gameConfigPath, {
         getItemById: () => null,
         getItemImageById: () => '',
+        getEffectiveSellInfo: () => ({ sellable: false, status: 'unavailable', condition: null, sells: [] }),
     });
     require.cache[utilsPath] = loadedModule(utilsPath, { getServerTimeSec: () => 1 });
 

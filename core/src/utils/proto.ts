@@ -112,6 +112,7 @@ async function loadProto(): Promise<void> {
     types.SellRequest = root.lookupType('gamepb.itempb.SellRequest');
     types.SellReply = root.lookupType('gamepb.itempb.SellReply');
     types.UseRequest = root.lookupType('gamepb.itempb.UseRequest');
+    types.UseTarget = root.lookupType('gamepb.itempb.UseTarget');
     types.UseReply = root.lookupType('gamepb.itempb.UseReply');
     types.BatchUseRequest = root.lookupType('gamepb.itempb.BatchUseRequest');
     types.BatchUseReply = root.lookupType('gamepb.itempb.BatchUseReply');

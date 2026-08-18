@@ -220,6 +220,7 @@ export interface ActivityActionsDto {
   exchange: ActivityActionDto
   qixiBridge: ActivityActionDto
   qixiGift: ActivityActionDto
+  qixiDew: ActivityActionDto
 }
 
 export interface QixiBridgeStageDto {
@@ -232,6 +233,57 @@ export interface QixiBridgeStageDto {
   current: boolean
   cost: ActivityItemDto
   rewards: ActivityItemDto[]
+}
+
+export interface QixiGiftExchangeDto {
+  costItems: ActivityItemDto[]
+  receiveItems: ActivityItemDto[]
+  giftType: string
+  content: string
+}
+
+export interface QixiDewDto extends ActivityItemDto {
+  balance: string | null
+  balanceKnown: boolean
+  usable: boolean
+  sellable: boolean
+  sellStatus: string
+  sellCondition: string
+  sellPrice: {
+    currencyId: string
+    amount: string
+    currencyName: string
+    currencyImage: string
+  } | null
+}
+
+export interface QixiDewLandTargetDto {
+  id: string
+  landId: string
+  hostGid: string
+  ownerName: string
+  isSelf: boolean
+  plantId: string
+  plantName: string
+  seedId: string
+  seedImage: string
+  phaseCode: number
+  phaseName: string
+  mature: boolean
+  occupiedLandIds: string[]
+  activityMarker: string
+}
+
+export interface QixiDewTargetsDto {
+  host: {
+    gid: string
+    name: string
+    avatarUrl: string
+    isSelf: boolean
+  }
+  lands: QixiDewLandTargetDto[]
+  count: number
+  serverValidationRequired: boolean
 }
 
 export interface QixiActivityDto {
@@ -249,10 +301,12 @@ export interface QixiActivityDto {
   feather: ActivityItemDto
   sachet: ActivityItemDto
   receivedSachet: ActivityItemDto
+  dew: QixiDewDto
   balances: {
     feather: string | null
     sachet: string | null
     receivedSachet: string | null
+    dew: string | null
     known: boolean
   }
   bridge: {
@@ -264,18 +318,15 @@ export interface QixiActivityDto {
   }
   gift: {
     sentCount: string
-    field2Code: string
-    field3Code: string
-    exchange: {
-      sentItem: ActivityItemDto
-      receivedItem: ActivityItemDto
-      field3: boolean
-      enabled: boolean
-    }
+    sendLimit: string
+    receiveLimit: string
+    exchanges: QixiGiftExchangeDto[]
+    messageTextId: string
   }
   actions: {
     bridge: ActivityActionDto
     gift: ActivityActionDto
+    dew: ActivityActionDto
   }
 }
 
@@ -334,7 +385,7 @@ export interface ActivityCenterSnapshotDto {
   actions: ActivityActionsDto
 }
 
-export type ActivityMutationKey = 'claimPass' | 'lightConstellation' | 'claimSolar' | 'exchange' | 'claimQixiBridge' | 'giftQixiSachet' | 'claimQingMeiSeed' | 'startQingMeiBrew' | 'continueQingMeiBrew' | 'settleQingMeiBrew'
+export type ActivityMutationKey = 'claimPass' | 'lightConstellation' | 'claimSolar' | 'exchange' | 'claimQixiBridge' | 'giftQixiSachet' | 'useQixiDew' | 'claimQingMeiSeed' | 'startQingMeiBrew' | 'continueQingMeiBrew' | 'settleQingMeiBrew'
 
 function isRecord(value: unknown): value is ActivityRecord {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -756,8 +807,10 @@ function normalizeQixi(value: unknown): QixiActivityDto | null {
   const balances = record(raw.balances)
   const bridge = record(raw.bridge)
   const gift = record(raw.gift)
-  const exchange = record(gift.exchange)
+  const dew = record(raw.dew)
+  const dewSellPrice = record(first(dew.sellPrice, dew.sell_price))
   const actions = record(raw.actions)
+  const dewBalance = first(dew.balance, balances.dew)
   return {
     groupId: text(raw.groupId, raw.group_id),
     activityId: text(raw.activityId, raw.activity_id, raw.bridgeActivityId, raw.bridge_activity_id),
@@ -773,12 +826,30 @@ function normalizeQixi(value: unknown): QixiActivityDto | null {
     feather: normalizeItem(raw.feather),
     sachet: normalizeItem(raw.sachet),
     receivedSachet: normalizeItem(first(raw.receivedSachet, raw.received_sachet)),
+    dew: {
+      ...normalizeItem(dew),
+      balance: dewBalance === null || dewBalance === undefined ? null : text(dewBalance),
+      balanceKnown: bool(dew.balanceKnown, dew.balance_known, balances.known),
+      usable: bool(dew.usable),
+      sellable: bool(dew.sellable),
+      sellStatus: text(dew.sellStatus, dew.sell_status),
+      sellCondition: text(dew.sellCondition, dew.sell_condition),
+      sellPrice: Object.keys(dewSellPrice).length
+        ? {
+            currencyId: text(dewSellPrice.currencyId, dewSellPrice.currency_id),
+            amount: text(dewSellPrice.amount, dewSellPrice.price),
+            currencyName: text(dewSellPrice.currencyName, dewSellPrice.currency_name),
+            currencyImage: text(dewSellPrice.currencyImage, dewSellPrice.currency_image),
+          }
+        : null,
+    },
     balances: {
       feather: balances.feather === null || balances.feather === undefined ? null : text(balances.feather),
       sachet: balances.sachet === null || balances.sachet === undefined ? null : text(balances.sachet),
       receivedSachet: balances.receivedSachet === null || balances.receivedSachet === undefined
         ? null
         : text(balances.receivedSachet),
+      dew: balances.dew === null || balances.dew === undefined ? null : text(balances.dew),
       known: bool(balances.known),
     },
     bridge: {
@@ -800,19 +871,58 @@ function normalizeQixi(value: unknown): QixiActivityDto | null {
     },
     gift: {
       sentCount: text(gift.sentCount, gift.sent_count),
-      field2Code: text(gift.field2Code, gift.field_2),
-      field3Code: text(gift.field3Code, gift.field_3),
-      exchange: {
-        sentItem: normalizeItem(first(exchange.sentItem, exchange.sent_item)),
-        receivedItem: normalizeItem(first(exchange.receivedItem, exchange.received_item)),
-        field3: bool(exchange.field3, exchange.field_3),
-        enabled: bool(exchange.enabled),
-      },
+      sendLimit: text(gift.sendLimit, gift.send_limit),
+      receiveLimit: text(gift.receiveLimit, gift.receive_limit),
+      exchanges: records(gift.exchanges).map(exchange => ({
+        costItems: records(first(exchange.costItems, exchange.cost_items)).map(normalizeItem),
+        receiveItems: records(first(exchange.receiveItems, exchange.receive_items)).map(normalizeItem),
+        giftType: text(exchange.giftType, exchange.gift_type),
+        content: text(exchange.content),
+      })),
+      messageTextId: text(gift.messageTextId, gift.message_text_id, 15),
     },
     actions: {
       bridge: normalizeAction(actions, {}, ['bridge']),
       gift: normalizeAction(actions, {}, ['gift']),
+      dew: normalizeAction(actions, {}, ['dew']),
     },
+  }
+}
+
+function normalizeQixiDewTargets(value: unknown): QixiDewTargetsDto | null {
+  if (!isRecord(value))
+    return null
+  const raw = value
+  const host = record(raw.host)
+  const lands = records(raw.lands).map((land) => {
+    const rawOccupiedLandIds = first(land.occupiedLandIds, land.occupied_land_ids)
+    return {
+      id: text(land.id, land.landId, land.land_id),
+      landId: text(land.landId, land.land_id, land.id),
+      hostGid: text(land.hostGid, land.host_gid, host.gid),
+      ownerName: text(land.ownerName, land.owner_name, host.name),
+      isSelf: bool(land.isSelf, land.is_self, host.isSelf, host.is_self),
+      plantId: text(land.plantId, land.plant_id),
+      plantName: text(land.plantName, land.plant_name, '未知作物'),
+      seedId: text(land.seedId, land.seed_id),
+      seedImage: text(land.seedImage, land.seed_image),
+      phaseCode: finiteNumber(first(land.phaseCode, land.phase_code)) || 0,
+      phaseName: text(land.phaseName, land.phase_name),
+      mature: bool(land.mature),
+      occupiedLandIds: Array.isArray(rawOccupiedLandIds) ? rawOccupiedLandIds.map(value => text(value)).filter(Boolean) : [],
+      activityMarker: text(land.activityMarker, land.activity_marker),
+    }
+  }).filter(land => land.landId)
+  return {
+    host: {
+      gid: text(host.gid),
+      name: text(host.name, host.remark),
+      avatarUrl: text(host.avatarUrl, host.avatar_url),
+      isSelf: bool(host.isSelf, host.is_self),
+    },
+    lands,
+    count: finiteNumber(raw.count) ?? lands.length,
+    serverValidationRequired: bool(raw.serverValidationRequired, raw.server_validation_required),
   }
 }
 
@@ -941,6 +1051,7 @@ export function normalizeActivitySnapshot(value: unknown): ActivityCenterSnapsho
       exchange: normalizeAction(actionsRaw, capabilitiesRaw, ['exchange', 'shopExchange', 'shop_exchange']),
       qixiBridge: normalizeAction(actionsRaw, capabilitiesRaw, ['qixiBridge', 'qixi_bridge']),
       qixiGift: normalizeAction(actionsRaw, capabilitiesRaw, ['qixiGift', 'qixi_gift']),
+      qixiDew: normalizeAction(actionsRaw, capabilitiesRaw, ['qixiDew', 'qixi_dew']),
     },
   }
 }
@@ -966,10 +1077,17 @@ const activityErrorMessages: Record<string, string> = {
   QIXI_BRIDGE_UNAVAILABLE: '当前没有可领取的鹊桥奖励',
   QIXI_GIFT_UNAVAILABLE: '当前无法赠送鹊羽香囊',
   INVALID_QIXI_FRIEND_GID: '好友信息无效，请重新选择',
-  INVALID_QIXI_SACHET_COUNT: '赠送数量必须是正整数',
+  INVALID_QIXI_MESSAGE_TEXT_ID: '祝福文案信息无效，请刷新活动后重试',
   INSUFFICIENT_QIXI_SACHET: '鹊羽香囊数量不足',
   QIXI_RESPONSE_INVALID: '鹊桥活动数据已经变化，请刷新页面后重试',
   QIXI_GIFT_FAILED: '鹊羽香囊赠送失败，请刷新后重试',
+  QIXI_DEW_ACCOUNT_UNAVAILABLE: '当前账号尚未就绪，请稍后重试',
+  INVALID_QIXI_DEW_HOST_GID: '农场主人信息无效，请重新选择',
+  INVALID_QIXI_DEW_LAND_ID: '地块信息无效，请刷新后重选',
+  QIXI_DEW_UNAVAILABLE: '活动未进行，鹊羽灵露当前不可使用',
+  INSUFFICIENT_QIXI_DEW: '背包中没有可用的鹊羽灵露',
+  QIXI_DEW_HOST_MISMATCH: '进入的农场与所选好友不一致，请刷新后重试',
+  QIXI_DEW_TARGET_UNAVAILABLE: '所选地块已不再可用，请刷新后重选',
   SEASON_UNAVAILABLE: '当前活动数据暂未开放，请稍后刷新重试',
   INVALID_SOLAR_TERM: '节令信息已失效，请刷新页面后重试',
   ACCOUNT_OFFLINE: '当前账号尚未运行，请先启动账号后再试',
@@ -1017,6 +1135,10 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
   const loadedAccountId = ref('')
   const serverClockOffset = ref(0)
   const requestVersion = ref(0)
+  const dewTargets = ref<QixiDewTargetsDto | null>(null)
+  const dewTargetsLoading = ref(false)
+  const dewTargetsError = ref('')
+  let dewTargetsRequestVersion = 0
   const pendingLoads = new Map<string, Promise<boolean>>()
   const pendingActions = ref<Record<ActivityMutationKey, boolean>>({
     claimPass: false,
@@ -1025,6 +1147,7 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     exchange: false,
     claimQixiBridge: false,
     giftQixiSachet: false,
+    useQixiDew: false,
     claimQingMeiSeed: false,
     startQingMeiBrew: false,
     continueQingMeiBrew: false,
@@ -1049,6 +1172,7 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
 
   function reset() {
     requestVersion.value += 1
+    dewTargetsRequestVersion += 1
     snapshot.value = normalizeActivitySnapshot({})
     loading.value = false
     error.value = ''
@@ -1056,7 +1180,10 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     notice.value = ''
     loadedAccountId.value = ''
     serverClockOffset.value = 0
-    pendingActions.value = { claimPass: false, lightConstellation: false, claimSolar: false, exchange: false, claimQixiBridge: false, giftQixiSachet: false, claimQingMeiSeed: false, startQingMeiBrew: false, continueQingMeiBrew: false, settleQingMeiBrew: false }
+    dewTargets.value = null
+    dewTargetsLoading.value = false
+    dewTargetsError.value = ''
+    pendingActions.value = { claimPass: false, lightConstellation: false, claimSolar: false, exchange: false, claimQixiBridge: false, giftQixiSachet: false, useQixiDew: false, claimQingMeiSeed: false, startQingMeiBrew: false, continueQingMeiBrew: false, settleQingMeiBrew: false }
   }
 
   function clearActionMessages() {
@@ -1157,6 +1284,51 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     return request
   }
 
+  function clearQixiDewTargets() {
+    dewTargetsRequestVersion += 1
+    dewTargets.value = null
+    dewTargetsLoading.value = false
+    dewTargetsError.value = ''
+  }
+
+  async function fetchQixiDewTargets(accountId: string, hostGid = '') {
+    const requestedAccountId = String(accountId || '').trim()
+    if (!requestedAccountId) {
+      clearQixiDewTargets()
+      dewTargetsError.value = '请先选择账号'
+      return false
+    }
+
+    const version = ++dewTargetsRequestVersion
+    dewTargetsLoading.value = true
+    dewTargetsError.value = ''
+    try {
+      const response = await api.get('/api/activity-center/qixi/dew/targets', {
+        headers: { 'x-account-id': requestedAccountId },
+        params: hostGid ? { hostGid } : {},
+        skipErrorToast: true,
+      } as any)
+      const normalized = normalizeQixiDewTargets(responsePayload(response.data))
+      if (version !== dewTargetsRequestVersion)
+        return false
+      dewTargets.value = normalized
+      if (!normalized)
+        dewTargetsError.value = '未能读取灵露候选地块'
+      return !!normalized
+    }
+    catch (targetError) {
+      if (version === dewTargetsRequestVersion) {
+        dewTargets.value = null
+        dewTargetsError.value = errorMessage(targetError, '加载灵露候选地块失败')
+      }
+      return false
+    }
+    finally {
+      if (version === dewTargetsRequestVersion)
+        dewTargetsLoading.value = false
+    }
+  }
+
   async function mutate(key: ActivityMutationKey, path: string, accountId: string, payload: ActivityRecord = {}) {
     const requestedAccountId = String(accountId || '').trim()
     if (!requestedAccountId || pendingActions.value[key])
@@ -1214,8 +1386,15 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     return mutate('claimQixiBridge', '/qixi/bridge/claim', accountId)
   }
 
-  function giftQixiSachet(accountId: string, friendGid: string, count: number) {
-    return mutate('giftQixiSachet', '/qixi/gift', accountId, { friendGid, count })
+  function giftQixiSachet(accountId: string, friendGid: string, messageTextId = 15) {
+    return mutate('giftQixiSachet', '/qixi/gift', accountId, { friendGid, messageTextId })
+  }
+
+  async function useQixiDew(accountId: string, hostGid: string, landId: string) {
+    const succeeded = await mutate('useQixiDew', '/qixi/dew/use', accountId, { hostGid, landId })
+    if (succeeded)
+      await fetchQixiDewTargets(accountId, hostGid)
+    return succeeded
   }
 
   function claimQingMeiDailySeed(accountId: string) {
@@ -1262,6 +1441,9 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     serverClockOffset,
     serverNow,
     pendingActions,
+    dewTargets,
+    dewTargetsLoading,
+    dewTargetsError,
     lazyLoad,
     refresh,
     claimPass,
@@ -1270,6 +1452,9 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     exchangeStarSandGoods,
     claimQixiBridgeRewards,
     giftQixiSachet,
+    fetchQixiDewTargets,
+    clearQixiDewTargets,
+    useQixiDew,
     claimQingMeiDailySeed,
     startQingMeiBrew,
     continueQingMeiBrew,

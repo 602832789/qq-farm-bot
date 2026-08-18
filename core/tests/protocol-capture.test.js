@@ -199,16 +199,19 @@ test('Qixi bridge and gifting messages match the captured activity frames', () =
     const gift = type('gamepb.activitypb.QixiGiftProgress').decode(hex(
         '0801100c183222120a0508810810011205088208100118012001',
     ));
-    assert.equal(number(gift.sent_count), 1);
-    assert.equal(number(gift.field_2), 12);
-    assert.equal(number(gift.field_3), 50);
-    assert.equal(number(gift.exchange.sent_item.item_id), 1025);
+    assert.equal(number(gift.total_send_count), 1);
+    assert.equal(number(gift.total_send_limit), 12);
+    assert.equal(number(gift.total_receive_limit), 50);
+    assert.equal(number(gift.gifts[0].cost_items[0].item_id), 1025);
+    assert.equal(number(gift.gifts[0].receive_items[0].item_id), 1026);
+    assert.equal(number(gift.gifts[0].gift_type), 1);
+    assert.equal(number(gift.gifts[0].content), 1);
 
     const giftRequestType = type('gamepb.activitypb.GiftQixiSachetRequest');
     const giftRequest = giftRequestType.create({
         activity_id: '2026081802',
         operate_type: 26,
-        params: { friend_gid: '1142601927', count: 15 },
+        params: { target_gid: '1142601927', msg_text_id: 15 },
     });
     assert.equal(
         Buffer.from(giftRequestType.encode(giftRequest).finish()).toString('hex'),
@@ -219,7 +222,7 @@ test('Qixi bridge and gifting messages match the captured activity frames', () =
     const claimRequest = claimRequestType.create({
         activity_id: '2026081801',
         operate_type: 25,
-        params: { claim_mode: 0 },
+        params: { step: 0 },
     });
     assert.equal(
         Buffer.from(claimRequestType.encode(claimRequest).finish()).toString('hex'),
@@ -230,6 +233,36 @@ test('Qixi bridge and gifting messages match the captured activity frames', () =
         '0a010112130881081005188092b8c398feffffff0130962712160883f1041004188092b8c398feffffff0130ea263801'
         + '121108ea0710c801188092b8c398feffffff01',
     ));
-    assert.deepEqual(rewardResult.claimed_stages.map(number), [1]);
-    assert.deepEqual(rewardResult.rewards.map(item => number(item.id)), [1025, 80003, 1002]);
+    assert.deepEqual(rewardResult.unlocked_steps.map(number), [1]);
+    assert.deepEqual(rewardResult.awards.map(item => number(item.id)), [1025, 80003, 1002]);
+});
+
+test('Qixi dew targets the selected farm and land without changing the captured item payload', () => {
+    const requestType = type('gamepb.itempb.UseRequest');
+    const encoded = requestType.encode(requestType.create({
+        item: { id: 301103, count: 1, uid: 77 },
+        target: { host_gid: '1142601927', land_ids: [3], use_config_id: 0 },
+    })).finish();
+    const decoded = requestType.decode(encoded);
+
+    assert.equal(number(decoded.item.id), 301103);
+    assert.equal(number(decoded.item.count), 1);
+    assert.equal(number(decoded.item.uid), 77);
+    assert.equal(number(decoded.target.host_gid), 1142601927);
+    assert.deepEqual(decoded.target.land_ids.map(number), [3]);
+    assert.equal(number(decoded.target.use_config_id), 0);
+
+    const reply = type('gamepb.itempb.UseReply').decode(hex(
+        '0a0908afb012100130816322bc0108051001180520054a1008b0ea0110d00f18c41320e05d28a01f'
+        + '529c0108c4ab3e1206e6a2a7e6a1902216080210cca891d406180c520a08cca891d406100d3003'
+        + '220a080210ccde91d4061814220a080610cc9492d4061813280150a4c30258f80e6a010078808e02'
+        + '8001018801019001f80ea201010db0018632d001a4c302d801f80e92020a08e90710c20318c4ab3e'
+        + 'a2020d08fe071031183120fcd48dc607a8028f01c2020408091001ca020a08cca891d406100d3003'
+        + '8001052a09080512050880081001',
+    ));
+    assert.equal(number(reply.land.id), 5);
+    assert.equal(reply.land.plant.name, '梧桐');
+    assert.equal(number(reply.land_reward.land_id), 5);
+    assert.deepEqual(reply.land_reward.items.map(item => number(item.id)), [1024]);
+    assert.deepEqual(reply.land_reward.items.map(item => number(item.count)), [1]);
 });

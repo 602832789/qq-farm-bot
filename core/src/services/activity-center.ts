@@ -6,10 +6,10 @@ import constellationCatalog from '../activity-data/constellation-2026072701.json
 const LongModule = require('long');
 const { sendMsgAsync, GatewayError } = require('../utils/network');
 const { types } = require('../utils/proto');
-const { getItemById, getItemImageById } = require('../config/gameConfig');
+const { getItemById, getItemImageById, getEffectiveSellInfo } = require('../config/gameConfig');
 const { getServerTimeSec } = require('../utils/utils');
 const { getBag, getBagItems } = require('./warehouse');
-const { getActivityWindows } = require('./activity-windows');
+const { getActivityWindows, getSellConditionContext } = require('./activity-windows');
 const { buildActivityGameplayBindings, resolveActivityGameplays } = require('./activity-gameplay-registry');
 const { reportActivityShare } = require('./share');
 const { getSystemDateKey } = require('../utils/utils');
@@ -48,6 +48,8 @@ const QIXI_GIFT_OPERATE_TYPE = 26;
 const QIXI_FEATHER_ITEM_ID = '1024';
 const QIXI_SACHET_ITEM_ID = '1025';
 const QIXI_RECEIVED_SACHET_ITEM_ID = '1026';
+const QIXI_DEW_ITEM_ID = '301103';
+const QIXI_DEFAULT_GIFT_MESSAGE_TEXT_ID = 15;
 const MAX_SIGNED_INT64 = 9223372036854775807n;
 const SECONDS_PER_DAY = 86400;
 const BEIJING_UTC_OFFSET_SECONDS = 8 * 60 * 60;
@@ -603,7 +605,29 @@ function qixiActivityIsActive(activity: any, serverTime = getServerTimeSec()): b
     return (beginTime <= 0 || serverTime >= beginTime) && (endTime <= 0 || serverTime <= endTime);
 }
 
-function qixiDto(groupReply: any, balances: Map<string, string> | null = null) {
+function configuredSellPrice(item: any, effectiveSellInfo: any) {
+    const effectivePrices = Array.isArray(effectiveSellInfo?.sells) ? effectiveSellInfo.sells : [];
+    const configuredPrices = effectivePrices.length > 0
+        ? effectivePrices
+        : String(item?.cond_sells || item?.sells || '')
+            .split(';')
+            .map((entry: string) => {
+                const [currencyId, price] = entry.split(':');
+                return { currencyId: Number(currencyId) || 0, price: Number(price) || 0 };
+            })
+            .filter((entry: any) => entry.currencyId > 0 && entry.price > 0);
+    const price = configuredPrices[0];
+    if (!price) return null;
+    const currency = itemDto({ item_id: price.currencyId, count: price.price });
+    return {
+        currencyId: String(price.currencyId),
+        amount: String(price.price),
+        currencyName: currency.name,
+        currencyImage: currency.image,
+    };
+}
+
+function qixiDto(groupReply: any, balances: Map<string, string> | null = null, sellContext: any = null) {
     const bridgeChild = findQixiChild(groupReply, QIXI_BRIDGE_ACTIVITY_ID);
     const giftChild = findQixiChild(groupReply, QIXI_GIFT_ACTIVITY_ID);
     const bridgeActivity = bridgeChild?.activity || null;
@@ -638,9 +662,17 @@ function qixiDto(groupReply: any, balances: Map<string, string> | null = null) {
     const featherBalance = balances ? readBalance(QIXI_FEATHER_ITEM_ID) : null;
     const sachetBalance = balances ? readBalance(QIXI_SACHET_ITEM_ID) : null;
     const receivedSachetBalance = balances ? readBalance(QIXI_RECEIVED_SACHET_ITEM_ID) : null;
+    const dewBalance = balances ? readBalance(QIXI_DEW_ITEM_ID) : null;
     const active = qixiActivityIsActive(bridgeActivity);
     const rules = textContent(bridgeActivity.extra);
-    const exchange = gift?.exchange || {};
+    const dewMetadata = getItemById(Number(QIXI_DEW_ITEM_ID));
+    const dewSellInfo = getEffectiveSellInfo(dewMetadata, sellContext || undefined);
+    const giftExchanges = (Array.isArray(gift.gifts) ? gift.gifts : []).map((entry: any) => ({
+        costItems: (Array.isArray(entry?.cost_items) ? entry.cost_items : []).map(itemDto),
+        receiveItems: (Array.isArray(entry?.receive_items) ? entry.receive_items : []).map(itemDto),
+        giftType: int64String(entry?.gift_type),
+        content: int64String(entry?.content),
+    }));
 
     return {
         groupId: QIXI_GROUP_ID,
@@ -657,10 +689,21 @@ function qixiDto(groupReply: any, balances: Map<string, string> | null = null) {
         feather: itemDto({ item_id: QIXI_FEATHER_ITEM_ID, count: featherBalance || '0' }),
         sachet: itemDto({ item_id: QIXI_SACHET_ITEM_ID, count: sachetBalance || '0' }),
         receivedSachet: itemDto({ item_id: QIXI_RECEIVED_SACHET_ITEM_ID, count: receivedSachetBalance || '0' }),
+        dew: {
+            ...itemDto({ item_id: QIXI_DEW_ITEM_ID, count: dewBalance || '0' }),
+            balance: dewBalance,
+            balanceKnown: balances !== null,
+            usable: active && (balances === null || BigInt(dewBalance || '0') > 0n),
+            sellable: !!dewSellInfo.sellable,
+            sellStatus: String(dewSellInfo.status || 'unavailable'),
+            sellCondition: String(dewSellInfo.condition || dewMetadata?.sell_cond || ''),
+            sellPrice: configuredSellPrice(dewMetadata, dewSellInfo),
+        },
         balances: {
             feather: featherBalance,
             sachet: sachetBalance,
             receivedSachet: receivedSachetBalance,
+            dew: dewBalance,
             known: balances !== null,
         },
         bridge: {
@@ -671,15 +714,11 @@ function qixiDto(groupReply: any, balances: Map<string, string> | null = null) {
             displayItems: (Array.isArray(config.display_items) ? config.display_items : []).map(itemDto),
         },
         gift: {
-            sentCount: int64String(gift.sent_count),
-            field2Code: int64String(gift.field_2),
-            field3Code: int64String(gift.field_3),
-            exchange: {
-                sentItem: itemDto(exchange.sent_item),
-                receivedItem: itemDto(exchange.received_item),
-                field3: !!exchange.field_3,
-                enabled: !!exchange.enabled,
-            },
+            sentCount: int64String(gift.total_send_count),
+            sendLimit: int64String(gift.total_send_limit),
+            receiveLimit: int64String(gift.total_receive_limit),
+            exchanges: giftExchanges,
+            messageTextId: String(QIXI_DEFAULT_GIFT_MESSAGE_TEXT_ID),
         },
         actions: {
             bridge: {
@@ -692,6 +731,11 @@ function qixiDto(groupReply: any, balances: Map<string, string> | null = null) {
                 available: active && (balances === null || BigInt(sachetBalance || '0') > 0n),
                 availabilityKnown: balances !== null,
             },
+            dew: {
+                enabled: active && (balances === null || BigInt(dewBalance || '0') > 0n),
+                available: active && (balances === null || BigInt(dewBalance || '0') > 0n),
+                availabilityKnown: balances !== null,
+            },
         },
     };
 }
@@ -699,10 +743,14 @@ function qixiDto(groupReply: any, balances: Map<string, string> | null = null) {
 async function getCurrentQixiActivity() {
     const groupReply = await queryQixiGroupReply();
     let balances: Map<string, string> | null = null;
+    let sellContext: any = null;
     try {
-        balances = readBagBalances(await getBag(), [QIXI_FEATHER_ITEM_ID, QIXI_SACHET_ITEM_ID, QIXI_RECEIVED_SACHET_ITEM_ID]);
+        balances = readBagBalances(await getBag(), [QIXI_FEATHER_ITEM_ID, QIXI_SACHET_ITEM_ID, QIXI_RECEIVED_SACHET_ITEM_ID, QIXI_DEW_ITEM_ID]);
     } catch {}
-    return qixiDto(groupReply, balances);
+    try {
+        sellContext = await getSellConditionContext();
+    } catch {}
+    return qixiDto(groupReply, balances, sellContext);
 }
 
 function findSeasonActivity(seasonReply: any, typeCode: string): any | null {
@@ -1024,6 +1072,7 @@ async function buildActivityCenterSnapshot(shopOverride: any = null) {
         ...buildActions(season, solarTerms, constellation, shop),
         qixiBridge: qixi?.actions?.bridge || { enabled: false, available: false, availabilityKnown: false },
         qixiGift: qixi?.actions?.gift || { enabled: false, available: false, availabilityKnown: false },
+        qixiDew: qixi?.actions?.dew || { enabled: false, available: false, availabilityKnown: false },
     };
     const activityWindows = settledValue(activityListResult) || [];
     return {
@@ -1041,6 +1090,7 @@ async function buildActivityCenterSnapshot(shopOverride: any = null) {
             exchange: actions.exchange.supported,
             qixiBridge: !!qixi,
             qixiGift: !!qixi,
+            qixiDew: !!qixi,
         },
         actions,
         errors: {
@@ -1186,7 +1236,7 @@ async function claimQixiBridgeRewards() {
         const request = types.ClaimQixiBridgeRewardsRequest.create({
             activity_id: activity.bridgeActivityId,
             operate_type: QIXI_BRIDGE_OPERATE_TYPE,
-            params: { claim_mode: 0 },
+            params: { step: 0 },
         });
         const body = Buffer.from(types.ClaimQixiBridgeRewardsRequest.encode(request).finish());
         const { body: replyBody } = await sendMsgAsync(
@@ -1202,12 +1252,13 @@ async function claimQixiBridgeRewards() {
             throw businessError('QIXI_RESPONSE_INVALID', '鹊桥奖励回包的操作类型不匹配');
         }
         const result = reply.qixi_bridge_result;
-        const rewards = (Array.isArray(result?.rewards) ? result.rewards : (Array.isArray(reply.rewards) ? reply.rewards : []))
+        const rewards = (Array.isArray(result?.awards) ? result.awards : (Array.isArray(reply.rewards) ? reply.rewards : []))
             .map(itemDto);
-        const claimedStages = (Array.isArray(result?.claimed_stages) ? result.claimed_stages : []).map(int64String);
+        const claimedStages = (Array.isArray(result?.unlocked_steps) ? result.unlocked_steps : []).map(int64String);
         return {
             claimedStages,
             rewards,
+            completed: !!result?.completed,
             message: claimedStages.length > 0
                 ? `已完成第 ${claimedStages.join('、')} 阶段鹊桥并领取奖励`
                 : '鹊桥奖励领取成功',
@@ -1216,16 +1267,20 @@ async function claimQixiBridgeRewards() {
     });
 }
 
-async function giftQixiSachet(friendGidInput: unknown, countInput: unknown) {
+async function giftQixiSachet(friendGidInput: unknown, messageTextIdInput: unknown = QIXI_DEFAULT_GIFT_MESSAGE_TEXT_ID) {
     const friendGid = positiveDecimal(friendGidInput, 'INVALID_QIXI_FRIEND_GID', 'friendGid');
-    const count = positiveDecimal(countInput, 'INVALID_QIXI_SACHET_COUNT', 'count');
+    const messageTextId = positiveDecimal(
+        messageTextIdInput ?? QIXI_DEFAULT_GIFT_MESSAGE_TEXT_ID,
+        'INVALID_QIXI_MESSAGE_TEXT_ID',
+        'messageTextId',
+    );
 
     return serializeMutation(async () => {
         const activity = await getCurrentQixiActivity();
         if (!activity.actions.gift.enabled) {
             throw businessError('QIXI_GIFT_UNAVAILABLE', '当前无法赠送鹊羽香囊');
         }
-        if (activity.balances.known && BigInt(activity.balances.sachet || '0') < BigInt(count)) {
+        if (activity.balances.known && BigInt(activity.balances.sachet || '0') < 1n) {
             throw businessError('INSUFFICIENT_QIXI_SACHET', '鹊羽香囊数量不足');
         }
 
@@ -1233,8 +1288,8 @@ async function giftQixiSachet(friendGidInput: unknown, countInput: unknown) {
             activity_id: activity.giftActivityId,
             operate_type: QIXI_GIFT_OPERATE_TYPE,
             params: {
-                friend_gid: friendGid,
-                count,
+                target_gid: friendGid,
+                msg_text_id: messageTextId,
             },
         });
         const body = Buffer.from(types.GiftQixiSachetRequest.encode(request).finish());
@@ -1250,13 +1305,12 @@ async function giftQixiSachet(friendGidInput: unknown, countInput: unknown) {
         if (int64String(reply.operate_type) !== String(QIXI_GIFT_OPERATE_TYPE)) {
             throw businessError('QIXI_RESPONSE_INVALID', '鹊羽香囊回包的操作类型不匹配');
         }
-        if (reply.qixi_gift_result && !reply.qixi_gift_result.success) {
-            throw businessError('QIXI_GIFT_FAILED', '鹊羽香囊赠送未成功');
-        }
         return {
             friendGid,
-            count,
-            message: `已向好友 ${friendGid} 赠送 ${count} 个鹊羽香囊`,
+            count: 1,
+            messageTextId,
+            totalSendCount: int64String(reply.qixi_gift_result?.total_send_count),
+            message: `已向好友 ${friendGid} 赠送 1 个鹊羽香囊`,
             snapshot: await getActivityCenterSnapshot(),
         };
     });

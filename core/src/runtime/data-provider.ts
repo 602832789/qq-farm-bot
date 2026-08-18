@@ -141,8 +141,14 @@ function createDataProvider(options: DataProviderOptions) {
         continueQingMeiBrew: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'continueQingMeiBrew'),
         settleQingMeiBrew: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'settleQingMeiBrew'),
         claimQixiBridgeRewards: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'claimQixiBridgeRewards'),
-        giftQixiSachet: (accountRef: string, friendGid: unknown, count: unknown) => (
-            callWorkerApi(resolveAccountRefId(accountRef), 'giftQixiSachet', friendGid, count)
+        giftQixiSachet: (accountRef: string, friendGid: unknown, messageTextId: unknown = 15) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'giftQixiSachet', friendGid, messageTextId)
+        ),
+        getQixiDewTargets: (accountRef: string, hostGid: unknown) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'getQixiDewTargets', hostGid)
+        ),
+        useQixiDew: (accountRef: string, hostGid: unknown, landId: unknown) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'useQixiDew', hostGid, landId)
         ),
         getMallCatalog: (accountRef: string, slotType: unknown, subSlotType: unknown) => (
             callWorkerApi(resolveAccountRefId(accountRef), 'getMallCatalog', slotType, subSlotType)
