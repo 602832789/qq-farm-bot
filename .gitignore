@@ -18,6 +18,10 @@ web/stats.html
 # Logs
 *.log
 
+# Runtime process state
+*.pid
+*.pid.lock
+
 # Misc
 core/share.txt
 Update.log
