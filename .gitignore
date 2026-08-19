@@ -37,6 +37,8 @@ Update.log
 Thumbs.db
 
 # Test/coverage
+**/test/
+**/tests/
 coverage/
 .nyc_output/
 
