@@ -250,7 +250,7 @@ function handleUseClick(item: any) {
   confirmModal.value = {
     show: true,
     title: `使用${item.name || `物品${item.id}`}`,
-    message: `当前拥有 ${item.count || 0} 个，请选择本次使用数量。`,
+    message: '',
     type: 'primary',
     loading: false,
     action: 'use',
@@ -768,6 +768,11 @@ useIntervalFn(loadBag, 60000)
       @confirm="handleConfirm"
       @cancel="handleCancel"
     >
+      <div v-if="confirmModal.action === 'use' && confirmModal.item" class="use-quantity-hint">
+        <span>当前拥有</span>
+        <strong>{{ maxUseCount }}</strong>
+        <span>个，请选择本次使用数量</span>
+      </div>
       <div v-if="confirmModal.action === 'use' && confirmModal.item" class="use-quantity">
         <span>使用数量</span>
         <div class="use-stepper">
@@ -826,11 +831,29 @@ useIntervalFn(loadBag, 60000)
 }
 
 .use-quantity {
-  margin: -1rem 0 1.5rem;
+  margin: 1rem 0 1.5rem;
   padding: 14px;
   border: 1px solid var(--n-border-color);
   border-radius: 8px;
   background: var(--n-color);
+}
+
+.use-quantity-hint {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px;
+  margin: 0.9rem 0 0;
+  color: var(--n-text-color-2);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.use-quantity-hint strong {
+  color: var(--theme-primary, #438d63);
+  font-size: 18px;
+  line-height: 1;
 }
 
 .use-quantity > span {

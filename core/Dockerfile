@@ -48,6 +48,7 @@ RUN apk add --no-cache tzdata && \
 COPY --from=prod-deps /app/node_modules ../node_modules/
 COPY --from=prod-deps /app/core/node_modules ./node_modules/
 COPY --from=prod-deps /app/package.json ../package.json
+COPY --from=prod-deps /app/core/package.json ./package.json
 
 COPY --from=builder /app/core/client.js ./client.js
 COPY --from=builder /app/core/dist ./dist
@@ -64,6 +65,6 @@ VOLUME ["/app/core/data"]
 EXPOSE 3007
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD wget -q --spider http://localhost:3007/api/status || exit 1
+    CMD wget -q --spider http://localhost:3007/api/game-version || exit 1
 
 CMD ["node", "client.js"]

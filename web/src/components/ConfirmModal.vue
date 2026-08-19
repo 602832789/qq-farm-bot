@@ -40,8 +40,8 @@ function handleShowChange(show: boolean) {
       :title="title || '确认操作'"
       size="medium"
     >
-      <p class="confirm-card__message">
-        {{ message || '确定要执行此操作吗？' }}
+      <p v-if="message !== ''" class="confirm-card__message">
+        {{ message ?? '确定要执行此操作吗？' }}
       </p>
       <slot />
       <template #footer>
