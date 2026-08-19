@@ -125,6 +125,32 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
         }
     });
 
+    // API: 背包中当前可对自己农场使用的特殊互动道具。
+    app.get('/api/farm/interaction-items', async (req: Request, res: Response) => {
+        const id = getAccId(ctx, req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+
+        try {
+            const data = await ctx.provider.getSelfInteractionItems(id);
+            res.json({ ok: true, data });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    });
+
+    // API: 在自己农场按地块编号顺序使用特殊互动道具。
+    app.post('/api/farm/interaction-items/use-batch', async (req: Request, res: Response) => {
+        const id = getAccId(ctx, req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+
+        try {
+            const data = await ctx.provider.useSelfInteractionItemBatch(id, req.body?.itemId, req.body?.landIds);
+            res.json({ ok: true, data });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    });
+
     // API: 蔬菜黑名单
     app.get('/api/plant-blacklist', authRequired, (req: Request, res: Response) => {
         try {
@@ -293,6 +319,52 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
                 return res.status(400).json({ ok: false, error: '缺少出售物品列表' });
             }
             const data = await ctx.provider.sellItems(id, items);
+            res.json({ ok: true, data });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    });
+
+    // API: 批量锁定/解锁果实、超变果实和种子。
+    app.post('/api/bag/lock', async (req: Request, res: Response) => {
+        const id = getAccId(ctx, req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+
+        try {
+            const { itemUids, locked } = req.body || {};
+            if (!Array.isArray(itemUids) || itemUids.length === 0) {
+                return res.status(400).json({ ok: false, error: '缺少物品 UID 列表' });
+            }
+            if (typeof locked !== 'boolean') {
+                return res.status(400).json({ ok: false, error: 'locked 必须为布尔值' });
+            }
+            const data = await ctx.provider.setItemsLocked(id, itemUids, locked);
+            res.json({ ok: true, data });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    });
+
+    // API: 页面打开或用户刷新时查询主人侧待拾取宠物礼包。
+    app.get('/api/dog/skill-gifts', async (req: Request, res: Response) => {
+        const id = getAccId(ctx, req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+
+        try {
+            const data = await ctx.provider.getDogSkillGiftStatus(id);
+            res.json({ ok: true, data });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    });
+
+    // API: 用户手动拾取全部待领取的“同气连枝礼包”。
+    app.post('/api/dog/skill-gifts/claim', async (req: Request, res: Response) => {
+        const id = getAccId(ctx, req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+
+        try {
+            const data = await ctx.provider.claimDogSkillGifts(id);
             res.json({ ok: true, data });
         } catch (e: any) {
             handleApiError(res, e);

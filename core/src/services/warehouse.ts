@@ -14,6 +14,7 @@ const { getSellConditionContext } = require('./activity-windows');
 const { updateStatusGold } = require('./status');
 
 const SELL_BATCH_SIZE: number = 15;
+const LOCKABLE_ITEM_TYPES: Set<number> = new Set([17, 6, 5]);
 const FERTILIZER_RELATED_IDS: Set<number> = new Set([
     100003, // 化肥礼包
     100004, // 有机化肥礼包
@@ -68,17 +69,18 @@ async function sellItems(items: any[]): Promise<any> {
     const requested: any[] = Array.isArray(items) ? items : [];
     if (requested.length === 0) throw new Error('没有可出售的物品');
     const baseContext: SellConditionContext = await getSellConditionContext();
-    let bagItems: any[] | null = null;
+    const bagItems: any[] = getBagItems(await getBag());
     for (const item of requested) {
         const id: number = toNum(item && item.id);
         const count: number = toNum(item && item.count);
         if (id <= 0 || count <= 0) throw new Error('出售物品参数无效');
         const info: any = getItemById(id);
-        let expireTime: number = getItemExpireTime(item);
-        if (hasExpireSellCondition(info)) {
-            if (!bagItems) bagItems = getBagItems(await getBag());
-            expireTime = getItemExpireTime(findBagItem(bagItems, item));
-        }
+        const bagItem: any | null = findBagItem(bagItems, item);
+        if (!bagItem) throw new Error(`背包中未找到${info?.name || `物品${id}`}`);
+        if (isItemLocked(bagItem)) throw new Error(`${info?.name || `物品${id}`}已锁定，不能出售`);
+        const expireTime: number = hasExpireSellCondition(info)
+            ? getItemExpireTime(bagItem)
+            : getItemExpireTime(item);
         const sellInfo: any = getEffectiveSellInfo(info, { ...baseContext, expireTime });
         if (!sellInfo.sellable) {
             throw new Error(`${info?.name || `物品${id}`}当前不可出售`);
@@ -93,11 +95,18 @@ async function sellItems(items: any[]): Promise<any> {
 async function useItem(itemId: number, count: number = 1, landIds: number[] = [], uid: number = 0): Promise<any> {
     if (landIds.length > 0) throw new Error('新版物品使用协议不再接受 landIds');
     const bagReply: any = await getBag();
-    const candidates: any[] = getBagItems(bagReply).filter((item: any) => (
+    const matchingItems: any[] = getBagItems(bagReply).filter((item: any) => (
         toNum(item && item.id) === itemId && (uid <= 0 || toNum(item && item.uid) === uid)
     ));
+    const candidates: any[] = matchingItems.filter((item: any) => !isItemLocked(item));
     const available: number = candidates.reduce((sum: number, item: any) => sum + Math.max(0, toNum(item && item.count)), 0);
-    if (available < count) throw new Error(`物品数量不足: 需要 ${count}，当前 ${available}`);
+    if (available < count) {
+        const lockedCount: number = matchingItems
+            .filter((item: any) => isItemLocked(item))
+            .reduce((sum: number, item: any) => sum + Math.max(0, toNum(item && item.count)), 0);
+        const suffix: string = lockedCount > 0 ? `，另有 ${lockedCount} 个已锁定` : '';
+        throw new Error(`物品可用数量不足: 需要 ${count}，当前 ${available}${suffix}`);
+    }
     const item: any = candidates.find((entry: any) => toNum(entry && entry.count) >= count);
     if (!item && candidates.length > 1) {
         let remaining: number = count;
@@ -146,9 +155,87 @@ function getBagItems(bagReply: any): any[] {
     return bagReply && bagReply.items ? bagReply.items : [];
 }
 
+function isItemLocked(item: any): boolean {
+    return item?.locked === true || item?.locked === 1 || item?.locked === '1';
+}
+
+function isLockableItem(item: any): boolean {
+    const id: number = toNum(item?.id);
+    const info: any = id > 0 ? getItemById(id) : null;
+    return LOCKABLE_ITEM_TYPES.has(Number(info?.type || 0));
+}
+
+function normalizeItemUids(values: any[]): number[] {
+    return [...new Set((Array.isArray(values) ? values : [])
+        .map((value: any) => toNum(value))
+        .filter((value: number) => Number.isSafeInteger(value) && value > 0))];
+}
+
+async function setItemsLocked(itemUids: any[], locked: boolean): Promise<any> {
+    const requestedUids: number[] = normalizeItemUids(itemUids);
+    if (requestedUids.length === 0) throw new Error('缺少物品 UID');
+
+    const bagItems: any[] = getBagItems(await getBag());
+    const byUid: Map<number, any> = new Map(
+        bagItems
+            .filter((item: any) => toNum(item?.uid) > 0)
+            .map((item: any) => [toNum(item.uid), item]),
+    );
+    const actionableUids: number[] = [];
+    for (const uid of requestedUids) {
+        const item: any = byUid.get(uid);
+        if (!item) throw new Error(`背包中未找到 UID ${uid}`);
+        const info: any = getItemById(toNum(item.id));
+        if (!isLockableItem(item)) {
+            throw new Error(`${info?.name || `物品${toNum(item.id)}`}不支持锁定`);
+        }
+        if (isItemLocked(item) !== locked) actionableUids.push(uid);
+    }
+
+    if (actionableUids.length === 0) {
+        return { locked, changed: 0, itemUids: [] };
+    }
+
+    const RequestType: any = locked ? types.LockItemsRequest : types.UnlockItemsRequest;
+    const ReplyType: any = locked ? types.LockItemsReply : types.UnlockItemsReply;
+    const method: string = locked ? 'LockItems' : 'UnlockItems';
+    const body: Uint8Array = RequestType.encode(RequestType.create({
+        item_uids: actionableUids.map((uid: number) => toLong(uid)),
+    })).finish();
+    const { body: replyBody } = await sendMsgAsync('gamepb.itempb.ItemService', method, body);
+    const reply: any = ReplyType.decode(replyBody);
+    const confirmedUids: number[] = normalizeItemUids(reply?.item_uids);
+    return {
+        locked,
+        changed: confirmedUids.length || actionableUids.length,
+        itemUids: confirmedUids.length > 0 ? confirmedUids : actionableUids,
+    };
+}
+
 function getItemExpireTime(item: any): number {
     if (!item) return 0;
     return toTimeSec(item.expire_time ?? item.expireTime);
+}
+
+function getItemSourceInfo(item: any): any | null {
+    const source: any = item?.source_info ?? item?.sourceInfo;
+    if (!source || typeof source !== 'object') return null;
+
+    const senderName: string = String(source.sender_name ?? source.senderName ?? '').trim();
+    const sentAt: number = toTimeSec(source.sent_at ?? source.sentAt);
+    // Qixi GiftQixiSachetRequest calls this value msg_text_id. The Bag reply
+    // carries the same selector as ItemSourceInfo field 3.
+    const messageTextId: number = toNum(source.source_type ?? source.sourceType);
+    if (!senderName && sentAt <= 0 && messageTextId <= 0) return null;
+    return { senderName, sentAt, messageTextId };
+}
+
+function getProtocolSellPrice(item: any): { currencyId: number; price: number } | null {
+    const show: any = item?.show;
+    const sellPrice: any = show?.sell_price ?? show?.sellPrice;
+    const currencyId: number = toNum(sellPrice?.id);
+    const price: number = toNum(sellPrice?.count);
+    return currencyId > 0 && price > 0 ? { currencyId, price } : null;
 }
 
 function hasExpireSellCondition(info: any): boolean {
@@ -402,6 +489,7 @@ async function getBagDetail(): Promise<any> {
             uid,
             expireTime: getItemExpireTime(it),
             mutantTypes,
+            locked: isItemLocked(it),
             groupKey: `uid:${uid}`,
         });
     }
@@ -435,9 +523,12 @@ async function getBagDetail(): Promise<any> {
         if (!name) name = `物品${id}`;
         const interactionType: string = info && info.interaction_type ? String(info.interaction_type) : '';
         const expireTime: number = getItemExpireTime(it);
+        const sourceInfo: any | null = getItemSourceInfo(it);
         const sellInfo: any = getEffectiveSellInfo(info, { ...baseContext, expireTime });
         const sellsList: any[] = sellInfo.sells;
-        const priceId: number = sellsList.length > 0 ? sellsList[0].currencyId : 0;
+        const protocolSellPrice: { currencyId: number; price: number } | null = getProtocolSellPrice(it);
+        const priceId: number = protocolSellPrice?.currencyId || (sellsList.length > 0 ? sellsList[0].currencyId : 0);
+        const price: number = protocolSellPrice?.price || (sellsList.length > 0 ? sellsList[0].price : 0);
         const priceUnit: string = priceId === 1005 ? '金豆豆' : priceId === 1002 ? '点券' : '金';
 
         if (!merged.has(groupKey)) {
@@ -448,6 +539,8 @@ async function getBagDetail(): Promise<any> {
                 uid,
                 expireTime,
                 mutantTypes,
+                locked: isItemLocked(it),
+                sourceInfo,
                 name,
                 image: getItemImageById(id),
                 category,
@@ -456,10 +549,12 @@ async function getBagDetail(): Promise<any> {
                 sellStatus: sellInfo.status,
                 sellCondition: sellInfo.condition,
                 priceId,
-                price: sellsList.length > 0 ? sellsList[0].price : 0,
+                price,
                 priceUnit,
                 level: info ? (Number(info.level) || 0) : 0,
                 interactionType,
+                description: info?.desc ? String(info.desc) : '',
+                viewable: Number(info?.to_see || 0) > 0,
                 hoursText: '',
             });
         }
@@ -518,6 +613,7 @@ async function sellAllFruits(): Promise<void> {
             const count: number = toNum(item.count);
             const expireTime: number = getItemExpireTime(item);
             if (isFruitItemId(id) && count > 0
+                && !isItemLocked(item)
                 && getEffectiveSellInfo(id, { ...baseContext, expireTime }).sellable) {
                 toSell.push(item);
                 names.push(`${getFruitName(id)}x${count}`);
@@ -631,6 +727,7 @@ async function getBagSeeds(): Promise<any[]> {
         const seedId: number = toNum(item && item.id);
         const count: number = toNum(item && item.count);
         if (seedId <= 0 || count <= 0) continue;
+        if (isItemLocked(item)) continue;
 
         const plant: any = getPlantBySeedId(seedId);
         if (!plant) continue;
@@ -667,4 +764,6 @@ module.exports = {
     getCurrentTotalsFromBag,
     getBagSeeds,
     getContainerHoursFromBagItems,
+    setItemsLocked,
+    isItemLocked,
 };

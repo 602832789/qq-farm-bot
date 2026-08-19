@@ -23,6 +23,7 @@ export interface FriendInteractionItemDto {
   saleConditionSatisfiedCount: number
   interactionType: string
   protocol: 'item-use'
+  selfUsable: boolean
   description: string
   activityId: string
   sellCondition: string

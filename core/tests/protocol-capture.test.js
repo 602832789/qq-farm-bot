@@ -68,6 +68,9 @@ test('all RPCs observed in the latest capture have request and reply types', () 
         ['gamepb.mallpb.GetMallListBySlotTypeRequest', 'gamepb.mallpb.GetMallListBySlotTypeResponse'],
         ['gamepb.shoppb.ShopInfoRequest', 'gamepb.shoppb.ShopInfoReply'],
         ['gamepb.itempb.BagRequest', 'gamepb.itempb.BagReply'],
+        ['gamepb.itempb.LockItemsRequest', 'gamepb.itempb.LockItemsReply'],
+        ['gamepb.itempb.UnlockItemsRequest', 'gamepb.itempb.UnlockItemsReply'],
+        ['gamepb.dogpb.ClaimSkillGiftsRequest', 'gamepb.dogpb.ClaimSkillGiftsReply'],
         ['gamepb.interactpb.GetInteractInfoRequest', 'gamepb.interactpb.GetInteractInfoReply'],
     ];
 
@@ -184,6 +187,69 @@ test('bag, item display, task and season additions use the captured wire types',
     const pass = type('gamepb.seasonpb.SeasonPass').decode(hex('18076008'));
     assert.equal(number(pass.total_progress), 7);
     assert.equal(number(pass.field_12), 8);
+});
+
+test('received Qixi sachet preserves its captured sender, message selector and server sell price', () => {
+    const captured = '0882081001188092b8c398feffffff0130f76352110a07e79da1e8a7892e10d7da90d406180ea20608220608e90710904e';
+    const sachetType = type('corepb.Item');
+    const sachet = sachetType.decode(hex(captured));
+
+    assert.equal(number(sachet.id), 1026);
+    assert.equal(number(sachet.uid), 12791);
+    assert.equal(sachet.source_info.sender_name, '睡觉.');
+    assert.equal(number(sachet.source_info.sent_at), 1787047255);
+    assert.equal(number(sachet.source_info.source_type), 14);
+    assert.equal(number(sachet.show.sell_price.id), 1001);
+    assert.equal(number(sachet.show.sell_price.count), 10000);
+    assert.equal(Buffer.from(sachetType.encode(sachet).finish()).toString('hex'), captured);
+});
+
+test('item lock and unlock use the captured packed UID payload and Item.locked field', () => {
+    const payload = '0a02b564';
+    for (const name of [
+        'gamepb.itempb.LockItemsRequest',
+        'gamepb.itempb.LockItemsReply',
+        'gamepb.itempb.UnlockItemsRequest',
+        'gamepb.itempb.UnlockItemsReply',
+    ]) {
+        const messageType = type(name);
+        const message = messageType.decode(hex(payload));
+        assert.deepEqual(message.item_uids.map(number), [12853]);
+        assert.equal(Buffer.from(messageType.encode(message).finish()).toString('hex'), payload);
+    }
+
+    const itemType = type('corepb.Item');
+    const lockedHex = '08b0cb01101a188092b8c398feffffff0130b5644801a20608220608e90710e807';
+    const unlockedHex = '08b0cb01101a188092b8c398feffffff0130b564a20608220608e90710e807';
+    const lockedItem = itemType.decode(hex(lockedHex));
+    const unlockedItem = itemType.decode(hex(unlockedHex));
+    assert.equal(number(lockedItem.id), 26032);
+    assert.equal(number(lockedItem.uid), 12853);
+    assert.equal(lockedItem.locked, true);
+    assert.equal(unlockedItem.locked, false);
+    assert.equal(Buffer.from(itemType.encode(lockedItem).finish()).toString('hex'), lockedHex);
+    assert.equal(Buffer.from(itemType.encode(unlockedItem).finish()).toString('hex'), unlockedHex);
+});
+
+test('dog skill gifts preserve the captured pending count and owner claim response', () => {
+    const dogInfoHex = '0a180891bf051209e794b0e59bade78aac18e8072001286438010a180892bf051209e789a7e7be8ae78aac18b8172001286438010a180893bf051209e69691e782b9e78b971888272001286438010a15089bbf051206e69fafe59fba1888272001286438010a1808a5bf051209e68aa4e4b8bbe78aac18882720012864380110a5bf0518d6dd6420809a9e012a080894bf051080a3052a080895bf051080e90f2a080896bf051080af1a3001380a420b08d10f100a181e20a5bf05';
+    const dogInfo = type('gamepb.dogpb.GetDogInfoReply').decode(hex(dogInfoHex));
+    assert.equal(number(dogInfo.pending_gift_count), 10);
+
+    const requestType = type('gamepb.dogpb.ClaimSkillGiftsRequest');
+    assert.equal(Buffer.from(requestType.encode(requestType.create({})).finish()).toString('hex'), '');
+
+    const replyHex = '0a0608e79706100a180a';
+    const replyType = type('gamepb.dogpb.ClaimSkillGiftsReply');
+    const reply = replyType.decode(hex(replyHex));
+    assert.equal(number(reply.item.id), 101351);
+    assert.equal(number(reply.item.count), 10);
+    assert.equal(number(reply.claimed_count), 10);
+    assert.equal(Buffer.from(replyType.encode(reply).finish()).toString('hex'), replyHex);
+
+    const notifyType = type('gamepb.dogpb.PendingGiftCountNotify');
+    assert.equal(number(notifyType.decode(hex('0801')).count), 1);
+    assert.equal(number(notifyType.decode(hex('')).count), 0);
 });
 
 test('land unlock and upgrade conditions match captured field meanings', () => {

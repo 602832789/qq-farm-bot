@@ -257,37 +257,6 @@ export interface QixiDewDto extends ActivityItemDto {
   } | null
 }
 
-export interface QixiDewLandTargetDto {
-  id: string
-  landId: string
-  hostGid: string
-  ownerName: string
-  isSelf: boolean
-  plantId: string
-  plantName: string
-  seedId: string
-  seedImage: string
-  landLevel: number
-  landTypeName: string
-  phaseCode: number
-  phaseName: string
-  mature: boolean
-  occupiedLandIds: string[]
-  activityMarker: string
-}
-
-export interface QixiDewTargetsDto {
-  host: {
-    gid: string
-    name: string
-    avatarUrl: string
-    isSelf: boolean
-  }
-  lands: QixiDewLandTargetDto[]
-  count: number
-  serverValidationRequired: boolean
-}
-
 export interface QixiActivityDto {
   groupId: string
   activityId: string
@@ -387,7 +356,7 @@ export interface ActivityCenterSnapshotDto {
   actions: ActivityActionsDto
 }
 
-export type ActivityMutationKey = 'claimPass' | 'lightConstellation' | 'claimSolar' | 'exchange' | 'claimQixiBridge' | 'giftQixiSachet' | 'useQixiDew' | 'claimQingMeiSeed' | 'startQingMeiBrew' | 'continueQingMeiBrew' | 'settleQingMeiBrew'
+export type ActivityMutationKey = 'claimPass' | 'lightConstellation' | 'claimSolar' | 'exchange' | 'claimQixiBridge' | 'giftQixiSachet' | 'claimQingMeiSeed' | 'startQingMeiBrew' | 'continueQingMeiBrew' | 'settleQingMeiBrew'
 
 function isRecord(value: unknown): value is ActivityRecord {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -891,45 +860,6 @@ function normalizeQixi(value: unknown): QixiActivityDto | null {
   }
 }
 
-function normalizeQixiDewTargets(value: unknown): QixiDewTargetsDto | null {
-  if (!isRecord(value))
-    return null
-  const raw = value
-  const host = record(raw.host)
-  const lands = records(raw.lands).map((land) => {
-    const rawOccupiedLandIds = first(land.occupiedLandIds, land.occupied_land_ids)
-    return {
-      id: text(land.id, land.landId, land.land_id),
-      landId: text(land.landId, land.land_id, land.id),
-      hostGid: text(land.hostGid, land.host_gid, host.gid),
-      ownerName: text(land.ownerName, land.owner_name, host.name),
-      isSelf: bool(land.isSelf, land.is_self, host.isSelf, host.is_self),
-      plantId: text(land.plantId, land.plant_id),
-      plantName: text(land.plantName, land.plant_name, '未知作物'),
-      seedId: text(land.seedId, land.seed_id),
-      seedImage: text(land.seedImage, land.seed_image),
-      landLevel: finiteNumber(first(land.landLevel, land.land_level)) || 0,
-      landTypeName: text(land.landTypeName, land.land_type_name, '普通土地'),
-      phaseCode: finiteNumber(first(land.phaseCode, land.phase_code)) || 0,
-      phaseName: text(land.phaseName, land.phase_name),
-      mature: bool(land.mature),
-      occupiedLandIds: Array.isArray(rawOccupiedLandIds) ? rawOccupiedLandIds.map(value => text(value)).filter(Boolean) : [],
-      activityMarker: text(land.activityMarker, land.activity_marker),
-    }
-  }).filter(land => land.landId)
-  return {
-    host: {
-      gid: text(host.gid),
-      name: text(host.name, host.remark),
-      avatarUrl: text(host.avatarUrl, host.avatar_url),
-      isSelf: bool(host.isSelf, host.is_self),
-    },
-    lands,
-    count: finiteNumber(raw.count) ?? lands.length,
-    serverValidationRequired: bool(raw.serverValidationRequired, raw.server_validation_required),
-  }
-}
-
 function normalizeQingMei(value: unknown): QingMeiActivityDto | null {
   if (!isRecord(value))
     return null
@@ -1141,11 +1071,6 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
   const loadedAccountId = ref('')
   const serverClockOffset = ref(0)
   const requestVersion = ref(0)
-  const dewTargets = ref<QixiDewTargetsDto | null>(null)
-  const dewTargetsLoading = ref(false)
-  const dewTargetsError = ref('')
-  const dewUsedLandIdsByInstance = ref<Record<string, string[]>>({})
-  let dewTargetsRequestVersion = 0
   const pendingLoads = new Map<string, Promise<boolean>>()
   const pendingActions = ref<Record<ActivityMutationKey, boolean>>({
     claimPass: false,
@@ -1154,7 +1079,6 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     exchange: false,
     claimQixiBridge: false,
     giftQixiSachet: false,
-    useQixiDew: false,
     claimQingMeiSeed: false,
     startQingMeiBrew: false,
     continueQingMeiBrew: false,
@@ -1179,7 +1103,6 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
 
   function reset() {
     requestVersion.value += 1
-    dewTargetsRequestVersion += 1
     snapshot.value = normalizeActivitySnapshot({})
     loading.value = false
     error.value = ''
@@ -1187,11 +1110,7 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     notice.value = ''
     loadedAccountId.value = ''
     serverClockOffset.value = 0
-    dewTargets.value = null
-    dewTargetsLoading.value = false
-    dewTargetsError.value = ''
-    dewUsedLandIdsByInstance.value = {}
-    pendingActions.value = { claimPass: false, lightConstellation: false, claimSolar: false, exchange: false, claimQixiBridge: false, giftQixiSachet: false, useQixiDew: false, claimQingMeiSeed: false, startQingMeiBrew: false, continueQingMeiBrew: false, settleQingMeiBrew: false }
+    pendingActions.value = { claimPass: false, lightConstellation: false, claimSolar: false, exchange: false, claimQixiBridge: false, giftQixiSachet: false, claimQingMeiSeed: false, startQingMeiBrew: false, continueQingMeiBrew: false, settleQingMeiBrew: false }
   }
 
   function clearActionMessages() {
@@ -1292,79 +1211,6 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     return request
   }
 
-  function clearQixiDewTargets() {
-    dewTargetsRequestVersion += 1
-    dewTargets.value = null
-    dewTargetsLoading.value = false
-    dewTargetsError.value = ''
-  }
-
-  function qixiDewUsageKey(hostGid: string) {
-    const activity = qixi.value
-    return [
-      loadedAccountId.value,
-      activity?.activityId || activity?.groupId || '',
-      activity?.startTime || '',
-      String(hostGid || ''),
-    ].join(':')
-  }
-
-  function getQixiDewUsedLandIds(hostGid: string) {
-    return dewUsedLandIdsByInstance.value[qixiDewUsageKey(hostGid)] || []
-  }
-
-  function recordQixiDewUsage(result: ActivityRecord) {
-    const hostGid = text(result.hostGid, result.host_gid)
-    const rawIds = first(result.usedLandIds, result.used_land_ids)
-    const usedLandIds = Array.isArray(rawIds) ? rawIds.map(value => text(value)).filter(Boolean) : []
-    if (!hostGid || usedLandIds.length === 0)
-      return
-    const key = qixiDewUsageKey(hostGid)
-    const merged = new Set([...(dewUsedLandIdsByInstance.value[key] || []), ...usedLandIds])
-    dewUsedLandIdsByInstance.value = {
-      ...dewUsedLandIdsByInstance.value,
-      [key]: [...merged],
-    }
-  }
-
-  async function fetchQixiDewTargets(accountId: string, hostGid = '') {
-    const requestedAccountId = String(accountId || '').trim()
-    if (!requestedAccountId) {
-      clearQixiDewTargets()
-      dewTargetsError.value = '请先选择账号'
-      return false
-    }
-
-    const version = ++dewTargetsRequestVersion
-    dewTargetsLoading.value = true
-    dewTargetsError.value = ''
-    try {
-      const response = await api.get('/api/activity-center/qixi/dew/targets', {
-        headers: { 'x-account-id': requestedAccountId },
-        params: hostGid ? { hostGid } : {},
-        skipErrorToast: true,
-      } as any)
-      const normalized = normalizeQixiDewTargets(responsePayload(response.data))
-      if (version !== dewTargetsRequestVersion)
-        return false
-      dewTargets.value = normalized
-      if (!normalized)
-        dewTargetsError.value = '未能读取灵露候选地块'
-      return !!normalized
-    }
-    catch (targetError) {
-      if (version === dewTargetsRequestVersion) {
-        dewTargets.value = null
-        dewTargetsError.value = errorMessage(targetError, '加载灵露候选地块失败')
-      }
-      return false
-    }
-    finally {
-      if (version === dewTargetsRequestVersion)
-        dewTargetsLoading.value = false
-    }
-  }
-
   async function mutate(key: ActivityMutationKey, path: string, accountId: string, payload: ActivityRecord = {}) {
     const requestedAccountId = String(accountId || '').trim()
     if (!requestedAccountId || pendingActions.value[key])
@@ -1426,20 +1272,6 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     return mutate('giftQixiSachet', '/qixi/gift', accountId, { friendGid, messageTextId })
   }
 
-  async function useQixiDewBatch(accountId: string, hostGid: string, landIds: string[], refreshTargets = true) {
-    const result = await mutate('useQixiDew', '/qixi/dew/use-batch', accountId, { hostGid, landIds })
-    if (result) {
-      recordQixiDewUsage(result)
-      if (refreshTargets)
-        await fetchQixiDewTargets(accountId, hostGid)
-    }
-    return result
-  }
-
-  function useQixiDew(accountId: string, hostGid: string, landId: string) {
-    return useQixiDewBatch(accountId, hostGid, [landId])
-  }
-
   function claimQingMeiDailySeed(accountId: string) {
     return mutate('claimQingMeiSeed', '/qingmei/daily-seed/claim', accountId)
   }
@@ -1484,10 +1316,6 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     serverClockOffset,
     serverNow,
     pendingActions,
-    dewTargets,
-    dewTargetsLoading,
-    dewTargetsError,
-    dewUsedLandIdsByInstance,
     lazyLoad,
     refresh,
     claimPass,
@@ -1496,11 +1324,6 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     exchangeStarSandGoods,
     claimQixiBridgeRewards,
     giftQixiSachet,
-    fetchQixiDewTargets,
-    clearQixiDewTargets,
-    getQixiDewUsedLandIds,
-    useQixiDew,
-    useQixiDewBatch,
     claimQingMeiDailySeed,
     startQingMeiBrew,
     continueQingMeiBrew,

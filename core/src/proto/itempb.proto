@@ -68,3 +68,21 @@ message CannelNewRequest {
 }
 
 message CannelNewReply {}
+
+// ============ 锁定/解锁物品 ============
+
+message LockItemsRequest {
+    repeated int64 item_uids = 1 [packed = true];
+}
+
+message LockItemsReply {
+    repeated int64 item_uids = 1 [packed = true];
+}
+
+message UnlockItemsRequest {
+    repeated int64 item_uids = 1 [packed = true];
+}
+
+message UnlockItemsReply {
+    repeated int64 item_uids = 1 [packed = true];
+}

@@ -56,6 +56,7 @@ interface FarmingOutcome {
     landCount: number;
     landIds: number[];
     operationLimits: any[];
+    dogSkillGiftCount: number;
     code?: number;
 }
 
@@ -466,7 +467,7 @@ export async function runBatchWithFallback(ids: number[], batchFn: (ids: number[
 }
 
 function emptyFarmingOutcome(effect: FarmingOutcome['effect'] = 'noop'): FarmingOutcome {
-    return { effect, operationCount: 0, landCount: 0, landIds: [], operationLimits: [] };
+    return { effect, operationCount: 0, landCount: 0, landIds: [], operationLimits: [], dogSkillGiftCount: 0 };
 }
 
 function mergeFarmingOutcomes(outcomes: FarmingOutcome[]): FarmingOutcome {
@@ -479,6 +480,7 @@ function mergeFarmingOutcomes(outcomes: FarmingOutcome[]): FarmingOutcome {
         landCount: landIds.length,
         landIds,
         operationLimits,
+        dogSkillGiftCount: outcomes.reduce((sum: number, outcome: FarmingOutcome) => sum + (Number(outcome.dogSkillGiftCount) || 0), 0),
     };
 }
 
@@ -594,7 +596,8 @@ export async function doFriendOperation(friendGid: any, opType: string): Promise
                 count,
                 landCount: outcome.landCount,
                 operationCount: outcome.operationCount,
-                message: `一键务农完成 ${outcome.landCount} 块 / ${outcome.operationCount} 项操作`,
+                dogSkillGiftCount: outcome.dogSkillGiftCount,
+                message: `一键务农完成 ${outcome.landCount} 块 / ${outcome.operationCount} 项操作${outcome.dogSkillGiftCount > 0 ? `，自动获得同气连枝礼包 x${outcome.dogSkillGiftCount}` : ''}`,
             };
         }
 
@@ -711,6 +714,7 @@ export async function visitFriend(friend: any, totalActions: any, myGid: number,
                 if (status.needBug.length) parts.push(`虫${status.needBug.length}`);
                 if (status.needWater.length) parts.push(`水${status.needWater.length}`);
                 actions.push(`一键务农${outcome.landCount}块/${outcome.operationCount}项(${parts.join('/')})`);
+                if (outcome.dogSkillGiftCount > 0) actions.push(`同气连枝礼包x${outcome.dogSkillGiftCount}(自动获得)`);
                 totalActions.farming += outcome.landCount;
                 recordOperation('helpFarming', outcome.operationCount);
             }
@@ -947,6 +951,7 @@ export async function visitFriendForHelp(friend: any, totalActions: any, myGid: 
             if (status.needBug.length) parts.push(`虫${status.needBug.length}`);
             if (status.needWater.length) parts.push(`水${status.needWater.length}`);
             actions.push(`一键务农${outcome.landCount}块/${outcome.operationCount}项(${parts.join('/')})`);
+            if (outcome.dogSkillGiftCount > 0) actions.push(`同气连枝礼包x${outcome.dogSkillGiftCount}(自动获得)`);
             totalActions.farming += outcome.landCount;
             recordOperation('helpFarming', outcome.operationCount);
         }

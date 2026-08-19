@@ -13,6 +13,7 @@ function installMocks(options = {}) {
     const protoPath = require.resolve('../dist/utils/proto');
     const utilsPath = require.resolve('../dist/utils/utils');
     const activityWindowsPath = require.resolve('../dist/services/activity-windows');
+    const farmApiPath = require.resolve('../dist/services/farm/api');
     const landAnalysisPath = require.resolve('../dist/services/farm/land-analysis');
     const friendApiPath = require.resolve('../dist/services/friend/api');
     const warehousePath = require.resolve('../dist/services/warehouse');
@@ -23,6 +24,7 @@ function installMocks(options = {}) {
         protoPath,
         utilsPath,
         activityWindowsPath,
+        farmApiPath,
         landAnalysisPath,
         friendApiPath,
         warehousePath,
@@ -56,6 +58,7 @@ function installMocks(options = {}) {
     });
     require.cache[networkPath] = loadedModule(networkPath, {
         GatewayError: MockGatewayError,
+        getUserState: () => ({ gid: options.selfGid ?? 100 }),
         sendMsgAsync: async (serviceName, methodName) => {
             calls.push(`ItemUse:${serviceName}.${methodName}`);
             const request = encodedUseRequests.at(-1);
@@ -130,6 +133,12 @@ function installMocks(options = {}) {
             return { basic: { gid, name: '好友甲' }, lands };
         },
         leaveFriendFarm: async () => calls.push('Leave'),
+    });
+    require.cache[farmApiPath] = loadedModule(farmApiPath, {
+        getAllLands: async () => {
+            calls.push('AllLands');
+            return { lands: options.selfLands || lands };
+        },
     });
     require.cache[warehousePath] = loadedModule(warehousePath, {
         getBag: async () => ({ item_bag: { items: bagItems } }),
@@ -319,6 +328,83 @@ test('灵露在售卖条件已满足时仍提交 ItemService.Use，由服务端�
             confirmed: true,
             source: 'use-reply',
         });
+    } finally {
+        mock.restore();
+    }
+});
+
+test('自己农场只列出白名单内的互动道具', { concurrency: false }, async () => {
+    const mock = installMocks({
+        metadata: [
+            specialItem(301101, '黄金虫'),
+            specialItem(301102, '足球'),
+            specialItem(301103, '鹊羽灵露'),
+        ],
+        bagItems: [
+            { id: 301101, count: 2, uid: 11 },
+            { id: 301102, count: 3, uid: 12 },
+            { id: 301103, count: 4, uid: 13 },
+        ],
+    });
+
+    try {
+        const friendInventory = await mock.service.getFriendInteractionItems();
+        assert.deepEqual(friendInventory.items.map(item => item.itemId).sort(), ['301101', '301102', '301103']);
+
+        const selfInventory = await mock.service.getSelfInteractionItems();
+        assert.deepEqual(selfInventory.items.map(item => item.itemId), ['301103']);
+        assert.equal(selfInventory.items[0].selfUsable, true);
+        assert.equal(friendInventory.items.find(item => item.itemId === '301101').selfUsable, false);
+        assert.equal(friendInventory.items.find(item => item.itemId === '301102').selfUsable, false);
+    } finally {
+        mock.restore();
+    }
+});
+
+test('鹊羽灵露在自己农场按编号顺序使用，直接读取自己土地而不进出好友农场', { concurrency: false }, async () => {
+    const mock = installMocks({
+        metadata: [specialItem(301103, '鹊羽灵露')],
+        bagItems: [{ id: 301103, count: 3, uid: 77 }],
+        selfGid: 520,
+        useReply: request => ({
+            used_items: [{ id: 301103, count: 1 }],
+            land: {
+                id: Number(request.target.land_ids[0]),
+                unlocked: true,
+                plant: { id: 9003, name: '自家作物', phases: [{ phase: 2 }] },
+            },
+        }),
+    });
+
+    try {
+        const result = await mock.service.useSelfInteractionItemBatch('301103', ['3', '1']);
+        assert.deepEqual(mock.calls.filter(call => ['Enter', 'Leave', 'AllLands'].includes(call)), ['AllLands']);
+        assert.deepEqual(mock.getEncodedUseRequests().map(request => request.target.land_ids), [['1'], ['3']]);
+        assert.deepEqual(mock.getEncodedUseRequests().map(request => request.target.host_gid), ['520', '520']);
+        assert.equal(result.isSelf, true);
+        assert.equal(result.hostGid, '520');
+        assert.deepEqual(result.usedLandIds, ['1', '3']);
+        assert.equal(result.failureCount, 0);
+        assert.match(result.message, /我的农场/);
+    } finally {
+        mock.restore();
+    }
+});
+
+test('黄金虫、足球不能对自己的农场使用', { concurrency: false }, async () => {
+    const mock = installMocks({
+        metadata: [specialItem(301101, '黄金虫'), specialItem(301102, '足球')],
+        bagItems: [{ id: 301101, count: 2, uid: 11 }, { id: 301102, count: 2, uid: 12 }],
+    });
+
+    try {
+        for (const itemId of ['301101', '301102']) {
+            await assert.rejects(
+                () => mock.service.useSelfInteractionItemBatch(itemId, ['1']),
+                error => error.code === 'SELF_INTERACTION_ITEM_UNSUPPORTED',
+            );
+        }
+        assert.equal(mock.calls.some(call => call.startsWith('ItemUse:')), false);
     } finally {
         mock.restore();
     }

@@ -24,6 +24,7 @@ const { initStatusBar, setStatusPlatform, statusData } = require('../services/st
 const { setRecordGoldExpHook } = require('../services/status');
 const { cleanupTaskSystem, checkAndClaimTasks, getTaskClaimDailyState, getTaskDailyStateLikeApp, getGrowthTaskStateLikeApp } = require('../services/task');
 const { sellAllFruits, getBag, getBagItems, openFertilizerGiftPacksSilently } = require('../services/warehouse');
+const { checkAndClaimDogSkillGifts } = require('../services/dog-skill-gifts');
 const { connect, cleanup, getWs, getUserState, networkEvents } = require('../utils/network');
 const { loadProto } = require('../utils/proto');
 const { setLogHook, log, logWarn, toNum, getSystemDateKey, formatSystemDateTime24 } = require('../utils/utils');
@@ -110,6 +111,7 @@ let lastStatusHash: string = '';
 let lastStatusSentAt: number = 0;
 let onSellGain: ((deltaGold: any) => void) | null = null;
 let onFarmHarvested: (() => Promise<void>) | null = null;
+let onDogSkillGiftPending: ((count: any) => void) | null = null;
 let harvestSellRunning: boolean = false;
 let onWsError: ((payload: any) => void) | null = null;
 let onDisconnected: ((payload: any) => void) | null = null;
@@ -505,6 +507,16 @@ async function startBot(config: any): Promise<void> {
         };
         networkEvents.on('farmHarvested', onFarmHarvested);
 
+        if (onDogSkillGiftPending) {
+            networkEvents.off('dogSkillGiftPending', onDogSkillGiftPending);
+        }
+        onDogSkillGiftPending = (count: any) => {
+            const pendingCount = Math.max(0, toNum(count));
+            if (pendingCount <= 0 || !loginReady) return;
+            checkAndClaimDogSkillGifts(pendingCount).catch(() => null);
+        };
+        networkEvents.on('dogSkillGiftPending', onDogSkillGiftPending);
+
         try {
             await refreshActivityWindows();
         } catch (e: any) {
@@ -589,6 +601,10 @@ function detachRuntimeListeners(): void {
     if (onFarmHarvested) {
         networkEvents.off('farmHarvested', onFarmHarvested);
         onFarmHarvested = null;
+    }
+    if (onDogSkillGiftPending) {
+        networkEvents.off('dogSkillGiftPending', onDogSkillGiftPending);
+        onDogSkillGiftPending = null;
     }
 }
 
@@ -684,6 +700,12 @@ async function handleApiCall(msg: any): Promise<void> {
             case 'useFriendInteractionItemBatch':
                 result = await require('../services/friend-interaction-items').useFriendInteractionItemBatch(args[0], args[1], args[2]);
                 break;
+            case 'getSelfInteractionItems':
+                result = await require('../services/friend-interaction-items').getSelfInteractionItems();
+                break;
+            case 'useSelfInteractionItemBatch':
+                result = await require('../services/friend-interaction-items').useSelfInteractionItemBatch(args[0], args[1]);
+                break;
             case 'doFriendOp':
                 result = await doFriendOperation(args[0], args[1]);
                 break;
@@ -718,6 +740,18 @@ async function handleApiCall(msg: any): Promise<void> {
                 })));
                 break;
             }
+            case 'setItemsLocked':
+                result = await require('../services/warehouse').setItemsLocked(args[0], args[1] === true);
+                break;
+            case 'getDogSkillGiftStatus': {
+                const dogGifts = require('../services/dog-skill-gifts');
+                const info = await dogGifts.getDogInfo();
+                result = { pendingCount: dogGifts.getPendingGiftCount(info) };
+                break;
+            }
+            case 'claimDogSkillGifts':
+                result = await require('../services/dog-skill-gifts').checkAndClaimDogSkillGifts();
+                break;
             case 'setAutomation': {
                 const payload = args && args[0] ? args[0] : {};
                 applyRuntimeConfig({ automation: { [payload.key]: payload.value } }, true);
@@ -793,15 +827,6 @@ async function handleApiCall(msg: any): Promise<void> {
                 break;
             case 'giftQixiSachet':
                 result = await require('../services/activity-center').giftQixiSachet(args[0], args[1]);
-                break;
-            case 'getQixiDewTargets':
-                result = await require('../services/qixi-dew').getQixiDewTargets(args[0]);
-                break;
-            case 'useQixiDew':
-                result = await require('../services/qixi-dew').useQixiDew(args[0], args[1]);
-                break;
-            case 'useQixiDewBatch':
-                result = await require('../services/qixi-dew').useQixiDewBatch(args[0], args[1]);
                 break;
             case 'getMallCatalog':
                 result = await require('../services/commerce').getMallCatalog(args[0], args[1]);

@@ -23,9 +23,9 @@ const imageErrors = ref<Record<string, boolean>>({})
 const CATEGORY_OPTIONS = [
   { label: '全部', value: 'all' },
   { label: '果实', value: 'fruit' },
+  { label: '超变果实', value: 'mutant' },
   { label: '种子', value: 'seed' },
   { label: '道具', value: 'tool' },
-  { label: '其他', value: 'other' },
 ] as const
 
 type CategoryValue = typeof CATEGORY_OPTIONS[number]['value']
@@ -34,13 +34,13 @@ const selectedCategory = ref<CategoryValue>('fruit')
 
 function getItemCategory(item: any): CategoryValue {
   const itemType = Number(item?.itemType || 0)
-  if (itemType === 17 || itemType === 6)
+  if (itemType === 17)
     return 'fruit'
+  if (itemType === 6)
+    return 'mutant'
   if (itemType === 5)
     return 'seed'
-  if (itemType === 11)
-    return 'tool'
-  return 'other'
+  return 'tool'
 }
 
 const filteredItems = computed(() => {
@@ -50,7 +50,7 @@ const filteredItems = computed(() => {
 })
 
 const categoryCounts = computed(() => {
-  const counts: Record<CategoryValue, number> = { all: items.value.length, fruit: 0, seed: 0, tool: 0, other: 0 }
+  const counts: Record<CategoryValue, number> = { all: items.value.length, fruit: 0, mutant: 0, seed: 0, tool: 0 }
   for (const item of items.value) {
     const cat = getItemCategory(item)
     counts[cat]++
@@ -64,10 +64,15 @@ const confirmModal = ref({
   message: '',
   type: 'primary' as 'primary' | 'danger',
   loading: false,
-  action: '' as 'sell' | 'use' | 'batchSell',
+  action: '' as 'sell' | 'use' | 'batchSell' | 'batchLock' | 'batchUnlock',
   item: null as any,
   useCount: 1,
   selectedItems: [] as any[],
+})
+
+const viewModal = ref({
+  show: false,
+  item: null as any,
 })
 
 const maxUseCount = computed(() => Math.max(1, Number(confirmModal.value.item?.count || 1)))
@@ -77,12 +82,36 @@ function setUseCount(value: unknown) {
   confirmModal.value.useCount = Math.max(1, Math.min(count, maxUseCount.value))
 }
 
-const batchMode = ref(false)
+type BatchAction = 'sell' | 'lock' | 'unlock'
+
+const batchAction = ref<BatchAction | null>(null)
+const batchMode = computed(() => batchAction.value !== null)
 const selectedForBatch = ref<Set<string>>(new Set())
 const batchSellResult = ref<{ gold: number, goldBean: number } | null>(null)
 
-const selectedSellableCount = computed(() => {
+const selectedBatchCount = computed(() => {
   return selectedForBatch.value.size
+})
+
+const lockModeAvailable = computed(() => ['fruit', 'mutant', 'seed'].includes(selectedCategory.value))
+const sellModeAvailable = computed(() => ['all', 'fruit', 'mutant'].includes(selectedCategory.value))
+
+const batchActionLabel = computed(() => {
+  if (batchAction.value === 'sell')
+    return '出售'
+  if (batchAction.value === 'lock')
+    return '锁定'
+  return '解锁'
+})
+
+const confirmButtonText = computed(() => {
+  if (confirmModal.value.action === 'sell' || confirmModal.value.action === 'batchSell')
+    return '确认出售'
+  if (confirmModal.value.action === 'batchLock')
+    return '确认锁定'
+  if (confirmModal.value.action === 'batchUnlock')
+    return '确认解锁'
+  return '确认使用'
 })
 
 function getPriceClass(item: any) {
@@ -95,11 +124,12 @@ function getPriceClass(item: any) {
 }
 
 function canSell(item: any) {
-  const itemType = Number(item?.itemType || 0)
-  return (itemType === 17 || itemType === 6) && item?.sellable === true
+  return item?.sellable === true && item?.locked !== true
 }
 
 function getSellStatusText(item: any) {
+  if (item?.locked === true)
+    return '已锁定'
   if (canSell(item))
     return '可出售'
   if (item?.sellStatus === 'conditional')
@@ -113,23 +143,85 @@ function canBatchSell(item: any) {
 
 function canUse(item: any) {
   const itemType = Number(item?.itemType || 0)
-  return itemType === 11
+  return itemType === 11 && item?.locked !== true
+}
+
+function isLockable(item: any) {
+  return [17, 6, 5].includes(Number(item?.itemType || 0))
+}
+
+function canLock(item: any) {
+  return isLockable(item) && item?.locked !== true
+}
+
+function canUnlock(item: any) {
+  return isLockable(item) && item?.locked === true
+}
+
+function isBatchEligible(item: any) {
+  if (batchAction.value === 'sell')
+    return canBatchSell(item)
+  if (batchAction.value === 'lock')
+    return canLock(item)
+  if (batchAction.value === 'unlock')
+    return canUnlock(item)
+  return false
+}
+
+function canView(item: any) {
+  return item?.viewable === true && !!item?.sourceInfo
+}
+
+function handleViewClick(item: any) {
+  viewModal.value = { show: true, item }
+}
+
+function closeViewModal() {
+  viewModal.value.show = false
+}
+
+function formatSentAt(value: unknown) {
+  const timestamp = Number(value || 0)
+  if (timestamp <= 0)
+    return '未记录'
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(timestamp * 1000))
+}
+
+function viewDescription(item: any) {
+  const senderName = String(item?.sourceInfo?.senderName || '好友')
+  const description = String(item?.description || '')
+  return description ? description.replace('{0}', senderName) : `${senderName}赠送的鹊羽香囊`
+}
+
+function sachetMessage(messageTextId: unknown) {
+  const id = Number(messageTextId || 0)
+  return id > 0 ? `寄语编号 ${id}` : '未记录'
 }
 
 function itemKey(item: any) {
   return String(item?.key || item?.groupKey || item?.id || '')
 }
 
+function toggleBatchSelection(item: any) {
+  if (!isBatchEligible(item))
+    return
+  const key = itemKey(item)
+  if (selectedForBatch.value.has(key))
+    selectedForBatch.value.delete(key)
+  else
+    selectedForBatch.value.add(key)
+}
+
 function handleSellClick(item: any) {
   if (batchMode.value) {
-    const key = itemKey(item)
-    const isSelected = selectedForBatch.value.has(key)
-    if (isSelected) {
-      selectedForBatch.value.delete(key)
-    }
-    else {
-      selectedForBatch.value.add(key)
-    }
+    toggleBatchSelection(item)
     return
   }
   const totalPrice = (Number(item.count) || 0) * (Number(item.price) || 0)
@@ -223,11 +315,31 @@ async function handleConfirm() {
         batchSellResult.value = { gold: totalGold, goldBean: totalGoldBean }
         toastStore.success(`已批量出售 ${selectedItems.length} 种物品，获得 ${totalGold} 金币, ${totalGoldBean} 金豆豆`)
         selectedForBatch.value.clear()
-        batchMode.value = false
+        batchAction.value = null
         await loadBag()
       }
       else {
         toastStore.error(`批量出售失败: ${res.error || '未知错误'}`)
+      }
+    }
+    else if ((action === 'batchLock' || action === 'batchUnlock') && selectedItems) {
+      const locked = action === 'batchLock'
+      const itemUids = selectedItems
+        .map((it: any) => Number(it.uid || 0))
+        .filter((uid: number) => Number.isSafeInteger(uid) && uid > 0)
+      if (itemUids.length === 0) {
+        toastStore.error('未找到可操作的物品 UID')
+        return
+      }
+      const res = await bagStore.setItemsLocked(currentAccountId.value, itemUids, locked)
+      if (res.ok) {
+        toastStore.success(`已${locked ? '锁定' : '解锁'} ${Number(res.data?.changed || itemUids.length)} 种物品`)
+        selectedForBatch.value.clear()
+        batchAction.value = null
+        await loadBag()
+      }
+      else {
+        toastStore.error(`${locked ? '锁定' : '解锁'}失败: ${res.error || '未知错误'}`)
       }
     }
     else if (action === 'use' && item) {
@@ -255,18 +367,16 @@ function handleCancel() {
   confirmModal.value.show = false
 }
 
-function toggleBatchMode() {
-  batchMode.value = !batchMode.value
-  if (!batchMode.value) {
-    selectedForBatch.value.clear()
-    batchSellResult.value = null
-  }
+function toggleBatchMode(action: BatchAction) {
+  batchAction.value = batchAction.value === action ? null : action
+  selectedForBatch.value.clear()
+  batchSellResult.value = null
 }
 
-function selectAllSellable() {
+function selectAllEligible() {
   selectedForBatch.value.clear()
   for (const item of filteredItems.value) {
-    if (canBatchSell(item)) {
+    if (isBatchEligible(item)) {
       selectedForBatch.value.add(itemKey(item))
     }
   }
@@ -327,6 +437,41 @@ function handleBatchSellClick() {
   }
 }
 
+function handleBatchLockClick(locked: boolean) {
+  const selectedList = Array.from(selectedForBatch.value)
+  if (selectedList.length === 0) {
+    toastStore.warning(`请先选择要${locked ? '锁定' : '解锁'}的物品`)
+    return
+  }
+  const selectedItems = filteredItems.value.filter((item: any) => (
+    selectedList.includes(itemKey(item)) && (locked ? canLock(item) : canUnlock(item))
+  ))
+  if (selectedItems.length === 0) {
+    toastStore.warning(`没有可${locked ? '锁定' : '解锁'}的物品`)
+    return
+  }
+  confirmModal.value = {
+    show: true,
+    title: `批量${locked ? '锁定' : '解锁'}`,
+    message: `确定要${locked ? '锁定' : '解锁'}选中的 ${selectedItems.length} 种物品吗?`,
+    type: 'primary',
+    loading: false,
+    action: locked ? 'batchLock' : 'batchUnlock',
+    item: null,
+    useCount: 1,
+    selectedItems,
+  }
+}
+
+function handleBatchActionClick() {
+  if (batchAction.value === 'sell')
+    handleBatchSellClick()
+  else if (batchAction.value === 'lock')
+    handleBatchLockClick(true)
+  else if (batchAction.value === 'unlock')
+    handleBatchLockClick(false)
+}
+
 async function loadBag() {
   if (!currentAccountId.value)
     return
@@ -338,8 +483,9 @@ async function loadBag() {
   if (!realtimeConnected.value)
     await statusStore.fetchStatus(currentAccountId.value)
 
-  if (acc.running && status.value?.connection?.connected)
+  if (acc.running && status.value?.connection?.connected) {
     await bagStore.fetchBag(currentAccountId.value)
+  }
 
   imageErrors.value = {}
 }
@@ -349,7 +495,14 @@ onMounted(() => {
 })
 
 watch(currentAccountId, () => {
+  batchAction.value = null
+  selectedForBatch.value.clear()
   loadBag()
+})
+
+watch(selectedCategory, () => {
+  batchAction.value = null
+  selectedForBatch.value.clear()
 })
 
 useIntervalFn(loadBag, 60000)
@@ -361,8 +514,21 @@ useIntervalFn(loadBag, 60000)
       <h2 class="flex items-center gap-2 text-2xl font-bold font-display">
         <span class="i-carbon-box" /> 背包
       </h2>
-      <div v-if="items.length" class="text-sm text-gray-500">
-        共 {{ items.length }} 种物品
+      <div class="flex items-center gap-2">
+        <div v-if="items.length" class="text-sm text-gray-500">
+          共 {{ items.length }} 种物品
+        </div>
+        <NButton
+          circle
+          quaternary
+          size="small"
+          title="刷新背包"
+          :loading="bagLoading"
+          :disabled="!currentAccountId || !status?.connection?.connected"
+          @click="loadBag"
+        >
+          <span class="i-carbon-renew" />
+        </NButton>
       </div>
     </div>
 
@@ -395,157 +561,201 @@ useIntervalFn(loadBag, 60000)
       </div>
     </div>
 
-    <div v-else-if="items.length === 0" class="farm-card rounded-xl p-8 text-center text-gray-500">
-      无可展示物品
-    </div>
-
     <div v-else>
-      <div class="mb-4 flex flex-wrap items-center gap-2">
-        <NButton
-          v-for="cat in CATEGORY_OPTIONS"
-          :key="cat.value"
-          :type="selectedCategory === cat.value ? 'primary' : 'default'"
-          :secondary="selectedCategory !== cat.value"
-          size="small"
-          @click="selectedCategory = cat.value"
-        >
-          {{ cat.value === 'fruit' ? '🍎' : cat.value === 'seed' ? '🌱' : cat.value === 'tool' ? '🔧' : cat.value === 'other' ? '📦' : '📋' }}
-          {{ cat.label }}
-          <span class="ml-1 text-xs opacity-70">({{ categoryCounts[cat.value] || 0 }})</span>
-        </NButton>
+      <div v-if="items.length === 0" class="farm-card rounded-xl p-8 text-center text-gray-500">
+        无可展示物品
+      </div>
 
-        <div class="flex-1" />
-
-        <template v-if="selectedCategory === 'fruit' || selectedCategory === 'all'">
+      <template v-else>
+        <div class="mb-4 flex flex-wrap items-center gap-2">
           <NButton
-            :type="batchMode ? 'warning' : 'default'"
-            :secondary="!batchMode"
+            v-for="cat in CATEGORY_OPTIONS"
+            :key="cat.value"
+            :type="selectedCategory === cat.value ? 'primary' : 'default'"
+            :secondary="selectedCategory !== cat.value"
             size="small"
-            @click="toggleBatchMode"
+            @click="selectedCategory = cat.value"
           >
-            <span v-if="batchMode" class="mr-1">✕</span>
-            {{ batchMode ? '取消批量' : '批量出售' }}
+            <span v-if="cat.value === 'fruit'" class="i-carbon-apple" />
+            <span v-else-if="cat.value === 'mutant'" class="i-carbon-flash" />
+            <span v-else-if="cat.value === 'seed'" class="i-carbon-tree" />
+            <span v-else-if="cat.value === 'tool'" class="i-carbon-tool-box" />
+            <span v-else class="i-carbon-list-boxes" />
+            {{ cat.label }}
+            <span class="ml-1 text-xs opacity-70">({{ categoryCounts[cat.value] || 0 }})</span>
+          </NButton>
+
+          <div class="flex-1" />
+
+          <NButton
+            v-if="sellModeAvailable"
+            :type="batchAction === 'sell' ? 'warning' : 'default'"
+            :secondary="batchAction !== 'sell'"
+            size="small"
+            @click="toggleBatchMode('sell')"
+          >
+            <span v-if="batchAction === 'sell'" class="i-carbon-close mr-1" />
+            <span v-else class="i-carbon-shopping-cart-arrow-down mr-1" />
+            {{ batchAction === 'sell' ? '取消出售' : '批量出售' }}
+          </NButton>
+          <NButton
+            v-if="lockModeAvailable"
+            :type="batchAction === 'lock' ? 'primary' : 'default'"
+            :secondary="batchAction !== 'lock'"
+            size="small"
+            @click="toggleBatchMode('lock')"
+          >
+            <span v-if="batchAction === 'lock'" class="i-carbon-close mr-1" />
+            <span v-else class="i-carbon-locked mr-1" />
+            {{ batchAction === 'lock' ? '取消锁定' : '批量锁定' }}
+          </NButton>
+          <NButton
+            v-if="lockModeAvailable"
+            :type="batchAction === 'unlock' ? 'primary' : 'default'"
+            :secondary="batchAction !== 'unlock'"
+            size="small"
+            @click="toggleBatchMode('unlock')"
+          >
+            <span v-if="batchAction === 'unlock'" class="i-carbon-close mr-1" />
+            <span v-else class="i-carbon-unlocked mr-1" />
+            {{ batchAction === 'unlock' ? '取消解锁' : '批量解锁' }}
           </NButton>
           <template v-if="batchMode">
-            <NButton
-              type="primary"
-              size="small"
-              @click="selectAllSellable"
-            >
-              全选
+            <NButton type="primary" secondary size="small" @click="selectAllEligible">
+              <span class="i-carbon-checkmark-outline mr-1" />
+              全选可{{ batchActionLabel }}项
             </NButton>
             <NButton
-              type="error"
+              :type="batchAction === 'sell' ? 'error' : 'primary'"
               size="small"
-              :disabled="selectedSellableCount === 0"
-              @click="handleBatchSellClick"
+              :disabled="selectedBatchCount === 0"
+              @click="handleBatchActionClick"
             >
-              出售 ({{ selectedSellableCount }})
+              <span v-if="batchAction === 'sell'" class="i-carbon-shopping-cart-arrow-down mr-1" />
+              <span v-else-if="batchAction === 'lock'" class="i-carbon-locked mr-1" />
+              <span v-else class="i-carbon-unlocked mr-1" />
+              {{ batchActionLabel }} ({{ selectedBatchCount }})
             </NButton>
           </template>
-        </template>
-      </div>
+        </div>
 
-      <div class="grid grid-cols-2 gap-4 lg:grid-cols-5 md:grid-cols-4 sm:grid-cols-3 xl:grid-cols-6">
-        <div
-          v-for="item in filteredItems"
-          :key="itemKey(item)"
-          class="group relative flex flex-col items-center farm-card rounded-xl p-3 transition"
-          :class="{
-            'ring-2 ring-orange-500 dark:ring-orange-400': batchMode && selectedForBatch.has(itemKey(item)),
-            'opacity-50': batchMode && canBatchSell(item) && !selectedForBatch.has(itemKey(item)),
-          }"
-          @click="batchMode && canBatchSell(item) && handleSellClick(item)"
-        >
-          <div class="absolute left-2 top-2 text-xs font-mono" style="color: var(--theme-text, #9ca3af); opacity: 0.5">
-            #{{ item.id }}
-          </div>
-
-          <div class="absolute right-1 top-1 flex gap-1">
-            <template v-if="!batchMode">
-              <NButton
-                v-if="canSell(item)"
-                type="error"
-                size="tiny"
-                circle
-                title="出售全部"
-                @click.stop="handleSellClick(item)"
-              >
-                售
-              </NButton>
-              <NButton
-                v-if="canUse(item)"
-                type="success"
-                size="tiny"
-                circle
-                title="选择使用数量"
-                @click.stop="handleUseClick(item)"
-              >
-                用
-              </NButton>
-            </template>
-            <div
-              v-else-if="canBatchSell(item)"
-              class="h-5 w-5 flex items-center justify-center border-2 rounded-lg transition"
-              :class="selectedForBatch.has(itemKey(item))
-                ? 'border-orange-500 bg-orange-500 text-white'
-                : 'border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-700'"
-            >
-              <span v-if="selectedForBatch.has(itemKey(item))" class="text-xs font-bold">✓</span>
-            </div>
-          </div>
-
+        <div class="grid grid-cols-2 gap-4 lg:grid-cols-5 md:grid-cols-4 sm:grid-cols-3 xl:grid-cols-6">
           <div
-            class="thumb-wrap mb-2 mt-6 h-16 w-16 flex items-center justify-center rounded-xl"
-            :data-fallback="(item.name || '物').slice(0, 1)"
-            style="background: color-mix(in srgb, var(--theme-bg, #fff) 90%, var(--theme-primary, #3b82f6))"
+            v-for="item in filteredItems"
+            :key="itemKey(item)"
+            class="group relative flex flex-col items-center farm-card rounded-xl p-3 transition"
+            :class="{
+              'ring-2 ring-orange-500 dark:ring-orange-400': batchMode && selectedForBatch.has(itemKey(item)),
+              'cursor-pointer opacity-55': batchMode && isBatchEligible(item) && !selectedForBatch.has(itemKey(item)),
+            }"
+            @click="batchMode && toggleBatchSelection(item)"
           >
-            <img
-              v-if="item.image && !imageErrors[itemKey(item)]"
-              :src="item.image"
-              :alt="item.name"
-              class="max-h-full max-w-full object-contain"
-              loading="lazy"
-              @error="imageErrors[itemKey(item)] = true"
-            >
-            <div v-else class="text-2xl text-gray-400 font-bold uppercase">
-              {{ (item.name || '物').slice(0, 1) }}
+            <div class="absolute left-2 top-2 text-xs font-mono" style="color: var(--theme-text, #9ca3af); opacity: 0.5">
+              #{{ item.id }}
             </div>
-          </div>
 
-          <div class="mb-1 w-full truncate px-2 text-center text-sm font-bold" :title="item.name" style="color: var(--theme-text, #374151)">
-            {{ item.name || `物品${item.id}` }}
-          </div>
-
-          <div class="mb-2 flex flex-col items-center gap-0.5 text-xs text-gray-400">
-            <span v-if="item.uid">UID: {{ item.uid }}</span>
-            <span v-if="item.mutantTypes?.length">变异类型: {{ item.mutantTypes.join(' + ') }}</span>
-            <span>
-              <span
-                class="inline-block rounded-md px-1.5 py-0.5 text-[10px] font-bold"
-                :class="getItemCategory(item) === 'fruit' ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'
-                  : getItemCategory(item) === 'seed' ? 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400'
-                    : getItemCategory(item) === 'tool' ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
-                      : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'"
+            <div class="absolute right-1 top-1 flex gap-1">
+              <template v-if="!batchMode">
+                <NButton
+                  v-if="canView(item)"
+                  type="info"
+                  size="tiny"
+                  circle
+                  title="查看赠送信息"
+                  @click.stop="handleViewClick(item)"
+                >
+                  <span class="i-carbon-view" />
+                </NButton>
+                <NButton
+                  v-if="canSell(item)"
+                  type="error"
+                  size="tiny"
+                  circle
+                  title="出售全部"
+                  @click.stop="handleSellClick(item)"
+                >
+                  <span class="i-carbon-shopping-cart-arrow-down" />
+                </NButton>
+                <NButton
+                  v-if="canUse(item)"
+                  type="success"
+                  size="tiny"
+                  circle
+                  title="选择使用数量"
+                  @click.stop="handleUseClick(item)"
+                >
+                  <span class="i-carbon-play-filled" />
+                </NButton>
+              </template>
+              <div
+                v-else-if="isBatchEligible(item)"
+                class="h-5 w-5 flex items-center justify-center border-2 rounded-lg transition"
+                :class="selectedForBatch.has(itemKey(item))
+                  ? 'border-orange-500 bg-orange-500 text-white'
+                  : 'border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-700'"
               >
-                {{ getItemCategory(item) === 'fruit' ? '🍎' : getItemCategory(item) === 'seed' ? '🌱' : getItemCategory(item) === 'tool' ? '🔧' : '📦' }}
-                {{ item.itemType || 0 }}
-              </span>
-              <span v-if="item.level > 0"> · Lv{{ item.level }}</span>
-              <span v-if="item.price > 0" :class="getPriceClass(item)"> · {{ item.price }}{{ item.priceUnit || '金' }}</span>
-            </span>
-            <span
-              v-if="getItemCategory(item) === 'fruit'"
-              :class="canSell(item) ? 'text-green-500 dark:text-green-400' : 'text-gray-400 dark:text-gray-500'"
-              :title="item.sellCondition || ''"
-            >{{ getSellStatusText(item) }}</span>
-          </div>
+                <span v-if="selectedForBatch.has(itemKey(item))" class="text-xs font-bold">✓</span>
+              </div>
+            </div>
 
-          <div class="mt-auto font-medium" :class="item.hoursText ? 'text-blue-500' : 'text-gray-600 dark:text-gray-300'">
-            {{ item.hoursText || `x${item.count || 0}` }}
+            <div
+              class="thumb-wrap mb-2 mt-6 h-16 w-16 flex items-center justify-center rounded-xl"
+              :data-fallback="(item.name || '物').slice(0, 1)"
+              style="background: color-mix(in srgb, var(--theme-bg, #fff) 90%, var(--theme-primary, #3b82f6))"
+            >
+              <img
+                v-if="item.image && !imageErrors[itemKey(item)]"
+                :src="item.image"
+                :alt="item.name"
+                class="max-h-full max-w-full object-contain"
+                loading="lazy"
+                @error="imageErrors[itemKey(item)] = true"
+              >
+              <div v-else class="text-2xl text-gray-400 font-bold uppercase">
+                {{ (item.name || '物').slice(0, 1) }}
+              </div>
+            </div>
+
+            <div class="mb-1 w-full truncate px-2 text-center text-sm font-bold" :title="item.name" style="color: var(--theme-text, #374151)">
+              {{ item.name || `物品${item.id}` }}
+            </div>
+
+            <div class="mb-2 flex flex-col items-center gap-0.5 text-xs text-gray-400">
+              <span v-if="item.locked" class="inline-flex items-center gap-1 text-amber-600 font-bold dark:text-amber-300">
+                <span class="i-carbon-locked" /> 已锁定
+              </span>
+              <span v-if="item.uid">UID: {{ item.uid }}</span>
+              <span v-if="item.mutantTypes?.length">变异类型: {{ item.mutantTypes.join(' + ') }}</span>
+              <span>
+                <span
+                  class="inline-block rounded-md px-1.5 py-0.5 text-[10px] font-bold"
+                  :class="getItemCategory(item) === 'fruit' ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'
+                    : getItemCategory(item) === 'mutant' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                      : getItemCategory(item) === 'seed' ? 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400'
+                        : 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'"
+                >
+                  <span v-if="getItemCategory(item) === 'fruit'" class="i-carbon-apple" />
+                  <span v-else-if="getItemCategory(item) === 'mutant'" class="i-carbon-flash" />
+                  <span v-else-if="getItemCategory(item) === 'seed'" class="i-carbon-tree" />
+                  <span v-else class="i-carbon-tool-box" />
+                  {{ item.itemType || 0 }}
+                </span>
+                <span v-if="item.level > 0"> · Lv{{ item.level }}</span>
+                <span v-if="item.price > 0" :class="getPriceClass(item)"> · {{ item.price }}{{ item.priceUnit || '金' }}</span>
+              </span>
+              <span
+                v-if="item.sellStatus"
+                :class="canSell(item) ? 'text-green-500 dark:text-green-400' : 'text-gray-400 dark:text-gray-500'"
+                :title="item.sellCondition || ''"
+              >{{ getSellStatusText(item) }}</span>
+            </div>
+
+            <div class="mt-auto font-medium" :class="item.hoursText ? 'text-blue-500' : 'text-gray-600 dark:text-gray-300'">
+              {{ item.hoursText || `x${item.count || 0}` }}
+            </div>
           </div>
         </div>
-      </div>
+      </template>
     </div>
 
     <ConfirmModal
@@ -554,7 +764,7 @@ useIntervalFn(loadBag, 60000)
       :message="confirmModal.message"
       :type="confirmModal.type"
       :loading="confirmModal.loading"
-      :confirm-text="confirmModal.action === 'sell' ? '确认出售' : confirmModal.action === 'batchSell' ? '确认出售' : '确认使用'"
+      :confirm-text="confirmButtonText"
       @confirm="handleConfirm"
       @cancel="handleCancel"
     >
@@ -571,6 +781,31 @@ useIntervalFn(loadBag, 60000)
           <NButton size="small" :disabled="confirmModal.loading || confirmModal.useCount >= maxUseCount" @click="setUseCount(maxUseCount)">
             全部
           </NButton>
+        </div>
+      </div>
+    </ConfirmModal>
+
+    <ConfirmModal
+      :show="viewModal.show"
+      title="香囊寄语"
+      :message="viewDescription(viewModal.item)"
+      confirm-text="关闭"
+      is-alert
+      @confirm="closeViewModal"
+      @cancel="closeViewModal"
+    >
+      <div v-if="viewModal.item?.sourceInfo" class="sachet-detail">
+        <div class="sachet-detail__row">
+          <span>赠送人</span>
+          <strong>{{ viewModal.item.sourceInfo.senderName || '未知好友' }}</strong>
+        </div>
+        <div class="sachet-detail__row">
+          <span>赠送时间</span>
+          <strong>{{ formatSentAt(viewModal.item.sourceInfo.sentAt) }}</strong>
+        </div>
+        <div class="sachet-detail__message">
+          <span>好友寄语</span>
+          <strong>{{ sachetMessage(viewModal.item.sourceInfo.messageTextId) }}</strong>
         </div>
       </div>
     </ConfirmModal>
@@ -610,5 +845,47 @@ useIntervalFn(loadBag, 60000)
   grid-template-columns: minmax(120px, 1fr) auto;
   gap: 8px;
   align-items: center;
+}
+
+.sachet-detail {
+  display: grid;
+  gap: 10px;
+  margin: 0.75rem 0 1.25rem;
+}
+
+.sachet-detail__row {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--n-border-color);
+}
+
+.sachet-detail__row span,
+.sachet-detail__message span {
+  color: var(--n-text-color-3);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sachet-detail__row strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sachet-detail__message {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--theme-primary, #3b82f6) 28%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--theme-primary, #3b82f6) 7%, var(--n-color));
+}
+
+.sachet-detail__message strong {
+  color: var(--n-text-color);
+  font-size: 15px;
+  line-height: 1.55;
 }
 </style>

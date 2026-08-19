@@ -91,5 +91,24 @@ export const useBagStore = defineStore('bag', () => {
     return res.data
   }
 
-  return { items, allItems, originalItems, systemItems, dashboardItems, loading, fetchBag, clearBag, useItem, sellItems }
+  async function setItemsLocked(accountId: string, itemUids: number[], locked: boolean) {
+    const res = await api.post('/api/bag/lock', { itemUids, locked }, {
+      headers: { 'x-account-id': accountId },
+    })
+    return res.data
+  }
+
+  return {
+    items,
+    allItems,
+    originalItems,
+    systemItems,
+    dashboardItems,
+    loading,
+    fetchBag,
+    clearBag,
+    useItem,
+    sellItems,
+    setItemsLocked,
+  }
 })

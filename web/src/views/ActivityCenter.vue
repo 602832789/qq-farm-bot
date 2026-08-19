@@ -21,7 +21,7 @@ const accountStore = useAccountStore()
 const activityStore = useActivityCenterStore()
 const friendStore = useFriendStore()
 const { currentAccountId } = storeToRefs(accountStore)
-const { activities, season, shop, solarTerms, constellation, qixi, actions, tabBadges, loading, error, actionError, notice, loadedAccountId, serverClockOffset, pendingActions, dewTargets, dewTargetsLoading, dewTargetsError } = storeToRefs(activityStore)
+const { activities, season, shop, solarTerms, constellation, qixi, actions, tabBadges, loading, error, actionError, notice, loadedAccountId, serverClockOffset, pendingActions } = storeToRefs(activityStore)
 const { friends, loading: friendsLoading } = storeToRefs(friendStore)
 const activeTab = ref<ActivityTab>('travel')
 const selectedActivity = ref<ActivityGameplayKey | null>(null)
@@ -93,10 +93,6 @@ const remaining = computed(() => {
   const minutes = Math.floor(diff % 3600000 / 60000)
   return days > 0 ? `剩余：${days}天${hours}小时` : `剩余：${hours}小时${minutes}分钟`
 })
-const dewUsedLandIds = computed(() => {
-  const hostGid = dewTargets.value?.host.gid || ''
-  return hostGid ? activityStore.getQixiDewUsedLandIds(hostGid) : []
-})
 const balanceVisible = computed(() => activeTab.value === 'travel' || activeTab.value === 'shop')
 
 function accountId() {
@@ -133,15 +129,11 @@ async function openActivity(activity: ActivityDirectoryItemDto) {
   if (gameplay.module.key === 'stellar')
     activeTab.value = gameplay.entryTab as ActivityTab
   selectedActivity.value = gameplay.module.key
-  if (gameplay.module.key === 'qixi' && currentAccountId.value) {
-    await activityStore.fetchQixiDewTargets(String(currentAccountId.value), '')
+  if (gameplay.module.key === 'qixi' && currentAccountId.value)
     await friendStore.fetchFriends(String(currentAccountId.value))
-  }
 }
 function goBack() {
   if (selectedActivity.value) {
-    if (selectedActivity.value === 'qixi')
-      activityStore.clearQixiDewTargets()
     selectedActivity.value = null
     return
   }
@@ -162,19 +154,12 @@ function claimQixiBridge() {
 function giftQixiSachet(friendGid: string) {
   activityStore.giftQixiSachet(accountId(), friendGid)
 }
-function loadQixiDewTargets(hostGid: string) {
-  activityStore.fetchQixiDewTargets(accountId(), hostGid)
-}
-function useQixiDew(hostGid: string, landIds: string[]) {
-  activityStore.useQixiDewBatch(accountId(), hostGid, landIds)
-}
 function refreshQixiFriends() {
   if (currentAccountId.value)
     friendStore.fetchFriends(String(currentAccountId.value), true)
 }
 async function refreshQixiActivity() {
   await load(true)
-  await activityStore.fetchQixiDewTargets(accountId(), '')
 }
 function selectShopGoods(goods: ShopGoodsDto) {
   selectedShopGoods.value = goods
@@ -366,15 +351,8 @@ onUnmounted(() => {
             :friends-loading="friendsLoading"
             :pending-bridge="pendingActions.claimQixiBridge"
             :pending-gift="pendingActions.giftQixiSachet"
-            :pending-dew="pendingActions.useQixiDew"
-            :dew-targets="dewTargets"
-            :dew-targets-loading="dewTargetsLoading"
-            :dew-targets-error="dewTargetsError"
-            :dew-used-land-ids="dewUsedLandIds"
             @claim-bridge="claimQixiBridge"
             @gift="giftQixiSachet"
-            @load-dew-targets="loadQixiDewTargets"
-            @use-dew="useQixiDew"
             @refresh-friends="refreshQixiFriends"
           />
         </main>
