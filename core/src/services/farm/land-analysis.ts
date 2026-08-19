@@ -115,6 +115,25 @@ function getPlantInteractionEffects(plant: any): any[] {
             });
         }
     }
+
+    const qixiDewStatus = plant?.field_40;
+    const qixiRewardValue = toNum(qixiDewStatus?.value_1);
+    const qixiAppliedMarker = toNum(qixiDewStatus?.value_2);
+    if (
+        qixiRewardValue > 0
+        && qixiAppliedMarker > 0
+        && !effects.some(effect => String(effect.itemId) === '301103')
+    ) {
+        effects.push({
+            itemId: '301103',
+            itemName: KNOWN_INTERACTION_ITEM_NAMES['301103'],
+            effectType: qixiAppliedMarker,
+            landId: '',
+            hostGid: '',
+            confirmed: true,
+            source: 'protocol-land-field-40',
+        });
+    }
     return effects;
 }
 

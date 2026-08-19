@@ -251,6 +251,12 @@ function usedInteractionIdSet(friendId: unknown, itemId: unknown = selectedInter
   return new Set(friendStore.getInteractionUsedLandIds(currentAccountId.value, itemId, friendKey(friendId)))
 }
 
+function hasConfirmedInteractionEffect(land: any, itemId: unknown = selectedInteractionItemId.value) {
+  const normalizedItemId = String(itemId || '')
+  return !!normalizedItemId && (Array.isArray(land?.interactionEffects) ? land.interactionEffects : [])
+    .some((effect: any) => effect?.confirmed && String(effect?.itemId || '') === normalizedItemId)
+}
+
 function isInteractionLandCandidate(land: any) {
   return !!land?.unlocked
     && !land?.occupiedByMaster
@@ -268,11 +274,14 @@ function isInteractionLandDisabled(friendId: unknown, land: any) {
     || item.count < 1
     || interactionUsePending.value
     || !isInteractionLandCandidate(land)
+    || hasConfirmedInteractionEffect(land, item.itemId)
     || usedInteractionIdSet(friendId, item.itemId).has(String(land?.id || ''))
 }
 
 function interactionLandSelectionLabel(friendId: unknown, land: any) {
   const landId = String(land?.id || '')
+  if (hasConfirmedInteractionEffect(land))
+    return '已生效'
   if (usedInteractionIdSet(friendId).has(landId))
     return '本次已用'
   if (['stealable', 'harvested'].includes(String(land?.status || '')))
@@ -316,7 +325,7 @@ function selectAllInteractionLands(friendId: unknown) {
   const key = friendKey(friendId)
   const used = usedInteractionIdSet(key, item.itemId)
   const candidates = (friendLands.value[key] || [])
-    .filter(land => isInteractionLandCandidate(land) && !used.has(String(land.id)))
+    .filter(land => isInteractionLandCandidate(land) && !hasConfirmedInteractionEffect(land, item.itemId) && !used.has(String(land.id)))
     .sort((left, right) => Number(left.id) - Number(right.id))
     .slice(0, item.count)
     .map(land => String(land.id))
