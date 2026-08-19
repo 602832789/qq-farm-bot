@@ -576,11 +576,11 @@ useIntervalFn(loadBag, 60000)
             size="small"
             @click="selectedCategory = cat.value"
           >
-            <span v-if="cat.value === 'fruit'" class="i-carbon-apple" />
-            <span v-else-if="cat.value === 'mutant'" class="i-carbon-flash" />
-            <span v-else-if="cat.value === 'seed'" class="i-carbon-tree" />
-            <span v-else-if="cat.value === 'tool'" class="i-carbon-tool-box" />
-            <span v-else class="i-carbon-list-boxes" />
+            <span v-if="cat.value === 'fruit'" class="i-carbon-apple mr-1.5" />
+            <span v-else-if="cat.value === 'mutant'" class="i-carbon-flash mr-1.5" />
+            <span v-else-if="cat.value === 'seed'" class="i-carbon-tree mr-1.5" />
+            <span v-else-if="cat.value === 'tool'" class="i-carbon-tool-box mr-1.5" />
+            <span v-else class="i-carbon-list-boxes mr-1.5" />
             {{ cat.label }}
             <span class="ml-1 text-xs opacity-70">({{ categoryCounts[cat.value] || 0 }})</span>
           </NButton>
@@ -684,7 +684,7 @@ useIntervalFn(loadBag, 60000)
                   title="选择使用数量"
                   @click.stop="handleUseClick(item)"
                 >
-                  <span class="i-carbon-play-filled" />
+                  <span class="i-carbon-magic-wand-filled" />
                 </NButton>
               </template>
               <div
