@@ -35,6 +35,21 @@ export interface FriendInteractionResultDto {
   ok: boolean
   code: string
   message: string
+  updatedLand?: any
+  interactionEffects?: FriendInteractionEffectDto[]
+  target?: any
+}
+
+export interface FriendInteractionEffectDto {
+  landId: string
+  itemId: string
+  itemName?: string
+  plantId?: string
+  hostGid?: string
+  effectType?: number
+  usedAt?: number | string
+  confirmed: boolean
+  source: string
 }
 
 export interface FriendInteractionBatchDto {
@@ -48,6 +63,8 @@ export interface FriendInteractionBatchDto {
   successCount: number
   failureCount: number
   results: FriendInteractionResultDto[]
+  updatedLands?: any[]
+  interactionEffects?: FriendInteractionEffectDto[]
   items: FriendInteractionItemDto[]
   message: string
 }
@@ -70,8 +87,159 @@ export const useFriendStore = defineStore('friend', () => {
   const interactionUseError = ref('')
   const interactionItemsAccountId = ref('')
   const interactionUsedLandIds = ref<Record<string, string[]>>({})
+  const friendLandOverlays = ref<Record<string, {
+    lands: any[]
+    effects: FriendInteractionEffectDto[]
+    updatedAt: number
+  }>>({})
+  const FRIEND_LAND_OVERLAY_TTL_MS = 15 * 60 * 1000
   let friendLandRequestSequence = 0
   let interactionItemsRequestSequence = 0
+
+  function normalizeLandId(value: unknown) {
+    const text = String(value ?? '').trim()
+    return /^\d+$/.test(text) && text !== '0' ? text : ''
+  }
+
+  function pruneFriendLandOverlays(now = Date.now()) {
+    const next = { ...friendLandOverlays.value }
+    let changed = false
+    for (const [key, overlay] of Object.entries(next)) {
+      if (!overlay || now - overlay.updatedAt > FRIEND_LAND_OVERLAY_TTL_MS) {
+        delete next[key]
+        changed = true
+      }
+    }
+    if (changed)
+      friendLandOverlays.value = next
+  }
+
+  function mergeLandUpdateList(landsInput: any[], updatesInput: any[]) {
+    const lands = Array.isArray(landsInput) ? landsInput : []
+    const updates = Array.isArray(updatesInput) ? updatesInput.filter(Boolean) : []
+    if (updates.length === 0)
+      return lands
+
+    const byId = new Map(lands.map(land => [normalizeLandId(land?.id), land]))
+    for (const update of updates) {
+      const updateId = normalizeLandId(update?.id)
+      if (!updateId)
+        continue
+      const occupiedIds = [...new Set([
+        updateId,
+        ...(Array.isArray(update?.occupiedLandIds) ? update.occupiedLandIds.map(normalizeLandId) : []),
+      ].filter(Boolean))]
+      const current = byId.get(updateId)
+      byId.set(updateId, {
+        ...(current || {}),
+        ...update,
+        id: current?.id ?? update.id,
+        occupiedLandIds: occupiedIds,
+      })
+      for (const occupiedId of occupiedIds) {
+        if (occupiedId === updateId)
+          continue
+        const slave = byId.get(occupiedId)
+        if (!slave)
+          continue
+        byId.set(occupiedId, {
+          ...slave,
+          ...update,
+          id: slave.id,
+          unlocked: slave.unlocked,
+          level: slave.level,
+          maxLevel: slave.maxLevel,
+          landsLevel: slave.landsLevel,
+          landSize: slave.landSize,
+          couldUnlock: slave.couldUnlock,
+          couldUpgrade: slave.couldUpgrade,
+          occupiedByMaster: true,
+          masterLandId: Number(updateId),
+          occupiedLandIds: occupiedIds,
+        })
+      }
+    }
+
+    const originalIds = new Set(lands.map(land => normalizeLandId(land?.id)))
+    const merged = lands.map(land => byId.get(normalizeLandId(land?.id)) || land)
+    for (const [id, land] of byId) {
+      if (id && !originalIds.has(id))
+        merged.push(land)
+    }
+    return merged
+  }
+
+  function applyFriendLandOverlay(friendId: string, landsInput: any[]) {
+    pruneFriendLandOverlays()
+    const overlay = friendLandOverlays.value[String(friendId)]
+    if (!overlay)
+      return Array.isArray(landsInput) ? landsInput : []
+    // UseReply.land 是刚刚成功操作后的权威快照；在短期 overlay 有效期内，
+    // 后续 Enter/AllLands 的旧快照不能覆盖它。TTL 到期后再完全信任服务端。
+    let lands = mergeLandUpdateList(landsInput, overlay.lands)
+    const effects = Array.isArray(overlay.effects) ? overlay.effects : []
+    if (effects.length === 0)
+      return lands
+    lands = lands.map((land: any) => {
+      const landId = normalizeLandId(land?.id)
+      const occupiedIds = new Set([
+        landId,
+        ...(Array.isArray(land?.occupiedLandIds) ? land.occupiedLandIds.map(normalizeLandId) : []),
+        normalizeLandId(land?.masterLandId),
+      ].filter(Boolean))
+      const plantId = normalizeLandId(land?.plantId)
+      const visibleEffects = effects.filter(effect => (
+        occupiedIds.has(normalizeLandId(effect?.landId))
+        && (!normalizeLandId(effect?.plantId) || normalizeLandId(effect?.plantId) === plantId)
+      ))
+      if (visibleEffects.length === 0)
+        return land
+      const existing = Array.isArray(land?.interactionEffects) ? land.interactionEffects : []
+      const seen = new Set(existing.map((effect: any) => `${effect?.itemId}:${effect?.landId}:${effect?.plantId || ''}:${effect?.usedAt || ''}`))
+      const mergedEffects = [...existing]
+      for (const effect of visibleEffects) {
+        const key = `${effect.itemId}:${effect.landId}:${effect.plantId || ''}:${effect.usedAt || ''}`
+        if (!seen.has(key)) {
+          seen.add(key)
+          mergedEffects.push(effect)
+        }
+      }
+      return { ...land, interactionEffects: mergedEffects }
+    })
+    return lands
+  }
+
+  function mergeFriendLandUpdates(
+    friendIdInput: unknown,
+    updatedLandsInput: any[],
+    effectsInput: FriendInteractionEffectDto[] = [],
+  ) {
+    const key = String(friendIdInput || '')
+    if (!key)
+      return
+    const updatedLands = Array.isArray(updatedLandsInput) ? updatedLandsInput.filter(Boolean) : []
+    const effects = Array.isArray(effectsInput) ? effectsInput.filter(effect => !!effect?.confirmed) : []
+    if (updatedLands.length === 0 && effects.length === 0)
+      return
+    const previous = friendLandOverlays.value[key]
+    const mergedUpdates = mergeLandUpdateList(previous?.lands || [], updatedLands)
+    friendLandOverlays.value = {
+      ...friendLandOverlays.value,
+      [key]: {
+        lands: mergedUpdates,
+        effects: [...(previous?.effects || []), ...effects].filter((effect, index, list) => (
+          list.findIndex(item => `${item.itemId}:${item.landId}:${item.plantId || ''}:${item.usedAt || ''}` === `${effect.itemId}:${effect.landId}:${effect.plantId || ''}:${effect.usedAt || ''}`) === index
+        )),
+        updatedAt: Date.now(),
+      },
+    }
+    const current = friendLands.value[key] || []
+    const merged = applyFriendLandOverlay(key, mergeLandUpdateList(current, updatedLands))
+    friendLands.value = { ...friendLands.value, [key]: merged }
+    const friendSummary = friends.value.find(friend => String(friend?.gid || '') === key)
+    if (friendSummary)
+      syncFriendPlantSummary(key, merged, null)
+  }
 
   const knownFriendGids = ref<number[]>([])
   const knownFriendGidSyncCooldownSec = ref(600)
@@ -89,6 +257,8 @@ export const useFriendStore = defineStore('friend', () => {
     if (detailLands.length > 0) {
       for (const land of detailLands) {
         if (!land || !land.unlocked)
+          continue
+        if (land.occupiedByMaster)
           continue
         if (land.status === 'stealable')
           stealNum++
@@ -212,7 +382,7 @@ export const useFriendStore = defineStore('friend', () => {
       if (sequence !== friendLandRequestSequence)
         return false
       if (res.data.ok) {
-        const lands = res.data.data.lands || []
+        const lands = applyFriendLandOverlay(key, res.data.data.lands || [])
         const summary = res.data.data.summary || null
         friendLands.value[key] = lands
         syncFriendPlantSummary(key, lands, summary)
@@ -246,6 +416,7 @@ export const useFriendStore = defineStore('friend', () => {
     friendLandsLoading.value = {}
     friendLandsError.value = {}
     friendLandsLoaded.value = {}
+    friendLandOverlays.value = {}
   }
 
   async function operate(accountId: string, friendId: string, opType: string) {
@@ -348,6 +519,7 @@ export const useFriendStore = defineStore('friend', () => {
       if (Array.isArray(result?.items))
         interactionItems.value = result.items
       recordInteractionUsage(accountId, result)
+      mergeFriendLandUpdates(result?.hostGid || friendId, result?.updatedLands || [], result?.interactionEffects || [])
       return result
     }
     catch (error: any) {
@@ -367,6 +539,7 @@ export const useFriendStore = defineStore('friend', () => {
     interactionUseError.value = ''
     interactionItemsAccountId.value = ''
     interactionUsedLandIds.value = {}
+    friendLandOverlays.value = {}
   }
 
   function applyKnownFriendSettings(data: KnownFriendSettings | null | undefined) {

@@ -10,7 +10,13 @@ const { sendMsgAsync, GatewayError } = require('../utils/network');
 const { types } = require('../utils/proto');
 const { toNum } = require('../utils/utils');
 const { getSellConditionContext } = require('./activity-windows');
-const { buildLandMap, getCurrentPhase, getDisplayLandContext } = require('./farm/land-analysis');
+const {
+    buildLandMap,
+    buildLandDetail,
+    getCurrentPhase,
+    getDisplayLandContext,
+    getPlantInteractionEffects,
+} = require('./farm/land-analysis');
 const { enterFriendFarm, leaveFriendFarm } = require('./friend/api');
 const { getBag, getBagItems } = require('./warehouse');
 
@@ -268,6 +274,72 @@ function normalizeReplyItems(itemsInput: any[]): any[] {
     }));
 }
 
+function interactionItemName(itemId: number, info: any): string {
+    return String(info?.name || ({
+        301101: '黄金虫',
+        301102: '足球',
+        301103: '鹊羽灵露',
+    } as Record<number, string>)[itemId] || `道具${itemId}`);
+}
+
+function normalizeUpdatedLand(rawLand: any, target: any = null): any | null {
+    if (!rawLand || typeof rawLand !== 'object') return null;
+    let detail: any;
+    try {
+        detail = buildLandDetail(rawLand, { friendMode: true });
+    } catch {
+        detail = {
+            id: toNum(rawLand.id),
+            unlocked: !!rawLand.unlocked,
+            status: 'growing',
+            plantName: String(rawLand?.plant?.name || ''),
+            occupiedLandIds: [],
+            mutantConfigIds: [],
+            isMutated: false,
+            interactionEffects: [],
+        };
+    }
+    if (target && Array.isArray(target.occupiedLandIds) && target.occupiedLandIds.length > 0) {
+        detail.occupiedLandIds = [...new Set(target.occupiedLandIds.map((id: any) => String(id)))];
+    }
+    return detail;
+}
+
+function buildConfirmedInteractionEffects(
+    rawLand: any,
+    itemId: number,
+    landId: string,
+    itemName: string,
+): any[] {
+    const protocolEffects = typeof getPlantInteractionEffects === 'function'
+        ? getPlantInteractionEffects(rawLand?.plant)
+        : [];
+    const matched = protocolEffects
+        .filter((effect: any) => (
+            String(effect.itemId || '') === String(itemId)
+            && (!effect.landId || String(effect.landId) === String(landId))
+        ))
+        .map((effect: any) => ({
+            ...effect,
+            landId: String(effect.landId || landId),
+            itemId: String(effect.itemId || itemId),
+            itemName: String(effect.itemName || itemName),
+            plantId: int64String(rawLand?.plant?.id),
+            confirmed: true,
+        }));
+    if (matched.length > 0) return matched;
+
+    return [{
+        landId: String(landId),
+        itemId: String(itemId),
+        itemName,
+        plantId: int64String(rawLand?.plant?.id),
+        effectType: 0,
+        confirmed: true,
+        source: 'use-reply',
+    }];
+}
+
 async function performFriendInteractionItemBatch(friendGidInput: unknown, itemIdInput: unknown, landIdsInput: unknown): Promise<any> {
     const friendGid = positiveDecimal(friendGidInput, 'INVALID_FRIEND_INTERACTION_GID', 'friendGid');
     const friendGidNumber = safePositiveNumber(friendGid, 'INVALID_FRIEND_INTERACTION_GID', 'friendGid');
@@ -322,13 +394,21 @@ async function performFriendInteractionItemBatch(friendGidInput: unknown, itemId
             try {
                 const reply = await sendTargetedItemUse(itemId, stack, friendGid, landId);
                 stack.remaining -= 1;
+                const updatedLand = normalizeUpdatedLand(reply?.land, target);
+                const interactionEffects = buildConfirmedInteractionEffects(
+                    reply?.land,
+                    itemId,
+                    landId,
+                    interactionItemName(itemId, info),
+                );
                 attempts.push({
                     landId,
                     ok: true,
                     code: '',
                     message: `第 ${landId} 块地使用成功`,
                     target,
-                    updatedLand: reply?.land || null,
+                    updatedLand,
+                    interactionEffects,
                     consumed: normalizeReplyItems(reply?.consumed || reply?.used_items || []),
                     rewards: normalizeReplyItems([
                         ...(Array.isArray(reply?.rewards) ? reply.rewards : []),
@@ -362,6 +442,12 @@ async function performFriendInteractionItemBatch(friendGidInput: unknown, itemId
     const ownerName = String(enterReply?.basic?.remark || enterReply?.basic?.name || `GID:${friendGid}`);
     const itemName = String(info.name || `物品${itemId}`);
     const refreshedInventory = await getFriendInteractionItems();
+    const updatedLands = succeeded
+        .map((attempt: any) => attempt.updatedLand)
+        .filter((land: any) => !!land);
+    const interactionEffects = succeeded.flatMap((attempt: any) => (
+        Array.isArray(attempt.interactionEffects) ? attempt.interactionEffects : []
+    ));
     return {
         hostGid: friendGid,
         ownerName,
@@ -374,6 +460,8 @@ async function performFriendInteractionItemBatch(friendGidInput: unknown, itemId
         successCount: succeeded.length,
         failureCount: failed.length,
         results: attempts,
+        updatedLands,
+        interactionEffects,
         items: refreshedInventory.items,
         message: failed.length > 0
             ? `已在${ownerName}的农场按顺序使用 ${succeeded.length} 个${itemName}，跳过 ${failed.length} 块地`

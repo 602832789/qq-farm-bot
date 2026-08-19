@@ -4,21 +4,19 @@ export {};
  */
 
 const protobuf = require('protobufjs');
-const { getPlantNameBySeedId, getPlantName, formatGrowTime, getPlantGrowTime, getAllSeeds, getPlantById, getPlantBySeedId, getSeedImageBySeedId } = require('../../config/gameConfig');
-const { isAutomationOn, getPreferredSeed, getAutomation, getPlantingStrategy, getBagSeedPriority, getBagSeedFallbackStrategy } = require('../../models/store');
+const { getPlantNameBySeedId, formatGrowTime, getPlantGrowTime, getAllSeeds, getPlantBySeedId } = require('../../config/gameConfig');
+const { getPreferredSeed, getAutomation, getPlantingStrategy, getBagSeedPriority, getBagSeedFallbackStrategy } = require('../../models/store');
 const { getUserState, getWsErrorState, sendMsgAsync } = require('../../utils/network');
-const { toNum, toLong, toTimeSec, getServerTimeSec, log, logWarn, sleep } = require('../../utils/utils');
+const { toNum, getServerTimeSec, log, logWarn, sleep } = require('../../utils/utils');
 const { types } = require('../../utils/proto');
-const { PHASE_NAMES, PlantPhase } = require('../../config/config');
 const { getPlantRankings } = require('../analytics');
 const { recordOperation } = require('../stats');
 const { getBagSeeds } = require('../warehouse');
 const { getAllLands, buyGoods, removePlant } = require('./api');
 const {
-    getCurrentPhase,
+    buildLandDetail,
     analyzeLands,
     buildLandMap,
-    getDisplayLandContext,
     summarizeLandDetails,
     getOrganicFertilizerTargetsFromLands,
     getFastMatureLands,
@@ -26,7 +24,6 @@ const {
     formatFertilizerLandTypes,
     filterLandIdsByTypes,
     getLandTypeByLevel,
-    resolveRemovableHarvestedLands,
     buildPlantingLayouts,
     selectNonOverlappingLayouts,
     resolveOccupiedLandIds,
@@ -44,6 +41,9 @@ interface PlantSeedsResult {
     reservedLandIds: number[];
     uncertain: boolean;
 }
+
+const NORMAL_FERTILIZER_ID: number = 1011;
+const ALL_FERTILIZER_LAND_TYPES: string[] = ['gold', 'black', 'red', 'normal'];
 
 function confirmsPlantedFootprint(
     expectedLandIds: Set<number>,
@@ -520,146 +520,12 @@ async function getLandsDetail(): Promise<{ lands: any[]; summary: any }> {
         const landsReply = await getAllLands();
         if (!landsReply.lands) return { lands: [], summary: {} };
         const nowSec: number = getServerTimeSec();
-        const lands: any[] = [];
         const landsMap = buildLandMap(landsReply.lands);
-
-        for (const land of landsReply.lands) {
-            const id = toNum(land.id);
-            const level = toNum(land.level);
-            const maxLevel = toNum(land.max_level);
-            const landsLevel = toNum(land.lands_level);
-            const landSize = toNum(land.land_size);
-            const couldUnlock = !!land.could_unlock;
-            const couldUpgrade = !!land.could_upgrade;
-            const {
-                sourceLand,
-                occupiedByMaster,
-                masterLandId,
-                occupiedLandIds,
-            } = getDisplayLandContext(land, landsMap);
-            if (!land.unlocked) {
-                lands.push({
-                    id,
-                    unlocked: false,
-                    status: 'locked',
-                    plantName: '',
-                    phaseName: '',
-                    level,
-                    maxLevel,
-                    landsLevel,
-                    landSize,
-                    couldUnlock,
-                    couldUpgrade,
-                    currentSeason: 0,
-                    totalSeason: 0,
-                    occupiedByMaster: false,
-                    masterLandId: 0,
-                    occupiedLandIds: [],
-                    plantSize: 1,
-                });
-                continue;
-            }
-            const plant = sourceLand && sourceLand.plant;
-            if (!plant || !plant.phases || plant.phases.length === 0) {
-                lands.push({
-                    id,
-                    unlocked: true,
-                    status: 'empty',
-                    plantName: '',
-                    phaseName: '空地',
-                    level,
-                    maxLevel,
-                    landsLevel,
-                    landSize,
-                    couldUnlock,
-                    couldUpgrade,
-                    currentSeason: 0,
-                    totalSeason: 0,
-                    occupiedByMaster,
-                    masterLandId,
-                    occupiedLandIds,
-                    plantSize: 1,
-                });
-                continue;
-            }
-            const currentPhase = getCurrentPhase(plant.phases, false, '');
-            if (!currentPhase) {
-                lands.push({
-                    id,
-                    unlocked: true,
-                    status: 'empty',
-                    plantName: '',
-                    phaseName: '',
-                    level,
-                    maxLevel,
-                    landsLevel,
-                    landSize,
-                    couldUnlock,
-                    couldUpgrade,
-                    currentSeason: 0,
-                    totalSeason: 0,
-                    occupiedByMaster,
-                    masterLandId,
-                    occupiedLandIds,
-                    plantSize: 1,
-                });
-                continue;
-            }
-            const phaseVal = currentPhase.phase;
-            const plantId = toNum(plant.id);
-            const plantName = getPlantName(plantId) || plant.name || '未知';
-            const plantCfg = getPlantById(plantId);
-            const seedId = toNum(plantCfg && plantCfg.seed_id);
-            const seedImage = seedId > 0 ? getSeedImageBySeedId(seedId) : '';
-            const plantSize = Math.max(1, toNum(plantCfg && plantCfg.size) || 1);
-            const totalSeason = Math.max(1, toNum(plantCfg && plantCfg.seasons) || 1);
-            const currentSeasonRaw = toNum(plant.season);
-            const currentSeason = currentSeasonRaw > 0 ? Math.min(currentSeasonRaw, totalSeason) : 1;
-            const phaseName = PHASE_NAMES[phaseVal] || '';
-            const maturePhase = Array.isArray(plant.phases)
-                ? plant.phases.find((p: any) => p && toNum(p.phase) === PlantPhase.MATURE)
-                : null;
-            const matureBegin = maturePhase ? toTimeSec(maturePhase.begin_time) : 0;
-            const matureInSec = matureBegin > nowSec ? (matureBegin - nowSec) : 0;
-            const totalGrowTime = getPlantGrowTime(plantId);
-
-            let landStatus = 'growing';
-            if (phaseVal === PlantPhase.MATURE) landStatus = 'harvestable';
-            else if (phaseVal === PlantPhase.DEAD) landStatus = 'dead';
-            else if (phaseVal === PlantPhase.UNKNOWN || !plant.phases.length) landStatus = 'empty';
-
-            const needWater = (toNum(plant.dry_num) > 0) || (toTimeSec(currentPhase.dry_time) > 0 && toTimeSec(currentPhase.dry_time) <= nowSec);
-            const needWeed = (plant.weed_owners && plant.weed_owners.length > 0) || (toTimeSec(currentPhase.weeds_time) > 0 && toTimeSec(currentPhase.weeds_time) <= nowSec);
-            const needBug = (plant.insect_owners && plant.insect_owners.length > 0) || (toTimeSec(currentPhase.insect_time) > 0 && toTimeSec(currentPhase.insect_time) <= nowSec);
-
-            lands.push({
-                id,
-                unlocked: true,
-                status: landStatus,
-                plantName,
-                seedId,
-                seedImage,
-                phaseName,
-                currentSeason,
-                totalSeason,
-                matureInSec,
-                totalGrowTime,
-                needWater,
-                needWeed,
-                needBug,
-                stealable: !!plant.stealable,
-                level,
-                maxLevel,
-                landsLevel,
-                landSize,
-                couldUnlock,
-                couldUpgrade,
-                occupiedByMaster,
-                masterLandId,
-                occupiedLandIds,
-                plantSize,
-            });
-        }
+        const lands: any[] = landsReply.lands.map((land: any) => buildLandDetail(land, {
+            friendMode: false,
+            landsMap,
+            nowSec,
+        }));
 
         return {
             lands,
@@ -998,13 +864,6 @@ async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNo
 
     return { normal: fertilizedNormal, organic: fertilizedOrganic };
 }
-
-// 普通肥料ID
-const NORMAL_FERTILIZER_ID: number = 1011;
-// 有机肥料 ID
-const ORGANIC_FERTILIZER_ID: number = 1012;
-// 金黑红普通土地类型
-const ALL_FERTILIZER_LAND_TYPES: string[] = ['gold', 'black', 'red', 'normal'];
 
 module.exports = {
     getPlantSizeBySeedId,

@@ -285,6 +285,8 @@ test('Qixi dew targets only the captured 2x2 master land', () => {
     ));
     assert.equal(number(reply.land.id), 5);
     assert.equal(reply.land.plant.name, '梧桐');
+    assert.deepEqual(reply.land.plant.mutant_config_ids.map(number), [13]);
+    assert.deepEqual(reply.land.plant.extended_mutations.map(record => number(record.mutant_config_id)), [13]);
     assert.equal(number(reply.land_reward.land_id), 5);
     assert.deepEqual(reply.land_reward.items.map(item => number(item.id)), [1024]);
     assert.deepEqual(reply.land_reward.items.map(item => number(item.count)), [1]);
@@ -292,6 +294,7 @@ test('Qixi dew targets only the captured 2x2 master land', () => {
 
 test('football and golden insect use the captured generic item target protocol', () => {
     const requestType = type('gamepb.itempb.UseRequest');
+    const plantType = type('gamepb.plantpb.PlantInfo');
     const captures = [
         {
             hex: '0a0908aeb012100130f452120908db93dcdd03120106',
@@ -299,6 +302,8 @@ test('football and golden insect use the captured generic item target protocol',
             uid: 10612,
             hostGid: 1001851355,
             landId: 6,
+            effectType: 3,
+            plantHex: '9a021408aeb01210011803209082b7e10328ee9d92d406b2021208aeb012109082b7e10318ee9d92d4062006c2020408021001',
         },
         {
             hex: '0a0908adb012100130ba3d120908db93dcdd03120114',
@@ -306,6 +311,8 @@ test('football and golden insect use the captured generic item target protocol',
             uid: 7866,
             hostGid: 1001851355,
             landId: 20,
+            effectType: 2,
+            plantHex: '9a021408adb01210011802209082b7e10328a59e92d406b2021208adb012109082b7e10318a59e92d4062014c2020408011001',
         },
     ];
 
@@ -318,5 +325,13 @@ test('football and golden insect use the captured generic item target protocol',
         assert.deepEqual(decoded.target.land_ids.map(number), [capture.landId]);
         assert.equal(number(decoded.target.use_config_id), 0);
         assert.equal(Buffer.from(requestType.encode(decoded).finish()).toString('hex'), capture.hex);
+
+        const plant = plantType.decode(hex(capture.plantHex));
+        assert.equal(number(plant.interaction_uses[0].item_id), capture.itemId);
+        assert.equal(number(plant.interaction_uses[0].effect_type), capture.effectType);
+        assert.equal(number(plant.interaction_targets[0].item_id), capture.itemId);
+        assert.equal(number(plant.interaction_targets[0].land_id), capture.landId);
+        assert.equal(number(plant.field_40.value_2), 1);
+        assert.equal(Buffer.from(plantType.encode(plant).finish()).toString('hex'), capture.plantHex);
     }
 });

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { FriendInteractionItemDto } from '@/stores/friend'
+import type { FriendInteractionItemDto, FriendInteractionResultDto } from '@/stores/friend'
 import { useIntervalFn } from '@vueuse/core'
 import { NButton, NButtonGroup, NCard, NModal, NPagination, NSpin, NTab, NTabs } from 'naive-ui'
 import { storeToRefs } from 'pinia'
@@ -164,7 +164,7 @@ async function onConfirm() {
 const expandedFriends = ref<Set<string>>(new Set())
 const selectedInteractionItemId = ref('')
 const selectedInteractionLandIds = ref<Record<string, string[]>>({})
-const lastInteractionResults = ref<Record<string, Array<{ landId: string, ok: boolean, message: string }>>>({})
+const lastInteractionResults = ref<Record<string, FriendInteractionResultDto[]>>({})
 const clockNow = ref(Date.now())
 const currentPage = ref(1)
 const pageSize = 25
@@ -348,7 +348,6 @@ function requestUseInteractionItem(friend: any) {
       }
       const used = new Set(result.usedLandIds || [])
       setSelectedInteractionIds(key, landIds.filter(landId => !used.has(landId)), item.itemId)
-      await friendStore.fetchFriendLands(accountId, key)
       const successCount = Number(result.successCount || 0)
       const failureCount = Number(result.failureCount || 0)
       if (successCount > 0 && failureCount === 0)

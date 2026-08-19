@@ -73,7 +73,9 @@ function installMocks(options = {}) {
                 },
             },
             UseReply: {
-                decode: () => ({ used_items: [], items: [] }),
+                decode: () => typeof options.useReply === 'function'
+                    ? options.useReply(encodedUseRequests.at(-1))
+                    : (options.useReply || { used_items: [], items: [] }),
             },
         },
     });
@@ -94,6 +96,32 @@ function installMocks(options = {}) {
             sourceLand: land,
             occupiedByMaster: false,
             occupiedLandIds: [Number(land.id)],
+        }),
+        getPlantInteractionEffects: (plant) => {
+            const uses = Array.isArray(plant?.interaction_uses) ? plant.interaction_uses : [];
+            const targets = Array.isArray(plant?.interaction_targets) ? plant.interaction_targets : [];
+            return uses.map(use => {
+                const target = targets.find(value => Number(value.item_id) === Number(use.item_id)) || {};
+                return {
+                    itemId: String(use.item_id),
+                    itemName: Number(use.item_id) === 301101 ? '黄金虫' : `道具${use.item_id}`,
+                    effectType: Number(use.effect_type) || 0,
+                    landId: String(target.land_id || ''),
+                    usedAt: String(use.timestamp || ''),
+                    confirmed: true,
+                    source: 'protocol-land',
+                };
+            });
+        },
+        buildLandDetail: land => ({
+            id: Number(land.id),
+            unlocked: !!land.unlocked,
+            status: 'growing',
+            plantName: land?.plant?.name || '',
+            occupiedLandIds: [Number(land.id)],
+            mutantConfigIds: [],
+            isMutated: false,
+            interactionEffects: [],
         }),
     });
     require.cache[friendApiPath] = loadedModule(friendApiPath, {
@@ -180,6 +208,31 @@ test('黄金虫在一次好友会话内按地块编号顺序使用，服务端�
     const mock = installMocks({
         metadata: [specialItem(301101, '黄金虫')],
         bagItems: [{ id: 301101, count: 3, uid: 11 }],
+        useReply: request => ({
+            used_items: [{ id: 301101, count: 1 }],
+            land: {
+                id: Number(request.target.land_ids[0]),
+                unlocked: true,
+                plant: {
+                    id: 9001,
+                    name: '测试作物',
+                    phases: [{ phase: 2 }],
+                    interaction_uses: [{
+                        item_id: 301101,
+                        count: 1,
+                        effect_type: 2,
+                        host_gid: 999,
+                        timestamp: 123,
+                    }],
+                    interaction_targets: [{
+                        item_id: 301101,
+                        host_gid: 999,
+                        timestamp: 123,
+                        land_id: Number(request.target.land_ids[0]),
+                    }],
+                },
+            },
+        }),
         onItemUse: (request, MockGatewayError) => {
             if (Number(request.target.land_ids[0]) === 2) {
                 throw new MockGatewayError(1003008, '达到使用限制');
@@ -202,6 +255,10 @@ test('黄金虫在一次好友会话内按地块编号顺序使用，服务端�
         assert.deepEqual(result.usedLandIds, ['1', '3']);
         assert.deepEqual(result.failedLandIds, ['2']);
         assert.match(result.results[1].message, /达到.*使用限制/);
+        assert.deepEqual(result.updatedLands.map(land => land.id), [1, 3]);
+        assert.deepEqual(result.interactionEffects.map(effect => effect.landId), ['1', '3']);
+        assert.equal(result.results[0].interactionEffects[0].effectType, 2);
+        assert.equal(result.results[0].interactionEffects[0].source, 'protocol-land');
     } finally {
         mock.restore();
     }
@@ -211,6 +268,20 @@ test('灵露在售卖条件已满足时仍提交 ItemService.Use，由服务端�
     const mock = installMocks({
         metadata: [specialItem(301103, '鹊羽灵露', { sell_cond: '活动结束后:2026081801' })],
         bagItems: [{ id: 301103, count: 1, uid: 77 }],
+        useReply: request => ({
+            used_items: [{ id: 301103, count: 1 }],
+            land: {
+                id: Number(request.target.land_ids[0]),
+                unlocked: true,
+                plant: {
+                    id: 9003,
+                    name: '活动作物',
+                    phases: [{ phase: 2 }],
+                    interaction_uses: [{ item_id: 301102, effect_type: 3, timestamp: 100 }],
+                    interaction_targets: [{ item_id: 301102, land_id: 3, timestamp: 100 }],
+                },
+            },
+        }),
         sellContext: {
             nowSec: 200,
             activityWindows: new Map([
@@ -238,6 +309,16 @@ test('灵露在售卖条件已满足时仍提交 ItemService.Use，由服务端�
         assert.equal(mock.calls.some(call => call.startsWith('PlantSocial:')), false);
         assert.equal(mock.calls.filter(call => call === 'Enter').length, 1);
         assert.equal(mock.calls.filter(call => call === 'Leave').length, 1);
+        assert.equal(result.updatedLands[0].id, 3);
+        assert.deepEqual(result.interactionEffects[0], {
+            landId: '3',
+            itemId: '301103',
+            itemName: '鹊羽灵露',
+            plantId: '9003',
+            effectType: 0,
+            confirmed: true,
+            source: 'use-reply',
+        });
     } finally {
         mock.restore();
     }

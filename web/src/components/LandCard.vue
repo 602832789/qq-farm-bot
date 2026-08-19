@@ -128,6 +128,33 @@ function activateSelection() {
   if (props.selectable && !props.selectionDisabled)
     emit('select', props.land)
 }
+
+function interactionEffectBadges(land: any) {
+  const effects = Array.isArray(land?.interactionEffects) ? land.interactionEffects : []
+  const seen = new Set<string>()
+  return effects
+    .filter((effect: any) => effect?.confirmed && effect?.itemId)
+    .map((effect: any) => ({
+      itemId: String(effect.itemId),
+      name: String(effect.itemName || `道具${effect.itemId}`),
+    }))
+    .filter((effect: any) => {
+      if (seen.has(effect.itemId))
+        return false
+      seen.add(effect.itemId)
+      return true
+    })
+}
+
+function interactionBadgeClass(itemId: string) {
+  if (itemId === '301101')
+    return 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
+  if (itemId === '301102')
+    return 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300'
+  if (itemId === '301103')
+    return 'bg-pink-100 text-pink-800 dark:bg-pink-900/40 dark:text-pink-300'
+  return 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200'
+}
 </script>
 
 <template>
@@ -227,24 +254,40 @@ function activateSelection() {
     </div>
 
     <!-- Status Badges (game-style) -->
-    <div class="mt-auto flex items-center gap-1 pt-1">
+    <div class="mt-auto flex flex-wrap items-center justify-center gap-1 pt-1">
+      <span
+        v-if="land.isMutated"
+        class="inline-flex items-center gap-0.5 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] text-violet-800 font-bold dark:bg-violet-900/40 dark:text-violet-300"
+        title="协议已确认存在变异配置"
+      >
+        <span class="i-carbon-star" /> 变异
+      </span>
+      <span
+        v-for="effect in interactionEffectBadges(land)"
+        :key="effect.itemId"
+        class="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold"
+        :class="interactionBadgeClass(effect.itemId)"
+        :title="`${effect.name}：本次会话已确认`"
+      >
+        <span class="i-carbon-checkmark-outline" /> {{ effect.name }}
+      </span>
       <span
         v-if="land.needWater"
         class="badge-water inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold"
       >
-        <span class="i-carbon-rain-drop" />
+        <span class="i-carbon-rain-drop" /> 缺水
       </span>
       <span
         v-if="land.needWeed"
         class="inline-flex items-center gap-0.5 rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] text-green-700 font-bold dark:bg-green-900/40 dark:text-green-300"
       >
-        <span class="i-carbon-clean" />
+        <span class="i-carbon-clean" /> 杂草
       </span>
       <span
         v-if="land.needBug"
         class="badge-bug inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold"
       >
-        <span class="i-carbon-debug" />
+        <span class="i-carbon-debug" /> 虫害
       </span>
       <span
         v-if="land.status === 'harvestable'"
@@ -257,6 +300,12 @@ function activateSelection() {
         class="inline-flex items-center gap-0.5 rounded-full bg-purple-100 px-1.5 py-0.5 text-[10px] text-purple-700 font-bold dark:bg-purple-900/40 dark:text-purple-300"
       >
         <span class="i-carbon-touch-1" /> 可偷
+      </span>
+      <span
+        v-if="land.status === 'harvested'"
+        class="inline-flex items-center gap-0.5 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-700 font-bold dark:bg-gray-700 dark:text-gray-200"
+      >
+        <span class="i-carbon-wheat" /> 成熟不可偷
       </span>
     </div>
   </div>

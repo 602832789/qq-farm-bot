@@ -2,8 +2,8 @@
  * 拜访好友策略 - 访问逻辑、好友分析、错误处理、安静时段
  */
 
-const { PlantPhase, PHASE_NAMES } = require('../../config/config');
-const { getPlantName, getPlantById, getSeedImageBySeedId, getPlantGrowTime } = require('../../config/gameConfig');
+const { PlantPhase } = require('../../config/config');
+const { getPlantName, getPlantById } = require('../../config/gameConfig');
 const {
     isAutomationOn,
     getFriendQuietHours,
@@ -12,9 +12,15 @@ const {
     getFriendsListCacheTtlSec,
 } = require('../../models/store');
 const { getUserState } = require('../../utils/network');
-const { toNum, toTimeSec, getServerTimeSec, getSystemClockMinutes, log, logWarn, sleep, randomDelay } = require('../../utils/utils');
+const { toNum, getServerTimeSec, getSystemClockMinutes, log, logWarn, sleep, randomDelay } = require('../../utils/utils');
 const { types } = require('../../utils/proto');
-const { getCurrentPhase, buildLandMap, getDisplayLandContext, isOccupiedSlaveLand } = require('../farm');
+const {
+    getCurrentPhase,
+    buildLandMap,
+    buildLandDetail,
+    getPlantStatusFlags,
+    isOccupiedSlaveLand,
+} = require('../farm');
 const { recordOperation } = require('../stats');
 const { sellAllFruits } = require('../warehouse');
 const {
@@ -316,9 +322,10 @@ export function analyzeFriendLands(lands: any[], myGid: number, friendName: stri
         if (phaseVal === PlantPhase.DEAD) continue;
 
         // 帮助操作
-        if (toNum(plant.dry_num) > 0) result.needWater.push(id);
-        if (plant.weed_owners && plant.weed_owners.length > 0) result.needWeed.push(id);
-        if (plant.insect_owners && plant.insect_owners.length > 0) result.needBug.push(id);
+        const statusFlags = getPlantStatusFlags(plant, currentPhase);
+        if (statusFlags.needWater) result.needWater.push(id);
+        if (statusFlags.needWeed) result.needWeed.push(id);
+        if (statusFlags.needBug) result.needBug.push(id);
 
         // 捣乱操作: 检查是否可以放草/放虫
         // 条件: 植物未成熟 + 没有草/虫且我没放过 + 每块地最多2个草/虫
@@ -420,112 +427,13 @@ export async function getFriendLandsDetail(friendGid: number): Promise<any> {
         const plantBlacklist: number[] = getPlantBlacklist(state.accountId);
         const analyzed: AnalyzeResult = analyzeFriendLands(lands, state.gid, '', { plantBlacklist });
 
-        const landsList: any[] = [];
         const nowSec: number = getServerTimeSec();
         const landsMap: any = buildLandMap(lands);
-        for (const land of lands) {
-            const id: number = toNum(land.id);
-            const level: number = toNum(land.level);
-            const unlocked: boolean = !!land.unlocked;
-            const {
-                sourceLand,
-                occupiedByMaster,
-                masterLandId,
-                occupiedLandIds,
-            } = getDisplayLandContext(land, landsMap);
-            if (!unlocked) {
-                landsList.push({
-                    id,
-                    unlocked: false,
-                    status: 'locked',
-                    plantName: '',
-                    phaseName: '未解锁',
-                    level,
-                    needWater: false,
-                    needWeed: false,
-                    needBug: false,
-                    occupiedByMaster: false,
-                    masterLandId: 0,
-                    occupiedLandIds: [],
-                    plantSize: 1,
-                });
-                continue;
-            }
-            const plant: any = sourceLand && sourceLand.plant;
-            if (!plant || !plant.phases || plant.phases.length === 0) {
-                landsList.push({
-                    id,
-                    unlocked: true,
-                    status: 'empty',
-                    plantName: '',
-                    phaseName: '空地',
-                    level,
-                    occupiedByMaster,
-                    masterLandId,
-                    occupiedLandIds,
-                    plantSize: 1,
-                });
-                continue;
-            }
-            const currentPhase: any = getCurrentPhase(plant.phases, false, '');
-            if (!currentPhase) {
-                landsList.push({
-                    id,
-                    unlocked: true,
-                    status: 'empty',
-                    plantName: '',
-                    phaseName: '',
-                    level,
-                    occupiedByMaster,
-                    masterLandId,
-                    occupiedLandIds,
-                    plantSize: 1,
-                });
-                continue;
-            }
-            const phaseVal: number = currentPhase.phase;
-            const plantId: number = toNum(plant.id);
-            const plantName: string = getPlantName(plantId) || plant.name || '未知';
-            const plantCfg: any = getPlantById(plantId);
-            const seedId: number = toNum(plantCfg && plantCfg.seed_id);
-            const seedImage: string = seedId > 0 ? getSeedImageBySeedId(seedId) : '';
-            const plantSize: number = Math.max(1, toNum(plantCfg && plantCfg.size) || 1);
-            const totalSeason: number = Math.max(1, toNum(plantCfg && plantCfg.seasons) || 1);
-            const currentSeasonRaw: number = toNum(plant.season);
-            const currentSeason: number = currentSeasonRaw > 0 ? Math.min(currentSeasonRaw, totalSeason) : 1;
-            const phaseName: string = PHASE_NAMES[phaseVal] || '';
-            const maturePhase: any = Array.isArray(plant.phases)
-                ? plant.phases.find((p: any) => p && toNum(p.phase) === PlantPhase.MATURE)
-                : null;
-            const matureBegin: number = maturePhase ? toTimeSec(maturePhase.begin_time) : 0;
-            const matureInSec: number = matureBegin > nowSec ? (matureBegin - nowSec) : 0;
-            const totalGrowTime: number = getPlantGrowTime(plantId);
-            let landStatus: string = 'growing';
-            if (phaseVal === PlantPhase.MATURE) landStatus = plant.stealable ? 'stealable' : 'harvested';
-            else if (phaseVal === PlantPhase.DEAD) landStatus = 'dead';
-
-            landsList.push({
-                id,
-                unlocked: true,
-                status: landStatus,
-                plantName,
-                seedId,
-                seedImage,
-                phaseName,
-                currentSeason,
-                totalSeason,
-                level,
-                matureInSec,
-                totalGrowTime,
-                needWater: toNum(plant.dry_num) > 0,
-                needWeed: (plant.weed_owners && plant.weed_owners.length > 0),
-                needBug: (plant.insect_owners && plant.insect_owners.length > 0),
-                occupiedByMaster,
-                masterLandId,
-                occupiedLandIds,
-                plantSize,
-            });
-        }
+        const landsList: any[] = lands.map((land: any) => buildLandDetail(land, {
+            friendMode: true,
+            landsMap,
+            nowSec,
+        }));
 
         return {
             lands: landsList,
