@@ -153,7 +153,7 @@ function registerAdminAccountRoutes({
     }
   });
 
-  app.post("/api/accounts", (req, res) => {
+  app.post("/api/accounts", async (req, res) => {
     try {
       const body = req.body && typeof req.body === "object" ? req.body : {};
       const currentUser = req.currentUser;
@@ -185,6 +185,26 @@ function registerAdminAccountRoutes({
         ? { ...body, id: resolvedId || String(body.id) }
         : body;
 
+      // 扫码凭证只允许由同一登录用户持有的短期会话写入账号。
+      if (body.wxSessionId && body.wxid && currentUser) {
+        const wxLoginAdapter = require("../services/wx-login-adapter");
+        const pending = wxLoginAdapter.peekPendingWxInfo(
+          body.wxSessionId,
+          body.wxid,
+          currentUser.username,
+        );
+        if (!pending) {
+          return res.status(400).json({ ok: false, error: "微信扫码会话无效或已过期，请重新扫码" });
+        }
+        Object.assign(nextAccount, {
+          loginBuffer: pending.loginBuffer,
+          refreshtoken: pending.refreshtoken,
+          accesstoken: pending.accesstoken,
+          avatar: pending.avatar || nextAccount.avatar || "",
+          wxDefaultsApplied: true,
+        });
+      }
+
       let wasRunning = false;
       if (isUpdate && provider.isAccountRunning) {
         wasRunning = provider.isAccountRunning(nextAccount.id);
@@ -205,6 +225,10 @@ function registerAdminAccountRoutes({
 
       if (!isUpdate && currentUser) nextAccount.username = currentUser.username;
       const data = addOrUpdateAccount(nextAccount);
+      if (body.wxSessionId && body.wxid && currentUser) {
+        const wxLoginAdapter = require("../services/wx-login-adapter");
+        wxLoginAdapter.consumePendingWxInfo(body.wxSessionId, body.wxid, currentUser.username);
+      }
       if (provider.addAccountLog) {
         const accountId = isUpdate
           ? String(nextAccount.id)
@@ -218,14 +242,33 @@ function registerAdminAccountRoutes({
         );
       }
 
+      let autoRefreshEnabled = false;
+      let started = false;
       if (!isUpdate) {
         const created = data.accounts.at(-1);
-        if (created) provider.startAccount(created.id);
+        if (created) {
+          const isNativeWxScan = created.platform === "wx"
+            && created.loginType === "wx_qr"
+            && !!body.wxSessionId;
+          if (isNativeWxScan && typeof provider.saveAutoCodeRefresh === "function") {
+            await provider.saveAutoCodeRefresh(created.id, {
+              enabled: true,
+              intervalMinutes: 60,
+            });
+            autoRefreshEnabled = true;
+          }
+          started = await provider.startAccount(created.id);
+        }
       } else if (wasRunning && !onlyRenaming) {
         provider.restartAccount(nextAccount.id);
       }
 
-      res.json({ ok: true, data });
+      // 使用 provider 的脱敏结果，避免把微信滚动凭证返回浏览器。
+      res.json({
+        ok: true,
+        data: provider.getAccounts(),
+        startup: { started, autoRefreshEnabled },
+      });
     } catch (error) {
       res.status(500).json({ ok: false, error: error.message });
     }

@@ -1442,6 +1442,10 @@ function addOrUpdateAccount(account) {
             platform: account.platform || 'qq',
             loginType: account.loginType || 'manual',
             wxid: account.wxid ? String(account.wxid) : '',
+            loginBuffer: account.loginBuffer ? String(account.loginBuffer) : '',
+            refreshtoken: account.refreshtoken ? String(account.refreshtoken) : '',
+            accesstoken: account.accesstoken ? String(account.accesstoken) : '',
+            wxDefaultsApplied: account.wxDefaultsApplied === true,
             uin: account.uin ? String(account.uin) : '',
             qq: account.qq ? String(account.qq) : (account.uin ? String(account.uin) : ''),
             gid: account.gid ? String(account.gid) : '',
@@ -1665,7 +1669,7 @@ function setLoginLinks(config) {
 // ==================== 微信配置 ====================
 
 const DEFAULT_WX_CONFIG = {
-    enabled: false,
+    enabled: true,
     apiBase: 'https://code.z74d.top/api',
     apiKey: '',
     proxyApiUrl: 'https://code.z74d.top/api',

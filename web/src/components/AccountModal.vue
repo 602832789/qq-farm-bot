@@ -141,6 +141,7 @@ const { pause: stopWxCheck, resume: startWxCheck } = useIntervalFn(async () => {
             loginType: 'wx_qr',
             wxid: result.wxid,
             avatar: result.avatar,
+            wxSessionId: wxLoginStore.uuid,
           })
         }
         else {
@@ -300,7 +301,7 @@ function shouldRefreshWxQr() {
 }
 
 async function loadWxQRCode() {
-  if (activeTab.value !== 'wx')
+  if (activeTab.value !== 'wx' || wxLoginStore.isLoading)
     return
   stopWxCheck()
   wxLoginStore.resetState()
@@ -464,7 +465,6 @@ watch(activeTab, (tab) => {
             手动填码
           </button>
           <button
-            v-if="wxLoginStore.config.enabled"
             class="flex-1 py-2 text-center text-sm font-medium transition-colors"
             :class="activeTab === 'wx' ? 'border-b-2' : 'opacity-60'"
             :style="{
@@ -506,8 +506,13 @@ watch(activeTab, (tab) => {
             </div>
             <div
               v-else
-              class="h-48 w-48 flex items-center justify-center rounded-lg"
+              class="h-48 w-48 flex cursor-pointer items-center justify-center rounded-lg transition-opacity hover:opacity-80"
               :style="{ background: 'color-mix(in srgb, var(--theme-bg) 90%, var(--theme-text))' }"
+              role="button"
+              tabindex="0"
+              @click="loadWxQRCode"
+              @keydown.enter.prevent="loadWxQRCode"
+              @keydown.space.prevent="loadWxQRCode"
             >
               <div v-if="wxLoginStore.isLoading" i-svg-spinners-90-ring-with-bg class="text-3xl" :style="{ color: 'var(--theme-primary)' }" />
               <span v-else class="text-sm" :style="{ color: 'var(--theme-text)' }">点击获取二维码</span>
@@ -522,7 +527,7 @@ watch(activeTab, (tab) => {
             </p>
 
             <BaseButton variant="secondary" size="sm" :loading="wxLoginStore.isLoading" @click="loadWxQRCode">
-              刷新二维码
+              {{ wxLoginStore.qrCode ? '刷新二维码' : '获取二维码' }}
             </BaseButton>
           </div>
 

@@ -1,4 +1,5 @@
 const fetch = require("node-fetch");
+const wxLoginAdapter = require("../services/wx-login-adapter");
 
 function trimTrailingSlash(value) {
   return String(value || "").replace(/\/+$/, "");
@@ -54,6 +55,24 @@ function registerAdminProxyRoutes({ app, logger }) {
       "wx5306c5978fdb76e4";
 
     try {
+      // 默认使用进程内应用宝协议。显式配置 apiKey 时仍保留旧代理服务作为回退。
+      if (!apiKey && ["getqr", "checkqr", "jslogin"].includes(action)) {
+        const owner = req.currentUser && req.currentUser.username;
+        let data;
+        if (action === "getqr") {
+          data = await wxLoginAdapter.getQRCode(owner);
+        } else if (action === "checkqr") {
+          data = await wxLoginAdapter.checkQR(payload.uuid, owner);
+        } else {
+          data = await wxLoginAdapter.getFarmCode(payload.wxid || payload.Wxid, {
+            sessionId: payload.sessionId || payload.uuid,
+            owner,
+            accountId: payload.accountId,
+          });
+        }
+        return res.json(data);
+      }
+
       let targetUrl = "";
       let requestBody = { ...payload };
       if (apiKey) {

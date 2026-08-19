@@ -330,6 +330,9 @@ function handleLogoFileChange(event: Event) {
           <div class="mt-1">
             用户隔离：开启后普通用户只能看到自己的账号。
           </div>
+          <div class="mt-1">
+            默认使用进程内应用宝扫码协议；填写 API 密钥后才切换到兼容代理服务。
+          </div>
         </div>
 
         <div class="mb-3 rounded-2xl bg-amber-50 px-4 py-3 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
@@ -337,7 +340,7 @@ function handleLogoFileChange(event: Event) {
         </div>
 
         <div class="mb-3 rounded-2xl bg-gray-50 px-4 py-3 text-xs text-gray-600 dark:bg-gray-900/40 dark:text-gray-300">
-          保存会立即影响扫码登录、自动添加账号与用户隔离行为，建议确认当前环境、代理地址和启用状态后再提交。
+          保存会立即影响扫码登录、自动添加账号与用户隔离行为。内置模式无需配置下方 API 地址。
         </div>
 
         <div class="grid grid-cols-2 gap-3 text-sm">
@@ -349,21 +352,21 @@ function handleLogoFileChange(event: Event) {
           </div>
           <BaseInput
             v-model="localWxConfig.apiBase"
-            label="API地址"
+            label="兼容 API 地址（可选）"
             type="text"
             placeholder="https://code.z74d.top/api"
             class="col-span-2"
           />
           <BaseInput
             v-model="localWxConfig.apiKey"
-            label="API密钥"
+            label="兼容 API 密钥"
             type="text"
             placeholder="可选，用于代理模式"
             class="col-span-2"
           />
           <BaseInput
             v-model="localWxConfig.proxyApiUrl"
-            label="代理API地址"
+            label="兼容代理 API 地址"
             type="text"
             placeholder="https://code.z74d.top/api"
             class="col-span-2"

@@ -312,6 +312,10 @@ function createDataProvider(deps) {
             data.accounts.forEach(acc => {
                 const worker = workers[acc.id];
                 acc.running = !!worker;
+                acc.hasWxCredential = !!acc.loginBuffer;
+                delete acc.loginBuffer;
+                delete acc.refreshtoken;
+                delete acc.accesstoken;
                 if (worker && worker.status && worker.status.status && worker.status.status.name) {
                     acc.nick = worker.status.status.name;
                 }
@@ -319,10 +323,15 @@ function createDataProvider(deps) {
             return data;
         },
 
-        startAccount: (ref) => {
+        startAccount: async (ref) => {
             const id = resolveAccountId(ref);
             const account = findAccount(id || ref);
             if (!account) return false;
+            if (typeof scheduleAutoCodeRefresh === 'function') scheduleAutoCodeRefresh(account.id);
+            if (account.platform === 'wx' && account.loginBuffer && typeof refreshAccountCode === 'function') {
+                const refreshed = await refreshAccountCode(account.id, 'manual_start');
+                if (refreshed) return true;
+            }
             startWorker(account);
             return true;
         },

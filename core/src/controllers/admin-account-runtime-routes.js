@@ -4,14 +4,14 @@ function registerAdminAccountRuntimeRoutes({
   resolveAccountReference,
   canAccessAccount,
 }) {
-  app.post("/api/accounts/:id/start", (req, res) => {
+  app.post("/api/accounts/:id/start", async (req, res) => {
     try {
       const accountId = resolveAccountReference(req.params.id);
       if (!canAccessAccount(req, accountId)) {
         return res.status(403).json({ ok: false, error: "无权访问此账号" });
       }
 
-      const started = provider.startAccount(accountId);
+      const started = await provider.startAccount(accountId);
       if (!started) {
         return res.status(404).json({ ok: false, error: "Account not found" });
       }

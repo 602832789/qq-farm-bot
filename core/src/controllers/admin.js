@@ -75,7 +75,6 @@ const PUBLIC_API_PATHS = new Set([
   "/login",
   "/qr/create",
   "/qr/check",
-  "/proxy",
   "/card-claim/status",
   "/card-claim/claim",
   "/game-version",

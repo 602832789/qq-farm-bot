@@ -22,6 +22,7 @@ function createWorkerManager(deps) {
         triggerOfflineReminder,
         addOrUpdateAccount,
         deleteAccount,
+        scheduleAutoRelogin,
         onStatusSync,
         onWorkerLog
     } = deps;
@@ -466,6 +467,9 @@ function createWorkerManager(deps) {
                 accountId, wrk.name, { reason });
 
             stopWorker(accountId);
+            if (typeof scheduleAutoRelogin === 'function') {
+                scheduleAutoRelogin(accountId, `kickout:${reason}`);
+            }
         } else if (msg.type === 'ws_reconnect_failed') {
             const reason = msg.reason || '未知';
             log('系统', `账号 ${  wrk.name  } 连接多次重试失败，已自动停止账号`, {
@@ -484,6 +488,9 @@ function createWorkerManager(deps) {
                 accountId, wrk.name, { reason });
 
             stopWorker(accountId);
+            if (typeof scheduleAutoRelogin === 'function') {
+                scheduleAutoRelogin(accountId, `ws_reconnect_failed:${reason}`);
+            }
         } else if (msg.type === 'automation_patch') {
             const patch = msg.patch && typeof msg.patch === 'object' ? msg.patch : {};
             if ((patch.automation && typeof patch.automation === 'object')

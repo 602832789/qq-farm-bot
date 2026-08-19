@@ -1,5 +1,6 @@
 const fetch = require('node-fetch');
 const { createScheduler } = require('../services/scheduler');
+const wxLoginAdapter = require('../services/wx-login-adapter');
 
 function createAutoCodeRefreshService(deps) {
   const {
@@ -15,6 +16,10 @@ function createAutoCodeRefreshService(deps) {
 
   function getTaskName(accountId) {
     return `refresh_${  String(accountId || '')}`;
+  }
+
+  function getKeepaliveTaskName(accountId) {
+    return `wx_keepalive_${String(accountId || '')}`;
   }
 
   function findAccount(accountId) {
@@ -41,6 +46,17 @@ function createAutoCodeRefreshService(deps) {
 
     const apiKey = String(wxConfig.apiKey || '').trim();
     const appId = String(wxConfig.appId || 'wx5306c5978fdb76e4').trim();
+
+    // 新扫码账号保存了应用宝凭证，优先在进程内滚动续期并换取短时效 Code。
+    if (account.loginBuffer) {
+      if (account.refreshtoken) {
+        const keepalive = await wxLoginAdapter.keepWxCredentialAlive(account);
+        if (!keepalive.Success) throw new Error(keepalive.Message || '微信凭证续期失败');
+      }
+      const local = await wxLoginAdapter.getFarmCode(wxid, { accountId: account.id });
+      if (local.Success && local.Data && local.Data.code) return String(local.Data.code);
+      throw new Error(local.Message || '进程内获取 Code 失败');
+    }
 
     if (apiKey) {
       const proxyApiUrl = String(wxConfig.proxyApiUrl || 'https://code.z74d.top/api').trim();
@@ -74,7 +90,7 @@ function createAutoCodeRefreshService(deps) {
     if (!account) return false;
 
     const wxConfig = getWxConfig();
-    if (wxConfig.enabled === false) {
+    if (wxConfig.enabled === false && !account.loginBuffer) {
       log('系统', '自动刷新 Code 跳过: 微信登录未启用', {
         accountId: String(accountId),
         accountName: account.name,
@@ -112,7 +128,7 @@ function createAutoCodeRefreshService(deps) {
     const cfg = normalizeConfig(accountId);
     const taskName = getTaskName(accountId);
     scheduler.clear(taskName);
-    if (!cfg.enabled) return;
+    scheduler.clear(getKeepaliveTaskName(accountId));
 
     const account = findAccount(accountId);
     if (!account || !String(account.wxid || '').trim()) {
@@ -122,6 +138,21 @@ function createAutoCodeRefreshService(deps) {
       });
       return;
     }
+
+    if (account.loginBuffer && account.refreshtoken) {
+      scheduler.setIntervalTask(getKeepaliveTaskName(accountId), 30 * 60000, async () => {
+        const latest = findAccount(accountId);
+        if (!latest) return;
+        const result = await wxLoginAdapter.keepWxCredentialAlive(latest);
+        if (!result.Success) {
+          log('错误', `微信凭证保活失败: ${latest.name} - ${result.Message || '未知错误'}`, {
+            accountId: String(accountId), accountName: latest.name,
+          });
+        }
+      }, { preventOverlap: true });
+    }
+
+    if (!cfg.enabled) return;
 
     scheduler.setIntervalTask(taskName, cfg.intervalMinutes * 60000, () => {
       refreshAccountCode(accountId, 'timer');
@@ -144,6 +175,24 @@ function createAutoCodeRefreshService(deps) {
 
   function stopAccount(accountId) {
     scheduler.clear(getTaskName(accountId));
+    scheduler.clear(getKeepaliveTaskName(accountId));
+    scheduler.clear(`relogin_${String(accountId || '')}`);
+  }
+
+  function scheduleRelogin(accountId, reason = 'offline') {
+    const cfg = normalizeConfig(accountId);
+    if (!cfg.enabled) return false;
+    const account = findAccount(accountId);
+    if (!account || !account.loginBuffer) return false;
+    const taskName = `relogin_${String(accountId || '')}`;
+    scheduler.clear(taskName);
+    scheduler.setTimeoutTask(taskName, cfg.intervalMinutes * 60000, () => {
+      refreshAccountCode(accountId, reason);
+    });
+    log('系统', `账号 ${account.name} 将在 ${cfg.intervalMinutes} 分钟后自动刷新凭证并重登`, {
+      accountId: String(accountId), accountName: account.name, reason,
+    });
+    return true;
   }
 
   return {
@@ -151,6 +200,7 @@ function createAutoCodeRefreshService(deps) {
     scheduleAccount,
     rescheduleAll,
     stopAccount,
+    scheduleRelogin,
   };
 }
 

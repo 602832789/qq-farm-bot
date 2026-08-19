@@ -111,6 +111,7 @@ function createRuntimeEngine(options = {}) {
         triggerOfflineReminder,
         addOrUpdateAccount: store.addOrUpdateAccount,
         deleteAccount: store.deleteAccount,
+        scheduleAutoRelogin: autoCodeRefresh.scheduleRelogin,
         onStatusSync: (accountId, status, accountName) => {
             runtimeEvents.emit('status', { accountId, status, accountName });
             if (onStatusSync) onStatusSync(accountId, status, accountName);
@@ -174,11 +175,31 @@ function createRuntimeEngine(options = {}) {
     }
 
     /** 启动所有账号 */
-    function startAllAccounts() {
+    async function startAllAccounts() {
         const accounts = store.getAccounts().accounts || [];
         if (accounts.length > 0) {
             log('系统', `发现 ${  accounts.length  } 个账号，正在启动...`);
-            accounts.forEach(acc => startWorker(acc));
+            for (const acc of accounts) {
+                // 为移植前已扫码保存凭证的微信账号执行一次默认策略迁移。
+                if (acc.platform === 'wx' && acc.loginBuffer && acc.wxDefaultsApplied !== true) {
+                    const currentRefresh = store.getAutoCodeRefresh(acc.id);
+                    store.setAutoCodeRefresh(acc.id, {
+                        enabled: true,
+                        intervalMinutes: currentRefresh.intervalMinutes || 60
+                    });
+                    store.addOrUpdateAccount({ id: acc.id, wxDefaultsApplied: true });
+                    acc.wxDefaultsApplied = true;
+                    log('系统', `已为微信扫码账号 ${acc.name} 默认开启自动刷新 Code`, {
+                        accountId: String(acc.id), accountName: acc.name
+                    });
+                }
+                if (acc.platform === 'wx' && acc.loginBuffer) {
+                    const refreshed = await autoCodeRefresh.refreshAccountCode(acc.id, 'startup');
+                    if (!refreshed) startWorker(acc);
+                } else {
+                    startWorker(acc);
+                }
+            }
         } else {
             log('系统', '未发现账号，请访问管理面板添加账号');
         }
@@ -203,7 +224,7 @@ function createRuntimeEngine(options = {}) {
         }
 
         if (shouldAutoStart) {
-            startAllAccounts();
+            await startAllAccounts();
         }
         autoCodeRefresh.rescheduleAll();
     }

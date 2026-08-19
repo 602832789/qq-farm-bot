@@ -71,6 +71,7 @@ async function handleAutoAddAccount(wxid: string, nickname?: string, avatar?: st
           loginType: 'wx_qr',
           wxid,
           avatar,
+          wxSessionId: wxLoginStore.uuid,
         })
         emit('saved')
         close()

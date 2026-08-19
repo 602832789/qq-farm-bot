@@ -92,8 +92,8 @@ export const useWxLoginStore = defineStore('wx-login', () => {
     errorMessage.value = ''
   }
 
-  // 判断是否需要使用代理模式（api_key 不为空）
-  const useProxyMode = computed(() => !!config.value.apiKey)
+  // 微信协议统一经当前服务端调用；未配置 apiKey 时由进程内应用宝协议处理。
+  const useProxyMode = computed(() => true)
 
   // 获取代理API URL（确保有默认值）
   const proxyApiUrl = computed(() =>
@@ -104,6 +104,7 @@ export const useWxLoginStore = defineStore('wx-login', () => {
   function buildProxyHeaders() {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
+      'x-admin-token': localStorage.getItem('admin_token') || '',
       'x-proxy-api-url': proxyApiUrl.value,
       'x-proxy-app-id': config.value.appId,
     }
@@ -297,6 +298,7 @@ export const useWxLoginStore = defineStore('wx-login', () => {
         const result = await requestProxy({
           action: 'jslogin',
           wxid: targetWxid,
+          sessionId: uuid.value,
         })
         const resultData = result.data || result.Data || {}
         if (result.code === 0 && resultData) {
