@@ -40,6 +40,16 @@ const serverVersion = ref('')
 const lastPingTime = ref(Date.now())
 const now = useNow()
 const formattedTime = useDateFormat(now, 'YYYY-MM-DD HH:mm:ss')
+const fallbackAvatar = computed(() => userStore.isAdmin
+  ? '/admin-default-avatar.jpg'
+  : 'https://free.picui.cn/free/2026/03/10/69affe5755149.jpg')
+
+function handleAvatarError(event: Event) {
+  const image = event.target as HTMLImageElement
+  if (image.src.endsWith(fallbackAvatar.value))
+    return
+  image.src = fallbackAvatar.value
+}
 
 async function checkConnection() {
   try {
@@ -454,9 +464,9 @@ async function copyToken() {
           <div class="flex items-center gap-3 overflow-hidden">
             <div class="h-9 w-9 flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-200 ring-2 ring-white dark:bg-gray-600 dark:ring-gray-700">
               <img
-                :src="userStore.avatar || 'https://free.picui.cn/free/2026/03/10/69affe5755149.jpg'"
+                :src="userStore.avatar || fallbackAvatar"
                 class="h-full w-full object-cover"
-                @error="(e) => (e.target as HTMLImageElement).src = 'https://free.picui.cn/free/2026/03/10/69affe5755149.jpg'"
+                @error="handleAvatarError"
               >
             </div>
             <div class="min-w-0 flex flex-col items-start">
