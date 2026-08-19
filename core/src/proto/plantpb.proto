@@ -101,7 +101,7 @@ message PlantInfo {
     int64 field_37 = 37;                       // unknown new field
     // ItemService.Use 回包中已抓包确认：道具目标记录，field 4 为目标土地 ID。
     repeated PlantInteractionTargetInfo interaction_targets = 38;
-    // field 40 的结构已确认，但业务含义尚未从协议/规则明确，不在界面映射为具体道具。
+    // 抓包确认 301103 使用前该字段为空，成功后及后续土地快照均为 {9/10, 1}，表示鹊羽灵露已生效。
     PlantExtendedStatus field_40 = 40;
     // 变异扩展记录；配置 ID 可与 mutant_config_ids / phase.mutants 交叉确认。
     repeated PlantMutationRecord extended_mutations = 41;
@@ -124,7 +124,7 @@ message PlantInteractionTargetInfo {
     int64 land_id = 4;
 }
 
-// PlantInfo.field 40 的已知线结构；具体枚举语义未确认，保留原始值。
+// PlantInfo.field 40：鹊羽灵露土地状态。字段 1 的精确奖励语义仍保留原始值，字段 2 为已生效标记。
 message PlantExtendedStatus {
     int64 value_1 = 1;
     int64 value_2 = 2;

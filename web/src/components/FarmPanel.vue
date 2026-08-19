@@ -106,6 +106,12 @@ function usedInteractionIdSet(itemId: unknown = selectedInteractionItemId.value)
   return new Set(farmStore.getInteractionUsedLandIds(currentAccountId.value, itemId))
 }
 
+function hasConfirmedInteractionEffect(land: any, itemId: unknown = selectedInteractionItemId.value) {
+  const normalizedItemId = String(itemId || '')
+  return !!normalizedItemId && (Array.isArray(land?.interactionEffects) ? land.interactionEffects : [])
+    .some((effect: any) => effect?.confirmed && String(effect?.itemId || '') === normalizedItemId)
+}
+
 // 与好友页保持同一口径：只有仍在生长期的作物才允许提交道具使用。
 function isInteractionLandCandidate(land: any) {
   return !!land?.unlocked
@@ -124,11 +130,14 @@ function isInteractionLandDisabled(land: any) {
     || item.count < 1
     || interactionUsePending.value
     || !isInteractionLandCandidate(land)
+    || hasConfirmedInteractionEffect(land, item.itemId)
     || usedInteractionIdSet(item.itemId).has(String(land?.id || ''))
 }
 
 function interactionLandSelectionLabel(land: any) {
   const landId = String(land?.id || '')
+  if (hasConfirmedInteractionEffect(land))
+    return '已生效'
   if (usedInteractionIdSet().has(landId))
     return '本次已用'
   if (['harvestable', 'stealable', 'harvested'].includes(String(land?.status || '')))
@@ -170,7 +179,7 @@ function selectAllInteractionLands() {
     return
   const used = usedInteractionIdSet(item.itemId)
   const candidates = (lands.value || [])
-    .filter(land => isInteractionLandCandidate(land) && !used.has(String(land.id)))
+    .filter(land => isInteractionLandCandidate(land) && !hasConfirmedInteractionEffect(land, item.itemId) && !used.has(String(land.id)))
     .sort((left, right) => Number(left.id) - Number(right.id))
     .slice(0, item.count)
     .map(land => String(land.id))

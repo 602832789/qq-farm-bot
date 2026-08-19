@@ -137,6 +137,7 @@ function interactionEffectBadges(land: any) {
     .map((effect: any) => ({
       itemId: String(effect.itemId),
       name: String(effect.itemName || `道具${effect.itemId}`),
+      title: `${String(effect.itemName || `道具${effect.itemId}`)}：服务端土地状态已确认`,
     }))
     .filter((effect: any) => {
       if (seen.has(effect.itemId))
@@ -267,7 +268,7 @@ function interactionBadgeClass(itemId: string) {
         :key="effect.itemId"
         class="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold"
         :class="interactionBadgeClass(effect.itemId)"
-        :title="`${effect.name}：本次会话已确认`"
+        :title="effect.title"
       >
         <span class="i-carbon-checkmark-outline" /> {{ effect.name }}
       </span>
