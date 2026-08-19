@@ -6,7 +6,7 @@
 
 🌱 一位会自己浇水、除草、收菜的 QQ 农场小帮手
 
-[能做什么](#-能做什么) · [开始种田](#-开始种田) · [Docker 部署](#-docker-部署) · [更新记录](docs/CHANGELOG.md) · [使用文档](#-使用文档) · [赛博义父](#-赛博义父)
+[能做什么](#-能做什么) · [YYB-GO](#-yyb-go-支持) · [开始种田](#-开始种田) · [Docker 部署](#-docker-部署) · [更新记录](docs/CHANGELOG.md) · [使用文档](#-使用文档) · [赛博义父](#-赛博义父)
 
 </div>
 
@@ -26,6 +26,13 @@
 > 🌱 想看看这片农场是怎么一步步长大的吗？前往[农场成长记录](docs/CHANGELOG.md)查看最新更新和完整历史。
 
 > 🐛 问题反馈？可加QQ群：1105296443。或点击链接加入：https://qm.qq.com/q/L3E9Yp03Ys
+
+## <th><img src="https://cdn.simpleicons.org/wechat/07C160" height="20" alt="微信" /></th> YYB-GO 支持
+
+群友开发版，已完美适配本项目当前版本：
+
+- [项目地址](https://github.com/991069003/yyb-go)
+- [Windows 版本下载](https://github.com/991069003/yyb-go/blob/50c7abc5aece4b38bd2cd8a6cbd6e1cc76356ca6/windows-amd64-yyb-go.zip)
 
 ## 🧺 小推车里装了什么
 
@@ -174,17 +181,33 @@ qq-farm-bot/
 
 本项目会一直保持免费开源。如果这位农场小帮手替你省下了一点时间，欢迎赛博义父打赏作者。赞助完全自愿，不附带功能承诺、优先服务或专属权益；点一颗 Star、提一次建议，也都是很棒的鼓励。
 
-<table>
+<table align="center" style="border-collapse: collapse; border: none;">
   <tr>
-    <th>微信</th>
-    <th>支付宝</th>
+    <!-- 左侧：微信 -->
+    <th style="padding: 10px 20px 5px 20px; border: none; text-align: center; font-size: 16px; font-weight: bold; color: #333;">
+      <div style="display: flex; align-items: center; justify-content: center; gap: 6px;">
+        <img src="https://cdn.simpleicons.org/wechat/07C160" height="28" alt="微信" />
+        <span>微信</span>
+      </div>
+    </th>
+    <!-- 右侧：支付宝 -->
+    <th style="padding: 10px 20px 5px 20px; border: none; text-align: center; font-size: 16px; font-weight: bold; color: #333;">
+      <div style="display: flex; align-items: center; justify-content: center; gap: 6px;">
+        <img src="https://cdn.simpleicons.org/alipay/1677FF" height="28" alt="支付宝" />
+        <span>支付宝</span>
+      </div>
+    </th>
   </tr>
   <tr>
-    <td><img src="docs/images/sponsor-wechat.png" width="240" alt="微信收款码"></td>
-    <td><img src="docs/images/sponsor-alipay.png" width="240" alt="支付宝收款码"></td>
+    <td style="padding: 5px 15px 15px 15px; border: none; text-align: center;">
+      <img src="docs/images/sponsor-wechat.png" width="220" alt="微信收款码" style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+    </td>
+    <td style="padding: 5px 15px 15px 15px; border: none; text-align: center;">
+      <img src="docs/images/sponsor-alipay.png" width="220" alt="支付宝收款码" style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+    </td>
   </tr>
 </table>
 
 ## 📌 免责声明
 
-本项目与腾讯及 QQ 农场官方无关，不保证长期可用，也不对因使用本项目造成的账号限制、数据损失或其他后果承担责任。请勿将本项目用于商业运营、破坏游戏公平性或其他违法违规用途。
+本项目仅作为研究型项目使用，不对因使用本项目造成的账号限制、数据损失或其他后果承担责任。请勿将本项目用于商业运营、破坏游戏公平性或其他违法违规用途。
