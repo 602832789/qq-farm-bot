@@ -117,12 +117,33 @@ function createDataProvider(options: DataProviderOptions) {
         clearFriendsCache: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'clearFriendsCache'),
         getInteractRecords: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getInteractRecords'),
         getFriendLands: (accountRef: string, gid: number) => callWorkerApi(resolveAccountRefId(accountRef), 'getFriendLands', gid),
+        getFriendInteractionItems: (accountRef: string) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'getFriendInteractionItems')
+        ),
+        useFriendInteractionItemBatch: (accountRef: string, gid: unknown, itemId: unknown, landIds: unknown) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'useFriendInteractionItemBatch', gid, itemId, landIds)
+        ),
+        getSelfInteractionItems: (accountRef: string) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'getSelfInteractionItems')
+        ),
+        useSelfInteractionItemBatch: (accountRef: string, itemId: unknown, landIds: unknown) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'useSelfInteractionItemBatch', itemId, landIds)
+        ),
         doFriendOp: (accountRef: string, gid: number, opType: string) => callWorkerApi(resolveAccountRefId(accountRef), 'doFriendOp', gid, opType),
         getBag: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getBag'),
         getBagSeeds: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getBagSeeds'),
         getDiamondBalance: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getDiamondBalance'),
         useItem: (accountRef: string, itemId: number, count: number, uid = 0) => callWorkerApi(resolveAccountRefId(accountRef), 'useItem', itemId, count, uid),
         sellItems: (accountRef: string, items: any[]) => callWorkerApi(resolveAccountRefId(accountRef), 'sellItems', items),
+        setItemsLocked: (accountRef: string, itemUids: unknown, locked: unknown) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'setItemsLocked', itemUids, locked)
+        ),
+        getDogSkillGiftStatus: (accountRef: string) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'getDogSkillGiftStatus')
+        ),
+        claimDogSkillGifts: (accountRef: string) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'claimDogSkillGifts')
+        ),
         getDailyGifts: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getDailyGiftOverview'),
         getActivityCenterSnapshot: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getActivityCenterSnapshot'),
         getCurrentSeasonEvent: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getCurrentSeasonEvent'),
@@ -141,8 +162,8 @@ function createDataProvider(options: DataProviderOptions) {
         continueQingMeiBrew: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'continueQingMeiBrew'),
         settleQingMeiBrew: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'settleQingMeiBrew'),
         claimQixiBridgeRewards: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'claimQixiBridgeRewards'),
-        giftQixiSachet: (accountRef: string, friendGid: unknown, count: unknown) => (
-            callWorkerApi(resolveAccountRefId(accountRef), 'giftQixiSachet', friendGid, count)
+        giftQixiSachet: (accountRef: string, friendGid: unknown, messageTextId: unknown = 15) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'giftQixiSachet', friendGid, messageTextId)
         ),
         getMallCatalog: (accountRef: string, slotType: unknown, subSlotType: unknown) => (
             callWorkerApi(resolveAccountRefId(accountRef), 'getMallCatalog', slotType, subSlotType)

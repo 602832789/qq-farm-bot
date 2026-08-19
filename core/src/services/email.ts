@@ -5,27 +5,19 @@ export {};
 
 const { sendMsgAsync, sendMsgNoReply } = require('../utils/network');
 const { types } = require('../utils/proto');
-const { log, toNum } = require('../utils/utils');
+const { log, toNum, getSystemDateKey } = require('../utils/utils');
 
 const DAILY_KEY: string = 'email_rewards';
 let doneDateKey: string = '';
 let lastCheckAt: number = 0;
 const CHECK_COOLDOWN_MS: number = 5 * 60 * 1000;
 
-function getDateKey(): string {
-    const now: Date = new Date();
-    const y: number = now.getFullYear();
-    const m: string = String(now.getMonth() + 1).padStart(2, '0');
-    const d: string = String(now.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-}
-
 function markDoneToday(): void {
-    doneDateKey = getDateKey();
+    doneDateKey = getSystemDateKey();
 }
 
 function isDoneToday(): boolean {
-    return doneDateKey === getDateKey();
+    return doneDateKey === getSystemDateKey();
 }
 
 async function getEmailList(boxType: number = 1): Promise<any> {

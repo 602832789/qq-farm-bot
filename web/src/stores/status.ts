@@ -41,6 +41,7 @@ export const useStatusStore = defineStore('status', () => {
   const tokenRef = useStorage('admin_token', '')
 
   let socket: Socket | null = null
+  let statusRequestSequence = 0
   let diamondRequestSequence = 0
 
   function normalizeStatusPayload(input: any) {
@@ -70,6 +71,8 @@ export const useStatusStore = defineStore('status', () => {
     if (currentRealtimeAccountId.value && accountId !== currentRealtimeAccountId.value)
       return
     if (body.status && typeof body.status === 'object') {
+      statusRequestSequence++
+      loading.value = false
       status.value = normalizeStatusPayload(body.status)
       error.value = ''
     }
@@ -126,9 +129,20 @@ export const useStatusStore = defineStore('status', () => {
   }
 
   function connectRealtime(accountId: string) {
-    currentRealtimeAccountId.value = String(accountId || '').trim()
+    const nextAccountId = String(accountId || '').trim()
+    const accountChanged = nextAccountId !== currentRealtimeAccountId.value
+    currentRealtimeAccountId.value = nextAccountId
+    if (accountChanged) {
+      statusRequestSequence++
+      status.value = null
+      loading.value = false
+      error.value = ''
+    }
     if (!tokenRef.value)
       return
+
+    if (nextAccountId && (accountChanged || (!status.value && !loading.value)))
+      void fetchStatus(nextAccountId)
 
     const client = ensureRealtimeSocket()
     client.auth = {
@@ -160,11 +174,14 @@ export const useStatusStore = defineStore('status', () => {
   async function fetchStatus(accountId: string) {
     if (!accountId)
       return
+    const sequence = ++statusRequestSequence
     loading.value = true
     try {
       const { data } = await api.get('/api/status', {
         headers: { 'x-account-id': accountId },
       })
+      if (sequence !== statusRequestSequence)
+        return
       if (data.ok) {
         status.value = normalizeStatusPayload(data.data)
         error.value = ''
@@ -174,10 +191,12 @@ export const useStatusStore = defineStore('status', () => {
       }
     }
     catch (e: any) {
-      error.value = e.message
+      if (sequence === statusRequestSequence)
+        error.value = e.message
     }
     finally {
-      loading.value = false
+      if (sequence === statusRequestSequence)
+        loading.value = false
     }
   }
 

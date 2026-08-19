@@ -1106,6 +1106,7 @@ const localSystemConfig = ref({
   clientVersion: '',
   platform: 'qq',
   os: 'Windows',
+  timeZone: 'Asia/Shanghai',
   deviceInfo: { ...defaultDeviceInfo },
 })
 const defaultSystemConfig = ref({
@@ -1113,10 +1114,14 @@ const defaultSystemConfig = ref({
   clientVersion: '',
   platform: 'qq',
   os: 'Windows',
+  timeZone: 'Asia/Shanghai',
   deviceInfo: { ...defaultDeviceInfo },
 })
 const devicePresets = ref<any[]>([])
 const selectedPresetId = ref('')
+const timeZoneOptions = ref([
+  { label: '北京时间 / 上海（UTC+8）', value: 'Asia/Shanghai' },
+])
 const platformOptions = [
   { label: 'QQ', value: 'qq' },
   { label: '微信', value: 'wx' },
@@ -1133,6 +1138,7 @@ function normalizeSystemConfig(source: any, fallback: any) {
     clientVersion: source?.clientVersion || '',
     platform: source?.platform || 'qq',
     os: source?.os || 'Windows',
+    timeZone: source?.timeZone || fallback.timeZone || 'Asia/Shanghai',
     deviceInfo: source?.deviceInfo ? { ...fallback.deviceInfo, ...source.deviceInfo } : { ...fallback.deviceInfo },
   }
 }
@@ -1167,6 +1173,12 @@ async function loadSystemConfig() {
   try {
     const { data } = await api.get('/api/settings/system-config')
     if (data?.ok) {
+      if (Array.isArray(data.data.timeZones) && data.data.timeZones.length) {
+        timeZoneOptions.value = data.data.timeZones.map((option: any) => ({
+          label: String(option.label || option.value || ''),
+          value: String(option.value || 'Asia/Shanghai'),
+        }))
+      }
       defaultSystemConfig.value = normalizeSystemConfig(data.data.default, defaultSystemConfig.value)
       localSystemConfig.value = normalizeSystemConfig(data.data.saved || data.data.default, defaultSystemConfig.value)
     }
@@ -1874,6 +1886,17 @@ async function handleResetSystemConfig() {
                   type="text"
                   placeholder="wss://..."
                 />
+
+                <div>
+                  <BaseSelect
+                    v-model="localSystemConfig.timeZone"
+                    label="系统时区"
+                    :options="timeZoneOptions"
+                  />
+                  <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                    每日礼包、好友额度、任务统计、安静时段和日志时间均以此时区为准；推荐使用北京时间 / 上海。
+                  </p>
+                </div>
 
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div class="flex flex-col gap-1.5">

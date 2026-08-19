@@ -4,8 +4,245 @@ export {};
  */
 
 const { PlantPhase, PHASE_NAMES } = require('../../config/config');
-const { getPlantName, getPlantExp } = require('../../config/gameConfig');
-const { toNum, toTimeSec, getServerTimeSec, log, logWarn } = require('../../utils/utils');
+const {
+    getPlantName,
+    getPlantExp,
+    getPlantById,
+    getSeedImageBySeedId,
+    getPlantGrowTime,
+} = require('../../config/gameConfig');
+const { toNum, toTimeSec, getServerTimeSec, logWarn } = require('../../utils/utils');
+
+function int64String(value: any): string {
+    if (value == null) return '0';
+    const text = String(value?.toString?.() ?? value).trim();
+    return /^-?\d+$/.test(text) ? text : '0';
+}
+
+function normalizePositiveId(value: any): string {
+    const text = int64String(value);
+    return /^\d+$/.test(text) && text !== '0' ? text : '';
+}
+
+function getPlantStatusFlags(
+    plant: any,
+    currentPhase: any,
+    nowSec: number = getServerTimeSec(),
+    options: { ownGid?: number; ignoreOwnEffects?: boolean } = {},
+): { needWater: boolean; needWeed: boolean; needBug: boolean } {
+    const phase = currentPhase || {};
+    const ownerIds = (values: any[]): number[] => (Array.isArray(values) ? values : [])
+        .map((value: any) => toNum(value));
+    const ownGid = toNum(options.ownGid);
+    const ignoreOwnEffects = !!options.ignoreOwnEffects && ownGid > 0;
+    const hasForeignOwner = (values: any[]): boolean => {
+        const ids = ownerIds(values);
+        if (ids.length === 0) return false;
+        if (!ignoreOwnEffects) return true;
+        return ids.some(id => id !== ownGid);
+    };
+
+    const dryTime = toTimeSec(phase.dry_time);
+    const weedsTime = toTimeSec(phase.weeds_time);
+    const insectTime = toTimeSec(phase.insect_time);
+    return {
+        needWater: toNum(plant?.dry_num) > 0 || (dryTime > 0 && dryTime <= nowSec),
+        needWeed: hasForeignOwner(plant?.weed_owners) || (weedsTime > 0 && weedsTime <= nowSec),
+        needBug: hasForeignOwner(plant?.insect_owners) || (insectTime > 0 && insectTime <= nowSec),
+    };
+}
+
+function getPlantMutantConfigIds(plant: any, currentPhase: any = null): string[] {
+    const values: any[] = [];
+    if (Array.isArray(plant?.mutant_config_ids)) values.push(...plant.mutant_config_ids);
+    if (Array.isArray(currentPhase?.mutants)) {
+        values.push(...currentPhase.mutants.map((mutant: any) => mutant?.mutant_config_id));
+    }
+    if (Array.isArray(plant?.extended_mutations)) {
+        values.push(...plant.extended_mutations.map((record: any) => record?.mutant_config_id));
+    }
+    return [...new Set(values.map(normalizePositiveId).filter(Boolean))];
+}
+
+const KNOWN_INTERACTION_ITEM_NAMES: Record<string, string> = {
+    '301101': '黄金虫',
+    '301102': '足球',
+    '301103': '鹊羽灵露',
+};
+
+function getPlantInteractionEffects(plant: any): any[] {
+    const uses: any[] = Array.isArray(plant?.interaction_uses) ? plant.interaction_uses : [];
+    const targets: any[] = Array.isArray(plant?.interaction_targets) ? plant.interaction_targets : [];
+    const effects: any[] = [];
+    const usedTargetKeys = new Set<string>();
+
+    const findTargets = (use: any): any[] => {
+        const itemId = normalizePositiveId(use?.item_id);
+        const hostGid = normalizePositiveId(use?.host_gid);
+        const timestamp = int64String(use?.timestamp);
+        const exact = targets.filter((target: any) => (
+            normalizePositiveId(target?.item_id) === itemId
+            && (!hostGid || normalizePositiveId(target?.host_gid) === hostGid)
+            && (!timestamp || int64String(target?.timestamp) === timestamp)
+        ));
+        if (exact.length > 0) return exact;
+        return targets.filter((target: any) => normalizePositiveId(target?.item_id) === itemId);
+    };
+
+    for (const use of uses) {
+        const itemId = normalizePositiveId(use?.item_id);
+        if (!itemId) continue;
+        const matchingTargets = findTargets(use);
+        const targetList = matchingTargets.length > 0 ? matchingTargets : [null];
+        for (const target of targetList) {
+            const landId = normalizePositiveId(target?.land_id);
+            const hostGid = normalizePositiveId(target?.host_gid ?? use?.host_gid);
+            const usedAt = int64String(target?.timestamp ?? use?.timestamp);
+            const targetKey = target
+                ? `${itemId}:${hostGid}:${usedAt}:${landId}`
+                : `${itemId}:${hostGid}:${usedAt}:`;
+            if (usedTargetKeys.has(targetKey)) continue;
+            usedTargetKeys.add(targetKey);
+            effects.push({
+                itemId,
+                itemName: KNOWN_INTERACTION_ITEM_NAMES[itemId] || `道具${itemId}`,
+                effectType: toNum(use?.effect_type),
+                landId,
+                hostGid,
+                usedAt,
+                confirmed: true,
+                source: 'protocol-land',
+            });
+        }
+    }
+
+    const qixiDewStatus = plant?.field_40;
+    const qixiRewardValue = toNum(qixiDewStatus?.value_1);
+    const qixiAppliedMarker = toNum(qixiDewStatus?.value_2);
+    if (
+        qixiRewardValue > 0
+        && qixiAppliedMarker > 0
+        && !effects.some(effect => String(effect.itemId) === '301103')
+    ) {
+        effects.push({
+            itemId: '301103',
+            itemName: KNOWN_INTERACTION_ITEM_NAMES['301103'],
+            effectType: qixiAppliedMarker,
+            landId: '',
+            hostGid: '',
+            confirmed: true,
+            source: 'protocol-land-field-40',
+        });
+    }
+    return effects;
+}
+
+function buildLandDetail(land: any, options: { friendMode?: boolean; landsMap?: Map<number, any>; nowSec?: number } = {}): any {
+    const nowSec = Number(options.nowSec) || getServerTimeSec();
+    const friendMode = !!options.friendMode;
+    const landsMap = options.landsMap instanceof Map ? options.landsMap : buildLandMap([land]);
+    const id = toNum(land?.id);
+    const level = toNum(land?.level);
+    const maxLevel = toNum(land?.max_level);
+    const landsLevel = toNum(land?.lands_level);
+    const landSize = toNum(land?.land_size);
+    const context = getDisplayLandContext(land, landsMap);
+    const base: any = {
+        id,
+        unlocked: !!land?.unlocked,
+        level,
+        maxLevel,
+        landsLevel,
+        landSize,
+        couldUnlock: !!land?.could_unlock,
+        couldUpgrade: !!land?.could_upgrade,
+        occupiedByMaster: !!context.occupiedByMaster,
+        masterLandId: toNum(context.masterLandId),
+        occupiedLandIds: Array.isArray(context.occupiedLandIds) ? context.occupiedLandIds : [],
+        plantSize: 1,
+        mutantConfigIds: [],
+        isMutated: false,
+        interactionEffects: [],
+        protocolField40: null,
+    };
+    if (!base.unlocked) {
+        return {
+            ...base,
+            status: 'locked',
+            plantName: '',
+            phaseName: friendMode ? '未解锁' : '',
+            currentSeason: 0,
+            totalSeason: 0,
+            occupiedByMaster: false,
+            masterLandId: 0,
+            occupiedLandIds: [],
+        };
+    }
+
+    const sourceLand = context.sourceLand || land;
+    const plant = sourceLand?.plant;
+    if (!plant || !Array.isArray(plant.phases) || plant.phases.length === 0) {
+        return {
+            ...base,
+            status: 'empty',
+            plantName: '',
+            phaseName: friendMode ? '空地' : '空地',
+            currentSeason: 0,
+            totalSeason: 0,
+        };
+    }
+
+    const currentPhase = getCurrentPhase(plant.phases, false, '');
+    if (!currentPhase) {
+        return { ...base, status: 'empty', plantName: '', phaseName: '', currentSeason: 0, totalSeason: 0 };
+    }
+    const phaseVal = toNum(currentPhase.phase);
+    const plantId = toNum(plant.id);
+    const plantName = getPlantName(plantId) || plant.name || '未知';
+    const plantCfg = getPlantById(plantId);
+    const seedId = toNum(plantCfg?.seed_id);
+    const plantSize = Math.max(1, toNum(plantCfg?.size) || toNum(sourceLand?.land_size) || landSize || 1);
+    const totalSeason = Math.max(1, toNum(plantCfg?.seasons) || 1);
+    const currentSeasonRaw = toNum(plant.season);
+    const currentSeason = currentSeasonRaw > 0 ? Math.min(currentSeasonRaw, totalSeason) : 1;
+    const maturePhase = plant.phases.find((phase: any) => toNum(phase?.phase) === PlantPhase.MATURE);
+    const matureBegin = maturePhase ? toTimeSec(maturePhase.begin_time) : 0;
+    const matureInSec = matureBegin > nowSec ? matureBegin - nowSec : 0;
+    const statusFlags = getPlantStatusFlags(plant, currentPhase, nowSec);
+    const mutantConfigIds = getPlantMutantConfigIds(plant, currentPhase);
+    let status = 'growing';
+    if (phaseVal === PlantPhase.MATURE) status = friendMode ? (plant.stealable ? 'stealable' : 'harvested') : 'harvestable';
+    else if (phaseVal === PlantPhase.DEAD) status = 'dead';
+    else if (phaseVal === PlantPhase.UNKNOWN) status = 'empty';
+
+    return {
+        ...base,
+        status,
+        plantId,
+        plantName,
+        seedId,
+        seedImage: seedId > 0 ? getSeedImageBySeedId(seedId) : '',
+        phaseName: PHASE_NAMES[phaseVal] || '',
+        currentSeason,
+        totalSeason,
+        matureInSec,
+        totalGrowTime: getPlantGrowTime(plantId),
+        needWater: statusFlags.needWater,
+        needWeed: statusFlags.needWeed,
+        needBug: statusFlags.needBug,
+        stealable: !!plant.stealable,
+        plantSize,
+        mutantConfigIds,
+        isMutated: mutantConfigIds.length > 0,
+        interactionEffects: getPlantInteractionEffects(plant),
+        protocolField40: plant.field_40
+            ? {
+                value1: int64String(plant.field_40.value_1),
+                value2: int64String(plant.field_40.value_2),
+            }
+            : null,
+    };
+}
 
 function getCurrentPhase(phases: any[], debug?: boolean, landLabel?: string): any | null {
     if (!phases || phases.length === 0) return null;
@@ -200,6 +437,7 @@ function summarizeLandDetails(lands: any[]): {
 
     for (const land of Array.isArray(lands) ? lands : []) {
         if (!land || !land.unlocked) continue;
+        if (land.occupiedByMaster) continue;
 
         const status = String(land.status || '');
         if (status === 'harvestable') summary.harvestable++;
@@ -587,6 +825,10 @@ async function resolveRemovableHarvestedLands(harvestedLandIds: number[], harves
 
 module.exports = {
     getCurrentPhase,
+    getPlantStatusFlags,
+    getPlantMutantConfigIds,
+    getPlantInteractionEffects,
+    buildLandDetail,
     getOrganicFertilizerTargetsFromLands,
     getFastMatureLands,
     getSlaveLandIds,

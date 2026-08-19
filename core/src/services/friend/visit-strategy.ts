@@ -2,8 +2,8 @@
  * 拜访好友策略 - 访问逻辑、好友分析、错误处理、安静时段
  */
 
-const { CONFIG, PlantPhase, PHASE_NAMES } = require('../../config/config');
-const { getPlantName, getPlantById, getSeedImageBySeedId, getPlantGrowTime } = require('../../config/gameConfig');
+const { PlantPhase } = require('../../config/config');
+const { getPlantName, getPlantById } = require('../../config/gameConfig');
 const {
     isAutomationOn,
     getFriendQuietHours,
@@ -12,9 +12,15 @@ const {
     getFriendsListCacheTtlSec,
 } = require('../../models/store');
 const { getUserState } = require('../../utils/network');
-const { toNum, toLong, toTimeSec, getServerTimeSec, log, logWarn, sleep, randomDelay } = require('../../utils/utils');
+const { toNum, getServerTimeSec, getSystemClockMinutes, log, logWarn, sleep, randomDelay } = require('../../utils/utils');
 const { types } = require('../../utils/proto');
-const { getCurrentPhase, buildLandMap, getDisplayLandContext, isOccupiedSlaveLand } = require('../farm');
+const {
+    getCurrentPhase,
+    buildLandMap,
+    buildLandDetail,
+    getPlantStatusFlags,
+    isOccupiedSlaveLand,
+} = require('../farm');
 const { recordOperation } = require('../stats');
 const { sellAllFruits } = require('../warehouse');
 const {
@@ -50,6 +56,7 @@ interface FarmingOutcome {
     landCount: number;
     landIds: number[];
     operationLimits: any[];
+    dogSkillGiftCount: number;
     code?: number;
 }
 
@@ -228,7 +235,7 @@ export function parseTimeToMinutes(timeStr: string): number | null {
     return h * 60 + min;
 }
 
-export function inFriendQuietHours(now: Date = new Date()): boolean {
+export function inFriendQuietHours(now?: Date): boolean {
     const cfg: any = getFriendQuietHours();
     if (!cfg || !cfg.enabled) return false;
 
@@ -236,7 +243,9 @@ export function inFriendQuietHours(now: Date = new Date()): boolean {
     const end: number | null = parseTimeToMinutes(cfg.end);
     if (start === null || end === null) return false;
 
-    const cur: number = now.getHours() * 60 + now.getMinutes();
+    const cur: number = now instanceof Date
+        ? getSystemClockMinutes(now.getTime())
+        : getSystemClockMinutes();
     if (start === end) return true; // 起止相同视为全天静默
     if (start < end) return cur >= start && cur < end;
     return cur >= start || cur < end; // 跨天时段
@@ -314,9 +323,10 @@ export function analyzeFriendLands(lands: any[], myGid: number, friendName: stri
         if (phaseVal === PlantPhase.DEAD) continue;
 
         // 帮助操作
-        if (toNum(plant.dry_num) > 0) result.needWater.push(id);
-        if (plant.weed_owners && plant.weed_owners.length > 0) result.needWeed.push(id);
-        if (plant.insect_owners && plant.insect_owners.length > 0) result.needBug.push(id);
+        const statusFlags = getPlantStatusFlags(plant, currentPhase);
+        if (statusFlags.needWater) result.needWater.push(id);
+        if (statusFlags.needWeed) result.needWeed.push(id);
+        if (statusFlags.needBug) result.needBug.push(id);
 
         // 捣乱操作: 检查是否可以放草/放虫
         // 条件: 植物未成熟 + 没有草/虫且我没放过 + 每块地最多2个草/虫
@@ -409,127 +419,29 @@ export async function getFriendsList(forceSync: boolean = false): Promise<any[]>
  * 获取指定好友的农田详情 (进入-获取-离开)
  */
 export async function getFriendLandsDetail(friendGid: number): Promise<any> {
+    let entered = false;
     try {
         const enterReply: any = await enterFriendFarm(friendGid);
+        entered = true;
         const lands: any[] = enterReply.lands || [];
         const state: any = getUserState();
         const plantBlacklist: number[] = getPlantBlacklist(state.accountId);
         const analyzed: AnalyzeResult = analyzeFriendLands(lands, state.gid, '', { plantBlacklist });
-        await leaveFriendFarm(friendGid);
 
-        const landsList: any[] = [];
         const nowSec: number = getServerTimeSec();
         const landsMap: any = buildLandMap(lands);
-        for (const land of lands) {
-            const id: number = toNum(land.id);
-            const level: number = toNum(land.level);
-            const unlocked: boolean = !!land.unlocked;
-            const {
-                sourceLand,
-                occupiedByMaster,
-                masterLandId,
-                occupiedLandIds,
-            } = getDisplayLandContext(land, landsMap);
-            if (!unlocked) {
-                landsList.push({
-                    id,
-                    unlocked: false,
-                    status: 'locked',
-                    plantName: '',
-                    phaseName: '未解锁',
-                    level,
-                    needWater: false,
-                    needWeed: false,
-                    needBug: false,
-                    occupiedByMaster: false,
-                    masterLandId: 0,
-                    occupiedLandIds: [],
-                    plantSize: 1,
-                });
-                continue;
-            }
-            const plant: any = sourceLand && sourceLand.plant;
-            if (!plant || !plant.phases || plant.phases.length === 0) {
-                landsList.push({
-                    id,
-                    unlocked: true,
-                    status: 'empty',
-                    plantName: '',
-                    phaseName: '空地',
-                    level,
-                    occupiedByMaster,
-                    masterLandId,
-                    occupiedLandIds,
-                    plantSize: 1,
-                });
-                continue;
-            }
-            const currentPhase: any = getCurrentPhase(plant.phases, false, '');
-            if (!currentPhase) {
-                landsList.push({
-                    id,
-                    unlocked: true,
-                    status: 'empty',
-                    plantName: '',
-                    phaseName: '',
-                    level,
-                    occupiedByMaster,
-                    masterLandId,
-                    occupiedLandIds,
-                    plantSize: 1,
-                });
-                continue;
-            }
-            const phaseVal: number = currentPhase.phase;
-            const plantId: number = toNum(plant.id);
-            const plantName: string = getPlantName(plantId) || plant.name || '未知';
-            const plantCfg: any = getPlantById(plantId);
-            const seedId: number = toNum(plantCfg && plantCfg.seed_id);
-            const seedImage: string = seedId > 0 ? getSeedImageBySeedId(seedId) : '';
-            const plantSize: number = Math.max(1, toNum(plantCfg && plantCfg.size) || 1);
-            const totalSeason: number = Math.max(1, toNum(plantCfg && plantCfg.seasons) || 1);
-            const currentSeasonRaw: number = toNum(plant.season);
-            const currentSeason: number = currentSeasonRaw > 0 ? Math.min(currentSeasonRaw, totalSeason) : 1;
-            const phaseName: string = PHASE_NAMES[phaseVal] || '';
-            const maturePhase: any = Array.isArray(plant.phases)
-                ? plant.phases.find((p: any) => p && toNum(p.phase) === PlantPhase.MATURE)
-                : null;
-            const matureBegin: number = maturePhase ? toTimeSec(maturePhase.begin_time) : 0;
-            const matureInSec: number = matureBegin > nowSec ? (matureBegin - nowSec) : 0;
-            const totalGrowTime: number = getPlantGrowTime(plantId);
-            let landStatus: string = 'growing';
-            if (phaseVal === PlantPhase.MATURE) landStatus = plant.stealable ? 'stealable' : 'harvested';
-            else if (phaseVal === PlantPhase.DEAD) landStatus = 'dead';
-
-            landsList.push({
-                id,
-                unlocked: true,
-                status: landStatus,
-                plantName,
-                seedId,
-                seedImage,
-                phaseName,
-                currentSeason,
-                totalSeason,
-                level,
-                matureInSec,
-                totalGrowTime,
-                needWater: toNum(plant.dry_num) > 0,
-                needWeed: (plant.weed_owners && plant.weed_owners.length > 0),
-                needBug: (plant.insect_owners && plant.insect_owners.length > 0),
-                occupiedByMaster,
-                masterLandId,
-                occupiedLandIds,
-                plantSize,
-            });
-        }
+        const landsList: any[] = lands.map((land: any) => buildLandDetail(land, {
+            friendMode: true,
+            landsMap,
+            nowSec,
+        }));
 
         return {
             lands: landsList,
             summary: analyzed,
         };
-    } catch {
-        return { lands: [], summary: {} };
+    } finally {
+        if (entered) await leaveFriendFarm(friendGid);
     }
 }
 
@@ -555,7 +467,7 @@ export async function runBatchWithFallback(ids: number[], batchFn: (ids: number[
 }
 
 function emptyFarmingOutcome(effect: FarmingOutcome['effect'] = 'noop'): FarmingOutcome {
-    return { effect, operationCount: 0, landCount: 0, landIds: [], operationLimits: [] };
+    return { effect, operationCount: 0, landCount: 0, landIds: [], operationLimits: [], dogSkillGiftCount: 0 };
 }
 
 function mergeFarmingOutcomes(outcomes: FarmingOutcome[]): FarmingOutcome {
@@ -568,6 +480,7 @@ function mergeFarmingOutcomes(outcomes: FarmingOutcome[]): FarmingOutcome {
         landCount: landIds.length,
         landIds,
         operationLimits,
+        dogSkillGiftCount: outcomes.reduce((sum: number, outcome: FarmingOutcome) => sum + (Number(outcome.dogSkillGiftCount) || 0), 0),
     };
 }
 
@@ -683,7 +596,8 @@ export async function doFriendOperation(friendGid: any, opType: string): Promise
                 count,
                 landCount: outcome.landCount,
                 operationCount: outcome.operationCount,
-                message: `一键务农完成 ${outcome.landCount} 块 / ${outcome.operationCount} 项操作`,
+                dogSkillGiftCount: outcome.dogSkillGiftCount,
+                message: `一键务农完成 ${outcome.landCount} 块 / ${outcome.operationCount} 项操作${outcome.dogSkillGiftCount > 0 ? `，自动获得同气连枝礼包 x${outcome.dogSkillGiftCount}` : ''}`,
             };
         }
 
@@ -800,6 +714,7 @@ export async function visitFriend(friend: any, totalActions: any, myGid: number,
                 if (status.needBug.length) parts.push(`虫${status.needBug.length}`);
                 if (status.needWater.length) parts.push(`水${status.needWater.length}`);
                 actions.push(`一键务农${outcome.landCount}块/${outcome.operationCount}项(${parts.join('/')})`);
+                if (outcome.dogSkillGiftCount > 0) actions.push(`同气连枝礼包x${outcome.dogSkillGiftCount}(自动获得)`);
                 totalActions.farming += outcome.landCount;
                 recordOperation('helpFarming', outcome.operationCount);
             }
@@ -1036,6 +951,7 @@ export async function visitFriendForHelp(friend: any, totalActions: any, myGid: 
             if (status.needBug.length) parts.push(`虫${status.needBug.length}`);
             if (status.needWater.length) parts.push(`水${status.needWater.length}`);
             actions.push(`一键务农${outcome.landCount}块/${outcome.operationCount}项(${parts.join('/')})`);
+            if (outcome.dogSkillGiftCount > 0) actions.push(`同气连枝礼包x${outcome.dogSkillGiftCount}(自动获得)`);
             totalActions.farming += outcome.landCount;
             recordOperation('helpFarming', outcome.operationCount);
         }

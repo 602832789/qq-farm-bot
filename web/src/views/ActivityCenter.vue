@@ -122,7 +122,7 @@ function formatActivityPeriod(activity: ActivityDirectoryItemDto) {
     return `${end} 结束`
   return '活动时间待定'
 }
-function openActivity(activity: ActivityDirectoryItemDto) {
+async function openActivity(activity: ActivityDirectoryItemDto) {
   const gameplay = resolveActivityGameplay(activity)
   if (!gameplay)
     return
@@ -130,7 +130,7 @@ function openActivity(activity: ActivityDirectoryItemDto) {
     activeTab.value = gameplay.entryTab as ActivityTab
   selectedActivity.value = gameplay.module.key
   if (gameplay.module.key === 'qixi' && currentAccountId.value)
-    friendStore.fetchFriends(String(currentAccountId.value))
+    await friendStore.fetchFriends(String(currentAccountId.value))
 }
 function goBack() {
   if (selectedActivity.value) {
@@ -151,12 +151,15 @@ function claimSolar(termId: string) {
 function claimQixiBridge() {
   activityStore.claimQixiBridgeRewards(accountId())
 }
-function giftQixiSachet(friendGid: string, count: number) {
-  activityStore.giftQixiSachet(accountId(), friendGid, count)
+function giftQixiSachet(friendGid: string) {
+  activityStore.giftQixiSachet(accountId(), friendGid)
 }
 function refreshQixiFriends() {
   if (currentAccountId.value)
     friendStore.fetchFriends(String(currentAccountId.value), true)
+}
+async function refreshQixiActivity() {
+  await load(true)
 }
 function selectShopGoods(goods: ShopGoodsDto) {
   selectedShopGoods.value = goods
@@ -226,7 +229,7 @@ onUnmounted(() => {
 <template>
   <section v-if="!selectedActivity" class="activity-picker">
     <button type="button" class="picker-back" aria-label="返回" @click="goBack">
-      ‹
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 5-7 7 7 7" /></svg>
     </button>
     <header class="picker-heading">
       <span>活动中心</span>
@@ -327,7 +330,7 @@ onUnmounted(() => {
         :loading="loading"
         show-refresh
         @back="goBack"
-        @refresh="load(true)"
+        @refresh="refreshQixiActivity"
       />
       <div v-if="!currentAccountId" class="activity-state qixi-state">
         <strong>请先选择账号</strong><span>活动数据按当前账号加载</span>
@@ -376,13 +379,24 @@ onUnmounted(() => {
   left: 30px;
   width: 40px;
   height: 40px;
+  display: grid;
+  place-items: center;
+  padding: 0;
   border: 1px solid #aec7b8;
   border-radius: 50%;
   color: #315d4c;
   background: #fff;
-  font-size: 30px;
-  line-height: 1;
+  line-height: 0;
   cursor: pointer;
+}
+.picker-back svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .picker-heading {
   width: 100%;

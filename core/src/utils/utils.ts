@@ -5,12 +5,15 @@ import type Long from 'long';
 export {};
 
 const LongModule = require('long');
+const { CONFIG } = require('../config/config');
 const { createModuleLogger, sanitizeMeta } = require('../services/logger');
 const coreLogger = createModuleLogger('core');
 
 // ============ 服务器时间状态 ============
 let serverTimeMs: number = 0;
 let localTimeAtSync: number = 0;
+const dateFormatters: Map<string, Intl.DateTimeFormat> = new Map();
+const timeFormatters: Map<string, Intl.DateTimeFormat> = new Map();
 
 // ============ 类型转换 ============
 function toLong(val: number | Long): Long {
@@ -35,6 +38,67 @@ function getServerTimeSec(): number {
 function syncServerTime(ms: number): void {
     serverTimeMs = ms;
     localTimeAtSync = Date.now();
+}
+
+function getDateFormatter(timeZone: string): Intl.DateTimeFormat {
+    let formatter = dateFormatters.get(timeZone);
+    if (!formatter) {
+        formatter = new Intl.DateTimeFormat('en-US', {
+            timeZone,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+        });
+        dateFormatters.set(timeZone, formatter);
+    }
+    return formatter;
+}
+
+function getTimeFormatter(timeZone: string): Intl.DateTimeFormat {
+    let formatter = timeFormatters.get(timeZone);
+    if (!formatter) {
+        formatter = new Intl.DateTimeFormat('en-US', {
+            timeZone,
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hourCycle: 'h23',
+        });
+        timeFormatters.set(timeZone, formatter);
+    }
+    return formatter;
+}
+
+function partsToRecord(parts: Intl.DateTimeFormatPart[]): Record<string, string> {
+    const result: Record<string, string> = {};
+    for (const part of parts) {
+        if (part.type !== 'literal') result[part.type] = part.value;
+    }
+    return result;
+}
+
+/** 按指定 IANA 时区生成日期键，不依赖服务器操作系统时区 */
+function formatDateKeyInTimeZone(nowMs: number, timeZone: string): string {
+    const parts = partsToRecord(getDateFormatter(timeZone).formatToParts(new Date(nowMs)));
+    return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+/** 获取系统配置时区下的当前日期键 */
+function getSystemDateKey(nowMs: number = getServerTimeSec() * 1000): string {
+    return formatDateKeyInTimeZone(nowMs, CONFIG.timeZone);
+}
+
+/** 获取系统配置时区下的当前分钟数（0-1439） */
+function getSystemClockMinutes(nowMs: number = getServerTimeSec() * 1000): number {
+    const parts = partsToRecord(getTimeFormatter(CONFIG.timeZone).formatToParts(new Date(nowMs)));
+    return Number(parts.hour) * 60 + Number(parts.minute);
+}
+
+/** 按系统配置时区格式化日志时间 */
+function formatSystemDateTime24(nowMs: number = Date.now()): string {
+    const date = formatDateKeyInTimeZone(nowMs, CONFIG.timeZone);
+    const parts = partsToRecord(getTimeFormatter(CONFIG.timeZone).formatToParts(new Date(nowMs)));
+    return `${date} ${parts.hour}:${parts.minute}:${parts.second}`;
 }
 
 /**
@@ -149,6 +213,7 @@ function randomDelay(minMs: number, maxMs: number): Promise<void> {
 module.exports = {
     toLong, toNum,
     setLogHook,
-    getServerTimeSec, syncServerTime, toTimeSec,
+    getServerTimeSec, syncServerTime, getSystemDateKey, getSystemClockMinutes,
+    formatDateKeyInTimeZone, formatSystemDateTime24, toTimeSec,
     log, logWarn, sleep, randomDelay,
 };

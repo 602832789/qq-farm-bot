@@ -1,8 +1,21 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   land: any
+  selectable?: boolean
+  selected?: boolean
+  selectionDisabled?: boolean
+  selectionLabel?: string
+}>(), {
+  selectable: false,
+  selected: false,
+  selectionDisabled: false,
+  selectionLabel: '',
+})
+
+const emit = defineEmits<{
+  select: [land: any]
 }>()
 
 const land = computed(() => props.land)
@@ -30,7 +43,7 @@ function getLandStatusClass(land: any) {
 
   // 土地等级样式 — soil texture classes
   switch (level) {
-    case 1: // 黄土地
+    case 1: // 普通土地
       baseClass = 'soil-level-1'
       break
     case 2: // 红土地
@@ -82,8 +95,8 @@ function getSafeImageUrl(url: string) {
 
 function getLandTypeName(level: number) {
   const typeMap: Record<number, string> = {
-    0: '普通',
-    1: '黄土地',
+    0: '普通土地',
+    1: '普通土地',
     2: '红土地',
     3: '黑土地',
     4: '金土地',
@@ -102,7 +115,7 @@ function landTypeBadgeClass(level: number) {
   const lv = Number(level) || 0
   const map: Record<number, string> = {
     0: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
-    1: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300',
+    1: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
     2: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300',
     3: 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200',
     4: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
@@ -110,22 +123,83 @@ function landTypeBadgeClass(level: number) {
   }
   return map[lv] || map[0]
 }
+
+function activateSelection() {
+  if (props.selectable && !props.selectionDisabled)
+    emit('select', props.land)
+}
+
+function interactionEffectBadges(land: any) {
+  const effects = Array.isArray(land?.interactionEffects) ? land.interactionEffects : []
+  const seen = new Set<string>()
+  return effects
+    .filter((effect: any) => effect?.confirmed && effect?.itemId)
+    .map((effect: any) => ({
+      itemId: String(effect.itemId),
+      name: String(effect.itemName || `道具${effect.itemId}`),
+      title: `${String(effect.itemName || `道具${effect.itemId}`)}：服务端土地状态已确认`,
+    }))
+    .filter((effect: any) => {
+      if (seen.has(effect.itemId))
+        return false
+      seen.add(effect.itemId)
+      return true
+    })
+}
+
+function interactionBadgeClass(itemId: string) {
+  if (itemId === '301101')
+    return 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
+  if (itemId === '301102')
+    return 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300'
+  if (itemId === '301103')
+    return 'bg-pink-100 text-pink-800 dark:bg-pink-900/40 dark:text-pink-300'
+  return 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200'
+}
 </script>
 
 <template>
   <div
     class="land-card relative min-h-[160px] flex flex-col items-center border-2 cartoon-card rounded-2xl p-3 transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5"
-    :class="getLandStatusClass(land)"
+    :class="[
+      getLandStatusClass(land),
+      {
+        'land-card--selectable': selectable,
+        'land-card--selected': selected,
+        'land-card--selection-disabled': selectable && selectionDisabled,
+      },
+    ]"
+    :role="selectable ? 'button' : undefined"
+    :tabindex="selectable && !selectionDisabled ? 0 : undefined"
+    :aria-pressed="selectable ? selected : undefined"
+    :aria-disabled="selectable ? selectionDisabled : undefined"
+    @click="activateSelection"
+    @keydown.enter.prevent="activateSelection"
+    @keydown.space.prevent="activateSelection"
   >
     <!-- Land ID badge -->
     <div class="absolute left-2 top-2 text-[10px] font-display font-mono opacity-50">
       #{{ land.id }}
     </div>
 
+    <div
+      v-if="selectable"
+      class="selection-cue absolute right-2 top-2"
+      :class="selected ? 'selection-cue--selected' : selectionDisabled ? 'selection-cue--disabled' : 'selection-cue--ready'"
+      :title="selectionLabel || (selected ? '已选择' : selectionDisabled ? '不可选择' : '点击选择')"
+    >
+      <span class="selection-cue__mark">
+        <span v-if="selected" class="i-carbon-checkmark" />
+        <span v-else-if="selectionDisabled" class="i-carbon-subtract" />
+      </span>
+      <span v-if="selectionLabel" class="selection-cue__label">{{ selectionLabel }}</span>
+    </div>
+
     <!-- Plant size badge (joint planting) -->
     <div
       v-if="land.plantSize > 1"
-      class="absolute right-2 top-2 rounded-full bg-pink-100 px-1.5 py-0.5 text-[10px] text-pink-700 font-bold shadow-sm dark:bg-pink-900/30 dark:text-pink-300"
+      class="absolute right-2 rounded-full bg-pink-100 px-1.5 py-0.5 text-[10px] text-pink-700 font-bold shadow-sm dark:bg-pink-900/30 dark:text-pink-300"
+      :class="selectable ? 'top-8' : 'top-2'"
     >
       合种 {{ getPlantSizeText(land) }}
     </div>
@@ -181,24 +255,40 @@ function landTypeBadgeClass(level: number) {
     </div>
 
     <!-- Status Badges (game-style) -->
-    <div class="mt-auto flex items-center gap-1 pt-1">
+    <div class="mt-auto flex flex-wrap items-center justify-center gap-1 pt-1">
+      <span
+        v-if="land.isMutated"
+        class="inline-flex items-center gap-0.5 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] text-violet-800 font-bold dark:bg-violet-900/40 dark:text-violet-300"
+        title="协议已确认存在变异配置"
+      >
+        <span class="i-carbon-star" /> 变异
+      </span>
+      <span
+        v-for="effect in interactionEffectBadges(land)"
+        :key="effect.itemId"
+        class="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold"
+        :class="interactionBadgeClass(effect.itemId)"
+        :title="effect.title"
+      >
+        <span class="i-carbon-checkmark-outline" /> {{ effect.name }}
+      </span>
       <span
         v-if="land.needWater"
         class="badge-water inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold"
       >
-        <span class="i-carbon-rain-drop" />
+        <span class="i-carbon-rain-drop" /> 缺水
       </span>
       <span
         v-if="land.needWeed"
         class="inline-flex items-center gap-0.5 rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] text-green-700 font-bold dark:bg-green-900/40 dark:text-green-300"
       >
-        <span class="i-carbon-clean" />
+        <span class="i-carbon-clean" /> 杂草
       </span>
       <span
         v-if="land.needBug"
         class="badge-bug inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold"
       >
-        <span class="i-carbon-debug" />
+        <span class="i-carbon-debug" /> 虫害
       </span>
       <span
         v-if="land.status === 'harvestable'"
@@ -211,6 +301,12 @@ function landTypeBadgeClass(level: number) {
         class="inline-flex items-center gap-0.5 rounded-full bg-purple-100 px-1.5 py-0.5 text-[10px] text-purple-700 font-bold dark:bg-purple-900/40 dark:text-purple-300"
       >
         <span class="i-carbon-touch-1" /> 可偷
+      </span>
+      <span
+        v-if="land.status === 'harvested'"
+        class="inline-flex items-center gap-0.5 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-700 font-bold dark:bg-gray-700 dark:text-gray-200"
+      >
+        <span class="i-carbon-wheat" /> 成熟不可偷
       </span>
     </div>
   </div>
@@ -225,8 +321,86 @@ function landTypeBadgeClass(level: number) {
     inset 0 1px 0 rgba(255, 255, 255, 0.38),
     0 8px 20px rgba(40, 48, 44, 0.12);
 }
+.land-card--selectable {
+  cursor: pointer;
+  user-select: none;
+}
+.land-card--selectable:focus-visible {
+  outline: 3px solid rgba(37, 116, 88, 0.34);
+  outline-offset: 3px;
+}
+.land-card--selected {
+  border-color: #257458 !important;
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 255, 255, 0.72),
+    0 0 0 3px rgba(37, 116, 88, 0.2),
+    0 12px 24px rgba(37, 116, 88, 0.18) !important;
+  transform: translateY(-2px);
+}
+.land-card--selection-disabled {
+  cursor: not-allowed;
+  filter: saturate(0.65);
+  opacity: 0.72;
+}
+.selection-cue {
+  z-index: 2;
+  min-height: 22px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  pointer-events: none;
+  line-height: 1.1;
+}
+.selection-cue--ready {
+  color: #257458;
+}
+.selection-cue--selected {
+  color: #257458;
+}
+.selection-cue--disabled {
+  color: #7d8782;
+}
+.selection-cue__mark {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid currentColor;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 2px 7px rgba(40, 62, 53, 0.14);
+}
+.selection-cue__mark > span {
+  font-size: 15px;
+}
+.selection-cue--selected .selection-cue__mark {
+  color: #fff;
+  border-color: #257458;
+  background: #257458;
+}
+.selection-cue--disabled .selection-cue__mark {
+  color: #7d8782;
+  border-color: #aab2ae;
+  background: rgba(239, 242, 240, 0.96);
+}
+.selection-cue__label {
+  padding: 4px 7px;
+  border: 1px solid rgba(37, 116, 88, 0.24);
+  border-radius: 999px;
+  color: #245f4b;
+  background: rgba(244, 252, 247, 0.96);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 2px 7px rgba(40, 62, 53, 0.1);
+}
+.selection-cue--disabled .selection-cue__label {
+  border-color: rgba(109, 119, 114, 0.22);
+  color: #69736e;
+  background: rgba(239, 242, 240, 0.96);
+}
 
-.land-card:hover {
+.land-card:hover:not(.land-card--selection-disabled):not(.land-card--selected) {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.45),
     0 12px 26px rgba(40, 48, 44, 0.16);
@@ -239,12 +413,9 @@ function landTypeBadgeClass(level: number) {
   border-color: #c9b88a;
 }
 .soil-level-1 {
-  /* 黄土地 — warm yellow-brown */
-  background:
-    radial-gradient(ellipse at 20% 80%, rgba(200, 160, 60, 0.25) 0%, transparent 50%),
-    radial-gradient(ellipse at 75% 30%, rgba(180, 140, 50, 0.2) 0%, transparent 45%),
-    linear-gradient(180deg, #f5e6b8 0%, #e0c878 45%, #c8a84a 100%);
-  border-color: #b89838;
+  /* 普通土地 */
+  background: linear-gradient(180deg, #f5f0e8 0%, #e8dcc8 60%, #d4c4a0 100%);
+  border-color: #c9b88a;
 }
 .soil-level-2 {
   /* 红土地 — reddish-brown */
@@ -289,7 +460,7 @@ function landTypeBadgeClass(level: number) {
 
 /* ===== Level-specific border accents ===== */
 .soil-level-1 {
-  border-color: #b89838;
+  border-color: #c9b88a;
 }
 .soil-level-2 {
   border-color: #984828;

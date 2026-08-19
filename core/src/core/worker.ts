@@ -4,7 +4,7 @@ export {};
  */
 const { parentPort, workerData } = require('node:worker_threads');
 
-const { CONFIG } = require('../config/config');
+const { CONFIG, updateRuntimeConfig } = require('../config/config');
 const { getLevelExpProgress, loadConfigs } = require('../config/gameConfig');
 const { getAutomation, getPreferredSeed, getConfigSnapshot, applyConfigSnapshot } = require('../models/store');
 const { checkAndClaimEmails } = require('../services/email');
@@ -24,9 +24,10 @@ const { initStatusBar, setStatusPlatform, statusData } = require('../services/st
 const { setRecordGoldExpHook } = require('../services/status');
 const { cleanupTaskSystem, checkAndClaimTasks, getTaskClaimDailyState, getTaskDailyStateLikeApp, getGrowthTaskStateLikeApp } = require('../services/task');
 const { sellAllFruits, getBag, getBagItems, openFertilizerGiftPacksSilently } = require('../services/warehouse');
+const { checkAndClaimDogSkillGifts } = require('../services/dog-skill-gifts');
 const { connect, cleanup, getWs, getUserState, networkEvents } = require('../utils/network');
 const { loadProto } = require('../utils/proto');
-const { setLogHook, log, logWarn, toNum } = require('../utils/utils');
+const { setLogHook, log, logWarn, toNum, getSystemDateKey, formatSystemDateTime24 } = require('../utils/utils');
 
 // Extend CONFIG with help/steal interval properties used by this worker
 interface WorkerRuntimeConfig {
@@ -72,27 +73,12 @@ function exitWorker(code: number = 0): void {
     process.exit(code);
 }
 
-function pad2(n: number): string {
-    return String(n).padStart(2, '0');
-}
-
-function formatLocalDateTime24(date: Date = new Date()): string {
-    const d = date instanceof Date ? date : new Date();
-    const y = d.getFullYear();
-    const m = pad2(d.getMonth() + 1);
-    const day = pad2(d.getDate());
-    const hh = pad2(d.getHours());
-    const mm = pad2(d.getMinutes());
-    const ss = pad2(d.getSeconds());
-    return `${y}-${m}-${day} ${hh}:${mm}:${ss}`;
-}
-
 // 捕获日志发送给主进程
 setLogHook((tag: string, msg: string, isWarn: boolean, meta: any) => {
     sendToMaster({
         type: 'log',
         data: {
-            time: formatLocalDateTime24(new Date()),
+            time: formatSystemDateTime24(),
             tag,
             msg,
             isWarn,
@@ -125,6 +111,7 @@ let lastStatusHash: string = '';
 let lastStatusSentAt: number = 0;
 let onSellGain: ((deltaGold: any) => void) | null = null;
 let onFarmHarvested: (() => Promise<void>) | null = null;
+let onDogSkillGiftPending: ((count: any) => void) | null = null;
 let harvestSellRunning: boolean = false;
 let onWsError: ((payload: any) => void) | null = null;
 let onDisconnected: ((payload: any) => void) | null = null;
@@ -133,14 +120,6 @@ let shutdownStarted: boolean = false;
 let runtimeGeneration: number = 0;
 let lastDailyRunDate: string = '';
 const workerScheduler = createScheduler('worker');
-
-function getLocalDateKey(): string {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
-    const d = String(now.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-}
 
 async function runDailyRoutines(force: boolean = false): Promise<void> {
     if (!loginReady) return;
@@ -161,12 +140,12 @@ function stopDailyRoutineTimer(): void {
 
 function startDailyRoutineTimer(): void {
     stopDailyRoutineTimer();
-    lastDailyRunDate = getLocalDateKey();
+    lastDailyRunDate = getSystemDateKey();
     // 新账号登录后强制执行一次领取
     runDailyRoutines(true).catch(() => null);
     workerScheduler.setIntervalTask('daily_routine_interval', 30 * 1000, () => {
         if (!loginReady) return;
-        const today = getLocalDateKey();
+        const today = getSystemDateKey();
         if (today === lastDailyRunDate) return;
         lastDailyRunDate = today;
         runDailyRoutines(true).catch(() => null);
@@ -365,6 +344,9 @@ function applyRuntimeConfig(snapshot: any, syncNow: boolean = false): number {
 
     const prevAuto = getAutomation();
     const accountId = process.env.FARM_ACCOUNT_ID || '';
+    if (snapshot && snapshot.systemTimeZone !== undefined) {
+        updateRuntimeConfig({ timeZone: snapshot.systemTimeZone });
+    }
     applyConfigSnapshot(snapshot || {}, { persist: false, accountId });
     if (rev > appliedConfigRevision) appliedConfigRevision = rev;
 
@@ -442,8 +424,9 @@ async function startBot(config: any): Promise<void> {
     shutdownStarted = false;
     runtimeGeneration += 1;
 
-    const { code, platform } = config;
+    const { code, platform, systemTimeZone } = config;
 
+    if (systemTimeZone !== undefined) updateRuntimeConfig({ timeZone: systemTimeZone });
     CONFIG.platform = platform || 'qq';
     // 注意：间隔配置由 applyIntervalsToRuntime 统一处理，不要在这里覆盖
 
@@ -523,6 +506,16 @@ async function startBot(config: any): Promise<void> {
             }
         };
         networkEvents.on('farmHarvested', onFarmHarvested);
+
+        if (onDogSkillGiftPending) {
+            networkEvents.off('dogSkillGiftPending', onDogSkillGiftPending);
+        }
+        onDogSkillGiftPending = (count: any) => {
+            const pendingCount = Math.max(0, toNum(count));
+            if (pendingCount <= 0 || !loginReady) return;
+            checkAndClaimDogSkillGifts(pendingCount).catch(() => null);
+        };
+        networkEvents.on('dogSkillGiftPending', onDogSkillGiftPending);
 
         try {
             await refreshActivityWindows();
@@ -608,6 +601,10 @@ function detachRuntimeListeners(): void {
     if (onFarmHarvested) {
         networkEvents.off('farmHarvested', onFarmHarvested);
         onFarmHarvested = null;
+    }
+    if (onDogSkillGiftPending) {
+        networkEvents.off('dogSkillGiftPending', onDogSkillGiftPending);
+        onDogSkillGiftPending = null;
     }
 }
 
@@ -697,6 +694,18 @@ async function handleApiCall(msg: any): Promise<void> {
             case 'getFriendLands':
                 result = await getFriendLandsDetail(args[0]);
                 break;
+            case 'getFriendInteractionItems':
+                result = await require('../services/friend-interaction-items').getFriendInteractionItems();
+                break;
+            case 'useFriendInteractionItemBatch':
+                result = await require('../services/friend-interaction-items').useFriendInteractionItemBatch(args[0], args[1], args[2]);
+                break;
+            case 'getSelfInteractionItems':
+                result = await require('../services/friend-interaction-items').getSelfInteractionItems();
+                break;
+            case 'useSelfInteractionItemBatch':
+                result = await require('../services/friend-interaction-items').useSelfInteractionItemBatch(args[0], args[1]);
+                break;
             case 'doFriendOp':
                 result = await doFriendOperation(args[0], args[1]);
                 break;
@@ -731,6 +740,18 @@ async function handleApiCall(msg: any): Promise<void> {
                 })));
                 break;
             }
+            case 'setItemsLocked':
+                result = await require('../services/warehouse').setItemsLocked(args[0], args[1] === true);
+                break;
+            case 'getDogSkillGiftStatus': {
+                const dogGifts = require('../services/dog-skill-gifts');
+                const info = await dogGifts.getDogInfo();
+                result = { pendingCount: dogGifts.getPendingGiftCount(info) };
+                break;
+            }
+            case 'claimDogSkillGifts':
+                result = await require('../services/dog-skill-gifts').checkAndClaimDogSkillGifts();
+                break;
             case 'setAutomation': {
                 const payload = args && args[0] ? args[0] : {};
                 applyRuntimeConfig({ automation: { [payload.key]: payload.value } }, true);
@@ -852,7 +873,7 @@ async function getDailyGiftOverview(): Promise<any> {
     const month = getMonthCardDailyState ? getMonthCardDailyState() : { doneToday: false, lastClaimAt: 0 };
 
     return {
-        date: new Date().toISOString().slice(0, 10),
+        date: getSystemDateKey(),
         growth: {
             key: 'growth_task',
             label: '成长任务',

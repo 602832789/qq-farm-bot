@@ -14,15 +14,233 @@ export interface KnownFriendSettings {
   friendsListCacheTtlSec: number
 }
 
+export interface FriendInteractionItemDto {
+  id: string
+  itemId: string
+  name: string
+  image: string
+  count: number
+  saleConditionSatisfiedCount: number
+  interactionType: string
+  protocol: 'item-use'
+  selfUsable: boolean
+  description: string
+  activityId: string
+  sellCondition: string
+  nearestExpireTime: number
+  serverValidationRequired: boolean
+}
+
+export interface FriendInteractionResultDto {
+  landId: string
+  ok: boolean
+  code: string
+  message: string
+  updatedLand?: any
+  interactionEffects?: FriendInteractionEffectDto[]
+  target?: any
+}
+
+export interface FriendInteractionEffectDto {
+  landId: string
+  itemId: string
+  itemName?: string
+  plantId?: string
+  hostGid?: string
+  effectType?: number
+  usedAt?: number | string
+  confirmed: boolean
+  source: string
+}
+
+export interface FriendInteractionBatchDto {
+  hostGid: string
+  ownerName: string
+  itemId: string
+  itemName: string
+  requestedLandIds: string[]
+  usedLandIds: string[]
+  failedLandIds: string[]
+  successCount: number
+  failureCount: number
+  results: FriendInteractionResultDto[]
+  updatedLands?: any[]
+  interactionEffects?: FriendInteractionEffectDto[]
+  items: FriendInteractionItemDto[]
+  message: string
+}
+
 export const useFriendStore = defineStore('friend', () => {
   const friends = ref<any[]>([])
   const loading = ref(false)
   const friendLands = ref<Record<string, any[]>>({})
   const friendLandsLoading = ref<Record<string, boolean>>({})
+  const friendLandsError = ref<Record<string, string>>({})
+  const friendLandsLoaded = ref<Record<string, boolean>>({})
   const blacklist = ref<BlacklistItem[]>([])
   const interactRecords = ref<any[]>([])
   const interactLoading = ref(false)
   const interactError = ref('')
+  const interactionItems = ref<FriendInteractionItemDto[]>([])
+  const interactionItemsLoading = ref(false)
+  const interactionItemsError = ref('')
+  const interactionUsePending = ref(false)
+  const interactionUseError = ref('')
+  const interactionItemsAccountId = ref('')
+  const interactionUsedLandIds = ref<Record<string, string[]>>({})
+  const friendLandOverlays = ref<Record<string, {
+    lands: any[]
+    effects: FriendInteractionEffectDto[]
+    updatedAt: number
+  }>>({})
+  const FRIEND_LAND_OVERLAY_TTL_MS = 15 * 60 * 1000
+  let friendLandRequestSequence = 0
+  let interactionItemsRequestSequence = 0
+
+  function normalizeLandId(value: unknown) {
+    const text = String(value ?? '').trim()
+    return /^\d+$/.test(text) && text !== '0' ? text : ''
+  }
+
+  function pruneFriendLandOverlays(now = Date.now()) {
+    const next = { ...friendLandOverlays.value }
+    let changed = false
+    for (const [key, overlay] of Object.entries(next)) {
+      if (!overlay || now - overlay.updatedAt > FRIEND_LAND_OVERLAY_TTL_MS) {
+        delete next[key]
+        changed = true
+      }
+    }
+    if (changed)
+      friendLandOverlays.value = next
+  }
+
+  function mergeLandUpdateList(landsInput: any[], updatesInput: any[]) {
+    const lands = Array.isArray(landsInput) ? landsInput : []
+    const updates = Array.isArray(updatesInput) ? updatesInput.filter(Boolean) : []
+    if (updates.length === 0)
+      return lands
+
+    const byId = new Map(lands.map(land => [normalizeLandId(land?.id), land]))
+    for (const update of updates) {
+      const updateId = normalizeLandId(update?.id)
+      if (!updateId)
+        continue
+      const occupiedIds = [...new Set([
+        updateId,
+        ...(Array.isArray(update?.occupiedLandIds) ? update.occupiedLandIds.map(normalizeLandId) : []),
+      ].filter(Boolean))]
+      const current = byId.get(updateId)
+      byId.set(updateId, {
+        ...(current || {}),
+        ...update,
+        id: current?.id ?? update.id,
+        occupiedLandIds: occupiedIds,
+      })
+      for (const occupiedId of occupiedIds) {
+        if (occupiedId === updateId)
+          continue
+        const slave = byId.get(occupiedId)
+        if (!slave)
+          continue
+        byId.set(occupiedId, {
+          ...slave,
+          ...update,
+          id: slave.id,
+          unlocked: slave.unlocked,
+          level: slave.level,
+          maxLevel: slave.maxLevel,
+          landsLevel: slave.landsLevel,
+          landSize: slave.landSize,
+          couldUnlock: slave.couldUnlock,
+          couldUpgrade: slave.couldUpgrade,
+          occupiedByMaster: true,
+          masterLandId: Number(updateId),
+          occupiedLandIds: occupiedIds,
+        })
+      }
+    }
+
+    const originalIds = new Set(lands.map(land => normalizeLandId(land?.id)))
+    const merged = lands.map(land => byId.get(normalizeLandId(land?.id)) || land)
+    for (const [id, land] of byId) {
+      if (id && !originalIds.has(id))
+        merged.push(land)
+    }
+    return merged
+  }
+
+  function applyFriendLandOverlay(friendId: string, landsInput: any[]) {
+    pruneFriendLandOverlays()
+    const overlay = friendLandOverlays.value[String(friendId)]
+    if (!overlay)
+      return Array.isArray(landsInput) ? landsInput : []
+    // UseReply.land 是刚刚成功操作后的权威快照；在短期 overlay 有效期内，
+    // 后续 Enter/AllLands 的旧快照不能覆盖它。TTL 到期后再完全信任服务端。
+    let lands = mergeLandUpdateList(landsInput, overlay.lands)
+    const effects = Array.isArray(overlay.effects) ? overlay.effects : []
+    if (effects.length === 0)
+      return lands
+    lands = lands.map((land: any) => {
+      const landId = normalizeLandId(land?.id)
+      const occupiedIds = new Set([
+        landId,
+        ...(Array.isArray(land?.occupiedLandIds) ? land.occupiedLandIds.map(normalizeLandId) : []),
+        normalizeLandId(land?.masterLandId),
+      ].filter(Boolean))
+      const plantId = normalizeLandId(land?.plantId)
+      const visibleEffects = effects.filter(effect => (
+        occupiedIds.has(normalizeLandId(effect?.landId))
+        && (!normalizeLandId(effect?.plantId) || normalizeLandId(effect?.plantId) === plantId)
+      ))
+      if (visibleEffects.length === 0)
+        return land
+      const existing = Array.isArray(land?.interactionEffects) ? land.interactionEffects : []
+      const seen = new Set(existing.map((effect: any) => `${effect?.itemId}:${effect?.landId}:${effect?.plantId || ''}:${effect?.usedAt || ''}`))
+      const mergedEffects = [...existing]
+      for (const effect of visibleEffects) {
+        const key = `${effect.itemId}:${effect.landId}:${effect.plantId || ''}:${effect.usedAt || ''}`
+        if (!seen.has(key)) {
+          seen.add(key)
+          mergedEffects.push(effect)
+        }
+      }
+      return { ...land, interactionEffects: mergedEffects }
+    })
+    return lands
+  }
+
+  function mergeFriendLandUpdates(
+    friendIdInput: unknown,
+    updatedLandsInput: any[],
+    effectsInput: FriendInteractionEffectDto[] = [],
+  ) {
+    const key = String(friendIdInput || '')
+    if (!key)
+      return
+    const updatedLands = Array.isArray(updatedLandsInput) ? updatedLandsInput.filter(Boolean) : []
+    const effects = Array.isArray(effectsInput) ? effectsInput.filter(effect => !!effect?.confirmed) : []
+    if (updatedLands.length === 0 && effects.length === 0)
+      return
+    const previous = friendLandOverlays.value[key]
+    const mergedUpdates = mergeLandUpdateList(previous?.lands || [], updatedLands)
+    friendLandOverlays.value = {
+      ...friendLandOverlays.value,
+      [key]: {
+        lands: mergedUpdates,
+        effects: [...(previous?.effects || []), ...effects].filter((effect, index, list) => (
+          list.findIndex(item => `${item.itemId}:${item.landId}:${item.plantId || ''}:${item.usedAt || ''}` === `${effect.itemId}:${effect.landId}:${effect.plantId || ''}:${effect.usedAt || ''}`) === index
+        )),
+        updatedAt: Date.now(),
+      },
+    }
+    const current = friendLands.value[key] || []
+    const merged = applyFriendLandOverlay(key, mergeLandUpdateList(current, updatedLands))
+    friendLands.value = { ...friendLands.value, [key]: merged }
+    const friendSummary = friends.value.find(friend => String(friend?.gid || '') === key)
+    if (friendSummary)
+      syncFriendPlantSummary(key, merged, null)
+  }
 
   const knownFriendGids = ref<number[]>([])
   const knownFriendGidSyncCooldownSec = ref(600)
@@ -40,6 +258,8 @@ export const useFriendStore = defineStore('friend', () => {
     if (detailLands.length > 0) {
       for (const land of detailLands) {
         if (!land || !land.unlocked)
+          continue
+        if (land.occupiedByMaster)
           continue
         if (land.status === 'stealable')
           stealNum++
@@ -149,22 +369,55 @@ export const useFriendStore = defineStore('friend', () => {
 
   async function fetchFriendLands(accountId: string, friendId: string) {
     if (!accountId || !friendId)
-      return
-    friendLandsLoading.value[friendId] = true
+      return false
+    const sequence = ++friendLandRequestSequence
+    const key = String(friendId)
+    friendLandsLoading.value[key] = true
+    friendLandsError.value[key] = ''
+    friendLandsLoaded.value[key] = false
     try {
-      const res = await api.get(`/api/friend/${friendId}/lands`, {
+      const res = await api.get(`/api/friend/${key}/lands`, {
         headers: { 'x-account-id': accountId },
-      })
+        skipErrorToast: true,
+      } as any)
+      if (sequence !== friendLandRequestSequence)
+        return false
       if (res.data.ok) {
-        const lands = res.data.data.lands || []
+        const lands = applyFriendLandOverlay(key, res.data.data.lands || [])
         const summary = res.data.data.summary || null
-        friendLands.value[friendId] = lands
-        syncFriendPlantSummary(friendId, lands, summary)
+        friendLands.value[key] = lands
+        syncFriendPlantSummary(key, lands, summary)
+        return true
       }
+      friendLands.value[key] = []
+      friendLandsError.value[key] = String(res.data?.error || '无法读取好友土地')
+      return false
+    }
+    catch (error: any) {
+      if (sequence !== friendLandRequestSequence)
+        return false
+      friendLands.value[key] = []
+      const rawMessage = String(error?.response?.data?.error || error?.message || '')
+      friendLandsError.value[key] = /gamepb\.|code=\d+|GatewayError/.test(rawMessage)
+        ? '无法进入该好友农场，好友状态可能已变化，请刷新后重试'
+        : (rawMessage || '无法读取好友土地，请稍后重试')
+      return false
     }
     finally {
-      friendLandsLoading.value[friendId] = false
+      if (sequence === friendLandRequestSequence) {
+        friendLandsLoaded.value[key] = true
+        friendLandsLoading.value[key] = false
+      }
     }
+  }
+
+  function resetFriendLandState() {
+    friendLandRequestSequence++
+    friendLands.value = {}
+    friendLandsLoading.value = {}
+    friendLandsError.value = {}
+    friendLandsLoaded.value = {}
+    friendLandOverlays.value = {}
   }
 
   async function operate(accountId: string, friendId: string, opType: string) {
@@ -184,6 +437,110 @@ export const useFriendStore = defineStore('friend', () => {
     catch (e: any) {
       return { ok: false, message: e?.response?.data?.error || e?.message || '操作失败' }
     }
+  }
+
+  function interactionUsageKey(accountId: string, itemId: unknown, friendId: unknown) {
+    return `${String(accountId || '')}:${String(itemId || '')}:${String(friendId || '')}`
+  }
+
+  function getInteractionUsedLandIds(accountId: string, itemId: unknown, friendId: unknown) {
+    return interactionUsedLandIds.value[interactionUsageKey(accountId, itemId, friendId)] || []
+  }
+
+  function recordInteractionUsage(accountId: string, result: FriendInteractionBatchDto) {
+    const key = interactionUsageKey(accountId, result.itemId, result.hostGid)
+    const used = new Set(interactionUsedLandIds.value[key] || [])
+    for (const landId of result.usedLandIds || [])
+      used.add(String(landId))
+    interactionUsedLandIds.value = {
+      ...interactionUsedLandIds.value,
+      [key]: [...used].sort((left, right) => Number(left) - Number(right)),
+    }
+  }
+
+  async function fetchInteractionItems(accountId: string) {
+    const requestedAccountId = String(accountId || '').trim()
+    if (!requestedAccountId)
+      return false
+    const sequence = ++interactionItemsRequestSequence
+    if (interactionItemsAccountId.value !== requestedAccountId) {
+      interactionItems.value = []
+      interactionItemsAccountId.value = requestedAccountId
+    }
+    interactionItemsLoading.value = true
+    interactionItemsError.value = ''
+    try {
+      const res = await api.get('/api/friend-interaction-items', {
+        headers: { 'x-account-id': requestedAccountId },
+        skipErrorToast: true,
+      } as any)
+      if (sequence !== interactionItemsRequestSequence)
+        return false
+      if (!res.data?.ok) {
+        interactionItems.value = []
+        interactionItemsError.value = String(res.data?.error || '无法读取特殊互动道具')
+        return false
+      }
+      interactionItems.value = Array.isArray(res.data?.data?.items) ? res.data.data.items : []
+      return true
+    }
+    catch (error: any) {
+      if (sequence !== interactionItemsRequestSequence)
+        return false
+      interactionItems.value = []
+      interactionItemsError.value = String(error?.response?.data?.error || error?.message || '无法读取特殊互动道具')
+      return false
+    }
+    finally {
+      if (sequence === interactionItemsRequestSequence)
+        interactionItemsLoading.value = false
+    }
+  }
+
+  async function useInteractionItemBatch(accountId: string, friendId: string, itemId: string, landIds: string[]) {
+    if (!accountId || !friendId || !itemId || !Array.isArray(landIds) || landIds.length === 0)
+      return false
+    if (interactionUsePending.value)
+      return false
+    interactionUsePending.value = true
+    interactionUseError.value = ''
+    try {
+      const res = await api.post(`/api/friend/${encodeURIComponent(friendId)}/interaction-items/use-batch`, {
+        itemId,
+        landIds,
+      }, {
+        headers: { 'x-account-id': accountId },
+        skipErrorToast: true,
+      } as any)
+      if (!res.data?.ok) {
+        interactionUseError.value = String(res.data?.error || '特殊互动道具使用失败')
+        return false
+      }
+      const result = res.data.data as FriendInteractionBatchDto
+      if (Array.isArray(result?.items))
+        interactionItems.value = result.items
+      recordInteractionUsage(accountId, result)
+      mergeFriendLandUpdates(result?.hostGid || friendId, result?.updatedLands || [], result?.interactionEffects || [])
+      return result
+    }
+    catch (error: any) {
+      interactionUseError.value = String(error?.response?.data?.error || error?.message || '特殊互动道具使用失败')
+      return false
+    }
+    finally {
+      interactionUsePending.value = false
+    }
+  }
+
+  function resetInteractionState() {
+    interactionItemsRequestSequence++
+    interactionItems.value = []
+    interactionItemsLoading.value = false
+    interactionItemsError.value = ''
+    interactionUseError.value = ''
+    interactionItemsAccountId.value = ''
+    interactionUsedLandIds.value = {}
+    friendLandOverlays.value = {}
   }
 
   function applyKnownFriendSettings(data: KnownFriendSettings | null | undefined) {
@@ -290,10 +647,17 @@ export const useFriendStore = defineStore('friend', () => {
     loading,
     friendLands,
     friendLandsLoading,
+    friendLandsError,
+    friendLandsLoaded,
     blacklist,
     interactRecords,
     interactLoading,
     interactError,
+    interactionItems,
+    interactionItemsLoading,
+    interactionItemsError,
+    interactionUsePending,
+    interactionUseError,
     knownFriendGids,
     knownFriendGidSyncCooldownSec,
     friendsListCacheTtlSec,
@@ -304,7 +668,12 @@ export const useFriendStore = defineStore('friend', () => {
     toggleBlacklist,
     fetchInteractRecords,
     fetchFriendLands,
+    resetFriendLandState,
     operate,
+    fetchInteractionItems,
+    useInteractionItemBatch,
+    getInteractionUsedLandIds,
+    resetInteractionState,
     fetchKnownFriendSettings,
     saveKnownFriendSettings,
     removeKnownFriendGid,

@@ -11,8 +11,10 @@ const protobuf = coreRequire('protobufjs');
 const cryptoWasm = require('../core/src/utils/crypto-wasm.ts');
 
 const captureDir = path.resolve(process.argv[2] || 'C:/Users/liyp/Downloads/协议');
-const methodFilter = String(process.argv[3] || '');
-const shapeOnly = process.argv.includes('--shape');
+const options = process.argv.slice(3);
+const methodFilter = String(options.find(value => !value.startsWith('--')) || '');
+const shapeOnly = options.includes('--shape');
+const includeAllMethods = options.includes('--all');
 const protoDir = path.resolve(__dirname, '../core/src/proto');
 const protoFiles = fs.readdirSync(protoDir)
     .filter((name) => name.endsWith('.proto'))
@@ -46,6 +48,10 @@ const selected = new Set([
     'gamepb.itempb.ItemService.Bag',
     'gamepb.itempb.ItemService.Use',
     'gamepb.itempb.ItemService.BatchUse',
+    'gamepb.visitpb.VisitService.Enter',
+    'gamepb.visitpb.VisitService.Leave',
+    'gamepb.plantpb.PlantService.AllLands',
+    'gamepb.plantpb.PlantService.Plant',
     'gamepb.taskpb.TaskService.TaskInfo',
     'gamepb.taskpb.TaskService.ClaimTaskReward',
     'gamepb.seasonpb.SeasonService.GetSeasonInfo',
@@ -151,6 +157,10 @@ function knownType(root, service, method, messageType) {
         'gamepb.itempb.ItemService.Bag': request ? 'gamepb.itempb.BagRequest' : 'gamepb.itempb.BagReply',
         'gamepb.itempb.ItemService.Use': request ? 'gamepb.itempb.UseRequest' : 'gamepb.itempb.UseReply',
         'gamepb.itempb.ItemService.BatchUse': request ? 'gamepb.itempb.BatchUseRequest' : 'gamepb.itempb.BatchUseReply',
+        'gamepb.visitpb.VisitService.Enter': request ? 'gamepb.visitpb.EnterRequest' : 'gamepb.visitpb.EnterReply',
+        'gamepb.visitpb.VisitService.Leave': request ? 'gamepb.visitpb.LeaveRequest' : 'gamepb.visitpb.LeaveReply',
+        'gamepb.plantpb.PlantService.AllLands': request ? 'gamepb.plantpb.AllLandsRequest' : 'gamepb.plantpb.AllLandsReply',
+        'gamepb.plantpb.PlantService.Plant': request ? 'gamepb.plantpb.PlantRequest' : 'gamepb.plantpb.PlantReply',
         'gamepb.taskpb.TaskService.TaskInfo': request ? 'gamepb.taskpb.TaskInfoRequest' : 'gamepb.taskpb.TaskInfoReply',
         'gamepb.taskpb.TaskService.ClaimTaskReward': request ? 'gamepb.taskpb.ClaimTaskRewardRequest' : 'gamepb.taskpb.ClaimTaskRewardReply',
         'gamepb.seasonpb.SeasonService.GetSeasonInfo': request ? 'gamepb.seasonpb.GetSeasonInfoRequest' : 'gamepb.seasonpb.GetSeasonInfoReply',
@@ -191,7 +201,7 @@ async function main() {
         }
         const service = String(meta.service_name || '');
         const method = String(meta.method_name || '');
-        if (!selected.has(`${service}.${method}`)) continue;
+        if (!includeAllMethods && !selected.has(`${service}.${method}`)) continue;
         if (methodFilter && method !== methodFilter) continue;
 
         let body = Buffer.from(message.body || []);

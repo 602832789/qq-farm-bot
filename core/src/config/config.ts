@@ -21,6 +21,7 @@ interface SystemConfig {
     clientVersion: string;
     platform: string;
     os: string;
+    timeZone: string;
     deviceInfo: DeviceInfo;
 }
 
@@ -40,6 +41,27 @@ interface RuntimeConfig extends SystemConfig {
 
 // clientVersion 由 CONFIG.clientVersion 动态获取，不写死在预设中
 const DEFAULT_CLIENT_VERSION = '1.13.2.8_20260723';
+const DEFAULT_TIME_ZONE = 'Asia/Shanghai';
+
+const TIME_ZONE_OPTIONS = [
+    { value: 'Asia/Shanghai', label: '北京时间 / 上海（UTC+8）' },
+    { value: 'UTC', label: '协调世界时（UTC）' },
+    { value: 'Asia/Hong_Kong', label: '香港' },
+    { value: 'Asia/Taipei', label: '台北' },
+    { value: 'Asia/Singapore', label: '新加坡' },
+    { value: 'Asia/Tokyo', label: '东京' },
+    { value: 'Asia/Seoul', label: '首尔' },
+    { value: 'Europe/London', label: '伦敦' },
+    { value: 'America/New_York', label: '纽约' },
+    { value: 'America/Los_Angeles', label: '洛杉矶' },
+] as const;
+
+const ALLOWED_TIME_ZONES: Set<string> = new Set(TIME_ZONE_OPTIONS.map(option => option.value));
+
+function normalizeTimeZone(input: unknown): string {
+    const value = String(input || '').trim();
+    return ALLOWED_TIME_ZONES.has(value) ? value : DEFAULT_TIME_ZONE;
+}
 
 const DEVICE_PRESETS: DevicePreset[] = [
     {
@@ -135,6 +157,7 @@ const DEFAULT_SYSTEM_CONFIG: SystemConfig = {
     clientVersion: DEFAULT_CLIENT_VERSION,
     platform: 'qq',
     os: DEFAULT_DEVICE_INFO.os,
+    timeZone: DEFAULT_TIME_ZONE,
     deviceInfo: { ...DEFAULT_DEVICE_INFO },
 };
 
@@ -143,6 +166,7 @@ const CONFIG: RuntimeConfig = {
     clientVersion: DEFAULT_CLIENT_VERSION,
     platform: DEFAULT_SYSTEM_CONFIG.platform,
     os: DEFAULT_SYSTEM_CONFIG.os,
+    timeZone: DEFAULT_SYSTEM_CONFIG.timeZone,
     deviceInfo: { ...DEFAULT_DEVICE_INFO },
     heartbeatInterval: 25000,
     farmCheckInterval: 3000,
@@ -181,6 +205,9 @@ function updateRuntimeConfig(newConfig: Partial<SystemConfig>): void {
     if (newConfig.os && typeof newConfig.os === 'string') {
         CONFIG.os = newConfig.os;
     }
+    if (newConfig.timeZone !== undefined) {
+        CONFIG.timeZone = normalizeTimeZone(newConfig.timeZone);
+    }
     if (newConfig.deviceInfo) {
         CONFIG.deviceInfo = normalizeDeviceInfo(newConfig.deviceInfo);
         // 同步 os 与 clientVersion 到顶层
@@ -195,6 +222,7 @@ function getRuntimeConfig(): SystemConfig {
         clientVersion: CONFIG.clientVersion,
         platform: CONFIG.platform,
         os: CONFIG.os,
+        timeZone: CONFIG.timeZone,
         deviceInfo: { ...CONFIG.deviceInfo },
     };
 }
@@ -208,6 +236,10 @@ function getDevicePresets(): DevicePreset[] {
         ...p,
         deviceInfo: { ...p.deviceInfo, clientVersion: CONFIG.clientVersion },
     }));
+}
+
+function getTimeZoneOptions(): Array<{ value: string; label: string }> {
+    return TIME_ZONE_OPTIONS.map(option => ({ ...option }));
 }
 
 // 生长阶段枚举
@@ -227,11 +259,14 @@ const PHASE_NAMES: string[] = ['未知', '种子', '发芽', '小叶', '大叶',
 module.exports = {
     CONFIG,
     DEFAULT_CLIENT_VERSION,
+    DEFAULT_TIME_ZONE,
     PlantPhase,
     PHASE_NAMES,
     updateRuntimeConfig,
     getRuntimeConfig,
     getDefaultSystemConfig,
     getDevicePresets,
+    getTimeZoneOptions,
+    normalizeTimeZone,
     DEVICE_PRESETS,
 };

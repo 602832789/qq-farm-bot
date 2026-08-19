@@ -1,3 +1,8 @@
+import type {
+  FriendInteractionBatchDto,
+  FriendInteractionEffectDto,
+  FriendInteractionItemDto,
+} from '@/stores/friend'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api from '@/api'
@@ -15,27 +20,333 @@ export interface Land {
   [key: string]: any
 }
 
+// UseReply.land 是刚成功操作后的权威快照，短期内不允许被随后的 AllLands 旧快照覆盖。
+const FARM_LAND_OVERLAY_TTL_MS = 60 * 1000
+
 export const useFarmStore = defineStore('farm', () => {
   const lands = ref<Land[]>([])
   const seeds = ref<any[]>([])
   const summary = ref<any>({})
   const loading = ref(false)
+  const loaded = ref(false)
+  const error = ref('')
+  const interactionItems = ref<FriendInteractionItemDto[]>([])
+  const interactionItemsLoading = ref(false)
+  const interactionItemsError = ref('')
+  const interactionUsePending = ref(false)
+  const interactionUseError = ref('')
+  const interactionItemsAccountId = ref('')
+  const interactionUsedLandIds = ref<Record<string, string[]>>({})
+  const dogSkillGiftPendingCount = ref(0)
+  const dogSkillGiftStatusLoading = ref(false)
+  const dogSkillGiftClaiming = ref(false)
+  const dogSkillGiftError = ref('')
+  const dogSkillGiftAccountId = ref('')
+  let landRequestSequence = 0
+  let interactionItemsRequestSequence = 0
+  let dogSkillGiftRequestSequence = 0
+  let landOverlay: { lands: any[], effects: FriendInteractionEffectDto[], updatedAt: number } | null = null
+
+  function normalizeLandId(value: unknown) {
+    const text = String(value ?? '').trim()
+    return /^\d+$/.test(text) && text !== '0' ? text : ''
+  }
+
+  function mergeLandUpdateList(landsInput: any[], updatesInput: any[]) {
+    const current = Array.isArray(landsInput) ? landsInput : []
+    const updates = Array.isArray(updatesInput) ? updatesInput.filter(Boolean) : []
+    if (updates.length === 0)
+      return current
+
+    const byId = new Map(current.map(land => [normalizeLandId(land?.id), land]))
+    for (const update of updates) {
+      const updateId = normalizeLandId(update?.id)
+      if (!updateId)
+        continue
+      const existing = byId.get(updateId)
+      if (!existing)
+        continue
+      byId.set(updateId, { ...existing, ...update, id: existing.id })
+    }
+    return current.map(land => byId.get(normalizeLandId(land?.id)) || land)
+  }
+
+  function applyLandOverlay(landsInput: any[]) {
+    if (landOverlay && Date.now() - landOverlay.updatedAt > FARM_LAND_OVERLAY_TTL_MS)
+      landOverlay = null
+    if (!landOverlay)
+      return Array.isArray(landsInput) ? landsInput : []
+
+    let merged = mergeLandUpdateList(landsInput, landOverlay.lands)
+    const effects = landOverlay.effects
+    if (effects.length === 0)
+      return merged
+
+    merged = merged.map((land: any) => {
+      const landId = normalizeLandId(land?.id)
+      const occupiedIds = new Set([
+        landId,
+        ...(Array.isArray(land?.occupiedLandIds) ? land.occupiedLandIds.map(normalizeLandId) : []),
+        normalizeLandId(land?.masterLandId),
+      ].filter(Boolean))
+      const visibleEffects = effects.filter(effect => occupiedIds.has(normalizeLandId(effect?.landId)))
+      if (visibleEffects.length === 0)
+        return land
+      const existing = Array.isArray(land?.interactionEffects) ? land.interactionEffects : []
+      const seen = new Set(existing.map((effect: any) => `${effect?.itemId}:${effect?.landId}:${effect?.usedAt || ''}`))
+      const mergedEffects = [...existing]
+      for (const effect of visibleEffects) {
+        const key = `${effect.itemId}:${effect.landId}:${effect.usedAt || ''}`
+        if (!seen.has(key)) {
+          seen.add(key)
+          mergedEffects.push(effect)
+        }
+      }
+      return { ...land, interactionEffects: mergedEffects }
+    })
+    return merged
+  }
+
+  function recordLandUpdates(updatedLandsInput: any[], effectsInput: FriendInteractionEffectDto[] = []) {
+    const updatedLands = Array.isArray(updatedLandsInput) ? updatedLandsInput.filter(Boolean) : []
+    const effects = Array.isArray(effectsInput) ? effectsInput.filter(effect => !!effect?.confirmed) : []
+    if (updatedLands.length === 0 && effects.length === 0)
+      return
+    landOverlay = {
+      lands: mergeLandUpdateList(landOverlay?.lands || [], updatedLands),
+      effects: [...(landOverlay?.effects || []), ...effects],
+      updatedAt: Date.now(),
+    }
+    lands.value = applyLandOverlay(mergeLandUpdateList(lands.value, updatedLands))
+  }
 
   async function fetchLands(accountId: string) {
     if (!accountId)
-      return
+      return false
+    const sequence = ++landRequestSequence
     loading.value = true
+    loaded.value = false
+    error.value = ''
     try {
       const { data } = await api.get('/api/lands', {
         headers: { 'x-account-id': accountId },
-      })
+        skipErrorToast: true,
+      } as any)
+      if (sequence !== landRequestSequence)
+        return false
       if (data && data.ok) {
-        lands.value = data.data.lands || []
+        lands.value = applyLandOverlay(data.data.lands || [])
         summary.value = data.data.summary || {}
+        return true
       }
+      error.value = String(data?.error || '无法读取土地数据')
+      return false
+    }
+    catch (cause: any) {
+      if (sequence !== landRequestSequence)
+        return false
+      error.value = String(cause?.response?.data?.error || cause?.message || '无法读取土地数据，请稍后重试')
+      return false
     }
     finally {
-      loading.value = false
+      if (sequence === landRequestSequence) {
+        loaded.value = true
+        loading.value = false
+      }
+    }
+  }
+
+  function resetLandState() {
+    landRequestSequence++
+    lands.value = []
+    summary.value = {}
+    loading.value = false
+    loaded.value = false
+    error.value = ''
+    landOverlay = null
+    resetInteractionState()
+    resetDogSkillGiftState()
+  }
+
+  function resetDogSkillGiftState() {
+    dogSkillGiftRequestSequence++
+    dogSkillGiftPendingCount.value = 0
+    dogSkillGiftStatusLoading.value = false
+    dogSkillGiftClaiming.value = false
+    dogSkillGiftError.value = ''
+    dogSkillGiftAccountId.value = ''
+  }
+
+  async function fetchDogSkillGiftStatus(accountId: string) {
+    const requestedAccountId = String(accountId || '').trim()
+    if (!requestedAccountId)
+      return false
+
+    const sequence = ++dogSkillGiftRequestSequence
+    if (dogSkillGiftAccountId.value !== requestedAccountId) {
+      dogSkillGiftPendingCount.value = 0
+      dogSkillGiftAccountId.value = requestedAccountId
+    }
+    dogSkillGiftStatusLoading.value = true
+    dogSkillGiftError.value = ''
+    try {
+      const res = await api.get('/api/dog/skill-gifts', {
+        headers: { 'x-account-id': requestedAccountId },
+        skipErrorToast: true,
+      } as any)
+      if (sequence !== dogSkillGiftRequestSequence || dogSkillGiftAccountId.value !== requestedAccountId)
+        return false
+      if (!res.data?.ok) {
+        dogSkillGiftError.value = String(res.data?.error || '无法读取待拾取礼包')
+        return false
+      }
+      dogSkillGiftPendingCount.value = Math.max(0, Number(res.data?.data?.pendingCount || 0))
+      return true
+    }
+    catch (cause: any) {
+      if (sequence !== dogSkillGiftRequestSequence || dogSkillGiftAccountId.value !== requestedAccountId)
+        return false
+      dogSkillGiftError.value = String(cause?.response?.data?.error || cause?.message || '无法读取待拾取礼包')
+      return false
+    }
+    finally {
+      if (sequence === dogSkillGiftRequestSequence && dogSkillGiftAccountId.value === requestedAccountId)
+        dogSkillGiftStatusLoading.value = false
+    }
+  }
+
+  async function claimDogSkillGifts(accountId: string) {
+    const requestedAccountId = String(accountId || '').trim()
+    if (!requestedAccountId || dogSkillGiftClaiming.value)
+      return false
+
+    const sequence = ++dogSkillGiftRequestSequence
+    dogSkillGiftAccountId.value = requestedAccountId
+    dogSkillGiftClaiming.value = true
+    dogSkillGiftError.value = ''
+    try {
+      const res = await api.post('/api/dog/skill-gifts/claim', {}, {
+        headers: { 'x-account-id': requestedAccountId },
+        skipErrorToast: true,
+      } as any)
+      if (sequence !== dogSkillGiftRequestSequence || dogSkillGiftAccountId.value !== requestedAccountId)
+        return false
+      if (!res.data?.ok || res.data?.data?.error) {
+        dogSkillGiftError.value = String(res.data?.data?.error || res.data?.error || '拾取礼包失败')
+        return false
+      }
+      dogSkillGiftPendingCount.value = Math.max(0, Number(res.data?.data?.pending || 0))
+      return res.data.data
+    }
+    catch (cause: any) {
+      if (sequence !== dogSkillGiftRequestSequence || dogSkillGiftAccountId.value !== requestedAccountId)
+        return false
+      dogSkillGiftError.value = String(cause?.response?.data?.error || cause?.message || '拾取礼包失败')
+      return false
+    }
+    finally {
+      if (sequence === dogSkillGiftRequestSequence && dogSkillGiftAccountId.value === requestedAccountId)
+        dogSkillGiftClaiming.value = false
+    }
+  }
+
+  function interactionUsageKey(accountId: string, itemId: unknown) {
+    return `${String(accountId || '')}:${String(itemId || '')}`
+  }
+
+  function getInteractionUsedLandIds(accountId: string, itemId: unknown) {
+    return interactionUsedLandIds.value[interactionUsageKey(accountId, itemId)] || []
+  }
+
+  function resetInteractionState() {
+    interactionItemsRequestSequence++
+    interactionItems.value = []
+    interactionItemsLoading.value = false
+    interactionItemsError.value = ''
+    interactionUseError.value = ''
+    interactionItemsAccountId.value = ''
+    interactionUsedLandIds.value = {}
+  }
+
+  /** 读取背包中可对自己农场使用的特殊互动道具（服务端已按白名单过滤）。 */
+  async function fetchInteractionItems(accountId: string) {
+    const requestedAccountId = String(accountId || '').trim()
+    if (!requestedAccountId)
+      return false
+    const sequence = ++interactionItemsRequestSequence
+    if (interactionItemsAccountId.value !== requestedAccountId) {
+      interactionItems.value = []
+      interactionItemsAccountId.value = requestedAccountId
+    }
+    interactionItemsLoading.value = true
+    interactionItemsError.value = ''
+    try {
+      const res = await api.get('/api/farm/interaction-items', {
+        headers: { 'x-account-id': requestedAccountId },
+        skipErrorToast: true,
+      } as any)
+      if (sequence !== interactionItemsRequestSequence)
+        return false
+      if (!res.data?.ok) {
+        interactionItems.value = []
+        interactionItemsError.value = String(res.data?.error || '无法读取可用的互动道具')
+        return false
+      }
+      interactionItems.value = Array.isArray(res.data?.data?.items) ? res.data.data.items : []
+      return true
+    }
+    catch (cause: any) {
+      if (sequence !== interactionItemsRequestSequence)
+        return false
+      interactionItems.value = []
+      interactionItemsError.value = String(cause?.response?.data?.error || cause?.message || '无法读取可用的互动道具')
+      return false
+    }
+    finally {
+      if (sequence === interactionItemsRequestSequence)
+        interactionItemsLoading.value = false
+    }
+  }
+
+  async function useInteractionItemBatch(accountId: string, itemId: string, landIds: string[]) {
+    if (!accountId || !itemId || !Array.isArray(landIds) || landIds.length === 0)
+      return false
+    if (interactionUsePending.value)
+      return false
+    interactionUsePending.value = true
+    interactionUseError.value = ''
+    try {
+      const res = await api.post('/api/farm/interaction-items/use-batch', {
+        itemId,
+        landIds,
+      }, {
+        headers: { 'x-account-id': accountId },
+        skipErrorToast: true,
+      } as any)
+      if (!res.data?.ok) {
+        interactionUseError.value = String(res.data?.error || '互动道具使用失败')
+        return false
+      }
+      const result = res.data.data as FriendInteractionBatchDto
+      if (Array.isArray(result?.items))
+        interactionItems.value = result.items
+      const key = interactionUsageKey(accountId, result.itemId)
+      const used = new Set(interactionUsedLandIds.value[key] || [])
+      for (const landId of result.usedLandIds || [])
+        used.add(String(landId))
+      interactionUsedLandIds.value = {
+        ...interactionUsedLandIds.value,
+        [key]: [...used].sort((left, right) => Number(left) - Number(right)),
+      }
+      recordLandUpdates(result?.updatedLands || [], result?.interactionEffects || [])
+      return result
+    }
+    catch (cause: any) {
+      interactionUseError.value = String(cause?.response?.data?.error || cause?.message || '互动道具使用失败')
+      return false
+    }
+    finally {
+      interactionUsePending.value = false
     }
   }
 
@@ -55,8 +366,36 @@ export const useFarmStore = defineStore('farm', () => {
     await api.post('/api/farm/operate', { opType }, {
       headers: { 'x-account-id': accountId },
     })
+    landOverlay = null
     await fetchLands(accountId)
   }
 
-  return { lands, summary, seeds, loading, fetchLands, fetchSeeds, operate }
+  return {
+    lands,
+    summary,
+    seeds,
+    loading,
+    loaded,
+    error,
+    interactionItems,
+    interactionItemsLoading,
+    interactionItemsError,
+    interactionUsePending,
+    interactionUseError,
+    dogSkillGiftPendingCount,
+    dogSkillGiftStatusLoading,
+    dogSkillGiftClaiming,
+    dogSkillGiftError,
+    fetchLands,
+    resetLandState,
+    fetchSeeds,
+    operate,
+    fetchInteractionItems,
+    useInteractionItemBatch,
+    getInteractionUsedLandIds,
+    resetInteractionState,
+    fetchDogSkillGiftStatus,
+    claimDogSkillGifts,
+    resetDogSkillGiftState,
+  }
 })

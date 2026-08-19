@@ -22,7 +22,7 @@ const ACTIVITY_ERROR_MESSAGES: Record<string, string> = {
     QIXI_GIFT_UNAVAILABLE: '当前无法赠送鹊羽香囊',
     INSUFFICIENT_QIXI_SACHET: '鹊羽香囊数量不足',
     INVALID_QIXI_FRIEND_GID: '好友 GID 必须是正十进制整数',
-    INVALID_QIXI_SACHET_COUNT: '赠送数量必须是正十进制整数',
+    INVALID_QIXI_MESSAGE_TEXT_ID: '祝福文案信息无效，请刷新活动后重试',
     QIXI_RESPONSE_INVALID: '鹊桥活动数据已经变化，请刷新页面后重试',
     QIXI_GIFT_FAILED: '鹊羽香囊赠送失败，请刷新后重试',
 };
@@ -151,7 +151,7 @@ function mountActivityCenterRoutes(app: Application, ctx: AdminContext): void {
     )));
 
     app.post('/api/activity-center/qixi/gift', withAccount((accountId: string, req: Request) => (
-        ctx.provider.giftQixiSachet(accountId, req.body?.friendGid, req.body?.count)
+        ctx.provider.giftQixiSachet(accountId, req.body?.friendGid, req.body?.messageTextId ?? 15)
     )));
 }
 
