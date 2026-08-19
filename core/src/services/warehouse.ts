@@ -5,7 +5,7 @@ export {};
  * 仓库系统 - 自动出售果实
  * 协议说明：BagReply 使用 item_bag（ItemBag），item_bag.items 才是背包物品列表
  */
-const { getFruitName, getPlantByFruitId, getPlantBySeedId, getItemById, getItemImageById, getSeedImageBySeedId, getEffectiveSellInfo } = require('../config/gameConfig');
+const { getFruitName, getPlantByFruitId, getPlantBySeedId, getItemById, getItemImageById, getSeedImageBySeedId, getEffectiveSellInfo, getMutantEffectsByIds } = require('../config/gameConfig');
 const { isAutomationOn } = require('../models/store');
 const { sendMsgAsync, networkEvents, getUserState } = require('../utils/network');
 const { types } = require('../utils/proto');
@@ -483,12 +483,15 @@ async function getBagDetail(): Promise<any> {
         const uid: number = toNum(it.uid);
         if (id <= 0 || count <= 0 || uid <= 0) continue;
         const mutantTypes: number[] = getMutantTypes(it);
+        const mutantEffects = getMutantEffectsByIds(mutantTypes);
         originalItems.push({
             id,
             count,
             uid,
             expireTime: getItemExpireTime(it),
             mutantTypes,
+            mutantEffects,
+            mutantTypeNames: mutantEffects.map((effect: any) => effect.name),
             locked: isItemLocked(it),
             groupKey: `uid:${uid}`,
         });
@@ -502,6 +505,7 @@ async function getBagDetail(): Promise<any> {
         const uid: number = toNum(it.uid);
         if (id <= 0 || count <= 0 || uid <= 0) continue;
         const mutantTypes: number[] = getMutantTypes(it);
+        const mutantEffects = getMutantEffectsByIds(mutantTypes);
         const groupKey: string = `uid:${uid}`;
         const info: any = getItemById(id) || null;
         let name: string = info && info.name ? String(info.name) : '';
@@ -539,6 +543,8 @@ async function getBagDetail(): Promise<any> {
                 uid,
                 expireTime,
                 mutantTypes,
+                mutantEffects,
+                mutantTypeNames: mutantEffects.map((effect: any) => effect.name),
                 locked: isItemLocked(it),
                 sourceInfo,
                 name,

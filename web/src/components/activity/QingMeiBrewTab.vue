@@ -32,6 +32,14 @@ const quotes = computed(() => (props.activity?.quoteTotals || []).map((total, in
   total,
 })))
 
+function mutantTypeLabel(item: { mutantTypeNames?: string[], mutantTypes?: string[] }) {
+  if (item.mutantTypeNames?.length)
+    return item.mutantTypeNames.join('+')
+  if (item.mutantTypes?.length)
+    return item.mutantTypes.join('+')
+  return ''
+}
+
 watch(ingredients, (items) => {
   const availableUids = new Set(items.map(item => item.uid))
   selectedUids.value = new Set([...selectedUids.value].filter(uid => availableUids.has(uid)))
@@ -109,7 +117,7 @@ function itemCount(uid: string) {
           <div v-for="item in ingredients" :key="item.key" class="ingredient-choice" :class="{ selected: selectedUids.has(item.uid) }">
             <button type="button" class="ingredient-toggle" :disabled="busy" :aria-pressed="selectedUids.has(item.uid)" @click="toggleIngredient(item.uid)">
               <img v-if="item.image" :src="item.image" alt="">
-              <span><strong>{{ item.name || '青梅果实' }}</strong><small>UID {{ item.uid }} · 背包拥有 x{{ item.count }}<template v-if="item.mutantTypes.length"> · 变异 {{ item.mutantTypes.join('+') }}</template></small></span>
+              <span><strong>{{ item.name || '青梅果实' }}</strong><small>UID {{ item.uid }} · 背包拥有 x{{ item.count }}<template v-if="mutantTypeLabel(item)"> · 变异 {{ mutantTypeLabel(item) }}</template></small></span>
               <span class="selection-mark"><span v-if="selectedUids.has(item.uid)" class="i-carbon-checkmark" /></span>
             </button>
             <div class="count-control">

@@ -114,6 +114,17 @@ const confirmButtonText = computed(() => {
   return '确认使用'
 })
 
+function mutantTypeLabel(item: any) {
+  const names = Array.isArray(item?.mutantTypeNames) ? item.mutantTypeNames.map(String).filter(Boolean) : []
+  if (names.length)
+    return names.join(' + ')
+  const effects = Array.isArray(item?.mutantEffects) ? item.mutantEffects.map((effect: any) => String(effect?.name || '')).filter(Boolean) : []
+  if (effects.length)
+    return effects.join(' + ')
+  const ids = Array.isArray(item?.mutantTypes) ? item.mutantTypes : []
+  return ids.join(' + ')
+}
+
 function getPriceClass(item: any) {
   const priceId = Number(item?.priceId || 0)
   if (priceId === 1005)
@@ -725,7 +736,7 @@ useIntervalFn(loadBag, 60000)
                 <span class="i-carbon-locked" /> 已锁定
               </span>
               <span v-if="item.uid">UID: {{ item.uid }}</span>
-              <span v-if="item.mutantTypes?.length">变异类型: {{ item.mutantTypes.join(' + ') }}</span>
+              <span v-if="mutantTypeLabel(item)">变异类型: {{ mutantTypeLabel(item) }}</span>
               <span>
                 <span
                   class="inline-block rounded-md px-1.5 py-0.5 text-[10px] font-bold"

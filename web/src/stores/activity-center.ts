@@ -312,6 +312,7 @@ export interface QingMeiIngredientDto extends ActivityItemDto {
   uid: string
   key: string
   mutantTypes: string[]
+  mutantTypeNames: string[]
 }
 
 export interface QingMeiActivityDto {
@@ -879,11 +880,17 @@ function normalizeQingMei(value: unknown): QingMeiActivityDto | null {
     ingredients: records(raw.ingredients).map((entry) => {
       const uid = text(entry.uid)
       const mutantTypes = Array.isArray(entry.mutantTypes) ? entry.mutantTypes.map(String) : []
+      const mutantTypeNames = Array.isArray(entry.mutantTypeNames)
+        ? entry.mutantTypeNames.map(String).filter(Boolean)
+        : (Array.isArray(entry.mutantEffects)
+            ? entry.mutantEffects.map((effect: any) => String(effect?.name || '')).filter(Boolean)
+            : [])
       return {
         ...normalizeItem(entry),
         uid,
         key: text(entry.key, `${uid}:${mutantTypes.join(',')}`),
         mutantTypes,
+        mutantTypeNames,
       }
     }),
     balance: raw.balance === null || raw.balance === undefined ? null : text(raw.balance),
