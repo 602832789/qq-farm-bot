@@ -21,13 +21,21 @@ function createWorkerManager(deps) {
         getOfflineAutoDeleteMs,
         triggerOfflineReminder,
         addOrUpdateAccount,
+        getAccounts,
         deleteAccount,
         scheduleAutoRelogin,
+        refreshAccountCode,
+        updateSystemClientVersion,
         onStatusSync,
         onWorkerLog
     } = deps;
 
     const scheduler = createScheduler('worker_manager');
+    const restartHistory = new Map();
+    const credentialRefreshes = new Map();
+    const WATCHDOG_PING_MS = 30000;
+    const WATCHDOG_TIMEOUT_MS = 90000;
+    const WATCHDOG_MAX_RESTARTS = 3;
 
     /** 是否支持 Thread 模式（非 pkg 打包 + Worker 可用） */
     const threadMode = runtimeMode === 'thread' && !processRef.pkg && typeof WorkerThread === 'function';
@@ -185,7 +193,8 @@ function createWorkerManager(deps) {
             disconnectedSince: 0,
             offlineReminderTriggered: false,
             autoDeleteTriggered: false,
-            wsError: null
+            wsError: null,
+            lastPongAt: Date.now()
         };
 
         // 发送启动配置
@@ -447,7 +456,19 @@ function createWorkerManager(deps) {
             if (code === 400) {
                 addAccountLog('ws_400', `账号 ${  wrk.name  } 登录失效，请更新 Code`,
                     accountId, wrk.name);
+                if (typeof refreshAccountCode === 'function' && !credentialRefreshes.has(accountId)) {
+                    const task = Promise.resolve(refreshAccountCode(accountId, 'ws_400'))
+                        .then(ok => {
+                            if (!ok && typeof scheduleAutoRelogin === 'function') {
+                                scheduleAutoRelogin(accountId, 'ws_400_refresh_failed');
+                            }
+                        })
+                        .finally(() => credentialRefreshes.delete(accountId));
+                    credentialRefreshes.set(accountId, task);
+                }
             }
+        } else if (msg.type === 'watchdog_pong') {
+            wrk.lastPongAt = Date.now();
         } else if (msg.type === 'account_kicked') {
             // 被踢下线
             const reason = msg.reason || '未知';
@@ -490,6 +511,19 @@ function createWorkerManager(deps) {
             stopWorker(accountId);
             if (typeof scheduleAutoRelogin === 'function') {
                 scheduleAutoRelogin(accountId, `ws_reconnect_failed:${reason}`);
+            }
+        } else if (msg.type === 'client_version_update') {
+            const clientVersion = cleanText(msg.clientVersion);
+            if (clientVersion && typeof updateSystemClientVersion === 'function') {
+                const changed = updateSystemClientVersion(clientVersion);
+                if (changed) {
+                    log('系统', `已根据服务端 WebSocket 回包更新游戏版本: ${clientVersion}`, {
+                        accountId: String(accountId), accountName: wrk.name
+                    });
+                    addAccountLog('client_version_update',
+                        `服务端已自动更新游戏版本: ${clientVersion}`,
+                        accountId, wrk.name, { previous: cleanText(msg.previous) });
+                }
             }
         } else if (msg.type === 'automation_patch') {
             const patch = msg.patch && typeof msg.patch === 'object' ? msg.patch : {};
@@ -541,6 +575,42 @@ function createWorkerManager(deps) {
             }
         }
     }
+
+    function findAccount(accountId) {
+        const data = typeof getAccounts === 'function' ? getAccounts() : { accounts: [] };
+        return (data.accounts || []).find(account => String(account.id) === String(accountId));
+    }
+
+    scheduler.setIntervalTask('watchdog_tick', WATCHDOG_PING_MS, () => {
+        const now = Date.now();
+        for (const [accountId, wrk] of Object.entries(workers)) {
+            if (!wrk || wrk.stopping) continue;
+            if (now - Number(wrk.lastPongAt || 0) > WATCHDOG_TIMEOUT_MS) {
+                const history = (restartHistory.get(accountId) || [])
+                    .filter(at => now - at < 60 * 60 * 1000);
+                if (history.length >= WATCHDOG_MAX_RESTARTS) {
+                    wrk.stopping = true;
+                    stopWorker(accountId);
+                    log('错误', `账号 ${wrk.name} Worker 连续无响应，已停止自动重启`, {
+                        accountId, accountName: wrk.name
+                    });
+                    addAccountLog('worker_watchdog_stopped',
+                        `Worker 一小时内已重启 ${WATCHDOG_MAX_RESTARTS} 次，停止账号`,
+                        accountId, wrk.name);
+                    continue;
+                }
+                history.push(now);
+                restartHistory.set(accountId, history);
+                const account = findAccount(accountId);
+                log('错误', `账号 ${wrk.name} Worker 超过 90 秒无响应，正在自动重启`, {
+                    accountId, accountName: wrk.name
+                });
+                if (account) restartWorker(account);
+                continue;
+            }
+            try { wrk.process.send({ type: 'watchdog_ping', at: now }); } catch { }
+        }
+    }, { preventOverlap: true });
 
     /**
      * 调用 Worker API（RPC）

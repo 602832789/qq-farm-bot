@@ -19,6 +19,20 @@ function hasWxRefreshIdentity(account) {
   return !!String((account && account.wxid) || "").trim();
 }
 
+const PROTECTED_WX_CREDENTIAL_FIELDS = [
+  "loginBuffer",
+  "refreshtoken",
+  "accesstoken",
+  "refreshToken",
+  "accessToken",
+];
+
+function stripProtectedWxCredentials(source) {
+  const result = { ...(source && typeof source === "object" ? source : {}) };
+  for (const field of PROTECTED_WX_CREDENTIAL_FIELDS) delete result[field];
+  return result;
+}
+
 function registerAdminAccountRoutes({
   app,
   provider,
@@ -155,7 +169,8 @@ function registerAdminAccountRoutes({
 
   app.post("/api/accounts", async (req, res) => {
     try {
-      const body = req.body && typeof req.body === "object" ? req.body : {};
+      const rawBody = req.body && typeof req.body === "object" ? req.body : {};
+      const body = stripProtectedWxCredentials(rawBody);
       const currentUser = req.currentUser;
       const isUpdate = !!body.id;
       const isAdmin =
@@ -205,6 +220,23 @@ function registerAdminAccountRoutes({
         });
       }
 
+      // wxid 换绑后旧账号凭据绝不能继续使用；只有新的扫码会话可以重新写入。
+      if (isUpdate) {
+        const existing = getAccountsForUser().find(
+          (account) => String(account.id) === String(nextAccount.id),
+        );
+        const wxidChanged = existing
+          && Object.hasOwn(body, "wxid")
+          && String(existing.wxid || "") !== String(body.wxid || "");
+        if (wxidChanged && !body.wxSessionId) {
+          Object.assign(nextAccount, {
+            loginBuffer: "",
+            refreshtoken: "",
+            accesstoken: "",
+          });
+        }
+      }
+
       let wasRunning = false;
       if (isUpdate && provider.isAccountRunning) {
         wasRunning = provider.isAccountRunning(nextAccount.id);
@@ -243,7 +275,7 @@ function registerAdminAccountRoutes({
       }
 
       let autoRefreshEnabled = false;
-      let started = false;
+      let startQueued = false;
       if (!isUpdate) {
         const created = data.accounts.at(-1);
         if (created) {
@@ -257,7 +289,19 @@ function registerAdminAccountRoutes({
             });
             autoRefreshEnabled = true;
           }
-          started = await provider.startAccount(created.id);
+          // 启动微信账号会包含凭证续期和 MMTLS 换 Code，不能阻塞新增账号响应。
+          // 账号与刷新策略落盘后立即返回，启动任务在后台继续执行。
+          startQueued = true;
+          Promise.resolve(provider.startAccount(created.id)).catch((error) => {
+            if (provider.addAccountLog) {
+              provider.addAccountLog(
+                "start_failed",
+                `账号 ${created.name || created.id} 后台启动失败: ${error.message || error}`,
+                created.id,
+                created.name || "",
+              );
+            }
+          });
         }
       } else if (wasRunning && !onlyRenaming) {
         provider.restartAccount(nextAccount.id);
@@ -267,7 +311,7 @@ function registerAdminAccountRoutes({
       res.json({
         ok: true,
         data: provider.getAccounts(),
-        startup: { started, autoRefreshEnabled },
+        startup: { queued: startQueued, autoRefreshEnabled },
       });
     } catch (error) {
       res.status(500).json({ ok: false, error: error.message });
@@ -417,4 +461,4 @@ function registerAdminAccountRoutes({
   });
 }
 
-module.exports = { registerAdminAccountRoutes };
+module.exports = { registerAdminAccountRoutes, stripProtectedWxCredentials };

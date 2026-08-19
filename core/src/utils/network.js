@@ -17,6 +17,28 @@ const cryptoWasm = require('./crypto-wasm');
 const { createGatewayToken } = require('./gateway-token');
 const { TsdkRuntime } = require('./tsdk-runtime');
 
+const CLIENT_VERSION_RE = /^\d+(?:\.\d+){2,4}_\d{8}$/;
+
+function extractServerClientVersion(versionInfo) {
+    const source = versionInfo && typeof versionInfo === 'object' ? versionInfo : {};
+    const candidates = [source.version_force, source.version_recommend];
+    for (const candidate of candidates) {
+        const value = String(candidate || '').trim();
+        if (CLIENT_VERSION_RE.test(value)) return value;
+    }
+    return '';
+}
+
+function applyServerVersionInfo(versionInfo) {
+    const clientVersion = extractServerClientVersion(versionInfo);
+    if (!clientVersion || clientVersion === CONFIG.clientVersion) return false;
+    const previous = CONFIG.clientVersion;
+    CONFIG.clientVersion = clientVersion;
+    log('系统', `服务端版本信息已自动更新客户端版本: ${previous} -> ${clientVersion}`);
+    networkEvents.emit('client_version_update', { clientVersion, previous });
+    return true;
+}
+
 // 延迟加载 warehouse 模块避免循环依赖
 let warehouseModule = null;
 function getWarehouseModule() {
@@ -563,6 +585,7 @@ async function sendLogin(onLoginSuccess, deviceProtocol) {
         }
         try {
             const reply = types.LoginReply.decode(bodyBytes);
+            applyServerVersionInfo(reply.version_info);
             if (reply.basic) {
                 clearWsErrorState();
                 userState.gid = toNum(reply.basic.gid);
@@ -654,6 +677,7 @@ function startHeartbeat() {
             heartbeatMissCount = 0;
             try {
                 const reply = types.HeartbeatReply.decode(replyBody);
+                applyServerVersionInfo(reply.version_info);
                 if (reply.server_time) {
                     const serverTime = toNum(reply.server_time);
                     const serverTimeMs = serverTime > 1e12 ? serverTime : serverTime * 1000;
@@ -849,5 +873,7 @@ module.exports = {
     getAceStatus,
     buildLoginDeviceInfo,
     buildWebSocketHeaders,
+    extractServerClientVersion,
+    applyServerVersionInfo,
     networkEvents,
 };

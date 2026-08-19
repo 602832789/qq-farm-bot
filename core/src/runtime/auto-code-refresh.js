@@ -13,6 +13,25 @@ function createAutoCodeRefreshService(deps) {
   } = deps;
 
   const scheduler = createScheduler('auto_code_refresh');
+  const recoveryState = new Map();
+  const MAX_DAILY_RECOVERIES = 8;
+  const MAX_CONSECUTIVE_FAILURES = 3;
+
+  function getRecoveryState(accountId) {
+    const date = new Date().toISOString().slice(0, 10);
+    const current = recoveryState.get(String(accountId));
+    if (!current || current.date !== date) {
+      const fresh = { date, attempts: 0, failures: 0 };
+      recoveryState.set(String(accountId), fresh);
+      return fresh;
+    }
+    return current;
+  }
+
+  function isRecoveryReason(reason) {
+    return ['ws_400', 'kickout:', 'ws_reconnect_failed:', 'refresh_failed']
+      .some(prefix => String(reason || '').includes(prefix));
+  }
 
   function getTaskName(accountId) {
     return `refresh_${  String(accountId || '')}`;
@@ -89,6 +108,15 @@ function createAutoCodeRefreshService(deps) {
     const account = findAccount(accountId);
     if (!account) return false;
 
+    const recovery = isRecoveryReason(reason) ? getRecoveryState(accountId) : null;
+    if (recovery && (recovery.attempts >= MAX_DAILY_RECOVERIES
+      || recovery.failures >= MAX_CONSECUTIVE_FAILURES)) {
+      addAccountLog('auto_relogin_blocked', '自动重登已熔断，请检查网络或重新扫码',
+        account.id, account.name, { reason, ...recovery });
+      return false;
+    }
+    if (recovery) recovery.attempts += 1;
+
     const wxConfig = getWxConfig();
     if (wxConfig.enabled === false && !account.loginBuffer) {
       log('系统', '自动刷新 Code 跳过: 微信登录未启用', {
@@ -112,8 +140,10 @@ function createAutoCodeRefreshService(deps) {
         accountId: String(account.id),
         accountName: account.name,
       });
+      if (recovery) recovery.failures = 0;
       return true;
     } catch (err) {
+      if (recovery) recovery.failures += 1;
       addAccountLog('auto_code_refresh_failed', `自动刷新 Code 失败: ${  err.message}`,
         account.id, account.name, { reason });
       log('错误', `自动刷新 Code 失败: ${  account.name  } - ${  err.message}`, {
@@ -184,6 +214,13 @@ function createAutoCodeRefreshService(deps) {
     if (!cfg.enabled) return false;
     const account = findAccount(accountId);
     if (!account || !account.loginBuffer) return false;
+    const recovery = getRecoveryState(accountId);
+    if (recovery.attempts >= MAX_DAILY_RECOVERIES
+      || recovery.failures >= MAX_CONSECUTIVE_FAILURES) {
+      addAccountLog('auto_relogin_blocked', '自动重登次数已达上限，请检查网络或重新扫码',
+        account.id, account.name, { reason, ...recovery });
+      return false;
+    }
     const taskName = `relogin_${String(accountId || '')}`;
     scheduler.clear(taskName);
     scheduler.setTimeoutTask(taskName, cfg.intervalMinutes * 60000, () => {

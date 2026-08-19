@@ -110,8 +110,18 @@ function createRuntimeEngine(options = {}) {
         getOfflineAutoDeleteMs,
         triggerOfflineReminder,
         addOrUpdateAccount: store.addOrUpdateAccount,
+        getAccounts: store.getAccounts,
         deleteAccount: store.deleteAccount,
         scheduleAutoRelogin: autoCodeRefresh.scheduleRelogin,
+        refreshAccountCode: autoCodeRefresh.refreshAccountCode,
+        updateSystemClientVersion: (clientVersion) => {
+            const value = String(clientVersion || '').trim();
+            const current = store.getSystemConfig() || store.DEFAULT_SYSTEM_CONFIG || {};
+            if (!value || current.clientVersion === value) return false;
+            const saved = store.setSystemConfig({ ...current, clientVersion: value });
+            if (saved) updateRuntimeConfig(saved);
+            return !!saved;
+        },
         onStatusSync: (accountId, status, accountName) => {
             runtimeEvents.emit('status', { accountId, status, accountName });
             if (onStatusSync) onStatusSync(accountId, status, accountName);

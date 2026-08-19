@@ -202,6 +202,7 @@ let onFarmHarvested = null;
 let harvestSellRunning = false;
 let onWsError = null;
 let onDisconnectHandler = null;
+let onClientVersionUpdate = null;
 let wsErrorHandledAt = 0;
 let lastDailyRunDate = '';
 let friendSyncPaused = false;
@@ -804,6 +805,8 @@ onMasterMessage(async (msg) => {
             handleApiCall(msg);
         } else if (msg.type === 'config_sync') {
             applyRuntimeConfig(msg.config || {}, true);
+        } else if (msg.type === 'watchdog_ping') {
+            sendToMaster({ type: 'watchdog_pong', at: msg.at || Date.now() });
         }
     } catch (err) {
         sendToMaster({ type: 'error', error: err.message });
@@ -852,6 +855,16 @@ async function startBot(config) {
     networkEvents.on('ws_error', onWsError);
     networkEvents.on('reconnect_failed', onReconnectFailed);
     networkEvents.on('kickout', onKickout);
+
+    if (onClientVersionUpdate) networkEvents.off('client_version_update', onClientVersionUpdate);
+    onClientVersionUpdate = ({ clientVersion, previous }) => {
+        sendToMaster({
+            type: 'client_version_update',
+            clientVersion: String(clientVersion || ''),
+            previous: String(previous || '')
+        });
+    };
+    networkEvents.on('client_version_update', onClientVersionUpdate);
 
     // 断线监听
     if (onDisconnectHandler) networkEvents.off('disconnect', onDisconnectHandler);
@@ -978,6 +991,10 @@ async function stopBot() {
 
     networkEvents.off('kickout', onKickout);
     networkEvents.off('reconnect_failed', onReconnectFailed);
+    if (onClientVersionUpdate) {
+        networkEvents.off('client_version_update', onClientVersionUpdate);
+        onClientVersionUpdate = null;
+    }
 
     if (onDisconnectHandler) {
         networkEvents.off('disconnect', onDisconnectHandler);
