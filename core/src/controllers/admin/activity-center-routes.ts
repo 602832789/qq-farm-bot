@@ -25,15 +25,6 @@ const ACTIVITY_ERROR_MESSAGES: Record<string, string> = {
     INVALID_QIXI_MESSAGE_TEXT_ID: '祝福文案信息无效，请刷新活动后重试',
     QIXI_RESPONSE_INVALID: '鹊桥活动数据已经变化，请刷新页面后重试',
     QIXI_GIFT_FAILED: '鹊羽香囊赠送失败，请刷新后重试',
-    QIXI_DEW_ACCOUNT_UNAVAILABLE: '当前账号 GID 尚未就绪，请稍后重试',
-    INVALID_QIXI_DEW_HOST_GID: '农场主人 GID 无效，请重新选择',
-    INVALID_QIXI_DEW_LAND_ID: '地块信息无效，请刷新后重选',
-    INVALID_QIXI_DEW_LAND_IDS: '请选择有效地块，单次最多选择 48 块',
-    QIXI_DEW_UNAVAILABLE: '活动未进行，鹊羽灵露当前不可使用',
-    INSUFFICIENT_QIXI_DEW: '背包中没有可用的鹊羽灵露',
-    QIXI_DEW_SELECTION_EXCEEDS_BALANCE: '所选地块数量超过当前鹊羽灵露余额',
-    QIXI_DEW_HOST_MISMATCH: '进入的农场与所选好友不一致，请刷新后重试',
-    QIXI_DEW_TARGET_UNAVAILABLE: '所选地块已不再可用，请刷新后重选',
 };
 
 function activityErrorResponse(error: any): { code: string; message: string } {
@@ -118,10 +109,6 @@ function mountActivityCenterRoutes(app: Application, ctx: AdminContext): void {
     mountGet('/api/activity-center/qingmei', 'getCurrentQingMeiActivity');
     mountGet('/api/activity-center/qixi', 'getCurrentQixiActivity');
 
-    app.get('/api/activity-center/qixi/dew/targets', withAccount((accountId: string, req: Request) => (
-        ctx.provider.getQixiDewTargets(accountId, req.query?.hostGid)
-    )));
-
     app.post('/api/activity-center/pass/claim', withAccount((accountId: string) => (
         ctx.provider.claimBattlePassRewards(accountId)
     )));
@@ -165,14 +152,6 @@ function mountActivityCenterRoutes(app: Application, ctx: AdminContext): void {
 
     app.post('/api/activity-center/qixi/gift', withAccount((accountId: string, req: Request) => (
         ctx.provider.giftQixiSachet(accountId, req.body?.friendGid, req.body?.messageTextId ?? 15)
-    )));
-
-    app.post('/api/activity-center/qixi/dew/use', withAccount((accountId: string, req: Request) => (
-        ctx.provider.useQixiDew(accountId, req.body?.hostGid, req.body?.landId)
-    )));
-
-    app.post('/api/activity-center/qixi/dew/use-batch', withAccount((accountId: string, req: Request) => (
-        ctx.provider.useQixiDewBatch(accountId, req.body?.hostGid, req.body?.landIds)
     )));
 }
 

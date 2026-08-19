@@ -6,6 +6,7 @@ const { CONFIG } = require('../../config/config');
 const { sendMsgAsync, getUserState, GatewayError } = require('../../utils/network');
 const { types } = require('../../utils/proto');
 const { toLong, toNum, log, logWarn, sleep, randomDelay } = require('../../utils/utils');
+const { getFarmingSkillGiftCount } = require('../dog-skill-gifts');
 const {
     syncKnownFriendGidsFromRecentVisitors,
     fetchQqFriendsByKnownGids,
@@ -114,6 +115,7 @@ export interface HelpFarmingOutcome {
     landCount: number;
     landIds: number[];
     operationLimits: any[];
+    dogSkillGiftCount: number;
     code?: number;
     raw?: any;
 }
@@ -121,7 +123,7 @@ export interface HelpFarmingOutcome {
 export async function helpFarming(friendGid: number, landIds: number[], stopWhenExpLimit: boolean = false): Promise<HelpFarmingOutcome> {
     const targetIds: number[] = [...new Set<number>((landIds || []).map((id: any) => toNum(id)).filter((id: number) => id > 0))];
     if (targetIds.length === 0) {
-        return { effect: 'noop', operationCount: 0, landCount: 0, landIds: [], operationLimits: [] };
+        return { effect: 'noop', operationCount: 0, landCount: 0, landIds: [], operationLimits: [], dogSkillGiftCount: 0 };
     }
 
     const beforeExp: number = toNum((getUserState() || {}).exp);
@@ -140,11 +142,21 @@ export async function helpFarming(friendGid: number, landIds: number[], stopWhen
         const results: any[] = Array.isArray(reply.results) ? reply.results : [];
         const confirmedLandIds: number[] = [...new Set(results.map((result: any) => toNum(result && result.land_id)).filter((id: number) => id > 0))];
         const operationLimits: any[] = Array.isArray(reply.operation_limits) ? reply.operation_limits : [];
+        const dogSkillGiftCount: number = getFarmingSkillGiftCount(reply);
         schedulerRef().updateOperationLimits(operationLimits);
         if (stopWhenExpLimit && results.length > 0) {
             await sleep(200);
             const afterExp: number = toNum((getUserState() || {}).exp);
             if (afterExp <= beforeExp) schedulerRef().autoDisableHelpByExpLimit();
+        }
+        if (dogSkillGiftCount > 0) {
+            log('好友', `帮助好友触发护主犬“同气连枝”，自动获得礼包 x${dogSkillGiftCount}`, {
+                module: 'friend',
+                event: '同气连枝礼包',
+                result: 'ok',
+                friendGid,
+                count: dogSkillGiftCount,
+            });
         }
         return {
             effect: results.length > 0 ? 'confirmed' : 'uncertain',
@@ -152,6 +164,7 @@ export async function helpFarming(friendGid: number, landIds: number[], stopWhen
             landCount: confirmedLandIds.length,
             landIds: confirmedLandIds,
             operationLimits,
+            dogSkillGiftCount,
             raw: reply,
         };
     } catch (e: any) {
@@ -162,6 +175,7 @@ export async function helpFarming(friendGid: number, landIds: number[], stopWhen
                 landCount: 0,
                 landIds: [],
                 operationLimits: [],
+                dogSkillGiftCount: 0,
                 code: e.code,
             };
         }

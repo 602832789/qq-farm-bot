@@ -1,4 +1,4 @@
-/** 好友土地特殊互动道具：库存发现、协议适配与顺序批量使用。 */
+/** 特殊互动道具：库存发现、协议适配与顺序批量使用（好友农场与自己农场共用）。 */
 
 export {};
 
@@ -6,10 +6,11 @@ const LongModule = require('long');
 const { PlantPhase } = require('../config/config');
 const { getItemById, getItemImageById } = require('../config/gameConfig');
 const { isSellConditionSatisfied } = require('../config/sell-conditions');
-const { sendMsgAsync, GatewayError } = require('../utils/network');
+const { sendMsgAsync, getUserState, GatewayError } = require('../utils/network');
 const { types } = require('../utils/proto');
 const { toNum } = require('../utils/utils');
 const { getSellConditionContext } = require('./activity-windows');
+const { getAllLands } = require('./farm/api');
 const {
     buildLandMap,
     buildLandDetail,
@@ -23,6 +24,15 @@ const { getBag, getBagItems } = require('./warehouse');
 const SPECIAL_INTERACTION_TYPE = 'additemuseitem';
 const MAX_BATCH_LANDS = 48;
 const MAX_SIGNED_INT64 = 9223372036854775807n;
+
+/**
+ * 可以对自己农场使用的互动道具白名单。
+ * 种草、黄金虫、足球一类只能作用于他人农场，官方客户端也不提供自用入口，
+ * 因此这里逐个登记，而不是按 interaction_type 放行。
+ */
+const SELF_USABLE_INTERACTION_ITEM_IDS: Set<number> = new Set([
+    301103, // 鹊羽灵露
+]);
 
 class FriendInteractionBusinessError extends Error {
     code: string;
@@ -94,6 +104,11 @@ function isFriendLandInteractionMetadata(info: any): boolean {
     return /好友|他人/.test(targetDescription);
 }
 
+function isSelfLandInteractionMetadata(info: any): boolean {
+    if (!isFriendLandInteractionMetadata(info)) return false;
+    return SELF_USABLE_INTERACTION_ITEM_IDS.has(Number(info.id) || 0);
+}
+
 function getStackExpireTime(stack: any): number {
     return toNum(stack?.expire_time ?? stack?.expireTime);
 }
@@ -146,6 +161,7 @@ function buildInteractionItemDto(info: any, stacks: any[]): any {
         saleConditionSatisfiedCount,
         interactionType: String(info.interaction_type || ''),
         protocol: 'item-use',
+        selfUsable: SELF_USABLE_INTERACTION_ITEM_IDS.has(itemId),
         description: String(info.desc || info.effectDesc || ''),
         activityId: info.activity_id == null ? '' : String(info.activity_id),
         sellCondition: String(info.sell_cond || ''),
@@ -193,6 +209,20 @@ async function getFriendInteractionItems(): Promise<any> {
         message: inventory.items.length > 0
             ? '特殊互动道具由服务端在实际使用时最终校验'
             : '背包中暂无可用于好友土地的特殊互动道具',
+    };
+}
+
+async function getSelfInteractionItems(): Promise<any> {
+    const inventory = await collectFriendInteractionInventory();
+    const items = inventory.items.filter((item: any) => item.selfUsable);
+    return {
+        items,
+        count: items.length,
+        serverValidationRequired: true,
+        confirmationRequired: true,
+        message: items.length > 0
+            ? '可对自己农场使用的道具由服务端在实际使用时最终校验'
+            : '背包中暂无可对自己农场使用的特殊互动道具',
     };
 }
 
@@ -252,7 +282,7 @@ function interactionFailure(itemName: string, landId: string, error: any, target
     const code = normalizedErrorCode(error);
     const knownMessages: Record<string, string> = {
         '1001065': `该地块当前不符合${itemName}的使用条件，作物品级或状态可能已变化`,
-        '1003008': `该好友农场当前已达到${itemName}的使用限制`,
+        '1003008': `该农场当前已达到${itemName}的使用限制`,
         FRIEND_INTERACTION_TARGET_UNAVAILABLE: '该地块已经没有可互动的作物',
     };
     const serverMessage = String(error?.errorMessage || '').trim();
@@ -282,11 +312,11 @@ function interactionItemName(itemId: number, info: any): string {
     } as Record<number, string>)[itemId] || `道具${itemId}`);
 }
 
-function normalizeUpdatedLand(rawLand: any, target: any = null): any | null {
+function normalizeUpdatedLand(rawLand: any, target: any = null, friendMode: boolean = true): any | null {
     if (!rawLand || typeof rawLand !== 'object') return null;
     let detail: any;
     try {
-        detail = buildLandDetail(rawLand, { friendMode: true });
+        detail = buildLandDetail(rawLand, { friendMode });
     } catch {
         detail = {
             id: toNum(rawLand.id),
@@ -340,6 +370,106 @@ function buildConfirmedInteractionEffects(
     }];
 }
 
+/** 读取并校验本次批量使用要消耗的库存，返回按过期时间排序的可用堆叠。 */
+async function resolveUsableStacks(itemId: number, info: any, landCount: number): Promise<any[]> {
+    const inventory = await collectFriendInteractionInventory();
+    const stacks = inventory.stacksByItemId.get(itemId) || [];
+    const available = stacks.reduce((sum: number, stack: any) => sum + Math.max(0, Number(stack.remaining) || 0), 0);
+    if (available <= 0) {
+        throw businessError('FRIEND_INTERACTION_ITEM_UNAVAILABLE', `${info.name || `物品${itemId}`}当前没有可提交服务器校验的库存`);
+    }
+    if (landCount > available) {
+        throw businessError('FRIEND_INTERACTION_SELECTION_EXCEEDS_BALANCE', `已选择 ${landCount} 块地，但当前只有 ${available} 个${info.name || `物品${itemId}`}`);
+    }
+    return stacks;
+}
+
+/**
+ * 在同一次农场会话内按地块编号顺序逐块提交道具使用。
+ * 好友农场由调用方负责 Enter/Leave，自己农场直接使用 AllLands 快照。
+ */
+async function runInteractionBatch(
+    itemId: number,
+    info: any,
+    stacks: any[],
+    hostGid: string,
+    landsInput: any[],
+    landIds: string[],
+    friendMode: boolean = true,
+): Promise<any[]> {
+    const itemName = String(info.name || `物品${itemId}`);
+    const targetMap = buildTargetLandMap(landsInput);
+    const attempts: any[] = [];
+
+    for (let index = 0; index < landIds.length; index += 1) {
+        const landId = landIds[index];
+        const target = targetMap.get(landId) || null;
+        if (!target) {
+            attempts.push(interactionFailure(
+                itemName,
+                landId,
+                businessError('FRIEND_INTERACTION_TARGET_UNAVAILABLE', '所选地块已无可互动作物'),
+            ));
+            continue;
+        }
+
+        const stack = currentStack(stacks);
+        if (!stack) {
+            attempts.push(interactionFailure(
+                itemName,
+                landId,
+                businessError('FRIEND_INTERACTION_ITEM_DEPLETED', '本次可用库存已经用完'),
+                target,
+            ));
+            continue;
+        }
+
+        try {
+            const reply = await sendTargetedItemUse(itemId, stack, hostGid, landId);
+            stack.remaining -= 1;
+            const updatedLand = normalizeUpdatedLand(reply?.land, target, friendMode);
+            const interactionEffects = buildConfirmedInteractionEffects(
+                reply?.land,
+                itemId,
+                landId,
+                interactionItemName(itemId, info),
+            );
+            attempts.push({
+                landId,
+                ok: true,
+                code: '',
+                message: `第 ${landId} 块地使用成功`,
+                target,
+                updatedLand,
+                interactionEffects,
+                consumed: normalizeReplyItems(reply?.consumed || reply?.used_items || []),
+                rewards: normalizeReplyItems([
+                    ...(Array.isArray(reply?.rewards) ? reply.rewards : []),
+                    ...(Array.isArray(reply?.items) ? reply.items : []),
+                    ...(Array.isArray(reply?.land_reward?.items) ? reply.land_reward.items : []),
+                ]),
+            });
+        } catch (error: any) {
+            attempts.push(interactionFailure(itemName, landId, error, target));
+            const gatewayFailure = typeof GatewayError === 'function' && error instanceof GatewayError;
+            if (!gatewayFailure && !(error instanceof FriendInteractionBusinessError)) {
+                for (const remainingLandId of landIds.slice(index + 1)) {
+                    attempts.push({
+                        landId: remainingLandId,
+                        ok: false,
+                        code: 'FRIEND_INTERACTION_BATCH_ABORTED',
+                        message: '前序请求被中断，本地未继续提交该地块',
+                        target: targetMap.get(remainingLandId) || null,
+                    });
+                }
+                break;
+            }
+        }
+    }
+
+    return attempts;
+}
+
 async function performFriendInteractionItemBatch(friendGidInput: unknown, itemIdInput: unknown, landIdsInput: unknown): Promise<any> {
     const friendGid = positiveDecimal(friendGidInput, 'INVALID_FRIEND_INTERACTION_GID', 'friendGid');
     const friendGidNumber = safePositiveNumber(friendGid, 'INVALID_FRIEND_INTERACTION_GID', 'friendGid');
@@ -350,89 +480,16 @@ async function performFriendInteractionItemBatch(friendGidInput: unknown, itemId
         throw businessError('FRIEND_INTERACTION_ITEM_UNSUPPORTED', '该物品不是可用于好友土地的特殊互动道具');
     }
 
-    const inventory = await collectFriendInteractionInventory();
-    const stacks = inventory.stacksByItemId.get(itemId) || [];
-    const available = stacks.reduce((sum: number, stack: any) => sum + Math.max(0, Number(stack.remaining) || 0), 0);
-    if (available <= 0) {
-        throw businessError('FRIEND_INTERACTION_ITEM_UNAVAILABLE', `${info.name || `物品${itemId}`}当前没有可提交服务器校验的库存`);
-    }
-    if (landIds.length > available) {
-        throw businessError('FRIEND_INTERACTION_SELECTION_EXCEEDS_BALANCE', `已选择 ${landIds.length} 块地，但当前只有 ${available} 个${info.name || `物品${itemId}`}`);
-    }
+    const stacks = await resolveUsableStacks(itemId, info, landIds.length);
 
     const enterReply = await enterFriendFarm(friendGidNumber);
-    const attempts: any[] = [];
+    let attempts: any[] = [];
     try {
         const actualGid = int64String(enterReply?.basic?.gid);
         if (actualGid !== '0' && actualGid !== friendGid) {
             throw businessError('FRIEND_INTERACTION_HOST_MISMATCH', '进入的好友农场与所选 GID 不一致');
         }
-        const targetMap = buildTargetLandMap(enterReply?.lands || []);
-        for (let index = 0; index < landIds.length; index += 1) {
-            const landId = landIds[index];
-            const target = targetMap.get(landId) || null;
-            if (!target) {
-                attempts.push(interactionFailure(
-                    String(info.name || `物品${itemId}`),
-                    landId,
-                    businessError('FRIEND_INTERACTION_TARGET_UNAVAILABLE', '所选地块已无可互动作物'),
-                ));
-                continue;
-            }
-
-            const stack = currentStack(stacks);
-            if (!stack) {
-                attempts.push(interactionFailure(
-                    String(info.name || `物品${itemId}`),
-                    landId,
-                    businessError('FRIEND_INTERACTION_ITEM_DEPLETED', '本次可用库存已经用完'),
-                    target,
-                ));
-                continue;
-            }
-
-            try {
-                const reply = await sendTargetedItemUse(itemId, stack, friendGid, landId);
-                stack.remaining -= 1;
-                const updatedLand = normalizeUpdatedLand(reply?.land, target);
-                const interactionEffects = buildConfirmedInteractionEffects(
-                    reply?.land,
-                    itemId,
-                    landId,
-                    interactionItemName(itemId, info),
-                );
-                attempts.push({
-                    landId,
-                    ok: true,
-                    code: '',
-                    message: `第 ${landId} 块地使用成功`,
-                    target,
-                    updatedLand,
-                    interactionEffects,
-                    consumed: normalizeReplyItems(reply?.consumed || reply?.used_items || []),
-                    rewards: normalizeReplyItems([
-                        ...(Array.isArray(reply?.rewards) ? reply.rewards : []),
-                        ...(Array.isArray(reply?.items) ? reply.items : []),
-                        ...(Array.isArray(reply?.land_reward?.items) ? reply.land_reward.items : []),
-                    ]),
-                });
-            } catch (error: any) {
-                attempts.push(interactionFailure(String(info.name || `物品${itemId}`), landId, error, target));
-                const gatewayFailure = typeof GatewayError === 'function' && error instanceof GatewayError;
-                if (!gatewayFailure && !(error instanceof FriendInteractionBusinessError)) {
-                    for (const remainingLandId of landIds.slice(index + 1)) {
-                        attempts.push({
-                            landId: remainingLandId,
-                            ok: false,
-                            code: 'FRIEND_INTERACTION_BATCH_ABORTED',
-                            message: '前序请求被中断，本地未继续提交该地块',
-                            target: targetMap.get(remainingLandId) || null,
-                        });
-                    }
-                    break;
-                }
-            }
-        }
+        attempts = await runInteractionBatch(itemId, info, stacks, friendGid, enterReply?.lands || [], landIds);
     } finally {
         await leaveFriendFarm(friendGidNumber);
     }
@@ -469,6 +526,56 @@ async function performFriendInteractionItemBatch(friendGidInput: unknown, itemId
     };
 }
 
+function currentAccountGid(): string {
+    const state = getUserState() || {};
+    return positiveDecimal(state.gid, 'SELF_INTERACTION_ACCOUNT_UNAVAILABLE', '当前账号 GID');
+}
+
+async function performSelfInteractionItemBatch(itemIdInput: unknown, landIdsInput: unknown): Promise<any> {
+    const hostGid = currentAccountGid();
+    const itemId = safePositiveNumber(itemIdInput, 'INVALID_FRIEND_INTERACTION_ITEM_ID', 'itemId');
+    const landIds = normalizeLandIds(landIdsInput);
+    const info = getItemById(itemId);
+    if (!isSelfLandInteractionMetadata(info)) {
+        throw businessError('SELF_INTERACTION_ITEM_UNSUPPORTED', '该道具只能在好友农场使用，不能对自己的农场使用');
+    }
+
+    const stacks = await resolveUsableStacks(itemId, info, landIds.length);
+    const landsReply = await getAllLands();
+    const attempts = await runInteractionBatch(itemId, info, stacks, hostGid, landsReply?.lands || [], landIds, false);
+
+    const succeeded = attempts.filter((attempt: any) => attempt.ok);
+    const failed = attempts.filter((attempt: any) => !attempt.ok);
+    const itemName = String(info.name || `物品${itemId}`);
+    const refreshedInventory = await getSelfInteractionItems();
+    const updatedLands = succeeded
+        .map((attempt: any) => attempt.updatedLand)
+        .filter((land: any) => !!land);
+    const interactionEffects = succeeded.flatMap((attempt: any) => (
+        Array.isArray(attempt.interactionEffects) ? attempt.interactionEffects : []
+    ));
+    return {
+        hostGid,
+        ownerName: '我的农场',
+        isSelf: true,
+        itemId: String(itemId),
+        itemName,
+        protocol: 'item-use',
+        requestedLandIds: landIds,
+        usedLandIds: succeeded.map((attempt: any) => attempt.landId),
+        failedLandIds: failed.map((attempt: any) => attempt.landId),
+        successCount: succeeded.length,
+        failureCount: failed.length,
+        results: attempts,
+        updatedLands,
+        interactionEffects,
+        items: refreshedInventory.items,
+        message: failed.length > 0
+            ? `已在我的农场按顺序使用 ${succeeded.length} 个${itemName}，跳过 ${failed.length} 块地`
+            : `已在我的农场按顺序使用 ${succeeded.length} 个${itemName}`,
+    };
+}
+
 let mutationTail: Promise<void> = Promise.resolve();
 
 function serializeMutation<T>(operation: () => Promise<T>): Promise<T> {
@@ -481,9 +588,17 @@ function useFriendInteractionItemBatch(friendGidInput: unknown, itemIdInput: unk
     return serializeMutation(() => performFriendInteractionItemBatch(friendGidInput, itemIdInput, landIdsInput));
 }
 
+function useSelfInteractionItemBatch(itemIdInput: unknown, landIdsInput: unknown): Promise<any> {
+    return serializeMutation(() => performSelfInteractionItemBatch(itemIdInput, landIdsInput));
+}
+
 module.exports = {
     MAX_BATCH_LANDS,
+    SELF_USABLE_INTERACTION_ITEM_IDS,
     isFriendLandInteractionMetadata,
+    isSelfLandInteractionMetadata,
     getFriendInteractionItems,
+    getSelfInteractionItems,
     useFriendInteractionItemBatch,
+    useSelfInteractionItemBatch,
 };

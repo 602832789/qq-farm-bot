@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package gamepb.dogpb;
 
+import "corepb.proto";
+
 // ============ 狗狗信息 ============
 message DogInfo {
     int64 id = 1;
@@ -26,4 +28,18 @@ message GetDogInfoReply {
     // field 2,3 reserved
     int64 protect_duration = 4;     // 护主时长(秒)
     repeated DogItem items = 5;     // 狗狗道具
+    // 抓包确认：主人侧尚未拾取的“同气连枝礼包”数量。
+    int64 pending_gift_count = 7;
+}
+
+// 主人点击农场中的礼包堆时发送空请求，服务端一次领取全部待拾取礼包。
+message ClaimSkillGiftsRequest {}
+
+message ClaimSkillGiftsReply {
+    corepb.Item item = 1;
+    int64 claimed_count = 3;
+}
+
+message PendingGiftCountNotify {
+    int64 count = 1;
 }

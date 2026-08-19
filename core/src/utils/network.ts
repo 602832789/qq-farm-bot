@@ -420,6 +420,15 @@ function handleNotify(msg: any): void {
             return;
         }
 
+        // 护主犬“同气连枝”主人侧待拾取礼包数量。
+        if (type.includes('PendingGiftCountNotify')) {
+            try {
+                const notify = types.PendingGiftCountNotify.decode(eventBody);
+                networkEvents.emit('dogSkillGiftPending', Math.max(0, toNum(notify.count)));
+            } catch {}
+            return;
+        }
+
         // 物品变化通知
         if (type.includes('ItemNotify')) {
             try {

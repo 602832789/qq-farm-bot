@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import type { QixiActivityDto, QixiDewTargetsDto } from '@/stores/activity-center'
+import type { QixiActivityDto } from '@/stores/activity-center'
 import { computed, ref } from 'vue'
-import QixiDewPanel from './QixiDewPanel.vue'
 
 interface FriendOption {
   gid?: string | number
@@ -18,18 +17,11 @@ const props = defineProps<{
   friendsLoading: boolean
   pendingBridge: boolean
   pendingGift: boolean
-  pendingDew: boolean
-  dewTargets: QixiDewTargetsDto | null
-  dewTargetsLoading: boolean
-  dewTargetsError: string
-  dewUsedLandIds: string[]
 }>()
 
 const emit = defineEmits<{
   claimBridge: []
   gift: [friendGid: string]
-  loadDewTargets: [hostGid: string]
-  useDew: [hostGid: string, landIds: string[]]
   refreshFriends: []
 }>()
 
@@ -114,6 +106,11 @@ function stageState(stage: QixiActivityDto['bridge']['stages'][number]) {
           <span>获赠香囊</span>
           <strong>{{ activity.balances.known ? (activity.balances.receivedSachet || '0') : '--' }}</strong>
         </div>
+        <div class="resource-item">
+          <img :src="activity.dew.image" alt="">
+          <span>{{ activity.dew.name || '鹊羽灵露' }}</span>
+          <strong>{{ activity.dew.balanceKnown ? (activity.dew.balance || '0') : '--' }}</strong>
+        </div>
         <div class="resource-item resource-item--count">
           <span class="i-carbon-user-favorite" />
           <span>已赠好友</span>
@@ -123,16 +120,10 @@ function stageState(stage: QixiActivityDto['bridge']['stages'][number]) {
     </section>
 
     <template v-if="activity">
-      <QixiDewPanel
-        :activity="activity"
-        :targets="dewTargets"
-        :loading="dewTargetsLoading"
-        :pending="pendingDew"
-        :error="dewTargetsError"
-        :used-land-ids="dewUsedLandIds"
-        @load-targets="emit('loadDewTargets', $event)"
-        @use="emit('useDew', $event.hostGid, $event.landIds)"
-      />
+      <p class="dew-hint">
+        <span class="i-carbon-information" />
+        鹊羽灵露在土地上使用：好友土地前往「好友」页，自己的土地前往「农场」页。
+      </p>
 
       <section class="qixi-section bridge-section">
         <div class="section-heading">
@@ -331,7 +322,7 @@ function stageState(stage: QixiActivityDto['bridge']['stages'][number]) {
   min-width: 0;
   display: grid;
   flex: 1;
-  grid-template-columns: repeat(4, minmax(110px, 1fr));
+  grid-template-columns: repeat(5, minmax(104px, 1fr));
   gap: 10px;
 }
 .resource-item {
@@ -363,6 +354,21 @@ function stageState(stage: QixiActivityDto['bridge']['stages'][number]) {
   padding: 26px 28px;
   border-bottom: 1px solid #d8dfdc;
   background: #fff;
+}
+.dew-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 28px;
+  border-bottom: 1px solid #d8dfdc;
+  color: #315d63;
+  background: #eef4f1;
+  font-size: 12px;
+}
+.dew-hint > span {
+  flex: 0 0 auto;
+  font-size: 16px;
 }
 .section-heading {
   display: flex;
@@ -746,6 +752,9 @@ function stageState(stage: QixiActivityDto['bridge']['stages'][number]) {
   }
   .qixi-section {
     padding: 20px 16px;
+  }
+  .dew-hint {
+    padding: 12px 16px;
   }
   .stage-grid,
   .gift-workspace {
