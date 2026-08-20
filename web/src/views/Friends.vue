@@ -467,6 +467,14 @@ async function handleRefreshFriends() {
   await friendStore.fetchFriends(currentAccountId.value, true)
 }
 
+async function refreshFriendLands(friendId: unknown) {
+  const accountId = currentAccountId.value
+  const key = friendKey(friendId)
+  if (!accountId || !key || friendLandsLoading.value[key])
+    return
+  await friendStore.fetchFriendLands(accountId, key)
+}
+
 function toggleFriend(friendId: string) {
   const key = friendKey(friendId)
   if (expandedFriends.value.has(key)) {
@@ -1020,20 +1028,36 @@ async function handleBatchAddKnownFriendGids() {
             </div>
 
             <div v-if="expandedFriends.has(String(friend.gid))" class="border-t bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/50">
+              <div class="mb-3 flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2 text-sm text-gray-700 font-semibold dark:text-gray-200">
+                  <span class="i-carbon-sprout" />
+                  土地详情
+                </div>
+                <NButton
+                  size="small"
+                  secondary
+                  :loading="!!friendLandsLoading[friend.gid]"
+                  :disabled="!currentAccountId"
+                  @click="refreshFriendLands(friend.gid)"
+                >
+                  <span class="i-carbon-renew mr-1" />
+                  刷新土地
+                </NButton>
+              </div>
               <div v-if="friendLandsLoading[friend.gid]" class="flex justify-center py-4">
                 <div class="i-svg-spinners-90-ring-with-bg text-2xl text-blue-500" />
               </div>
               <div v-else-if="friendLandsError[friend.gid]" class="flex flex-col items-center gap-2 py-5 text-center text-red-600 dark:text-red-300">
                 <span class="i-carbon-warning-alt text-2xl" />
                 <span>{{ friendLandsError[friend.gid] }}</span>
-                <NButton size="small" secondary type="error" @click="currentAccountId && friendStore.fetchFriendLands(currentAccountId, String(friend.gid))">
+                <NButton size="small" secondary type="error" @click="refreshFriendLands(friend.gid)">
                   重新读取
                 </NButton>
               </div>
               <div v-else-if="!friendLandsLoaded[friend.gid]" class="flex flex-col items-center gap-2 py-5 text-center text-gray-500 dark:text-gray-400">
                 <span class="i-carbon-data-view-alt text-2xl" />
                 <span>尚未读取该好友土地</span>
-                <NButton size="small" secondary @click="currentAccountId && friendStore.fetchFriendLands(currentAccountId, String(friend.gid))">
+                <NButton size="small" secondary @click="refreshFriendLands(friend.gid)">
                   读取土地
                 </NButton>
               </div>
