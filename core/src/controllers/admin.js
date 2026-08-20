@@ -128,7 +128,7 @@ function configureCorsMiddleware(expressApp) {
     res.header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS, PUT");
     res.header(
       "Access-Control-Allow-Headers",
-      "Content-Type, x-account-id, x-admin-token, x-proxy-api-key, x-proxy-api-url, x-proxy-app-id",
+      "Content-Type, x-account-id, x-admin-token",
     );
     res.header("Access-Control-Allow-Credentials", "true");
     res.header("Access-Control-Max-Age", "86400");

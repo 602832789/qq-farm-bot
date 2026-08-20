@@ -133,23 +133,16 @@ const { pause: stopWxCheck, resume: startWxCheck } = useIntervalFn(async () => {
       const codeResult = await wxLoginStore.getFarmCode(result.wxid)
       if (codeResult.success && codeResult.code) {
         const name = wxAccountName.value.trim() || result.nickname || `微信账号${Date.now()}`
-        if (wxLoginStore.config.autoAddAccount) {
-          await addAccount({
-            id: props.editData?.id,
-            name: props.editData ? (props.editData.name || name) : name,
-            code: codeResult.code,
-            platform: 'wx',
-            loginType: 'wx_qr',
-            wxid: result.wxid,
-            avatar: result.avatar,
-            wxSessionId: wxLoginStore.uuid,
-          })
-        }
-        else {
-          form.code = codeResult.code
-          form.platform = 'wx'
-          activeTab.value = 'manual'
-        }
+        await addAccount({
+          id: props.editData?.id,
+          name: props.editData ? (props.editData.name || name) : name,
+          code: codeResult.code,
+          platform: 'wx',
+          loginType: 'wx_qr',
+          wxid: result.wxid,
+          avatar: result.avatar,
+          wxSessionId: wxLoginStore.uuid,
+        })
       }
     }
   }
