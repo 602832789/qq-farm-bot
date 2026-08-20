@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { formatCurrencyAmount, type ResourceCurrency } from '@/utils/number-format'
+import type { ResourceCurrency } from '@/utils/number-format'
+import { formatCurrencyAmount } from '@/utils/number-format'
 
 const props = defineProps<{
   accountName?: string
   level: number
   gold: number
   coupon: number
+  diamond: number
   goldBean: number
 }>()
 
@@ -13,6 +15,7 @@ const L = {
   title: '\u5546\u57CE',
   gold: '\u91D1\u5E01',
   coupon: '\u70B9\u5238',
+  diamond: '\u94BB\u77F3',
   goldBean: '\u91D1\u8C46\u8C46',
   none: '\u672A\u9009\u62E9',
 }
@@ -31,6 +34,13 @@ const resourcePills = [
     value: () => props.coupon,
     currency: 'coupon' as ResourceCurrency,
     class: 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400',
+  },
+  {
+    label: L.diamond,
+    icon: 'i-carbon-diamond-outline',
+    value: () => props.diamond,
+    currency: 'coupon' as ResourceCurrency,
+    class: 'bg-cyan-50 text-cyan-700 dark:bg-cyan-900/20 dark:text-cyan-300',
   },
   {
     label: L.goldBean,

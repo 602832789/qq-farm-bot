@@ -49,10 +49,19 @@ export interface ShopMallItem {
   name: string
   images?: string[]
   price: number
+  currencyId?: number
+  currencyName?: string
+  currencyBalance?: number
+  balanceKnown?: boolean
   isFree?: boolean
   canBuy?: boolean
   isSoldOut?: boolean
   discount?: string
+  limitType?: number
+  limitCount?: number
+  boughtNum?: number
+  isActivity?: boolean
+  endTime?: number
 }
 
 export interface MysteryShopOffer {
@@ -95,6 +104,7 @@ export const useShopStore = defineStore('shop', () => {
   const userGold = ref(0)
   const userGoldBean = ref(0)
   const userTicket = ref(0)
+  const userDiamond = ref(0)
 
   let seedRequestId = 0
   let petRequestId = 0
@@ -122,6 +132,7 @@ export const useShopStore = defineStore('shop', () => {
     userGold.value = 0
     userGoldBean.value = 0
     userTicket.value = 0
+    userDiamond.value = 0
   }
 
   function isCurrentAccount(accountId: string) {
@@ -237,6 +248,7 @@ export const useShopStore = defineStore('shop', () => {
       if (data.ok) {
         mallGoods.value = data.data || []
         userTicket.value = data.userTicket || 0
+        userDiamond.value = data.userDiamond || 0
       }
       else {
         mallError.value = data.error || '获取道具商城失败'
@@ -350,6 +362,7 @@ export const useShopStore = defineStore('shop', () => {
     userGold,
     userGoldBean,
     userTicket,
+    userDiamond,
     clearShopData,
     fetchSeeds,
     fetchPets,

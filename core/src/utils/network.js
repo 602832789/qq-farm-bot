@@ -152,6 +152,7 @@ const userState = {
     gold: 0,
     exp: 0,
     coupon: 0, // 点券(ID:1002)
+    diamond: 0, // 钻石(ID:1004)
     goldBean: 0, // 金豆豆(ID:1005)
     openId: '',
     avatar: '',
@@ -179,7 +180,7 @@ function logLoginSummary(loginTimeMs) {
     log('系统', `登录摘要\n${lines.join('\n')}`);
 }
 
-// 登录后从背包获取金豆豆数量
+// 登录后从背包获取钻石、金豆豆数量
 async function fetchGoldBeanFromBag() {
     try {
         const warehouse = getWarehouseModule();
@@ -188,10 +189,10 @@ async function fetchGoldBeanFromBag() {
         for (const item of (items || [])) {
             const id = toNum(item && item.id);
             const count = toNum(item && item.count);
-            if (id === 1005 && count > 0) {
+            if (id === 1004) {
+                userState.diamond = count;
+            } else if (id === 1005 && count > 0) {
                 userState.goldBean = count;
-                log('系统', `金豆豆数量: ${count}`);
-                break;
             }
         }
     // eslint-disable-next-line unused-imports/no-unused-vars
@@ -428,6 +429,13 @@ function handleNotify(msg) {
                             userState.goldBean = count;
                         } else if (delta !== 0) {
                             userState.goldBean = Math.max(0, Number(userState.goldBean || 0) + delta);
+                        }
+                    } else if (id === 1004) {
+                        // 钻石
+                        if (count > 0) {
+                            userState.diamond = count;
+                        } else if (delta !== 0) {
+                            userState.diamond = Math.max(0, Number(userState.diamond || 0) + delta);
                         }
                     } else if (id === 101351) {
                         // 同气连枝礼包 - 帮忙好友时有概率获得

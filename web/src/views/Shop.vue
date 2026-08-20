@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/api'
 import ConfirmModal from '@/components/ConfirmModal.vue'
@@ -46,6 +46,7 @@ const {
   mallError,
   mysteryError,
   userGoldBean,
+  userDiamond,
 } = storeToRefs(shopStore)
 
 const tab = ref<'seed' | 'pet' | 'decoration' | 'mall' | 'mystery'>('seed')
@@ -53,6 +54,8 @@ const ascending = ref(true)
 const FERTILIZER_MALL_GOODS_IDS = new Set([1002, 1003])
 const SHOP_TABS = new Set(['seed', 'pet', 'decoration', 'mall', 'mystery'])
 const mysteryAutoBuyEnabled = ref(false)
+const nowSeconds = ref(Math.floor(Date.now() / 1000))
+let mallExpiryTimer: ReturnType<typeof setInterval> | undefined
 
 const showConfirm = ref(false)
 const confirmTitle = ref('确认购买')
@@ -95,12 +98,14 @@ const {
   currentLevel: () => currentLevel.value,
   currentGold: () => currentGold.value,
   currentCoupon: () => currentCoupon.value,
+  currentDiamond: () => userDiamond.value,
   userGoldBean: () => userGoldBean.value,
 })
 
 const sortedSeeds = computed(() => {
   return [...seeds.value].sort((a, b) => ascending.value ? a.seedLevel - b.seedLevel : b.seedLevel - a.seedLevel)
 })
+const visibleMallGoods = computed(() => mallGoods.value.filter(item => !item.endTime || nowSeconds.value <= item.endTime))
 
 const activeError = computed(() => {
   if (tab.value === 'seed')
@@ -121,7 +126,7 @@ const activeIsEmpty = computed(() => {
   if (tab.value === 'decoration')
     return decorations.value.length === 0
   if (tab.value === 'mall')
-    return mallGoods.value.length === 0
+    return visibleMallGoods.value.length === 0
   return !mysteryOffer.value?.active
 })
 const activeEmptyMessage = computed(() => {
@@ -338,7 +343,8 @@ function confirmBuyMallGoods(item: any) {
     return
   }
 
-  const priceText = item.isFree ? '免费' : `${formatCouponAmount(item.price || 0)} 点券`
+  const currencyName = item.currencyName || '点券'
+  const priceText = item.isFree ? '免费' : `${formatCouponAmount(item.price || 0)} ${currencyName}`
   openConfirm(
     '确认购买',
     `确定购买 ${item.name} 吗？
@@ -362,6 +368,14 @@ onMounted(() => {
   syncTabFromRouteQuery()
   refreshAll()
   refreshMysteryAutoBuyStatus()
+  mallExpiryTimer = setInterval(() => {
+    nowSeconds.value = Math.floor(Date.now() / 1000)
+  }, 1000)
+})
+
+onUnmounted(() => {
+  if (mallExpiryTimer)
+    clearInterval(mallExpiryTimer)
 })
 </script>
 
@@ -374,6 +388,7 @@ onMounted(() => {
           :level="currentLevel"
           :gold="currentGold"
           :coupon="currentCoupon"
+          :diamond="userDiamond"
           :gold-bean="userGoldBean"
         />
 
@@ -459,10 +474,10 @@ onMounted(() => {
         <div v-if="mallError" class="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
           {{ mallError }}
         </div>
-        <ShopEmptyState v-if="!mallGoods.length" :message="activeEmptyMessage" />
+        <ShopEmptyState v-if="!visibleMallGoods.length" :message="activeEmptyMessage" />
         <div class="grid grid-cols-[repeat(auto-fill,minmax(156px,1fr))] gap-3">
           <MallGoodsCard
-            v-for="item in mallGoods"
+            v-for="item in visibleMallGoods"
             :key="item.goodsId"
             :item="item"
             :can-afford="canAffordMall(item)"

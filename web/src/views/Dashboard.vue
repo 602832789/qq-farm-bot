@@ -513,8 +513,8 @@ useIntervalFn(updateCountdowns, 1000)
       </div>
 
       <div class="ui-card metric-card min-h-[168px] flex flex-col justify-between rounded-lg p-5">
-        <div class="flex justify-between">
-          <div>
+        <div class="grid grid-cols-4 gap-3">
+          <div class="min-w-0">
             <div class="flex items-center gap-1.5 text-xs text-gray-500">
               <div class="i-fas-coins text-yellow-500" />
               金币
@@ -530,8 +530,8 @@ useIntervalFn(updateCountdowns, 1000)
               {{ (status?.sessionGoldGained || 0) > 0 ? '+' : '' }}{{ formatGoldAmount(status?.sessionGoldGained || 0) }}
             </div>
           </div>
-          <div class="text-right">
-            <div class="flex items-center justify-end gap-1.5 text-xs text-gray-500">
+          <div class="min-w-0 text-center">
+            <div class="flex items-center justify-center gap-1.5 text-xs text-gray-500">
               <div class="i-fas-ticket-alt text-emerald-400" />
               点券
             </div>
@@ -546,7 +546,16 @@ useIntervalFn(updateCountdowns, 1000)
               {{ (status?.sessionCouponGained || 0) > 0 ? '+' : '' }}{{ formatCouponAmount(status?.sessionCouponGained || 0) }}
             </div>
           </div>
-          <div class="text-right">
+          <div class="min-w-0 text-center">
+            <div class="flex items-center justify-center gap-1.5 text-xs text-gray-500">
+              <div class="i-carbon-diamond-outline text-cyan-500" />
+              钻石
+            </div>
+            <div class="text-2xl text-cyan-600 font-bold dark:text-cyan-400">
+              {{ formatCouponAmount(status?.status?.diamond || 0) }}
+            </div>
+          </div>
+          <div class="min-w-0 text-right">
             <div class="flex items-center justify-end gap-1.5 text-xs text-gray-500">
               <div class="i-carbon-circle text-amber-500" />
               金豆
