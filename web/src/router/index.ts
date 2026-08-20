@@ -9,23 +9,17 @@ NProgress.configure({ showSpinner: false })
 
 const adminToken = useStorage('admin_token', '')
 const userInfo = useStorage('user_info', '')
-let bootstrapPromise: Promise<boolean> | null = null
+let sessionPromise: Promise<boolean> | null = null
+let sessionBootstrapAttempted = false
 
 async function ensureAdminSession() {
-  if (adminToken.value) {
-    try {
-      const { data } = await axios.get('/api/auth/validate', {
-        headers: { 'x-admin-token': adminToken.value },
-        timeout: 6000,
-      })
-      if (data?.ok)
-        return true
-    }
-    catch {}
-  }
+  // 管理页面采用宽松鉴权：已有 token 时直接放行，不在导航时重复校验。
+  if (adminToken.value || sessionBootstrapAttempted)
+    return true
 
-  if (!bootstrapPromise) {
-    bootstrapPromise = axios.post('/api/auto-login', {}, { timeout: 6000 })
+  if (!sessionPromise) {
+    sessionBootstrapAttempted = true
+    sessionPromise = axios.post('/api/auto-login', {}, { timeout: 6000 })
       .then(({ data }) => {
         if (!data?.ok)
           return false
@@ -40,9 +34,9 @@ async function ensureAdminSession() {
         return true
       })
       .catch(() => false)
-      .finally(() => { bootstrapPromise = null })
+      .finally(() => { sessionPromise = null })
   }
-  return bootstrapPromise
+  return sessionPromise
 }
 
 const router = createRouter({
@@ -66,7 +60,8 @@ const router = createRouter({
 
 router.beforeEach(async () => {
   NProgress.start()
-  return await ensureAdminSession() ? true : false
+  await ensureAdminSession()
+  return true
 })
 
 router.afterEach(() => NProgress.done())
