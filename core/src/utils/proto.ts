@@ -279,9 +279,18 @@ async function loadProto(): Promise<void> {
     // 狗狗
     types.GetDogInfoRequest = root.lookupType('gamepb.dogpb.GetDogInfoRequest');
     types.GetDogInfoReply = root.lookupType('gamepb.dogpb.GetDogInfoReply');
+    types.DeployDogRequest = root.lookupType('gamepb.dogpb.DeployDogRequest');
+    types.DeployDogReply = root.lookupType('gamepb.dogpb.DeployDogReply');
+    types.WithdrawDogRequest = root.lookupType('gamepb.dogpb.WithdrawDogRequest');
+    types.WithdrawDogReply = root.lookupType('gamepb.dogpb.WithdrawDogReply');
+    types.AddFoodRequest = root.lookupType('gamepb.dogpb.AddFoodRequest');
+    types.AddFoodReply = root.lookupType('gamepb.dogpb.AddFoodReply');
     types.ClaimSkillGiftsRequest = root.lookupType('gamepb.dogpb.ClaimSkillGiftsRequest');
     types.ClaimSkillGiftsReply = root.lookupType('gamepb.dogpb.ClaimSkillGiftsReply');
     types.PendingGiftCountNotify = root.lookupType('gamepb.dogpb.PendingGiftCountNotify');
+    types.GetProtectLogsRequest = root.lookupType('gamepb.dogpb.GetProtectLogsRequest');
+    types.GetProtectLogsReply = root.lookupType('gamepb.dogpb.GetProtectLogsReply');
+    types.NewProtectLogNotify = root.lookupType('gamepb.dogpb.NewProtectLogNotify');
 
     // 皮肤
     types.SkinsOwnedRequest = root.lookupType('gamepb.skinpb.SkinsOwnedRequest');

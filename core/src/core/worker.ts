@@ -752,6 +752,21 @@ async function handleApiCall(msg: any): Promise<void> {
             case 'claimDogSkillGifts':
                 result = await require('../services/dog-skill-gifts').checkAndClaimDogSkillGifts();
                 break;
+            case 'getPetInfo':
+                result = await require('../services/pets').getPetInfo();
+                break;
+            case 'deployDog':
+                result = await require('../services/pets').deployDog(args[0]);
+                break;
+            case 'withdrawDog':
+                result = await require('../services/pets').withdrawDog();
+                break;
+            case 'useDogFood':
+                result = await require('../services/pets').useDogFood(args[0], args[1], args[2]);
+                break;
+            case 'getPetProtectLogs':
+                result = await require('../services/pets').getProtectLogs();
+                break;
             case 'setAutomation': {
                 const payload = args && args[0] ? args[0] : {};
                 applyRuntimeConfig({ automation: { [payload.key]: payload.value } }, true);

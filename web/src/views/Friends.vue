@@ -13,13 +13,16 @@ import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 import { useAccountStore } from '@/stores/account'
 import { useActivityCenterStore } from '@/stores/activity-center'
 import { useFriendStore } from '@/stores/friend'
+import { useStatusStore } from '@/stores/status'
 import { useToastStore } from '@/stores/toast'
 
 const accountStore = useAccountStore()
 const activityStore = useActivityCenterStore()
 const friendStore = useFriendStore()
+const statusStore = useStatusStore()
 const toast = useToastStore()
 const { currentAccountId, currentAccount } = storeToRefs(accountStore)
+const { status } = storeToRefs(statusStore)
 const {
   friends,
   loading,
@@ -55,6 +58,15 @@ const isQqAccount = computed(() => {
   const platform = String(acc.platform || 'qq').toLowerCase()
   return platform === 'qq'
 })
+const currentAccountConnected = computed(() => {
+  const accountId = String(currentAccountId.value || '')
+  return !!accountId
+    && String(status.value?.accountId || '') === accountId
+    && !!status.value?.connection?.connected
+})
+const currentAccountRunning = computed(() => (
+  !!currentAccount.value?.running || currentAccountConnected.value
+))
 
 const knownFriendGidCount = computed(() => knownFriendGids.value.length)
 const knownFriendGidSet = computed(() => new Set(knownFriendGids.value.map(Number)))
@@ -346,7 +358,7 @@ function requestUseInteractionItem(friend: any) {
     ? `该道具库存中有 ${item.saleConditionSatisfiedCount} 个已满足游戏配置的出售条件，可能已过活动或有效期，`
     : ''
   confirmAction(
-    `${saleConditionWarning}将在 ${friendName} 的 ${landIds.length} 块土地上按编号依次使用“${item.name}”。作物状态、地块限制及道具时效由服务端最终校验，部分地块可能失败；是否继续？`,
+    `${saleConditionWarning}将在 ${friendName} 的 ${landIds.length} 块土地上按编号依次使用“${item.name}”。若期间作物状态发生变化，部分地块可能使用失败；是否继续？`,
     async () => {
       const result = await friendStore.useInteractionItemBatch(accountId, key, item.itemId, landIds)
       if (!result)
@@ -392,8 +404,7 @@ function giftQixiSachetToFriend(friend: any, event: Event) {
 
 async function loadData() {
   const accountId = currentAccountId.value
-  const acc = currentAccount.value
-  if (!accountId || !acc?.running)
+  if (!accountId || !currentAccountRunning.value)
     return
 
   avatarErrorKeys.value.clear()
@@ -428,7 +439,7 @@ watch(currentAccountId, () => {
   friendStore.resetFriendLandState()
 })
 
-watch([currentAccountId, () => currentAccount.value?.running], () => {
+watch([currentAccountId, () => currentAccount.value?.running, currentAccountConnected], () => {
   void loadData()
 }, { immediate: true })
 
@@ -456,6 +467,14 @@ async function handleRefreshFriends() {
   await friendStore.fetchFriends(currentAccountId.value, true)
 }
 
+async function refreshFriendLands(friendId: unknown) {
+  const accountId = currentAccountId.value
+  const key = friendKey(friendId)
+  if (!accountId || !key || friendLandsLoading.value[key])
+    return
+  await friendStore.fetchFriendLands(accountId, key)
+}
+
 function toggleFriend(friendId: string) {
   const key = friendKey(friendId)
   if (expandedFriends.value.has(key)) {
@@ -466,7 +485,7 @@ function toggleFriend(friendId: string) {
     expandedFriends.value.clear()
     selectedInteractionLandIds.value = {}
     expandedFriends.value.add(key)
-    if (currentAccountId.value && currentAccount.value?.running) {
+    if (currentAccountId.value && currentAccountRunning.value) {
       void Promise.allSettled([
         friendStore.fetchFriendLands(currentAccountId.value, key),
         friendStore.fetchInteractionItems(currentAccountId.value),
@@ -808,7 +827,7 @@ async function handleBatchAddKnownFriendGids() {
       </div>
     </div>
 
-    <div v-else-if="!currentAccount?.running" class="flex flex-col items-center justify-center gap-4 farm-card rounded-2xl bg-white p-12 text-center text-gray-500 shadow-md dark:bg-gray-800">
+    <div v-else-if="!currentAccountRunning" class="flex flex-col items-center justify-center gap-4 farm-card rounded-2xl bg-white p-12 text-center text-gray-500 shadow-md dark:bg-gray-800">
       <span class="i-carbon-network-4 text-4xl text-gray-400" />
       <div>
         <div class="text-lg text-gray-700 font-medium dark:text-gray-300">
@@ -1009,20 +1028,36 @@ async function handleBatchAddKnownFriendGids() {
             </div>
 
             <div v-if="expandedFriends.has(String(friend.gid))" class="border-t bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/50">
+              <div class="mb-3 flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2 text-sm text-gray-700 font-semibold dark:text-gray-200">
+                  <span class="i-carbon-sprout" />
+                  土地详情
+                </div>
+                <NButton
+                  size="small"
+                  secondary
+                  :loading="!!friendLandsLoading[friend.gid]"
+                  :disabled="!currentAccountId"
+                  @click="refreshFriendLands(friend.gid)"
+                >
+                  <span class="i-carbon-renew mr-1" />
+                  刷新土地
+                </NButton>
+              </div>
               <div v-if="friendLandsLoading[friend.gid]" class="flex justify-center py-4">
                 <div class="i-svg-spinners-90-ring-with-bg text-2xl text-blue-500" />
               </div>
               <div v-else-if="friendLandsError[friend.gid]" class="flex flex-col items-center gap-2 py-5 text-center text-red-600 dark:text-red-300">
                 <span class="i-carbon-warning-alt text-2xl" />
                 <span>{{ friendLandsError[friend.gid] }}</span>
-                <NButton size="small" secondary type="error" @click="currentAccountId && friendStore.fetchFriendLands(currentAccountId, String(friend.gid))">
+                <NButton size="small" secondary type="error" @click="refreshFriendLands(friend.gid)">
                   重新读取
                 </NButton>
               </div>
               <div v-else-if="!friendLandsLoaded[friend.gid]" class="flex flex-col items-center gap-2 py-5 text-center text-gray-500 dark:text-gray-400">
                 <span class="i-carbon-data-view-alt text-2xl" />
                 <span>尚未读取该好友土地</span>
-                <NButton size="small" secondary @click="currentAccountId && friendStore.fetchFriendLands(currentAccountId, String(friend.gid))">
+                <NButton size="small" secondary @click="refreshFriendLands(friend.gid)">
                   读取土地
                 </NButton>
               </div>
@@ -1067,12 +1102,11 @@ async function handleBatchAddKnownFriendGids() {
                         </div>
                         <div v-if="selectedInteractionItem" class="mt-2 text-xs text-amber-800 dark:text-amber-200">
                           {{ selectedInteractionItem.description || '选择土地后按编号依次使用。' }}
-                          <span class="font-medium">是否可用以服务端回包为准。</span>
                           <div v-if="selectedInteractionItem.saleConditionSatisfiedCount > 0" class="mt-1 text-red-700 font-medium dark:text-red-300">
-                            其中 {{ selectedInteractionItem.saleConditionSatisfiedCount }} 个已满足游戏配置中的出售条件，可能已过活动或有效期；仍会保留供提交，是否可用由服务端判断。
+                            其中 {{ selectedInteractionItem.saleConditionSatisfiedCount }} 个已满足游戏配置中的出售条件，可能已过活动或有效期，使用时可能失败。
                           </div>
                           <div class="mt-1 text-gray-600 dark:text-gray-300">
-                            当前仅选择生长期作物；实测官方客户端点击成熟作物只进入收获/偷取，不会发出道具使用请求。
+                            仅可选择生长期作物。
                           </div>
                         </div>
                       </div>

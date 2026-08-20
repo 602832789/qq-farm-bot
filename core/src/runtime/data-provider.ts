@@ -144,6 +144,21 @@ function createDataProvider(options: DataProviderOptions) {
         claimDogSkillGifts: (accountRef: string) => (
             callWorkerApi(resolveAccountRefId(accountRef), 'claimDogSkillGifts')
         ),
+        getPetInfo: (accountRef: string) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'getPetInfo')
+        ),
+        deployDog: (accountRef: string, dogId: unknown) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'deployDog', dogId)
+        ),
+        withdrawDog: (accountRef: string) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'withdrawDog')
+        ),
+        useDogFood: (accountRef: string, itemId: unknown, count: unknown = 1, uid: unknown = 0) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'useDogFood', itemId, count, uid)
+        ),
+        getPetProtectLogs: (accountRef: string) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'getPetProtectLogs')
+        ),
         getDailyGifts: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getDailyGiftOverview'),
         getActivityCenterSnapshot: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getActivityCenterSnapshot'),
         getCurrentSeasonEvent: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getCurrentSeasonEvent'),

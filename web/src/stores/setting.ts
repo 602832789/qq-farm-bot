@@ -46,6 +46,7 @@ export interface OfflineConfig {
   channel: string
   endpoint: string
   token: string
+  secret: string
   title: string
   msg: string
   offlineDeleteSec: number
@@ -126,6 +127,7 @@ function createDefaultSettings(): SettingsState {
       channel: 'webhook',
       endpoint: '',
       token: '',
+      secret: '',
       title: '账号下线提醒',
       msg: '账号下线',
       offlineDeleteSec: 0,
@@ -176,7 +178,10 @@ export const useSettingStore = defineStore('setting', () => {
       friendQuietHours: cloneValue(data.friendQuietHours || defaults.friendQuietHours),
       automation: cloneValue(data.automation || defaults.automation),
       ui: cloneValue(data.ui || defaults.ui),
-      offlineReminder: cloneValue(data.offlineReminder || defaults.offlineReminder),
+      offlineReminder: {
+        ...defaults.offlineReminder,
+        ...(cloneValue(data.offlineReminder) || {}),
+      },
       stealDelaySeconds: data.stealDelaySeconds ?? defaults.stealDelaySeconds,
       plantOrderRandom: data.plantOrderRandom ?? defaults.plantOrderRandom,
       plantDelaySeconds: data.plantDelaySeconds ?? defaults.plantDelaySeconds,
@@ -284,6 +289,9 @@ export const useSettingStore = defineStore('setting', () => {
         return { ok: true }
       }
       return { ok: false, error: '保存失败' }
+    }
+    catch (error: any) {
+      return { ok: false, error: error?.response?.data?.error || error?.message || '保存失败' }
     }
     finally {
       endRequest()

@@ -32,6 +32,7 @@ const DEFAULT_OFFLINE_REMINDER: OfflineReminder = {
     channel: 'webhook',
     endpoint: '',
     token: '',
+    secret: '',
     title: '账号下线提醒',
     msg: '账号下线',
     offlineDeleteSec: 0,

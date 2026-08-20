@@ -38,10 +38,11 @@ function createReloginReminderService(options: ReloginReminderOptions) {
             const channel = String(cfg.channel || '').trim().toLowerCase();
             const endpoint = String(cfg.endpoint || '').trim();
             const token = String(cfg.token || '').trim();
+            const secret = String(cfg.secret || '').trim();
             const baseTitle = String(cfg.title || '').trim();
             const title = accountName ? `${baseTitle} ${accountName}` : baseTitle;
             const content = String(cfg.msg || '').trim();
-            if (!channel || !token || !title || !content) {
+            if (!channel || !title || !content) {
                 log('错误', '下线提醒配置不完整');
                 return;
             }
@@ -49,8 +50,16 @@ function createReloginReminderService(options: ReloginReminderOptions) {
                 log('错误', 'Webhook 渠道未设置接口地址');
                 return;
             }
+            if (channel === 'dingtalk' && !endpoint && !token) {
+                log('错误', '钉钉渠道未设置 Webhook 地址');
+                return;
+            }
+            if (channel !== 'webhook' && channel !== 'dingtalk' && !token) {
+                log('错误', '下线提醒渠道未设置 Token');
+                return;
+            }
 
-            const result = await sendPushooMessage({ channel, endpoint, token, title, content });
+            const result = await sendPushooMessage({ channel, endpoint, token, secret, title, content });
             if (result?.ok) {
                 log('系统', `下线提醒发送成功: ${accountName || accountId}`);
             } else {

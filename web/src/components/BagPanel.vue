@@ -6,16 +6,19 @@ import { computed, onMounted, ref, watch } from 'vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import { useAccountStore } from '@/stores/account'
 import { useBagStore } from '@/stores/bag'
+import { usePetStore } from '@/stores/pet'
 import { useStatusStore } from '@/stores/status'
 import { useToastStore } from '@/stores/toast'
 
 const accountStore = useAccountStore()
 const bagStore = useBagStore()
+const petStore = usePetStore()
 const statusStore = useStatusStore()
 const toastStore = useToastStore()
 
 const { currentAccountId, currentAccount } = storeToRefs(accountStore)
 const { items, loading: bagLoading, originalItems } = storeToRefs(bagStore)
+const { snapshot: petSnapshot, activeDog, error: petError } = storeToRefs(petStore)
 const { status, loading: statusLoading, error: statusError, realtimeConnected } = storeToRefs(statusStore)
 
 const imageErrors = ref<Record<string, boolean>>({})
@@ -27,6 +30,12 @@ const CATEGORY_OPTIONS = [
   { label: '种子', value: 'seed' },
   { label: '道具', value: 'tool' },
 ] as const
+
+const DOG_FOOD_DURATIONS = new Map<number, number>([
+  [90004, 86400],
+  [90005, 3 * 86400],
+  [90006, 5 * 86400],
+])
 
 type CategoryValue = typeof CATEGORY_OPTIONS[number]['value']
 
@@ -75,7 +84,25 @@ const viewModal = ref({
   item: null as any,
 })
 
-const maxUseCount = computed(() => Math.max(1, Number(confirmModal.value.item?.count || 1)))
+function isDogFood(item: any) {
+  return DOG_FOOD_DURATIONS.has(Number(item?.id || 0))
+}
+
+function dogFoodMaxUseCount(item: any) {
+  const inventory = Math.max(0, Math.trunc(Number(item?.count || 0)))
+  const duration = DOG_FOOD_DURATIONS.get(Number(item?.id || 0)) || 0
+  if (!duration || !petSnapshot.value)
+    return inventory
+  const currentDuration = Math.max(0, Number(petSnapshot.value.protectDuration || 0))
+  const maxDuration = Math.max(currentDuration, Number(petSnapshot.value.maxProtectDuration || 30 * 86400))
+  return Math.max(0, Math.min(inventory, Math.floor((maxDuration - currentDuration) / duration)))
+}
+
+const maxUseCount = computed(() => {
+  const item = confirmModal.value.item
+  const count = isDogFood(item) ? dogFoodMaxUseCount(item) : Number(item?.count || 1)
+  return Math.max(1, count)
+})
 
 function setUseCount(value: unknown) {
   const count = Math.trunc(Number(value) || 1)
@@ -111,6 +138,8 @@ const confirmButtonText = computed(() => {
     return '确认锁定'
   if (confirmModal.value.action === 'batchUnlock')
     return '确认解锁'
+  if (confirmModal.value.action === 'use' && isDogFood(confirmModal.value.item))
+    return '确认喂食'
   return '确认使用'
 })
 
@@ -154,7 +183,7 @@ function canBatchSell(item: any) {
 
 function canUse(item: any) {
   const itemType = Number(item?.itemType || 0)
-  return itemType === 11 && item?.locked !== true
+  return (itemType === 11 || isDogFood(item)) && item?.locked !== true
 }
 
 function isLockable(item: any) {
@@ -257,10 +286,27 @@ function handleSellClick(item: any) {
   }
 }
 
-function handleUseClick(item: any) {
+async function handleUseClick(item: any) {
+  if (isDogFood(item)) {
+    const accountId = String(currentAccountId.value || '')
+    const hasCurrentSnapshot = petStore.accountId === accountId && !!petSnapshot.value
+    const loaded = hasCurrentSnapshot || await petStore.fetchPetInfo(accountId)
+    if (!loaded || !petSnapshot.value) {
+      toastStore.error(petError.value || '读取宠物看护时间失败')
+      return
+    }
+    if (!activeDog.value) {
+      toastStore.warning('请先在宠物页选择一只已获得的宠物上场')
+      return
+    }
+    if (dogFoodMaxUseCount(item) <= 0) {
+      toastStore.warning('当前看护时间已接近 30 天上限，无法再使用这份狗粮')
+      return
+    }
+  }
   confirmModal.value = {
     show: true,
-    title: `使用${item.name || `物品${item.id}`}`,
+    title: `${isDogFood(item) ? '喂食' : '使用'}${item.name || `物品${item.id}`}`,
     message: '',
     type: 'primary',
     loading: false,
@@ -354,14 +400,31 @@ async function handleConfirm() {
       }
     }
     else if (action === 'use' && item) {
-      const count = Math.max(1, Math.min(Math.trunc(Number(useCount) || 1), Number(item.count || 1)))
-      const res = await bagStore.useItem(currentAccountId.value, Number(item.id), count, Number(item.uid) || 0)
-      if (res.ok) {
-        toastStore.success(`已使用 ${item.name || `物品${item.id}`} x${count}`)
-        await loadBag()
+      const useLimit = isDogFood(item) ? dogFoodMaxUseCount(item) : Number(item.count || 1)
+      if (useLimit <= 0) {
+        toastStore.warning('当前看护时间已接近 30 天上限，无法再使用这份狗粮')
+        return
+      }
+      const count = Math.max(1, Math.min(Math.trunc(Number(useCount) || 1), useLimit))
+      if (isDogFood(item)) {
+        const result = await petStore.useDogFood(currentAccountId.value, Number(item.id), count, Number(item.uid) || 0)
+        if (result) {
+          toastStore.success(`已喂食 ${item.name || `狗粮${item.id}`} x${count}，看护时间已增加`)
+          await loadBag()
+        }
+        else {
+          toastStore.error(`喂食失败: ${petError.value || '未知错误'}`)
+        }
       }
       else {
-        toastStore.error(`使用失败: ${res.error || '未知错误'}`)
+        const res = await bagStore.useItem(currentAccountId.value, Number(item.id), count, Number(item.uid) || 0)
+        if (res.ok) {
+          toastStore.success(`已使用 ${item.name || `物品${item.id}`} x${count}`)
+          await loadBag()
+        }
+        else {
+          toastStore.error(`使用失败: ${res.error || '未知错误'}`)
+        }
       }
     }
   }
@@ -780,9 +843,16 @@ useIntervalFn(loadBag, 60000)
       @cancel="handleCancel"
     >
       <div v-if="confirmModal.action === 'use' && confirmModal.item" class="use-quantity-hint">
-        <span>当前拥有</span>
-        <strong>{{ maxUseCount }}</strong>
-        <span>个，请选择本次使用数量</span>
+        <template v-if="isDogFood(confirmModal.item)">
+          <span>受 30 天上限影响，本次最多可喂食</span>
+          <strong>{{ maxUseCount }}</strong>
+          <span>个</span>
+        </template>
+        <template v-else>
+          <span>当前拥有</span>
+          <strong>{{ maxUseCount }}</strong>
+          <span>个，请选择本次使用数量</span>
+        </template>
       </div>
       <div v-if="confirmModal.action === 'use' && confirmModal.item" class="use-quantity">
         <span>使用数量</span>

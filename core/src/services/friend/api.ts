@@ -245,7 +245,7 @@ export async function putPlantItemsDetailed(friendGid: number, landIds: number[]
             const confirmed: boolean = (Array.isArray(reply.land) ? reply.land : [])
                 .some((land: any) => toNum(land && land.id) === landId);
             if (confirmed) ok++;
-            else failed.push({ landId, reason: '服务端未确认土地状态变化' });
+            else failed.push({ landId, reason: '土地状态未更新，请稍后重试' });
         } catch (e: any) {
             const limitReached: boolean = e instanceof GatewayError && e.code === 1001046;
             if (limitReached) {

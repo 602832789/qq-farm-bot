@@ -429,6 +429,12 @@ function handleNotify(msg: any): void {
             return;
         }
 
+        // 守护日志新增通知的真实事件体为空，仅作为失效信号使用。
+        if (type.includes('NewProtectLogNotify')) {
+            networkEvents.emit('dogProtectLogChanged');
+            return;
+        }
+
         // 物品变化通知
         if (type.includes('ItemNotify')) {
             try {
