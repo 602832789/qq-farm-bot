@@ -537,6 +537,8 @@ function startAdminServer(dataProvider) {
     getAccessibleAccountIdsFromRequest,
     userStore,
     sendProviderError,
+    store,
+    updateRuntimeConfig,
   });
   registerAdminQrLoginRoutes({ app });
   registerAdminProxyRoutes({ app, logger: adminLogger });

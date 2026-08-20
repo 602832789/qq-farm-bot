@@ -6,6 +6,7 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 import { useWxLoginStore } from '@/stores/wx-login'
+import { parseManualLoginInput } from '@/utils/gateway-url'
 
 const props = defineProps<{
   show: boolean
@@ -338,16 +339,25 @@ async function submitManual() {
     return
   }
 
-  let code = form.code.trim()
-  const match = code.match(CODE_QUERY_RE)
-  if (match && match[1]) {
-    code = decodeURIComponent(match[1])
-    form.code = code
+  const parsedInput = parseManualLoginInput(form.code)
+  let code = parsedInput.code
+  if (!code) {
+    errorMessage.value = '请输入有效 Code 或官方 WebSocket URL'
+    return
   }
+  if (!parsedInput.gatewayUrl) {
+    const match = code.match(CODE_QUERY_RE)
+    if (match && match[1])
+      code = decodeURIComponent(match[1])
+  }
+  form.code = code
+  if (parsedInput.platform)
+    form.platform = parsedInput.platform
 
   let payload: any = {}
   if (props.editData) {
-    const onlyNameChanged = form.name !== props.editData.name
+    const onlyNameChanged = !parsedInput.gatewayUrl
+      && form.name !== props.editData.name
       && form.code === (props.editData.code || '')
       && form.platform === (props.editData.platform || 'qq')
 
@@ -361,6 +371,7 @@ async function submitManual() {
         code,
         platform: form.platform,
         loginType: 'manual',
+        ...(parsedInput.gatewayUrl ? { gatewayUrl: parsedInput.gatewayUrl } : {}),
       }
     }
   }
@@ -370,6 +381,7 @@ async function submitManual() {
       code,
       platform: form.platform,
       loginType: 'manual',
+      ...(parsedInput.gatewayUrl ? { gatewayUrl: parsedInput.gatewayUrl } : {}),
     }
   }
 
