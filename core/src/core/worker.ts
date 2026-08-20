@@ -967,11 +967,17 @@ function syncStatus(force: boolean = false): void {
     const farmRemainSec = Math.max(0, Math.ceil((Number(nextFarmRunAt || 0) - nowMs) / 1000));
     const helpRemainSec = Math.max(0, Math.ceil((Number(nextHelpRunAt || 0) - nowMs) / 1000));
     const stealRemainSec = Math.max(0, Math.ceil((Number(nextStealRunAt || 0) - nowMs) / 1000));
+    const visitStrategy = require('../services/friend/visit-strategy');
+    const friendQuiet = !!visitStrategy.inFriendQuietHours();
+    const farmQuiet = !!visitStrategy.inFarmQuietHours();
     fullStats.nextChecks = {
         farmRemainSec,
         helpRemainSec,
         stealRemainSec,
         friendRemainSec: Math.max(helpRemainSec, stealRemainSec),
+        farmQuiet,
+        helpQuiet: friendQuiet,
+        stealQuiet: friendQuiet,
     };
 
     fullStats.automation = getAutomation();
