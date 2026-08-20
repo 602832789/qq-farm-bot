@@ -371,6 +371,81 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
         }
     });
 
+    // API: 获取当前账号的宠物、护主剩余时间和狗粮库存。
+    app.get('/api/pets', async (req: Request, res: Response) => {
+        const id = getAccId(ctx, req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+
+        try {
+            const data = await ctx.provider.getPetInfo(id);
+            res.json({ ok: true, data });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    });
+
+    // API: 宠物技能静态文案。真实点击技能图标不会发起独立 RPC。
+    app.get('/api/pets/skills', (_req: Request, res: Response) => {
+        try {
+            const data = require('../../services/pets').getPetSkillCatalog();
+            res.json({ ok: true, data });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    });
+
+    // API: 使用狗粮。worker 调用经真实抓包确认的 DogService.AddFood（游戏内狗盆确认行为）。
+    app.post('/api/pets/food/use', async (req: Request, res: Response) => {
+        const id = getAccId(ctx, req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+
+        try {
+            const itemId = Number(req.body?.itemId) || 0;
+            const count = Math.max(1, Math.trunc(Number(req.body?.count) || 1));
+            const uid = Math.max(0, Number(req.body?.uid) || 0);
+            if (!itemId) return res.status(400).json({ ok: false, error: '缺少 itemId' });
+            const data = await ctx.provider.useDogFood(id, itemId, count, uid);
+            res.json({ ok: true, data });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    });
+
+    // API: 上场已获得宠物（DogService.DeployDog）。
+    app.post('/api/pets/deploy', async (req: Request, res: Response) => {
+        const id = getAccId(ctx, req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        try {
+            const dogId = Math.max(0, Number(req.body?.dogId) || 0);
+            if (!dogId) return res.status(400).json({ ok: false, error: '缺少 dogId' });
+            res.json({ ok: true, data: await ctx.provider.deployDog(id, dogId) });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    });
+
+    // API: 收回当前宠物（DogService.WithdrawDog，真实请求体为空）。
+    app.post('/api/pets/withdraw', async (req: Request, res: Response) => {
+        const id = getAccId(ctx, req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        try {
+            res.json({ ok: true, data: await ctx.provider.withdrawDog(id) });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    });
+
+    // API: 获取宠物页守护记录（DogService.GetProtectLogs，真实点击抓包确认）。
+    app.get('/api/pets/protect-logs', async (req: Request, res: Response) => {
+        const id = getAccId(ctx, req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        try {
+            res.json({ ok: true, data: await ctx.provider.getPetProtectLogs(id) });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    });
+
     // API: 获取背包种子列表
     app.get('/api/bag/seeds', async (req: Request, res: Response) => {
         const id = getAccId(ctx, req);
