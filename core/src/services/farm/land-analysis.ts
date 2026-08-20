@@ -10,6 +10,7 @@ const {
     getPlantById,
     getSeedImageBySeedId,
     getPlantGrowTime,
+    getItemById,
     getMutantEffectsByIds,
     getMutantDisplayPlantId,
 } = require('../../config/gameConfig');
@@ -66,14 +67,16 @@ function getPlantMutantConfigIds(plant: any, currentPhase: any = null): string[]
     return [...new Set(values.map(normalizePositiveId).filter(Boolean))];
 }
 
-const KNOWN_INTERACTION_ITEM_NAMES: Record<string, string> = {
-    '301101': '黄金虫',
-    '301102': '足球',
-    '301103': '鹊羽灵露',
-};
-
 // 抓包确认：黄金虫和足球由农场主通过自家 Farming 清理，好友帮助务农不能代为清理。
 const OWNER_CLEANABLE_INTERACTION_ITEM_IDS = new Set(['301101', '301102']);
+
+function getInteractionItemMetadata(itemId: string): { name: string; activityId: number } {
+    const item = getItemById(Number(itemId));
+    return {
+        name: String(item?.name || `道具${itemId}`),
+        activityId: toNum(item?.activity_id),
+    };
+}
 
 function hasOwnerCleanableInteraction(plant: any): boolean {
     const uses: any[] = Array.isArray(plant?.interaction_uses) ? plant.interaction_uses : [];
@@ -102,6 +105,7 @@ function getPlantInteractionEffects(plant: any): any[] {
     for (const use of uses) {
         const itemId = normalizePositiveId(use?.item_id);
         if (!itemId) continue;
+        const itemMetadata = getInteractionItemMetadata(itemId);
         const matchingTargets = findTargets(use);
         const targetList = matchingTargets.length > 0 ? matchingTargets : [null];
         for (const target of targetList) {
@@ -115,7 +119,8 @@ function getPlantInteractionEffects(plant: any): any[] {
             usedTargetKeys.add(targetKey);
             effects.push({
                 itemId,
-                itemName: KNOWN_INTERACTION_ITEM_NAMES[itemId] || `道具${itemId}`,
+                itemName: itemMetadata.name,
+                activityId: itemMetadata.activityId,
                 effectType: toNum(use?.effect_type),
                 landId,
                 hostGid,
@@ -134,9 +139,11 @@ function getPlantInteractionEffects(plant: any): any[] {
         && qixiAppliedMarker > 0
         && !effects.some(effect => String(effect.itemId) === '301103')
     ) {
+        const itemMetadata = getInteractionItemMetadata('301103');
         effects.push({
             itemId: '301103',
-            itemName: KNOWN_INTERACTION_ITEM_NAMES['301103'],
+            itemName: itemMetadata.name,
+            activityId: itemMetadata.activityId,
             effectType: qixiAppliedMarker,
             landId: '',
             hostGid: '',

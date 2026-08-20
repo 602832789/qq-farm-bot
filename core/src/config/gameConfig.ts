@@ -115,6 +115,7 @@ interface MutantEffectDto {
     icon: string;
     description: string;
     tag: string;
+    activityId: number;
 }
 
 // ============ 等级经验表 ============
@@ -468,6 +469,11 @@ function getAllLandConfigs(): LandConfigItem[] {
     return Array.from(landConfigMap.values());
 }
 
+function normalizeMutantIconName(value: unknown): string {
+    const raw = String(value || '').trim().replace(/\/spriteFrame$/i, '');
+    return raw.split('/').filter(Boolean).pop() || '';
+}
+
 function toMutantEffectDto(effect: MutantEffectItem | undefined, id: number): MutantEffectDto {
     const numericId = Number(id) || Number(effect?.id) || 0;
     if (!effect) {
@@ -477,14 +483,17 @@ function toMutantEffectDto(effect: MutantEffectItem | undefined, id: number): Mu
             icon: '',
             description: '',
             tag: '',
+            activityId: 0,
         };
     }
     return {
         id: numericId,
-        name: String(effect.name || effect.effect_name || (numericId > 0 ? `变异 #${numericId}` : '变异')),
-        icon: String(effect.icon || ''),
+        // 土地效果以官方运行时配置的 effect_name 为准；name 可能是“喜鹊事件”等内部事件名。
+        name: String(effect.effect_name || effect.name || (numericId > 0 ? `变异 #${numericId}` : '变异')),
+        icon: normalizeMutantIconName(effect.icon),
         description: String(effect.description || effect.tips || ''),
         tag: String(effect.tag || ''),
+        activityId: Number(effect.activity_id) || 0,
     };
 }
 

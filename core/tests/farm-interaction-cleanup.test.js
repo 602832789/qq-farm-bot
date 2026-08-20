@@ -4,7 +4,9 @@ const test = require('node:test');
 const { loadProto, types } = require('../dist/utils/proto');
 const {
     analyzeLands,
+    buildLandDetail,
 } = require('../dist/services/farm/land-analysis');
+const { getMutantEffectById } = require('../dist/config/gameConfig');
 const {
     analyzeFriendLands,
 } = require('../dist/services/friend/visit-strategy');
@@ -66,6 +68,23 @@ test('ordinary watering, weeding and bug removal targets stay unchanged', () => 
     assert.deepEqual(friendStatus.needWater, [3]);
     assert.deepEqual(friendStatus.needWeed, [3]);
     assert.deepEqual(friendStatus.needBug, [3]);
+});
+
+test('qixi mutation uses official effect_name while keeping drought independent', () => {
+    assert.equal(getMutantEffectById(1).icon, 'frozen');
+    const effect = getMutantEffectById(13);
+    assert.equal(effect.name, '喜鹊');
+    assert.equal(effect.activityId, 2026081801);
+
+    const detail = buildLandDetail(growingLand(21, 0, {
+        dry_num: 1,
+        mutant_config_ids: [13],
+        field_40: { value_1: 10, value_2: 1 },
+    }));
+
+    assert.equal(detail.needWater, true);
+    assert.deepEqual(detail.mutantEffects.map(item => item.name), ['喜鹊']);
+    assert.equal(detail.interactionEffects[0].activityId, effect.activityId);
 });
 
 test('own Farming request keeps the two explicit zero-valued scene fields', async () => {
