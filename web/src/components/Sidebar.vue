@@ -212,98 +212,99 @@ const showThemeDropdown = ref(false)
 
 <template>
   <aside
-    class="fixed inset-y-0 left-0 z-50 h-full w-72 flex flex-col border-r border-gray-200/50 p-3 transition-transform duration-300 lg:static lg:translate-x-0 dark:border-gray-700/50"
+    class="fixed inset-y-0 left-0 z-50 h-full w-72 flex flex-col border-r border-gray-200/60 p-3 transition-transform duration-300 lg:static lg:translate-x-0 dark:border-gray-700/60"
     :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full'"
-    :style="{ background: 'color-mix(in srgb, var(--surface-1) 88%, transparent)', color: 'var(--theme-text)' }"
+    :style="{ background: 'color-mix(in srgb, var(--surface-1) 90%, transparent)', color: 'var(--theme-text)' }"
   >
     <!-- Brand -->
-    <div class="h-14 flex items-center justify-between border-b border-gray-200/60 px-3 dark:border-gray-700/60">
+    <div class="relative h-16 flex flex-none items-center justify-between px-2">
       <div class="min-w-0 flex items-center gap-3">
-        <div class="h-10 w-10 flex flex-none items-center justify-center overflow-hidden rounded-full shadow-sm ring-1 ring-gray-200 dark:ring-gray-700">
+        <div class="h-11 w-11 flex flex-none items-center justify-center overflow-hidden rounded-full shadow-sm ring-1 ring-gray-200 dark:ring-gray-700">
           <img
             src="/icon.png"
             :alt="`${loginPageConfig.title || 'QQ农场智能助手'}图标`"
-            class="h-full w-full object-cover"
+            class="h-full w-full scale-150 object-cover"
           >
         </div>
-        <span class="min-w-0 truncate text-base text-gray-800 font-bold dark:text-gray-100">
-          {{ loginPageConfig.title || 'QQ农场智能助手' }}
-        </span>
+        <div class="min-w-0">
+          <div class="truncate text-[15px] font-bold tracking-tight" style="color: var(--theme-text);">
+            {{ loginPageConfig.title || 'QQ农场智能助手' }}
+          </div>
+          <div class="truncate text-[11px] font-mono opacity-45" style="color: var(--theme-text);">
+            QQ FARM ASSISTANT
+          </div>
+        </div>
       </div>
       <!-- Mobile Close Button -->
       <button
-        class="h-8 w-8 flex items-center justify-center rounded-lg text-gray-500 transition lg:hidden hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+        class="h-8 w-8 flex flex-none items-center justify-center rounded-lg text-gray-500 transition lg:hidden hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
         @click="appStore.closeSidebar"
       >
         <div class="i-carbon-close text-xl" />
       </button>
     </div>
 
+    <!-- 渐变分隔线 -->
+    <div class="mx-2 mb-3 h-px flex-none" style="background: linear-gradient(90deg, color-mix(in srgb, var(--theme-primary) 45%, transparent), transparent);" />
+
     <!-- Navigation -->
-    <nav class="flex-1 overflow-y-auto px-1 py-4 space-y-2">
+    <nav class="custom-scrollbar flex-1 overflow-y-auto px-1 py-1 space-y-1">
       <router-link
         v-for="item in navItems"
         :key="item.path"
         :to="item.path"
-        class="group flex items-center gap-3.5 rounded-xl px-4 py-3 text-base transition-all duration-200 hover:translate-x-0.5 hover:bg-gray-100/70 dark:hover:bg-gray-700/50"
-        :active-class="item.path === '/' ? '' : 'font-medium shadow-sm'"
-        :style="{
-          '--active-color': 'var(--theme-primary)',
-          '--active-bg': 'var(--theme-primary)',
-          '--active-bg-opacity': '0.1',
-          'color': 'var(--theme-text)',
-          'opacity': '0.8',
-        }"
+        :active-class="item.path === '/' ? '' : 'router-link-active'"
+        :exact-active-class="item.path === '/' ? 'router-link-active' : 'router-link-exact-active'"
+        class="nav-item group relative flex items-center gap-3 rounded-xl px-2 py-1.5 transition-colors duration-200"
       >
-        <div class="text-xl transition-transform duration-200 group-hover:scale-110" :class="[item.icon]" />
-        <span class="min-w-0 flex-1 truncate">{{ item.label }}</span>
+        <span class="nav-icon h-9 w-9 flex flex-none items-center justify-center rounded-lg text-[22px] transition-colors duration-200">
+          <div :class="[item.icon]" />
+        </span>
+        <span class="min-w-0 flex-1 truncate text-sm font-medium">{{ item.label }}</span>
         <span
           v-if="item.path === '/shop' && hasActiveMysteryOffer"
-          class="h-2.5 w-2.5 shrink-0 rounded-full bg-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.15)]"
+          class="h-2 w-2 shrink-0 rounded-full bg-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.15)]"
           title="神秘商人已出现"
         />
         <span
           v-if="item.path === '/activity' && hasUnadaptedActivities"
-          class="h-2.5 w-2.5 shrink-0 rounded-full bg-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.15)]"
+          class="h-2 w-2 shrink-0 rounded-full bg-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.15)]"
           :title="`发现 ${unadaptedActivityIds.length} 个未适配活动`"
         />
       </router-link>
     </nav>
 
     <!-- Footer Status -->
-    <div class="ui-subtle-panel relative mt-auto rounded-lg px-3 py-2.5">
-      <div class="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-        <div class="flex items-center gap-1.5">
-          <div
-            class="h-2 w-2 rounded-full"
-            :class="[connectionStatus.color, { 'animate-pulse': connectionStatus.pulse }]"
-          />
+    <div class="relative mt-4 flex-none rounded-xl px-3 py-2.5" style="background: color-mix(in srgb, var(--surface-2) 80%, transparent);">
+      <div class="flex items-center justify-between text-xs">
+        <div class="flex items-center gap-1.5 font-medium" style="color: var(--theme-text);">
+          <span class="h-2 w-2 rounded-full" :class="[connectionStatus.color, { 'animate-pulse': connectionStatus.pulse }]" />
           <span>{{ connectionStatus.text }}</span>
         </div>
-        <span>{{ uptime }}</span>
+        <span class="font-mono opacity-60" style="color: var(--theme-text);">{{ uptime }}</span>
       </div>
-      <div class="flex flex-col text-xs text-gray-400 font-mono">
-        <div class="flex items-center justify-between">
-          <span>{{ formattedTime }}</span>
-          <!-- 主题调色盘按钮 -->
-          <button
-            class="h-8 w-8 flex items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-gray-200/50 hover:text-gray-600 dark:hover:bg-gray-700/50 dark:hover:text-gray-300"
-            title="主题设置"
-            @click="showThemeDropdown = !showThemeDropdown"
-          >
-            <div class="i-carbon-color-palette text-sm" :style="{ color: 'var(--theme-primary)' }" />
-          </button>
-        </div>
-        <div class="flex items-center justify-between opacity-60">
-          <span>v{{ version }}</span>
-          <span>xxxscarlxrd404</span>
-        </div>
+
+      <div class="mt-2 flex items-center justify-between border-t pt-2 text-xs opacity-80" style="border-color: color-mix(in srgb, var(--theme-text) 10%, transparent); color: var(--theme-text);">
+        <span class="font-mono">{{ formattedTime }}</span>
+        <!-- 主题调色盘按钮 -->
+        <button
+          class="h-7 w-7 flex items-center justify-center rounded-lg transition-colors hover:bg-gray-200/60 dark:hover:bg-gray-700/60"
+          title="主题设置"
+          @click="showThemeDropdown = !showThemeDropdown"
+        >
+          <div class="i-carbon-color-palette text-sm" :style="{ color: 'var(--theme-primary)' }" />
+        </button>
+      </div>
+
+      <div class="mt-1 flex items-center justify-between text-[11px] font-mono opacity-45" style="color: var(--theme-text);">
+        <span>v{{ version }}</span>
+        <span>xxxscarlxrd404</span>
       </div>
 
       <!-- 主题选择弹出面板 -->
       <div
         v-show="showThemeDropdown"
-        class="glass-panel absolute bottom-full left-0 right-0 z-50 grid grid-cols-4 mb-14 gap-1.5 rounded-lg p-2"
+        class="glass-panel absolute bottom-full left-0 right-0 z-50 grid grid-cols-4 mb-2 gap-1.5 rounded-lg p-2"
       >
         <button
           v-for="(t, theme) in appStore.themes"
@@ -332,8 +333,8 @@ const showThemeDropdown = ref(false)
       </div>
     </div>
   </aside>
-
 </template>
+
 <style scoped>
 .custom-scrollbar::-webkit-scrollbar {
   width: 4px;
@@ -349,41 +350,51 @@ const showThemeDropdown = ref(false)
   background-color: rgba(156, 163, 175, 0.5);
 }
 
-/* Active router link styling */
-.router-link-active {
-  background-color: var(--active-bg) !important;
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--theme-primary) 15%, transparent),
-    color-mix(in srgb, var(--theme-primary) 6%, transparent)
-  ) !important;
+/* ===== 导航菜单项 ===== */
+
+/* 默认态 */
+.nav-item {
+  opacity: 0.82;
+}
+.nav-item:hover {
+  background: var(--surface-2);
+  opacity: 1;
+}
+
+/* 图标容器 */
+.nav-item .nav-icon {
+  color: color-mix(in srgb, var(--theme-text) 58%, transparent);
+}
+.nav-item:hover .nav-icon {
+  background: color-mix(in srgb, var(--theme-text) 7%, transparent);
+  color: var(--theme-text);
+}
+
+/* 选中态：渐变图标胶囊 + 左侧指示条 */
+.router-link-active.nav-item,
+.router-link-exact-active.nav-item {
+  background: color-mix(in srgb, var(--theme-primary) 9%, transparent) !important;
   color: var(--theme-primary) !important;
-  box-shadow:
-    inset 3px 0 0 var(--theme-primary),
-    0 8px 18px color-mix(in srgb, var(--theme-primary) 12%, transparent),
-    0 0 0 1px color-mix(in srgb, var(--theme-primary) 15%, transparent) !important;
+  opacity: 1;
 }
 
-.router-link-exact-active {
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--theme-primary) 15%, transparent),
-    color-mix(in srgb, var(--theme-primary) 6%, transparent)
-  ) !important;
-  color: var(--theme-primary) !important;
-  box-shadow:
-    inset 3px 0 0 var(--theme-primary),
-    0 8px 18px color-mix(in srgb, var(--theme-primary) 12%, transparent),
-    0 0 0 1px color-mix(in srgb, var(--theme-primary) 15%, transparent) !important;
+.router-link-active .nav-icon,
+.router-link-exact-active .nav-icon {
+  background: var(--theme-gradient) !important;
+  color: #fff !important;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--theme-primary) 28%, transparent);
 }
 
-/* Dropdown active item */
-.bg-green-50 {
-  background-color: color-mix(in srgb, var(--theme-primary) 10%, transparent) !important;
+.router-link-active::before,
+.router-link-exact-active::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: -4px;
+  width: 3px;
+  height: 56%;
+  transform: translateY(-50%);
+  border-radius: 0 4px 4px 0;
+  background: var(--theme-gradient);
 }
-
-.dark\:bg-green-900\/10 {
-  background-color: color-mix(in srgb, var(--theme-primary) 15%, transparent) !important;
-}
-
 </style>
