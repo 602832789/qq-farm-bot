@@ -8,14 +8,16 @@
 
 # 当前状态
 
-- TSDK/ACE 安全链路已升级到 QQ Mac 客户端 2026-07-29 包内的官方
-  `v3.8.6.1785240280` WASM（SHA-256
-  `8a94a43c9f96a24ca99c46912244ad8d39535944acfa223426c4c51d282e769a`）。
-  最新 `game.js` 和 WASM 反汇编确认 22 个 imports、导出映射、59 字节运行时表、
+- TSDK/ACE 安全链路已升级到 QQ Mac 客户端 2026-08-20 10:32 包内的官方
+  `v3.9.0.1787057219` WASM（161114 字节，SHA-256
+  `98cc5301cff10f5b87a014d0a4af92630e4a6e91292cc7de5eb86422275f0070`）。
+  同包 `game.js` 和 WASM 静态检查确认 22 个 imports、导出映射、
   `SdkInitEx(3167, 0)`、17 个 mergewasm 数据段及解密密钥均与现有 Node 宿主兼容；
-  默认运行文件已切换为 `tsdk-v3.8.6.wasm`，完整后端测试 30/30 通过。调用映射和
-  内存所有权见 `core/docs/tsdk-ace-runtime.md`；受控在线 5/30 分钟好友操作仍需
-  测试账号实测。
+  默认运行文件已切换为 `tsdk-v3.9.0.wasm`，保留 `tsdk-v3.8.6.wasm` 用于回退。
+  语法检查、定向 ESLint 和 6/6 TSDK/网关测试通过；完整后端套件中 TSDK 项通过，
+  总计 152/153 通过，既有 `capture-core` 代理启动用例在当前环境失败，未改动该模块。
+  调用映射和内存所有权见 `core/docs/tsdk-ace-runtime.md`；受控在线 5/30 分钟好友
+  操作仍需测试账号实测。
 - WASM 后续更新已标准化：新增 `core/scripts/inspect-tsdk-update.js` 和
   `npm run inspect:tsdk`，可静态输出 SHA-256、imports、exports、active data
   segments、解密高频常量、`game.js` 版本/关键标记及基线兼容性；完整发现、快照、
