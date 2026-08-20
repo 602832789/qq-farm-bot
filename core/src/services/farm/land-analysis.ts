@@ -72,6 +72,14 @@ const KNOWN_INTERACTION_ITEM_NAMES: Record<string, string> = {
     '301103': '鹊羽灵露',
 };
 
+// 抓包确认：黄金虫和足球由农场主通过自家 Farming 清理，好友帮助务农不能代为清理。
+const OWNER_CLEANABLE_INTERACTION_ITEM_IDS = new Set(['301101', '301102']);
+
+function hasOwnerCleanableInteraction(plant: any): boolean {
+    const uses: any[] = Array.isArray(plant?.interaction_uses) ? plant.interaction_uses : [];
+    return uses.some((use: any) => OWNER_CLEANABLE_INTERACTION_ITEM_IDS.has(normalizePositiveId(use?.item_id)));
+}
+
 function getPlantInteractionEffects(plant: any): any[] {
     const uses: any[] = Array.isArray(plant?.interaction_uses) ? plant.interaction_uses : [];
     const targets: any[] = Array.isArray(plant?.interaction_targets) ? plant.interaction_targets : [];
@@ -514,6 +522,7 @@ function analyzeLands(lands: any[], debug?: boolean, ownGid?: number): {
     needWater: number[];
     needWeed: number[];
     needBug: number[];
+    needInteractionCleanup: number[];
     growing: number[];
     empty: number[];
     dead: number[];
@@ -526,6 +535,7 @@ function analyzeLands(lands: any[], debug?: boolean, ownGid?: number): {
         needWater: [] as number[],
         needWeed: [] as number[],
         needBug: [] as number[],
+        needInteractionCleanup: [] as number[],
         growing: [] as number[],
         empty: [] as number[],
         dead: [] as number[],
@@ -568,6 +578,10 @@ function analyzeLands(lands: any[], debug?: boolean, ownGid?: number): {
             continue;
         }
         const phaseVal = currentPhase.phase;
+
+        if (hasOwnerCleanableInteraction(plant)) {
+            result.needInteractionCleanup.push(id);
+        }
 
         if (phaseVal === PlantPhase.DEAD) {
             result.dead.push(id);
@@ -835,6 +849,7 @@ module.exports = {
     getPlantStatusFlags,
     getPlantMutantConfigIds,
     getPlantInteractionEffects,
+    hasOwnerCleanableInteraction,
     buildLandDetail,
     getOrganicFertilizerTargetsFromLands,
     getFastMatureLands,

@@ -61,7 +61,22 @@ async function waterLand(landIds: number[]): Promise<any> {
 
 async function farming(landIds: number[]): Promise<any> {
     const state = getUserState();
-    return sendPlantRequest(types.FarmingRequest, types.FarmingReply, 'Farming', landIds, state.gid);
+    const body = encodeOwnFarmingRequest(landIds, state.gid);
+    const { body: replyBody } = await sendMsgAsync('gamepb.plantpb.PlantService', 'Farming', body);
+    return types.FarmingReply.decode(replyBody);
+}
+
+/**
+ * 自家一键务农。官方抓包会显式编码两个值为 0 的场景字段；不能依赖 proto3 默认省略。
+ * 好友帮助务农使用 field_4=2，由 friend/api.ts 单独编码。
+ */
+function encodeOwnFarmingRequest(landIds: number[], hostGid: number | string): Uint8Array {
+    return types.FarmingRequest.encode(types.FarmingRequest.create({
+        land_ids: landIds,
+        host_gid: toLong(hostGid),
+        field_3: 0,
+        field_4: 0,
+    })).finish();
 }
 
 // 普通肥料 ID
@@ -208,6 +223,7 @@ module.exports = {
     harvest,
     waterLand,
     farming,
+    encodeOwnFarmingRequest,
     fertilize,
     fertilizeOrganicLoop,
     removePlant,

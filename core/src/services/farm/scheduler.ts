@@ -24,7 +24,6 @@ let isFirstFarmCheck: boolean = true;
 let farmLoopRunning: boolean = false;
 let externalSchedulerMode: boolean = false;
 let fertilizerBuyCheckTimer: ReturnType<typeof setInterval> | null = null;
-const lastFertilizerBuyCheckAt: number = 0;
 const farmScheduler = createScheduler('farm');
 let lastPushTime: number = 0;
 
@@ -116,7 +115,7 @@ async function runFarmOperation(opType: string): Promise<{ hadWork: boolean; act
     // 摘要
     const statusParts: string[] = [];
     if (status.harvestable.length) statusParts.push(`收:${status.harvestable.length}`);
-    const farmingCount = new Set([...status.needWeed, ...status.needBug]).size;
+    const farmingCount = new Set([...status.needWeed, ...status.needBug, ...status.needInteractionCleanup]).size;
     if (farmingCount > 0) statusParts.push(`农:${farmingCount}`);
     if (status.needWater.length) statusParts.push(`水:${status.needWater.length}`);
     if (status.dead.length) statusParts.push(`枯:${status.dead.length}`);
@@ -131,7 +130,12 @@ async function runFarmOperation(opType: string): Promise<{ hadWork: boolean; act
     if (opType === 'all' || opType === 'clear') {
         // 检查是否跳过一键务农（仅自动模式生效，手动clear不受影响）
         const skipOwnWeedBug = opType === 'all' && isAutomationOn('skip_own_weed_bug');
-        const farmingLandIds = [...new Set([...status.needWeed, ...status.needBug, ...status.needWater])];
+        const farmingLandIds = [...new Set([
+            ...status.needWeed,
+            ...status.needBug,
+            ...status.needWater,
+            ...status.needInteractionCleanup,
+        ])];
         if (!skipOwnWeedBug && farmingLandIds.length > 0) {
             try {
                 await farming(farmingLandIds);
@@ -139,6 +143,7 @@ async function runFarmOperation(opType: string): Promise<{ hadWork: boolean; act
                 if (status.needWeed.length) parts.push(`草${status.needWeed.length}`);
                 if (status.needBug.length) parts.push(`虫${status.needBug.length}`);
                 if (status.needWater.length) parts.push(`水${status.needWater.length}`);
+                if (status.needInteractionCleanup.length) parts.push(`道具${status.needInteractionCleanup.length}`);
                 actions.push(`一键务农${parts.join('/')}`);
                 recordOperation('farming', farmingLandIds.length);
             } catch (e: any) {
