@@ -48,6 +48,7 @@ export interface FriendInteractionEffectDto {
   plantId?: string
   hostGid?: string
   effectType?: number
+  activityId?: number
   usedAt?: number | string
   confirmed: boolean
   source: string

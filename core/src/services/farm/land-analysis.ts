@@ -10,6 +10,7 @@ const {
     getPlantById,
     getSeedImageBySeedId,
     getPlantGrowTime,
+    getItemById,
     getMutantEffectsByIds,
     getMutantDisplayPlantId,
 } = require('../../config/gameConfig');
@@ -59,6 +60,12 @@ function getPlantMutantConfigIds(plant: any, currentPhase: any = null): string[]
     if (Array.isArray(plant?.mutant_config_ids)) values.push(...plant.mutant_config_ids);
     if (Array.isArray(currentPhase?.mutants)) {
         values.push(...currentPhase.mutants.map((mutant: any) => mutant?.mutant_config_id));
+    } else if (Array.isArray(plant?.phases)) {
+        for (const phase of plant.phases) {
+            if (Array.isArray(phase?.mutants)) {
+                values.push(...phase.mutants.map((mutant: any) => mutant?.mutant_config_id));
+            }
+        }
     }
     if (Array.isArray(plant?.extended_mutations)) {
         values.push(...plant.extended_mutations.map((record: any) => record?.mutant_config_id));
@@ -66,11 +73,45 @@ function getPlantMutantConfigIds(plant: any, currentPhase: any = null): string[]
     return [...new Set(values.map(normalizePositiveId).filter(Boolean))];
 }
 
-const KNOWN_INTERACTION_ITEM_NAMES: Record<string, string> = {
-    '301101': '黄金虫',
-    '301102': '足球',
-    '301103': '鹊羽灵露',
-};
+// 抓包确认：黄金虫和足球由农场主通过自家 Farming 清理，好友帮助务农不能代为清理。
+const OWNER_CLEANABLE_INTERACTION_ITEM_IDS = new Set(['301101', '301102']);
+
+const QIXI_DEW_ITEM_ID = '301103';
+const QIXI_MUTANT_CONFIG_ID = '13';
+const QIXI_DEW_HISTORY_CODES = new Set([9, 10]);
+
+function getPlantExtendedStatuses(plant: any): any[] {
+    if (Array.isArray(plant?.field_40)) return plant.field_40.filter(Boolean);
+    // 兼容旧 proto 或测试数据中的单对象形式。
+    return plant?.field_40 ? [plant.field_40] : [];
+}
+
+function getQixiDewExtendedStatus(plant: any): any | null {
+    if (!getPlantMutantConfigIds(plant).includes(QIXI_MUTANT_CONFIG_ID)) return null;
+    return getPlantExtendedStatuses(plant).find((status: any) => (
+        QIXI_DEW_HISTORY_CODES.has(toNum(status?.value_1))
+        && toNum(status?.value_2) === 1
+    )) || null;
+}
+
+function getExtendedStatusInteractionItemId(plant: any): string {
+    return getQixiDewExtendedStatus(plant) ? QIXI_DEW_ITEM_ID : '';
+}
+
+function getInteractionItemMetadata(itemId: string): { name: string; activityId: number } {
+    const item = getItemById(Number(itemId));
+    return {
+        name: String(item?.name || `道具${itemId}`),
+        activityId: toNum(item?.activity_id),
+    };
+}
+
+function hasOwnerCleanableInteraction(plant: any): boolean {
+    const uses: any[] = Array.isArray(plant?.interaction_uses) ? plant.interaction_uses : [];
+    const targets: any[] = Array.isArray(plant?.interaction_targets) ? plant.interaction_targets : [];
+    return [...uses, ...targets]
+        .some((entry: any) => OWNER_CLEANABLE_INTERACTION_ITEM_IDS.has(normalizePositiveId(entry?.item_id)));
+}
 
 function getPlantInteractionEffects(plant: any): any[] {
     const uses: any[] = Array.isArray(plant?.interaction_uses) ? plant.interaction_uses : [];
@@ -94,6 +135,7 @@ function getPlantInteractionEffects(plant: any): any[] {
     for (const use of uses) {
         const itemId = normalizePositiveId(use?.item_id);
         if (!itemId) continue;
+        const itemMetadata = getInteractionItemMetadata(itemId);
         const matchingTargets = findTargets(use);
         const targetList = matchingTargets.length > 0 ? matchingTargets : [null];
         for (const target of targetList) {
@@ -107,7 +149,8 @@ function getPlantInteractionEffects(plant: any): any[] {
             usedTargetKeys.add(targetKey);
             effects.push({
                 itemId,
-                itemName: KNOWN_INTERACTION_ITEM_NAMES[itemId] || `道具${itemId}`,
+                itemName: itemMetadata.name,
+                activityId: itemMetadata.activityId,
                 effectType: toNum(use?.effect_type),
                 landId,
                 hostGid,
@@ -118,18 +161,42 @@ function getPlantInteractionEffects(plant: any): any[] {
         }
     }
 
-    const qixiDewStatus = plant?.field_40;
-    const qixiRewardValue = toNum(qixiDewStatus?.value_1);
-    const qixiAppliedMarker = toNum(qixiDewStatus?.value_2);
-    if (
-        qixiRewardValue > 0
-        && qixiAppliedMarker > 0
-        && !effects.some(effect => String(effect.itemId) === '301103')
-    ) {
+    // 通常 use/target 成对出现；若服务端只返回 target，仍保留该实时当前态。
+    for (const target of targets) {
+        const itemId = normalizePositiveId(target?.item_id);
+        if (!itemId) continue;
+        const hostGid = normalizePositiveId(target?.host_gid);
+        const usedAt = int64String(target?.timestamp);
+        const landId = normalizePositiveId(target?.land_id);
+        const targetKey = `${itemId}:${hostGid}:${usedAt}:${landId}`;
+        if (usedTargetKeys.has(targetKey)) continue;
+        usedTargetKeys.add(targetKey);
+        const itemMetadata = getInteractionItemMetadata(itemId);
         effects.push({
-            itemId: '301103',
-            itemName: KNOWN_INTERACTION_ITEM_NAMES['301103'],
-            effectType: qixiAppliedMarker,
+            itemId,
+            itemName: itemMetadata.name,
+            activityId: itemMetadata.activityId,
+            effectType: 0,
+            landId,
+            hostGid,
+            usedAt,
+            confirmed: true,
+            source: 'protocol-land-target',
+        });
+    }
+
+    const qixiDewStatus = getQixiDewExtendedStatus(plant);
+    const extendedStatusItemId = qixiDewStatus ? QIXI_DEW_ITEM_ID : '';
+    if (
+        extendedStatusItemId
+        && !effects.some(effect => String(effect.itemId) === extendedStatusItemId)
+    ) {
+        const itemMetadata = getInteractionItemMetadata(extendedStatusItemId);
+        effects.push({
+            itemId: extendedStatusItemId,
+            itemName: itemMetadata.name,
+            activityId: itemMetadata.activityId,
+            effectType: toNum(qixiDewStatus?.value_1),
             landId: '',
             hostGid: '',
             confirmed: true,
@@ -220,6 +287,11 @@ function buildLandDetail(land: any, options: { friendMode?: boolean; landsMap?: 
     else if (phaseVal === PlantPhase.DEAD) status = 'dead';
     else if (phaseVal === PlantPhase.UNKNOWN) status = 'empty';
 
+    const protocolField40 = getPlantExtendedStatuses(plant).map((status: any) => ({
+        value1: int64String(status?.value_1),
+        value2: int64String(status?.value_2),
+    }));
+
     return {
         ...base,
         status,
@@ -242,12 +314,7 @@ function buildLandDetail(land: any, options: { friendMode?: boolean; landsMap?: 
         mutantEffects,
         isMutated: mutantConfigIds.length > 0,
         interactionEffects: getPlantInteractionEffects(plant),
-        protocolField40: plant.field_40
-            ? {
-                value1: int64String(plant.field_40.value_1),
-                value2: int64String(plant.field_40.value_2),
-            }
-            : null,
+        protocolField40: protocolField40.length > 0 ? protocolField40 : null,
     };
 }
 
@@ -514,6 +581,7 @@ function analyzeLands(lands: any[], debug?: boolean, ownGid?: number): {
     needWater: number[];
     needWeed: number[];
     needBug: number[];
+    needInteractionCleanup: number[];
     growing: number[];
     empty: number[];
     dead: number[];
@@ -526,6 +594,7 @@ function analyzeLands(lands: any[], debug?: boolean, ownGid?: number): {
         needWater: [] as number[],
         needWeed: [] as number[],
         needBug: [] as number[],
+        needInteractionCleanup: [] as number[],
         growing: [] as number[],
         empty: [] as number[],
         dead: [] as number[],
@@ -568,6 +637,10 @@ function analyzeLands(lands: any[], debug?: boolean, ownGid?: number): {
             continue;
         }
         const phaseVal = currentPhase.phase;
+
+        if (hasOwnerCleanableInteraction(plant)) {
+            result.needInteractionCleanup.push(id);
+        }
 
         if (phaseVal === PlantPhase.DEAD) {
             result.dead.push(id);
@@ -834,7 +907,9 @@ module.exports = {
     getCurrentPhase,
     getPlantStatusFlags,
     getPlantMutantConfigIds,
+    getExtendedStatusInteractionItemId,
     getPlantInteractionEffects,
+    hasOwnerCleanableInteraction,
     buildLandDetail,
     getOrganicFertilizerTargetsFromLands,
     getFastMatureLands,

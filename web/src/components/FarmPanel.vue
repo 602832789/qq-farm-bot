@@ -83,7 +83,7 @@ function handleOperate(opType: string) {
 
   const confirmMap: Record<string, string> = {
     harvest: '确定要收获所有成熟作物吗？',
-    clear: '确定要一键务农吗？(除草+除虫+浇水)',
+    clear: '确定要一键务农吗？（除草、除虫、浇水并清理黄金虫/足球）',
     plant: '确定要一键种植吗？(根据策略配置)',
     upgrade: '确定要升级所有可升级的土地吗？(消耗金币)',
     all: '确定要一键全收吗？(包含收获、除草、种植等)',
@@ -513,7 +513,7 @@ onUnmounted(() => {
                   <div class="mb-2 flex items-center gap-2 text-sm text-amber-950 font-bold dark:text-amber-100">
                     <span class="i-carbon-game-console" />
                     可对自己农场使用的道具
-                    <span class="text-xs text-amber-700 font-normal dark:text-amber-300">种草、黄金虫、足球等只能在好友页使用</span>
+                    <span class="text-xs text-amber-700 font-normal dark:text-amber-300">种草、黄金虫、足球等仅可放置到好友农场，清理由农场主完成</span>
                   </div>
                   <div class="flex flex-wrap gap-2">
                     <button

@@ -115,6 +115,7 @@ interface MutantEffectDto {
     icon: string;
     description: string;
     tag: string;
+    activityId: number;
 }
 
 // ============ 等级经验表 ============
@@ -134,6 +135,12 @@ const landConfigMap = new Map<number, LandConfigItem>();
 const landCoordinateMap = new Map<string, LandConfigItem>();
 let mutantEffectConfig: MutantEffectItem[] | null = null;
 const mutantEffectMap = new Map<number, MutantEffectItem>();
+
+// 官方活动说明确认：变异 13 为鹊羽活动效果，收获时会额外获得鹊羽。
+// 运行时 MutantEffect 暂未下发 tips/description，因此在展示 DTO 层补充说明。
+const MUTANT_EFFECT_DESCRIPTION_FALLBACKS = new Map<number, string>([
+    [13, '特殊活动变异，收获时可额外获得鹊羽。'],
+]);
 
 function getLandCoordinateKey(gridX: number, gridY: number): string {
     return `${gridX},${gridY}`;
@@ -468,6 +475,11 @@ function getAllLandConfigs(): LandConfigItem[] {
     return Array.from(landConfigMap.values());
 }
 
+function normalizeMutantIconName(value: unknown): string {
+    const raw = String(value || '').trim().replace(/\/spriteFrame$/i, '');
+    return raw.split('/').filter(Boolean).pop() || '';
+}
+
 function toMutantEffectDto(effect: MutantEffectItem | undefined, id: number): MutantEffectDto {
     const numericId = Number(id) || Number(effect?.id) || 0;
     if (!effect) {
@@ -477,14 +489,22 @@ function toMutantEffectDto(effect: MutantEffectItem | undefined, id: number): Mu
             icon: '',
             description: '',
             tag: '',
+            activityId: 0,
         };
     }
     return {
         id: numericId,
-        name: String(effect.name || effect.effect_name || (numericId > 0 ? `变异 #${numericId}` : '变异')),
-        icon: String(effect.icon || ''),
-        description: String(effect.description || effect.tips || ''),
+        // 土地效果以官方运行时配置的 effect_name 为准；name 可能是“喜鹊事件”等内部事件名。
+        name: String(effect.effect_name || effect.name || (numericId > 0 ? `变异 #${numericId}` : '变异')),
+        icon: normalizeMutantIconName(effect.icon),
+        description: String(
+            effect.description
+            || effect.tips
+            || MUTANT_EFFECT_DESCRIPTION_FALLBACKS.get(numericId)
+            || '',
+        ),
         tag: String(effect.tag || ''),
+        activityId: Number(effect.activity_id) || 0,
     };
 }
 

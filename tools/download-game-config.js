@@ -9,7 +9,15 @@ const { TextDecoder } = require('node:util');
 const DEFAULT_SOURCE = 'D:\\wxsource\\wx5306c5978fdb76e4-code';
 const DEFAULT_OUTPUT = path.join(__dirname, 'json');
 const BUNDLE_NAME = 'mainscene';
-const RESOURCE_NAMES = ['ItemInfo', 'Plant', 'RoleLevel', 'Land', 'MutantEffect'];
+const RESOURCES = [
+    { name: 'ItemInfo', path: 'config/ItemInfo', assetName: 'ItemInfo' },
+    { name: 'Plant', path: 'config/Plant', assetName: 'Plant' },
+    { name: 'RoleLevel', path: 'config/RoleLevel', assetName: 'RoleLevel' },
+    { name: 'Land', path: 'config/Land', assetName: 'Land' },
+    // 大写版本是滞后的宝典展示配置；土地协议使用的完整列表来自运行时配置。
+    { name: 'MutantEffect', path: 'config/mutant_effect', assetName: 'mutant_effect' },
+];
+const RESOURCE_NAMES = RESOURCES.map(resource => resource.name);
 const XOR_KEY = Buffer.from('NQF_SHANGXIANDAMAI_#2026_SECURE', 'utf8');
 const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -207,8 +215,8 @@ function resolveResources(manifest, server, bundleVersion) {
     const versions = buildImportVersionMap(manifest);
     const entries = [];
 
-    for (const name of RESOURCE_NAMES) {
-        const expectedPath = `config/${name}`;
+    for (const resource of RESOURCES) {
+        const { name, path: expectedPath, assetName } = resource;
         const matches = Object.entries(manifest.paths)
             .filter(([, pathEntry]) => Array.isArray(pathEntry) && pathEntry[0] === expectedPath);
         if (matches.length !== 1) {
@@ -224,6 +232,7 @@ function resolveResources(manifest, server, bundleVersion) {
         const relative = `remote/${BUNDLE_NAME}/import/${uuid.slice(0, 2)}/${uuid}.${hash}.json`;
         entries.push({
             name,
+            assetName,
             bundleVersion,
             index,
             uuid,
@@ -311,6 +320,12 @@ function validateConfigs(configs) {
     const itemIds = assertPositiveUniqueIds(configs.ItemInfo, 'ItemInfo');
     assertPositiveUniqueIds(configs.Plant, 'Plant');
     assertPositiveUniqueIds(configs.Land, 'Land');
+    assertPositiveUniqueIds(configs.MutantEffect, 'MutantEffect');
+    for (const effect of configs.MutantEffect) {
+        if (typeof effect?.effect_name !== 'string' || !effect.effect_name.trim()) {
+            throw new Error(`MutantEffect ${effect?.id} 缺少 effect_name`);
+        }
+    }
 
     const landCoordinates = new Set();
     for (let i = 0; i < configs.Land.length; i += 1) {
@@ -444,7 +459,7 @@ async function main() {
     for (const resource of resources) {
         console.log(`[下载] ${resource.name}: ${resource.url}`);
         const payload = await downloadJson(resource.url, MAX_ASSET_BYTES);
-        const text = extractTextAsset(payload, resource.name);
+        const text = extractTextAsset(payload, resource.assetName);
         configs[resource.name] = decodeConfig(text, resource.name);
         console.log(`[解析] ${resource.name}: ${configs[resource.name].length} 条 (uuid=${resource.uuid}, hash=${resource.hash})`);
     }
