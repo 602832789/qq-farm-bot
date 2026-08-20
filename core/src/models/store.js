@@ -996,7 +996,7 @@ function sanitizeGlobalConfigBeforeSave() {
     globalConfig.userDeviceProtocols = cleanProtocols;
 }
 
-function saveGlobalConfig() {
+function saveGlobalConfig(options = {}) {
     ensureDataDir();
     try {
         const oldContent = readTextFile(STORE_FILE, '');
@@ -1008,6 +1008,7 @@ function saveGlobalConfig() {
         }
     } catch (err) {
         console.error('保存配置失败:', err.message);
+        if (options.throwOnError === true) throw err;
     }
 }
 
@@ -1540,13 +1541,21 @@ function getUserDefaultAccountPlan(username) {
 function setUserDefaultAccountPlan(username, rawConfig, options = {}) {
     const key = String(username || '').trim();
     if (!key) throw new Error('Missing username');
+    const previousPlan = globalConfig.userDefaultAccountPlans[key];
     const plan = {
         enabled: options.enabled !== false,
         config: pickDefaultPlanConfig(rawConfig),
         updatedAt: Date.now()
     };
     globalConfig.userDefaultAccountPlans[key] = plan;
-    saveGlobalConfig();
+    try {
+        // 默认方案的接口会向用户明确报告保存结果，因此必须在真正落盘后才能返回成功。
+        saveGlobalConfig({ throwOnError: true });
+    } catch (error) {
+        if (previousPlan === undefined) delete globalConfig.userDefaultAccountPlans[key];
+        else globalConfig.userDefaultAccountPlans[key] = previousPlan;
+        throw error;
+    }
     return { exists: true, ...normalizeUserDefaultPlan(plan) };
 }
 

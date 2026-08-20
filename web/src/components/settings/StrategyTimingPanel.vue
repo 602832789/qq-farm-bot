@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseSwitch from '@/components/ui/BaseSwitch.vue'
 
@@ -22,19 +23,44 @@ interface StrategyTimingSettings {
 }
 
 const settings = defineModel<StrategyTimingSettings>('settings', { required: true })
+
+type IntervalKey = keyof StrategyTimingSettings['intervals']
+
+function intervalModel(key: IntervalKey) {
+  return computed({
+    get: () => settings.value.intervals[key],
+    set: (value: number | string) => {
+      const parsed = Number.parseInt(String(value), 10)
+      settings.value = {
+        ...settings.value,
+        intervals: {
+          ...settings.value.intervals,
+          [key]: Number.isFinite(parsed) ? parsed : 1,
+        },
+      }
+    },
+  })
+}
+
+const farmMin = intervalModel('farmMin')
+const farmMax = intervalModel('farmMax')
+const helpMin = intervalModel('helpMin')
+const helpMax = intervalModel('helpMax')
+const stealMin = intervalModel('stealMin')
+const stealMax = intervalModel('stealMax')
 </script>
 
 <template>
   <div class="space-y-3">
     <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
       <BaseInput
-        v-model.number="settings.intervals.farmMin"
+        v-model.number="farmMin"
         label="农场巡查最小 (秒)"
         type="number"
         min="1"
       />
       <BaseInput
-        v-model.number="settings.intervals.farmMax"
+        v-model.number="farmMax"
         label="农场巡查最大 (秒)"
         type="number"
         min="1"
@@ -43,13 +69,13 @@ const settings = defineModel<StrategyTimingSettings>('settings', { required: tru
 
     <div class="grid grid-cols-2 gap-3 md:grid-cols-2">
       <BaseInput
-        v-model.number="settings.intervals.helpMin"
+        v-model.number="helpMin"
         label="帮助巡查最小 (秒)"
         type="number"
         min="1"
       />
       <BaseInput
-        v-model.number="settings.intervals.helpMax"
+        v-model.number="helpMax"
         label="帮助巡查最大 (秒)"
         type="number"
         min="1"
@@ -58,13 +84,13 @@ const settings = defineModel<StrategyTimingSettings>('settings', { required: tru
 
     <div class="grid grid-cols-2 gap-3 md:grid-cols-2">
       <BaseInput
-        v-model.number="settings.intervals.stealMin"
+        v-model.number="stealMin"
         label="偷菜巡查最小 (秒)"
         type="number"
         min="1"
       />
       <BaseInput
-        v-model.number="settings.intervals.stealMax"
+        v-model.number="stealMax"
         label="偷菜巡查最大 (秒)"
         type="number"
         min="1"

@@ -53,6 +53,23 @@ test('new accounts inherit an enabled user default plan', () => {
   assert.equal(config.goldenBugRoundLimit, 12);
 });
 
+test('saving an existing default plan overwrites it on disk', () => {
+  const before = store.getUserDefaultAccountPlan('alice');
+  const saved = store.setUserDefaultAccountPlan('alice', {
+    ...before.config,
+    plantingStrategy: 'level',
+    automation: { ...before.config.automation, farm: false, task: true },
+  });
+
+  const persisted = JSON.parse(fs.readFileSync(path.join(dataDir, 'store.json'), 'utf8'));
+  assert.equal(saved.config.plantingStrategy, 'level');
+  assert.equal(saved.config.automation.farm, false);
+  assert.equal(saved.config.automation.task, true);
+  assert.equal(persisted.userDefaultAccountPlans.alice.config.plantingStrategy, 'level');
+  assert.equal(persisted.userDefaultAccountPlans.alice.config.automation.farm, false);
+  assert.equal(persisted.userDefaultAccountPlans.alice.config.automation.task, true);
+});
+
 test('disabled plans do not change new account defaults', () => {
   store.setUserDefaultAccountPlan('bob', {
     plantingStrategy: 'max_profit',
