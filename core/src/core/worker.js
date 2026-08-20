@@ -199,6 +199,7 @@ let lastStatusHash = '';
 let lastStatusSentAt = 0;
 let onSellGain = null;
 let onFarmHarvested = null;
+let onDogSkillGiftPending = null;
 let harvestSellRunning = false;
 let onWsError = null;
 let onDisconnectHandler = null;
@@ -907,6 +908,14 @@ async function startBot(config) {
         };
         networkEvents.on('farmHarvested', onFarmHarvested);
 
+        if (onDogSkillGiftPending) networkEvents.off('dogSkillGiftPending', onDogSkillGiftPending);
+        onDogSkillGiftPending = (count) => {
+            const pendingCount = Math.max(0, toNum(count));
+            if (!loginReady || pendingCount <= 0) return;
+            require('../services/dog-skill-gifts').checkAndClaimDogSkillGifts(pendingCount).catch(() => null);
+        };
+        networkEvents.on('dogSkillGiftPending', onDogSkillGiftPending);
+
         // 获取背包点券数
         try {
             const bag = await getBag();
@@ -1012,6 +1021,10 @@ async function stopBot() {
         networkEvents.off('farmHarvested', onFarmHarvested);
         onFarmHarvested = null;
     }
+    if (onDogSkillGiftPending) {
+        networkEvents.off('dogSkillGiftPending', onDogSkillGiftPending);
+        onDogSkillGiftPending = null;
+    }
 
     stopFarmCheckLoop();
     stopFriendCheckLoop();
@@ -1108,6 +1121,14 @@ async function handleApiCall(msg) {
                 break;
             case 'getBagSeeds':
                 result = await require('../services/warehouse').getBagSeeds();
+                break;
+            case 'getDogSkillGiftStatus': {
+                const dogGifts = require('../services/dog-skill-gifts');
+                result = { pendingCount: dogGifts.getPendingGiftCount(await dogGifts.getDogInfo()) };
+                break;
+            }
+            case 'claimDogSkillGifts':
+                result = await require('../services/dog-skill-gifts').checkAndClaimDogSkillGifts();
                 break;
             case 'useItem': {
                 const { useItem } = require('../services/warehouse');

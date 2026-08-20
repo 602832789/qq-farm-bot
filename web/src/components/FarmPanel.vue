@@ -11,7 +11,7 @@ import { useStatusStore } from '@/stores/status'
 const farmStore = useFarmStore()
 const accountStore = useAccountStore()
 const statusStore = useStatusStore()
-const { lands, summary, loading } = storeToRefs(farmStore)
+const { lands, summary, loading, dogSkillGiftPendingCount, dogSkillGiftLoading, dogSkillGiftError } = storeToRefs(farmStore)
 const { currentAccountId, currentAccount } = storeToRefs(accountStore)
 const { status, loading: statusLoading, realtimeConnected, currentStatusReady } = storeToRefs(statusStore)
 
@@ -171,13 +171,21 @@ async function refresh() {
       }
 
       if (acc.running) {
-        await farmStore.fetchLands(currentAccountId.value)
+        await Promise.all([
+          farmStore.fetchLands(currentAccountId.value),
+          farmStore.fetchDogSkillGiftStatus(currentAccountId.value),
+        ])
       }
     }
     finally {
       farmLoaded.value = true
     }
   }
+}
+
+async function claimDogSkillGifts() {
+  if (currentAccountId.value)
+    await farmStore.claimDogSkillGifts(currentAccountId.value)
 }
 
 const showInitialLoading = computed(() =>
@@ -415,6 +423,26 @@ onUnmounted(() => {
             一键铲除
           </button>
         </div>
+      </div>
+
+      <div
+        v-if="dogSkillGiftPendingCount > 0"
+        class="flex items-center gap-3 border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100"
+      >
+        <div class="i-carbon-gift text-xl" />
+        <div class="min-w-0 flex-1">
+          待拾取同气连枝礼包 ×{{ dogSkillGiftPendingCount }}
+        </div>
+        <button
+          class="rounded bg-amber-600 px-3 py-1.5 text-white disabled:opacity-50 hover:bg-amber-700"
+          :disabled="dogSkillGiftLoading"
+          @click="claimDogSkillGifts"
+        >
+          {{ dogSkillGiftLoading ? '拾取中…' : '拾取' }}
+        </button>
+      </div>
+      <div v-else-if="dogSkillGiftError" class="border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
+        {{ dogSkillGiftError }}
       </div>
 
       <!-- Summary -->

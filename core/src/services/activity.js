@@ -399,6 +399,12 @@ async function getQixiActivity() {
   return activity;
 }
 
+function isQixiDewLandCandidate(land) {
+  return !!land?.plantId
+    && ['growing', 'harvestable'].includes(land.status)
+    && land?.qixiDew?.applied !== true;
+}
+
 async function useQixiDew(options = {}) {
   const activity = await getQixiActivity();
   if (activity.dewUsage.limitReached) {
@@ -408,7 +414,7 @@ async function useQixiDew(options = {}) {
   if (available <= 0) return { ok: true, usedCount: 0, reason: 'no_dew', activity };
   const { getLandsDetail } = require('./farm-land-analyzer');
   const lands = (await getLandsDetail())?.lands || [];
-  const candidates = lands.filter(land => land?.plantId && ['growing', 'harvestable'].includes(land.status));
+  const candidates = lands.filter(isQixiDewLandCandidate);
   const limit = Math.min(available, Math.max(1, toNum(options.limit) || available), candidates.length);
   if (limit <= 0) return { ok: true, usedCount: 0, reason: 'no_eligible_land', activity };
   let usedCount = 0;
@@ -2532,6 +2538,7 @@ module.exports = {
   buildQixiBridge,
   sendQixiSachet,
   useQixiDew,
+  isQixiDewLandCandidate,
   normalizeQixiActivity,
   getSeasonPassport,
   claimSeasonPassportRewards,

@@ -81,6 +81,14 @@ message PlantInfo {
     repeated int64 mutant_config_ids = 20;     // 变异配置ID
     bool is_nudged = 21;                       // 是否被催熟
     repeated SocialItem social_items = 35;      // 好友放置的背包型社交道具
+    // 抓包确认：301103 鹊羽灵露使用后为 {奖励值, 1}。
+    PlantExtendedStatus field_40 = 40;
+}
+
+// PlantInfo.field 40：字段 1 保留服务端奖励值，字段 2 为已生效标记。
+message PlantExtendedStatus {
+    int64 value_1 = 1;
+    int64 value_2 = 2;
 }
 
 // 背包型社交道具。字段含义依据 2026-07-12 黄金虫抓包。

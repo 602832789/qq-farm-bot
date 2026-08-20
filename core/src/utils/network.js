@@ -380,6 +380,14 @@ function handleNotify(msg) {
             return;
         }
 
+        if (type.includes('PendingGiftCountNotify')) {
+            try {
+                const notify = types.PendingGiftCountNotify.decode(eventBody);
+                networkEvents.emit('dogSkillGiftPending', Math.max(0, toNum(notify.count)));
+            } catch { }
+            return;
+        }
+
         // 物品变化通知 (经验/金币等)
         if (type.includes('ItemNotify')) {
             try {

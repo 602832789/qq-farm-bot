@@ -64,6 +64,22 @@ test('star bell flower is configured as a 2x2 crop', () => {
   assert.equal(getPlantBySeedId(29003)?.size, 2);
 });
 
+test('qixi activity items resolve official static icons', () => {
+  const expected = new Map([
+    [1024, '/activity/qixi/qixi-feather.png'],
+    [301103, '/activity/qixi/qixi-dew.png'],
+  ]);
+
+  for (const [itemId, imageUrl] of expected) {
+    assert.equal(getItemImageById(itemId), imageUrl);
+    assert.equal(
+      fs.existsSync(path.join(__dirname, '..', '..', 'web', 'public', imageUrl)),
+      true,
+      `${getItemById(itemId)?.name} image file`,
+    );
+  }
+});
+
 test('activity supplements preserve growth phases from the base plant config', () => {
   const baseBackedActivitySeeds = [
     21353, 20264, 21404, 20108, 21050, 21251, 21380, 20129, 20375, 20329

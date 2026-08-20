@@ -25,6 +25,8 @@ let plantPhaseManifestMtimeMs = -1;
 const skinDetailImageMap = new Map();// itemId → skinDetailImageUrl
 const staticItemImageMap = new Map([
     [1023, '/activity/star-festival/star-token.png'],
+    [1024, '/activity/qixi/qixi-feather.png'],
+    [301103, '/activity/qixi/qixi-dew.png'],
 ]);
 
 // 变异效果配置

@@ -35,6 +35,7 @@ const {
   buildLandMap,
   getDisplayLandContext,
   isOccupiedSlaveLand,
+  getQixiDewStatus,
 } = require('./farm-land-analyzer');
 
 const GOLDEN_BUG_ITEM_ID = 301101;
@@ -539,6 +540,7 @@ async function getFriendLandsDetail(gid) {
 
       // Mutant effects
       const mutantEffects = getMutantEffectsByIds(mutantConfigIds);
+      const qixiDew = getQixiDewStatus(targetPlant);
 
       detailLands.push({
         id: landId,
@@ -568,6 +570,7 @@ async function getFriendLandsDetail(gid) {
         occupiedLandIds,
         plantSize,
         mutantEffects,
+        qixiDew,
       });
     }
 

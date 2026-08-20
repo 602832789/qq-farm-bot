@@ -350,6 +350,19 @@ function getIsometricBubbleClass(targetLand: any) {
     </div>
 
     <div
+      v-if="land?.qixiDew?.applied"
+      class="qixi-dew-effect pointer-events-none absolute"
+      title="鹊羽灵露已生效"
+      aria-label="鹊羽灵露已生效"
+    >
+      <img class="qixi-dew-feather qixi-dew-feather-1" src="/game-config/effect_images/qixi-dew/effect_yumao.png" alt="">
+      <img class="qixi-dew-feather qixi-dew-feather-2" src="/game-config/effect_images/qixi-dew/effect_yumao.png" alt="">
+      <img class="qixi-dew-feather qixi-dew-feather-3" src="/game-config/effect_images/qixi-dew/effect_yumao.png" alt="">
+      <img class="qixi-dew-feather qixi-dew-feather-4" src="/game-config/effect_images/qixi-dew/effect_yumao.png" alt="">
+      <img class="qixi-dew-feather qixi-dew-feather-5" src="/game-config/effect_images/qixi-dew/effect_yumao.png" alt="">
+    </div>
+
+    <div
       v-if="mutantEffects.length > 0"
       class="land-mutant-effects absolute left-1 top-5 flex flex-col gap-1"
     >
@@ -573,6 +586,109 @@ function getIsometricBubbleClass(targetLand: any) {
 </template>
 
 <style scoped>
+.qixi-dew-effect {
+  z-index: 6;
+  left: 50%;
+  top: 46%;
+  width: 70%;
+  height: 72%;
+  transform: translate(-50%, -50%);
+  overflow: hidden;
+}
+
+.qixi-dew-effect img {
+  position: absolute;
+  display: block;
+  object-fit: contain;
+  user-select: none;
+}
+
+.qixi-dew-feather {
+  top: -20%;
+  width: 22%;
+  opacity: 0;
+  transform-origin: center;
+  filter: brightness(1.55) saturate(0.7) drop-shadow(0 0 3px rgb(255 244 249 / 0.82));
+  animation: qixi-dew-feather-fall 4.8s linear infinite backwards;
+}
+
+.qixi-dew-feather-1 {
+  left: 4%;
+  animation-delay: -0.4s;
+}
+
+.qixi-dew-feather-2 {
+  left: 26%;
+  width: 17%;
+  animation-delay: -3.2s;
+  animation-duration: 5.4s;
+}
+
+.qixi-dew-feather-3 {
+  left: 48%;
+  width: 24%;
+  animation-delay: -1.8s;
+  animation-duration: 5.8s;
+}
+
+.qixi-dew-feather-4 {
+  left: 68%;
+  width: 15%;
+  animation-delay: -4.3s;
+  animation-duration: 4.5s;
+}
+
+.qixi-dew-feather-5 {
+  left: 81%;
+  width: 12%;
+  animation-delay: -2.7s;
+  animation-duration: 6.2s;
+}
+
+.land-isometric-size-2 .qixi-dew-effect {
+  top: 45%;
+  width: 52%;
+  height: 68%;
+}
+
+@keyframes qixi-dew-feather-fall {
+  0% {
+    opacity: 0;
+    transform: translate3d(-8%, -8%, 0) rotate(-18deg) scale(0.72);
+  }
+  16% {
+    opacity: 0.3;
+    transform: translate3d(10%, 18%, 0) rotate(4deg) scale(0.82);
+  }
+  42% {
+    opacity: 0.58;
+    transform: translate3d(-12%, 58%, 0) rotate(-12deg) scale(0.92);
+  }
+  72% {
+    opacity: 0.4;
+    transform: translate3d(14%, 108%, 0) rotate(11deg) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(-5%, 160%, 0) rotate(-8deg) scale(1.05);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qixi-dew-effect img {
+    animation: none !important;
+  }
+  .qixi-dew-feather {
+    display: none;
+  }
+  .qixi-dew-feather-3 {
+    display: block;
+    top: 38%;
+    opacity: 0.38;
+    transform: rotate(-8deg);
+  }
+}
+
 .land-card-image-golden {
   position: relative;
   isolation: isolate;

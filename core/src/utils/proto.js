@@ -196,6 +196,11 @@ async function loadProto() {
     types.VisitLeaveRequest = root.lookupType('gamepb.visitpb.LeaveRequest');
     types.VisitLeaveReply = root.lookupType('gamepb.visitpb.LeaveReply');
     types.BriefDogInfo = root.lookupType('gamepb.visitpb.BriefDogInfo');
+    types.GetDogInfoRequest = root.lookupType('gamepb.dogpb.GetDogInfoRequest');
+    types.GetDogInfoReply = root.lookupType('gamepb.dogpb.GetDogInfoReply');
+    types.ClaimSkillGiftsRequest = root.lookupType('gamepb.dogpb.ClaimSkillGiftsRequest');
+    types.ClaimSkillGiftsReply = root.lookupType('gamepb.dogpb.ClaimSkillGiftsReply');
+    types.PendingGiftCountNotify = root.lookupType('gamepb.dogpb.PendingGiftCountNotify');
 
 
     // 任务
