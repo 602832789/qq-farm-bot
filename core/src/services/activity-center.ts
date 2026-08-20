@@ -6,7 +6,7 @@ import constellationCatalog from '../activity-data/constellation-2026072701.json
 const LongModule = require('long');
 const { sendMsgAsync, GatewayError } = require('../utils/network');
 const { types } = require('../utils/proto');
-const { getItemById, getItemImageById, getEffectiveSellInfo } = require('../config/gameConfig');
+const { getItemById, getItemImageById, getEffectiveSellInfo, getMutantEffectsByIds } = require('../config/gameConfig');
 const { getServerTimeSec } = require('../utils/utils');
 const { getBag, getBagItems } = require('./warehouse');
 const { getActivityWindows, getSellConditionContext } = require('./activity-windows');
@@ -511,11 +511,14 @@ function qingMeiIngredients(bagReply: any): any[] {
             const mutantTypes = (Array.isArray(item?.mutant_types) ? item.mutant_types : (Array.isArray(item?.mutantTypes) ? item.mutantTypes : []))
                 .map(int64String)
                 .filter((value: string) => value !== '0');
+            const mutantEffects = getMutantEffectsByIds(mutantTypes);
             const uid = int64String(item?.uid);
             return {
                 ...itemDto(item),
                 uid,
                 mutantTypes,
+                mutantEffects,
+                mutantTypeNames: mutantEffects.map((effect: any) => effect.name),
                 key: `${uid}:${mutantTypes.join(',')}`,
             };
         });

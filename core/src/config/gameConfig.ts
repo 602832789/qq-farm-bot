@@ -98,6 +98,25 @@ interface LandConfigItem {
     [key: string]: any;
 }
 
+interface MutantEffectItem {
+    id: number;
+    name?: string;
+    effect_name?: string;
+    icon?: string;
+    description?: string;
+    tips?: string;
+    tag?: string;
+    [key: string]: any;
+}
+
+interface MutantEffectDto {
+    id: number;
+    name: string;
+    icon: string;
+    description: string;
+    tag: string;
+}
+
 // ============ 等级经验表 ============
 let roleLevelConfig: RoleLevelItem[] | null = null;
 let levelExpTable: number[] | null = null;
@@ -113,6 +132,8 @@ const seedItemMap = new Map<number, ItemInfo>();
 let landConfig: LandConfigItem[] | null = null;
 const landConfigMap = new Map<number, LandConfigItem>();
 const landCoordinateMap = new Map<string, LandConfigItem>();
+let mutantEffectConfig: MutantEffectItem[] | null = null;
+const mutantEffectMap = new Map<number, MutantEffectItem>();
 
 function getLandCoordinateKey(gridX: number, gridY: number): string {
     return `${gridX},${gridY}`;
@@ -208,6 +229,22 @@ function loadConfigs(): void {
         }
     } catch (e: any) {
         console.warn('[配置] 加载 Land.json 失败:', e.message);
+    }
+
+    try {
+        const mutantPath = path.join(configDir, 'MutantEffect.json');
+        if (fs.existsSync(mutantPath)) {
+            mutantEffectConfig = JSON.parse(fs.readFileSync(mutantPath, 'utf8'));
+            mutantEffectMap.clear();
+            for (const mutant of mutantEffectConfig || []) {
+                const mutantId = Number(mutant && mutant.id) || 0;
+                if (mutantId <= 0) continue;
+                mutantEffectMap.set(mutantId, mutant);
+            }
+            console.warn(`[配置] 已加载变异效果配置 (${mutantEffectMap.size} 种)`);
+        }
+    } catch (e: any) {
+        console.warn('[配置] 加载 MutantEffect.json 失败:', e.message);
     }
 
 }
@@ -431,6 +468,86 @@ function getAllLandConfigs(): LandConfigItem[] {
     return Array.from(landConfigMap.values());
 }
 
+function toMutantEffectDto(effect: MutantEffectItem | undefined, id: number): MutantEffectDto {
+    const numericId = Number(id) || Number(effect?.id) || 0;
+    if (!effect) {
+        return {
+            id: numericId,
+            name: numericId > 0 ? `变异 #${numericId}` : '变异',
+            icon: '',
+            description: '',
+            tag: '',
+        };
+    }
+    return {
+        id: numericId,
+        name: String(effect.name || effect.effect_name || (numericId > 0 ? `变异 #${numericId}` : '变异')),
+        icon: String(effect.icon || ''),
+        description: String(effect.description || effect.tips || ''),
+        tag: String(effect.tag || ''),
+    };
+}
+
+function getMutantEffectById(mutantId: number | string): MutantEffectDto | undefined {
+    const id = Number(mutantId) || 0;
+    if (id <= 0) return undefined;
+    const effect = mutantEffectMap.get(id);
+    return effect ? toMutantEffectDto(effect, id) : undefined;
+}
+
+function getMutantEffectsByIds(ids: Array<number | string> | undefined | null): MutantEffectDto[] {
+    if (!Array.isArray(ids)) return [];
+    const seen = new Set<number>();
+    const result: MutantEffectDto[] = [];
+    for (const raw of ids) {
+        const id = Number(raw) || 0;
+        if (id <= 0 || seen.has(id)) continue;
+        seen.add(id);
+        result.push(toMutantEffectDto(mutantEffectMap.get(id), id));
+    }
+    return result;
+}
+
+function getMutantTypeNames(ids: Array<number | string> | undefined | null): string[] {
+    return getMutantEffectsByIds(ids).map(effect => effect.name);
+}
+
+/**
+ * 根据当前变异组合解析客户端应展示的植物 ID。
+ * mutant_effect_plant 格式示例：5:1120112:1;5_6:1129001:1。
+ * 多效果组合优先于单效果，避免黄金+活动变异退化成普通黄金作物。
+ */
+function getMutantDisplayPlantId(plantId: number | string, mutantIds: Array<number | string> | undefined | null): number {
+    const numericPlantId = Number(plantId) || 0;
+    if (!Array.isArray(mutantIds) || mutantIds.length === 0) return numericPlantId;
+    const activeIds = new Set(mutantIds.map(id => Number(id) || 0).filter(id => id > 0));
+    let currentPlantId = numericPlantId;
+    const visited = new Set<number>([currentPlantId]);
+
+    for (let depth = 0; depth < 4; depth += 1) {
+        const plant = plantMap.get(currentPlantId);
+        const mapping = String(plant && plant.mutant_effect_plant || '').trim();
+        if (!mapping) break;
+        let bestMatch: { effectCount: number; targetId: number } | null = null;
+        for (const entry of mapping.split(';')) {
+            const [effectKey, targetIdText] = entry.split(':');
+            const effectIds = String(effectKey || '')
+                .split('_')
+                .map(id => Number(id) || 0)
+                .filter(id => id > 0);
+            const targetId = Number(targetIdText) || 0;
+            if (!targetId || effectIds.length === 0 || !effectIds.every(id => activeIds.has(id))) continue;
+            if (!bestMatch || effectIds.length > bestMatch.effectCount) {
+                bestMatch = { effectCount: effectIds.length, targetId };
+            }
+        }
+        if (!bestMatch || visited.has(bestMatch.targetId)) break;
+        currentPlantId = bestMatch.targetId;
+        visited.add(currentPlantId);
+    }
+    return currentPlantId;
+}
+
 // 启动时加载配置
 loadConfigs();
 
@@ -468,4 +585,8 @@ module.exports = {
     getLandConfigById,
     getLandConfigByCoordinate,
     getAllLandConfigs,
+    getMutantEffectById,
+    getMutantEffectsByIds,
+    getMutantTypeNames,
+    getMutantDisplayPlantId,
 };

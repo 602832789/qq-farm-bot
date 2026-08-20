@@ -325,6 +325,7 @@ function normalizeUpdatedLand(rawLand: any, target: any = null, friendMode: bool
             plantName: String(rawLand?.plant?.name || ''),
             occupiedLandIds: [],
             mutantConfigIds: [],
+            mutantEffects: [],
             isMutated: false,
             interactionEffects: [],
         };

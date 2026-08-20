@@ -20,6 +20,32 @@ const emit = defineEmits<{
 
 const land = computed(() => props.land)
 
+const mutantEffects = computed(() => {
+  const effects = Array.isArray(land.value?.mutantEffects) ? land.value.mutantEffects : []
+  if (effects.length > 0) {
+    return effects
+      .map((effect: any) => ({
+        id: Number(effect?.id) || 0,
+        name: String(effect?.name || effect?.effect_name || '').trim(),
+        icon: String(effect?.icon || '').trim(),
+        description: String(effect?.description || effect?.desc || effect?.tips || '').trim(),
+      }))
+      .filter((effect: { name: string }) => !!effect.name)
+  }
+  const ids = Array.isArray(land.value?.mutantConfigIds) ? land.value.mutantConfigIds : []
+  return ids
+    .map((id: any) => {
+      const numericId = Number(id) || 0
+      return {
+        id: numericId,
+        name: numericId > 0 ? `变异 #${numericId}` : '',
+        icon: '',
+        description: '',
+      }
+    })
+    .filter((effect: { name: string }) => !!effect.name)
+})
+
 const growProgress = computed(() => {
   const matureInSec = land.value.matureInSec || 0
   const totalGrowTime = land.value.totalGrowTime || 0
@@ -156,6 +182,35 @@ function interactionBadgeClass(itemId: string) {
     return 'bg-pink-100 text-pink-800 dark:bg-pink-900/40 dark:text-pink-300'
   return 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200'
 }
+
+function mutantBadgeClass(effect: { icon?: string }) {
+  const icon = String(effect?.icon || '').toLowerCase()
+  const map: Record<string, string> = {
+    golden: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
+    frozen: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300',
+    ice: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300',
+    snow: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300',
+    love: 'bg-pink-100 text-pink-800 dark:bg-pink-900/40 dark:text-pink-300',
+    dark: 'bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-200',
+    moist: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-300',
+    haha: 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300',
+    tata: 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300',
+    lotus: 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300',
+    moon: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300',
+    mian: 'bg-fuchsia-100 text-fuchsia-800 dark:bg-fuchsia-900/40 dark:text-fuchsia-300',
+    crystal: 'bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300',
+    desert: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300',
+    lucky: 'bg-lime-100 text-lime-800 dark:bg-lime-900/40 dark:text-lime-300',
+    luxury: 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300',
+    shinning: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300',
+  }
+  return map[icon] || 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300'
+}
+
+function mutantIconUrl(icon: string) {
+  const name = String(icon || '').trim()
+  return name ? `/game-config/seed_images_named/mutant/${name}.png` : ''
+}
 </script>
 
 <template>
@@ -257,11 +312,20 @@ function interactionBadgeClass(itemId: string) {
     <!-- Status Badges (game-style) -->
     <div class="mt-auto flex flex-wrap items-center justify-center gap-1 pt-1">
       <span
-        v-if="land.isMutated"
-        class="inline-flex items-center gap-0.5 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] text-violet-800 font-bold dark:bg-violet-900/40 dark:text-violet-300"
-        title="协议已确认存在变异配置"
+        v-for="effect in mutantEffects"
+        :key="effect.id || effect.name"
+        class="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold"
+        :class="mutantBadgeClass(effect)"
+        :title="effect.description || effect.name"
       >
-        <span class="i-carbon-star" /> 变异
+        <img
+          v-if="effect.icon"
+          :src="mutantIconUrl(effect.icon)"
+          :alt="effect.name"
+          class="h-3 w-3 object-contain"
+        >
+        <span v-else class="i-carbon-star" />
+        {{ effect.name }}
       </span>
       <span
         v-for="effect in interactionEffectBadges(land)"

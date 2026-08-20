@@ -10,6 +10,8 @@ const {
     getPlantById,
     getSeedImageBySeedId,
     getPlantGrowTime,
+    getMutantEffectsByIds,
+    getMutantDisplayPlantId,
 } = require('../../config/gameConfig');
 const { toNum, toTimeSec, getServerTimeSec, logWarn } = require('../../utils/utils');
 
@@ -161,6 +163,7 @@ function buildLandDetail(land: any, options: { friendMode?: boolean; landsMap?: 
         occupiedLandIds: Array.isArray(context.occupiedLandIds) ? context.occupiedLandIds : [],
         plantSize: 1,
         mutantConfigIds: [],
+        mutantEffects: [],
         isMutated: false,
         interactionEffects: [],
         protocolField40: null,
@@ -198,7 +201,10 @@ function buildLandDetail(land: any, options: { friendMode?: boolean; landsMap?: 
     }
     const phaseVal = toNum(currentPhase.phase);
     const plantId = toNum(plant.id);
-    const plantName = getPlantName(plantId) || plant.name || '未知';
+    const mutantConfigIds = getPlantMutantConfigIds(plant, currentPhase);
+    const mutantEffects = getMutantEffectsByIds(mutantConfigIds);
+    const displayPlantId = getMutantDisplayPlantId(plantId, mutantConfigIds);
+    const plantName = getPlantName(displayPlantId) || getPlantName(plantId) || plant.name || '未知';
     const plantCfg = getPlantById(plantId);
     const seedId = toNum(plantCfg?.seed_id);
     const plantSize = Math.max(1, toNum(plantCfg?.size) || toNum(sourceLand?.land_size) || landSize || 1);
@@ -209,7 +215,6 @@ function buildLandDetail(land: any, options: { friendMode?: boolean; landsMap?: 
     const matureBegin = maturePhase ? toTimeSec(maturePhase.begin_time) : 0;
     const matureInSec = matureBegin > nowSec ? matureBegin - nowSec : 0;
     const statusFlags = getPlantStatusFlags(plant, currentPhase, nowSec);
-    const mutantConfigIds = getPlantMutantConfigIds(plant, currentPhase);
     let status = 'growing';
     if (phaseVal === PlantPhase.MATURE) status = friendMode ? (plant.stealable ? 'stealable' : 'harvested') : 'harvestable';
     else if (phaseVal === PlantPhase.DEAD) status = 'dead';
@@ -219,6 +224,7 @@ function buildLandDetail(land: any, options: { friendMode?: boolean; landsMap?: 
         ...base,
         status,
         plantId,
+        displayPlantId,
         plantName,
         seedId,
         seedImage: seedId > 0 ? getSeedImageBySeedId(seedId) : '',
@@ -233,6 +239,7 @@ function buildLandDetail(land: any, options: { friendMode?: boolean; landsMap?: 
         stealable: !!plant.stealable,
         plantSize,
         mutantConfigIds,
+        mutantEffects,
         isMutated: mutantConfigIds.length > 0,
         interactionEffects: getPlantInteractionEffects(plant),
         protocolField40: plant.field_40
