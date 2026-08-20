@@ -80,7 +80,11 @@ test('qixi mutation uses official effect_name while keeping drought independent'
     const detail = buildLandDetail(growingLand(21, 0, {
         dry_num: 1,
         mutant_config_ids: [13],
-        field_40: { value_1: 10, value_2: 1 },
+        field_40: [
+            { value_1: 2, value_2: 2 },
+            { value_1: 10, value_2: 1 },
+            { value_1: 1, value_2: 1 },
+        ],
     }));
 
     assert.equal(detail.needWater, true);
@@ -89,39 +93,75 @@ test('qixi mutation uses official effect_name while keeping drought independent'
     assert.equal(detail.interactionEffects[0].activityId, effect.activityId);
 });
 
-test('field 40 restores only confirmed interaction item states', () => {
-    const footballOverGoldenLand = growingLand(10, 301102, {
-        field_40: { value_1: 1, value_2: 1 },
+test('field 40 history does not restore cleared golden beetles or footballs', () => {
+    const clearedGoldenHistoryLand = growingLand(15, 0, {
+        field_40: [
+            { value_1: 1, value_2: 3 },
+            { value_1: 2, value_2: 1 },
+        ],
     });
-    const footballLand = growingLand(23, 301102, {
-        field_40: { value_1: 2, value_2: 1 },
+    const clearedFootballHistoryLand = growingLand(16, 0, {
+        field_40: [
+            { value_1: 1, value_2: 2 },
+            { value_1: 2, value_2: 2 },
+        ],
     });
-    const qixiNineLand = growingLand(5, 0, {
-        field_40: { value_1: 9, value_2: 1 },
+    const activeFootballLand = growingLand(23, 301102, {
+        field_40: [
+            { value_1: 2, value_2: 2 },
+            { value_1: 1, value_2: 1 },
+        ],
     });
-    const qixiTenLand = growingLand(12, 0, {
-        mutant_config_ids: [13],
-        field_40: { value_1: 10, value_2: 1 },
-    });
-    const unknownLand = growingLand(6, 0, {
-        field_40: { value_1: 3, value_2: 1 },
+    const activeGoldenTargetOnlyLand = growingLand(24, 0, {
+        interaction_targets: [{ item_id: 301101, land_id: 24 }],
+        field_40: [
+            { value_1: 1, value_2: 3 },
+            { value_1: 2, value_2: 1 },
+        ],
     });
 
-    const footballOverGoldenDetail = buildLandDetail(footballOverGoldenLand);
-    const footballDetail = buildLandDetail(footballLand);
-    const qixiNineDetail = buildLandDetail(qixiNineLand);
-    const qixiTenDetail = buildLandDetail(qixiTenLand);
-    const unknownDetail = buildLandDetail(unknownLand);
-    assert.deepEqual(footballOverGoldenDetail.interactionEffects.map(item => item.itemId), ['301102', '301101']);
-    assert.deepEqual(footballDetail.interactionEffects.map(item => item.itemId), ['301102']);
-    assert.deepEqual(qixiNineDetail.interactionEffects.map(item => item.itemId), ['301103']);
-    assert.deepEqual(qixiTenDetail.interactionEffects.map(item => item.itemId), ['301103']);
-    assert.deepEqual(unknownDetail.interactionEffects, []);
+    assert.deepEqual(buildLandDetail(clearedGoldenHistoryLand).interactionEffects, []);
+    assert.deepEqual(buildLandDetail(clearedFootballHistoryLand).interactionEffects, []);
     assert.deepEqual(
-        analyzeLands([footballOverGoldenLand, footballLand, qixiNineLand, qixiTenLand], false, 9001)
-            .needInteractionCleanup,
-        [10, 23],
+        buildLandDetail(activeFootballLand).interactionEffects.map(item => item.itemId),
+        ['301102'],
     );
+    assert.deepEqual(
+        buildLandDetail(activeGoldenTargetOnlyLand).interactionEffects.map(item => item.itemId),
+        ['301101'],
+    );
+    assert.deepEqual(
+        analyzeLands([
+            clearedGoldenHistoryLand,
+            clearedFootballHistoryLand,
+            activeFootballLand,
+            activeGoldenTargetOnlyLand,
+        ], false, 9001)
+            .needInteractionCleanup,
+        [23, 24],
+    );
+});
+
+test('qixi dew fallback requires both its captured history code and mutation 13', () => {
+    const confirmedNineLand = growingLand(5, 0, {
+        mutant_config_ids: [13],
+        field_40: [{ value_1: 9, value_2: 1 }],
+    });
+    const confirmedTenLand = growingLand(12, 0, {
+        mutant_config_ids: [13],
+        field_40: [{ value_1: 10, value_2: 1 }],
+    });
+    const historyWithoutMutationLand = growingLand(6, 0, {
+        field_40: [{ value_1: 10, value_2: 1 }],
+    });
+    const mutationWithoutHistoryLand = growingLand(22, 0, {
+        mutant_config_ids: [13],
+    });
+
+    assert.deepEqual(buildLandDetail(confirmedNineLand).interactionEffects.map(item => item.itemId), ['301103']);
+    assert.deepEqual(buildLandDetail(confirmedTenLand).interactionEffects.map(item => item.itemId), ['301103']);
+    assert.deepEqual(buildLandDetail(historyWithoutMutationLand).interactionEffects, []);
+    assert.deepEqual(buildLandDetail(mutationWithoutHistoryLand).interactionEffects, []);
 });
 
 test('own Farming request keeps the two explicit zero-valued scene fields', async () => {
@@ -133,4 +173,16 @@ test('own Farming request keeps the two explicit zero-valued scene fields', asyn
     assert.deepEqual(Array.from(decoded.land_ids, value => Number(value)), [8, 15]);
     assert.equal(Number(decoded.host_gid), 1234);
     assert.deepEqual(Array.from(body.slice(-4)), [0x18, 0x00, 0x20, 0x00]);
+
+    const repeatedField40Reply = types.AllLandsReply.decode(Buffer.from(
+        '0a10520ec2020408011003c2020408021001',
+        'hex',
+    ));
+    assert.deepEqual(
+        repeatedField40Reply.lands[0].plant.field_40.map(status => [
+            Number(status.value_1),
+            Number(status.value_2),
+        ]),
+        [[1, 3], [2, 1]],
+    );
 });
