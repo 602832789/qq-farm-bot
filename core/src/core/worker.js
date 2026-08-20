@@ -1134,7 +1134,8 @@ async function handleApiCall(msg) {
                 const { useItem } = require('../services/warehouse');
                 const itemId = Number(args[0]) || 0;
                 const count = Math.max(1, Number(args[1]) || 1);
-                result = await useItem(itemId, count, []);
+                const uid = Number(args[2]) || 0;
+                result = await useItem(itemId, count, uid);
                 break;
             }
             case 'sellItems': {

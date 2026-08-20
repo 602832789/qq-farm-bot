@@ -80,6 +80,18 @@ test('qixi activity items resolve official static icons', () => {
   }
 });
 
+test('recent bag items resolve official names and icons', () => {
+  const expected = new Map([
+    [1026, '鹊羽香囊'],
+    [101304, '千星游记礼包'],
+  ]);
+
+  for (const [itemId, name] of expected) {
+    assert.equal(getItemById(itemId)?.name, name);
+    assertImageExists(itemId, `${name} image`);
+  }
+});
+
 test('activity supplements preserve growth phases from the base plant config', () => {
   const baseBackedActivitySeeds = [
     21353, 20264, 21404, 20108, 21050, 21251, 21380, 20129, 20375, 20329

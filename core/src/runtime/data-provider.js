@@ -167,7 +167,7 @@ function createDataProvider(deps) {
         delFriend: (ref, gid) => callWorkerApi(resolveAccountId(ref), 'delFriend', gid),
 
         // ========== 仓库 ==========
-        useItem: (ref, itemId, count) => callWorkerApi(resolveAccountId(ref), 'useItem', itemId, count),
+        useItem: (ref, itemId, count, uid) => callWorkerApi(resolveAccountId(ref), 'useItem', itemId, count, uid),
         sellItems: (ref, items) => callWorkerApi(resolveAccountId(ref), 'sellItems', items),
 
         // ========== 每日礼包 ==========
