@@ -254,7 +254,7 @@ const localStrategySettings = ref({
   plantOrderRandom: false,
   plantDelaySeconds: 0,
   intervals: { farmMin: 2, farmMax: 5, helpMin: 10, helpMax: 15, stealMin: 10, stealMax: 15 },
-  friendQuietHours: { enabled: false, start: '23:00', end: '07:00' },
+  friendQuietHours: { enabled: false, start: '23:00', end: '07:00', continueFarm: true },
 })
 
 const plantingStrategyOptions = [
@@ -677,7 +677,13 @@ function syncLocalStrategySettings() {
       plantOrderRandom: !!settings.value.plantOrderRandom,
       plantDelaySeconds: settings.value.plantDelaySeconds ?? 0,
       intervals: settings.value.intervals,
-      friendQuietHours: settings.value.friendQuietHours,
+      friendQuietHours: {
+        enabled: false,
+        start: '23:00',
+        end: '07:00',
+        continueFarm: true,
+        ...(settings.value.friendQuietHours || {}),
+      },
     }))
   }
 }
@@ -1709,6 +1715,11 @@ async function handleResetSystemConfig() {
                   size="small"
                 />
               </div>
+              <BaseSwitch
+                v-model="localStrategySettings.friendQuietHours.continueFarm"
+                label="静默时继续农场巡查"
+                :disabled="!localStrategySettings.friendQuietHours.enabled"
+              />
             </div>
 
             <div class="border-t pt-3 space-y-3 dark:border-gray-700">

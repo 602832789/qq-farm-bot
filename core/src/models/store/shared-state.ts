@@ -74,6 +74,7 @@ const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
         enabled: false,
         start: '01:00',
         end: '07:30',
+        continueFarm: true,
     },
     knownFriendGids: [],
     knownFriendGidSyncCooldownSec: DEFAULT_KNOWN_FRIEND_GID_SYNC_COOLDOWN_SEC,
@@ -222,7 +223,7 @@ function cloneAccountConfig(base: Partial<AccountConfig> = DEFAULT_ACCOUNT_CONFI
         ...base,
         automation,
         intervals: { ...(base.intervals || DEFAULT_ACCOUNT_CONFIG.intervals) },
-        friendQuietHours: { ...(base.friendQuietHours || DEFAULT_ACCOUNT_CONFIG.friendQuietHours) },
+        friendQuietHours: { ...DEFAULT_ACCOUNT_CONFIG.friendQuietHours, ...(base.friendQuietHours || {}) },
         knownFriendGids,
         knownFriendGidSyncCooldownSec,
         friendsListCacheTtlSec,
@@ -289,6 +290,9 @@ function normalizeAccountConfig(input: unknown, fallback: AccountConfig = accoun
             enabled: src.friendQuietHours.enabled !== undefined ? !!src.friendQuietHours.enabled : !!old.enabled,
             start: normalizeTimeString(src.friendQuietHours.start, old.start || '23:00'),
             end: normalizeTimeString(src.friendQuietHours.end, old.end || '07:00'),
+            continueFarm: src.friendQuietHours.continueFarm !== undefined
+                ? !!src.friendQuietHours.continueFarm
+                : (old.continueFarm !== undefined ? !!old.continueFarm : true),
         };
     }
 

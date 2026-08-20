@@ -142,6 +142,9 @@ function applyConfigSnapshot(snapshot: Record<string, any> | undefined, options:
             enabled: cfg.friendQuietHours.enabled !== undefined ? !!cfg.friendQuietHours.enabled : !!old.enabled,
             start: normalizeTimeString(cfg.friendQuietHours.start, old.start || '23:00'),
             end: normalizeTimeString(cfg.friendQuietHours.end, old.end || '07:00'),
+            continueFarm: cfg.friendQuietHours.continueFarm !== undefined
+                ? !!cfg.friendQuietHours.continueFarm
+                : (old.continueFarm !== undefined ? !!old.continueFarm : true),
         };
     }
 

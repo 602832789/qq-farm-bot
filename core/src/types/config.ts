@@ -50,6 +50,7 @@ export interface QuietHoursConfig {
   enabled: boolean;
   start: string;
   end: string;
+  continueFarm: boolean;
 }
 
 export interface AccountConfig {
