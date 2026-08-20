@@ -3,12 +3,14 @@ import { nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '@/api'
 import ConfirmModal from '@/components/ConfirmModal.vue'
+import AdminSystemPanel from '@/components/admin/AdminSystemPanel.vue'
 import AccountSettingsTab from '@/components/settings/AccountSettingsTab.vue'
 import AutomationSettingsTab from '@/components/settings/AutomationSettingsTab.vue'
 import DefaultPlanSettingsTab from '@/components/settings/DefaultPlanSettingsTab.vue'
 import StrategySettingsTab from '@/components/settings/StrategySettingsTab.vue'
 import UserSettingsTab from '@/components/settings/UserSettingsTab.vue'
 import { useAccountSettings } from '@/composables/settings/useAccountSettings'
+import { useAdminSystemConfig } from '@/composables/useAdminSystemConfig'
 import { useAutomationSettings } from '@/composables/settings/useAutomationSettings'
 import { useStrategySettings } from '@/composables/settings/useStrategySettings'
 import { useUserSettings } from '@/composables/settings/useUserSettings'
@@ -17,15 +19,17 @@ import { useSettingStore } from '@/stores/setting'
 const settingStore = useSettingStore()
 const route = useRoute()
 
-type SettingsTabKey = 'account' | 'strategy' | 'automation' | 'default-plan' | 'user'
+type SettingsTabKey = 'account' | 'strategy' | 'automation' | 'default-plan' | 'user' | 'system' | 'wx' | 'capture'
+
+const SETTINGS_TAB_KEYS: SettingsTabKey[] = ['account', 'strategy', 'automation', 'default-plan', 'user', 'system', 'wx', 'capture']
 
 function getInitialSettingsTab(): SettingsTabKey {
   const requested = String(route.query.tab || '')
-  if (requested === 'account' || requested === 'strategy' || requested === 'automation' || requested === 'default-plan' || requested === 'user')
-    return requested
+  if (SETTINGS_TAB_KEYS.includes(requested as SettingsTabKey))
+    return requested as SettingsTabKey
   const saved = localStorage.getItem('settings-active-tab')
-  return saved === 'strategy' || saved === 'automation' || saved === 'default-plan' || saved === 'user'
-    ? saved
+  return SETTINGS_TAB_KEYS.includes(saved as SettingsTabKey)
+    ? saved as SettingsTabKey
     : 'account'
 }
 
@@ -48,7 +52,10 @@ const tabs = [
   { key: 'strategy', label: '策略设置', icon: 'i-fas-cogs' },
   { key: 'automation', label: '自动控制', icon: 'i-carbon-toggle-on' },
   { key: 'default-plan', label: '默认方案', icon: 'i-carbon-settings-adjust' },
-  { key: 'user', label: '用户管理', icon: 'i-carbon-user' },
+  { key: 'user', label: '设备与通知', icon: 'i-carbon-settings' },
+  { key: 'system', label: '系统配置', icon: 'i-carbon-settings-services' },
+  { key: 'wx', label: '微信配置', icon: 'i-carbon-logo-wechat' },
+  { key: 'capture', label: '抓包服务', icon: 'i-carbon-data-connected' },
 ] as const
 
 const modalVisible = ref(false)
@@ -71,12 +78,32 @@ function showAlert(message: string, type: 'primary' | 'danger' = 'primary') {
 }
 
 const {
-  passwordSaving,
+  systemConfigSaving,
+  wxConfigSaving,
+  captureConfigSaving,
+  captureConfigTesting,
+  localSystemConfig,
+  defaultSystemConfig,
+  localWxConfig,
+  localCaptureConfig,
+  platformOptions,
+  osOptions,
+  loadWxConfig,
+  loadCaptureConfig,
+  handleTestCaptureConfig,
+  handleSaveCaptureConfig,
+  handleSaveWxConfig,
+  handleResetWxConfig,
+  loadSystemConfig,
+  handleSaveSystemConfig,
+  handleResetSystemConfig,
+} = useAdminSystemConfig({ showAlert })
+
+const {
   offlineSaving,
   offlineTesting,
   deviceProtocolLoading,
   deviceProtocolSaving,
-  passwordForm,
   deviceProtocolPresetOptions,
   selectedDevicePreset,
   deviceProtocolForm,
@@ -91,7 +118,6 @@ const {
   fetchDeviceProtocol,
   syncLocalOfflineSettings,
   handleSaveDeviceProtocol,
-  handleChangePassword,
   handleSaveOffline,
   handleTestOffline,
 } = useUserSettings(showAlert)
@@ -209,6 +235,7 @@ watch(currentAccountId, async () => {
 })
 
 onMounted(async () => {
+  await Promise.all([loadSystemConfig(), loadWxConfig(), loadCaptureConfig()])
   await fetchAccounts()
   await fetchDeviceProtocol()
   selectFirstAccountIfNeeded()
@@ -346,12 +373,10 @@ onMounted(async () => {
           v-else-if="activeTab === 'user'"
           v-model:device-protocol-form="deviceProtocolForm"
           v-model:selected-device-preset="selectedDevicePreset"
-          v-model:password-form="passwordForm"
           v-model:offline-config="localOffline"
           :device-protocol-loading="deviceProtocolLoading"
           :device-protocol-saving="deviceProtocolSaving"
           :device-protocol-preset-options="deviceProtocolPresetOptions"
-          :password-saving="passwordSaving"
           :channel-options="channelOptions"
           :current-channel-doc-url="currentChannelDocUrl"
           :offline-saving="offlineSaving"
@@ -361,10 +386,72 @@ onMounted(async () => {
           @random-device-id="fillRandomDeviceId"
           @random-imei="fillRandomImei"
           @save-device-protocol="handleSaveDeviceProtocol"
-          @change-password="handleChangePassword"
           @open-docs="openChannelDocs"
           @test-offline="handleTestOffline"
           @save-offline="handleSaveOffline"
+        />
+
+        <AdminSystemPanel
+          v-else-if="activeTab === 'system'"
+          section="system"
+          v-model:local-system-config="localSystemConfig"
+          v-model:local-wx-config="localWxConfig"
+          v-model:local-capture-config="localCaptureConfig"
+          :default-system-config="defaultSystemConfig"
+          :platform-options="platformOptions"
+          :os-options="osOptions"
+          :system-config-saving="systemConfigSaving"
+          :wx-config-saving="wxConfigSaving"
+          :capture-config-saving="captureConfigSaving"
+          :capture-config-testing="captureConfigTesting"
+          @reset-system="handleResetSystemConfig"
+          @save-system="handleSaveSystemConfig"
+          @reset-wx="handleResetWxConfig"
+          @save-wx="handleSaveWxConfig"
+          @test-capture="handleTestCaptureConfig"
+          @save-capture="handleSaveCaptureConfig"
+        />
+
+        <AdminSystemPanel
+          v-else-if="activeTab === 'wx'"
+          section="wx"
+          v-model:local-system-config="localSystemConfig"
+          v-model:local-wx-config="localWxConfig"
+          v-model:local-capture-config="localCaptureConfig"
+          :default-system-config="defaultSystemConfig"
+          :platform-options="platformOptions"
+          :os-options="osOptions"
+          :system-config-saving="systemConfigSaving"
+          :wx-config-saving="wxConfigSaving"
+          :capture-config-saving="captureConfigSaving"
+          :capture-config-testing="captureConfigTesting"
+          @reset-system="handleResetSystemConfig"
+          @save-system="handleSaveSystemConfig"
+          @reset-wx="handleResetWxConfig"
+          @save-wx="handleSaveWxConfig"
+          @test-capture="handleTestCaptureConfig"
+          @save-capture="handleSaveCaptureConfig"
+        />
+
+        <AdminSystemPanel
+          v-else-if="activeTab === 'capture'"
+          section="capture"
+          v-model:local-system-config="localSystemConfig"
+          v-model:local-wx-config="localWxConfig"
+          v-model:local-capture-config="localCaptureConfig"
+          :default-system-config="defaultSystemConfig"
+          :platform-options="platformOptions"
+          :os-options="osOptions"
+          :system-config-saving="systemConfigSaving"
+          :wx-config-saving="wxConfigSaving"
+          :capture-config-saving="captureConfigSaving"
+          :capture-config-testing="captureConfigTesting"
+          @reset-system="handleResetSystemConfig"
+          @save-system="handleSaveSystemConfig"
+          @reset-wx="handleResetWxConfig"
+          @save-wx="handleSaveWxConfig"
+          @test-capture="handleTestCaptureConfig"
+          @save-capture="handleSaveCaptureConfig"
         />
       </div>
     </div>
