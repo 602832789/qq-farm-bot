@@ -343,7 +343,7 @@ function getAllSeeds(): SeedInfo[] {
 function getMappedSeedImage(targetId: number): string {
     const id = Number(targetId) || 0;
     if (id <= 0) return '';
-    return `/game-config/seed_images_named/${id}.png`;
+    return `/game-config/seed_images_named/seed_images/${id}.png`;
 }
 
 function getSeedImageBySeedId(seedId: number): string {
@@ -355,7 +355,7 @@ function getItemImageById(itemId: number): string {
     if (id <= 0) return '';
 
     // 直接按ID返回
-    return `/game-config/seed_images_named/${id}.png`;
+    return `/game-config/seed_images_named/seed_images/${id}.png`;
 }
 
 function getItemById(itemId: number): ItemInfo | undefined {

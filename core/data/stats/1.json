@@ -1,0 +1,21 @@
+{
+  "date": "2026-08-20",
+  "operations": {
+    "harvest": 0,
+    "farming": 0,
+    "fertilize": 0,
+    "plant": 0,
+    "steal": 69,
+    "helpFarming": 49,
+    "taskClaim": 0,
+    "sell": 3,
+    "upgrade": 0,
+    "levelUp": 0
+  },
+  "initialState": {
+    "gold": 148445372,
+    "exp": 6006159,
+    "coupon": 23152
+  },
+  "savedAt": 1787194022701
+}
