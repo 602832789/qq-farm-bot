@@ -13,13 +13,16 @@ import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 import { useAccountStore } from '@/stores/account'
 import { useActivityCenterStore } from '@/stores/activity-center'
 import { useFriendStore } from '@/stores/friend'
+import { useStatusStore } from '@/stores/status'
 import { useToastStore } from '@/stores/toast'
 
 const accountStore = useAccountStore()
 const activityStore = useActivityCenterStore()
 const friendStore = useFriendStore()
+const statusStore = useStatusStore()
 const toast = useToastStore()
 const { currentAccountId, currentAccount } = storeToRefs(accountStore)
+const { status } = storeToRefs(statusStore)
 const {
   friends,
   loading,
@@ -55,6 +58,15 @@ const isQqAccount = computed(() => {
   const platform = String(acc.platform || 'qq').toLowerCase()
   return platform === 'qq'
 })
+const currentAccountConnected = computed(() => {
+  const accountId = String(currentAccountId.value || '')
+  return !!accountId
+    && String(status.value?.accountId || '') === accountId
+    && !!status.value?.connection?.connected
+})
+const currentAccountRunning = computed(() => (
+  !!currentAccount.value?.running || currentAccountConnected.value
+))
 
 const knownFriendGidCount = computed(() => knownFriendGids.value.length)
 const knownFriendGidSet = computed(() => new Set(knownFriendGids.value.map(Number)))
@@ -392,8 +404,7 @@ function giftQixiSachetToFriend(friend: any, event: Event) {
 
 async function loadData() {
   const accountId = currentAccountId.value
-  const acc = currentAccount.value
-  if (!accountId || !acc?.running)
+  if (!accountId || !currentAccountRunning.value)
     return
 
   avatarErrorKeys.value.clear()
@@ -428,7 +439,7 @@ watch(currentAccountId, () => {
   friendStore.resetFriendLandState()
 })
 
-watch([currentAccountId, () => currentAccount.value?.running], () => {
+watch([currentAccountId, () => currentAccount.value?.running, currentAccountConnected], () => {
   void loadData()
 }, { immediate: true })
 
@@ -466,7 +477,7 @@ function toggleFriend(friendId: string) {
     expandedFriends.value.clear()
     selectedInteractionLandIds.value = {}
     expandedFriends.value.add(key)
-    if (currentAccountId.value && currentAccount.value?.running) {
+    if (currentAccountId.value && currentAccountRunning.value) {
       void Promise.allSettled([
         friendStore.fetchFriendLands(currentAccountId.value, key),
         friendStore.fetchInteractionItems(currentAccountId.value),
@@ -808,7 +819,7 @@ async function handleBatchAddKnownFriendGids() {
       </div>
     </div>
 
-    <div v-else-if="!currentAccount?.running" class="flex flex-col items-center justify-center gap-4 farm-card rounded-2xl bg-white p-12 text-center text-gray-500 shadow-md dark:bg-gray-800">
+    <div v-else-if="!currentAccountRunning" class="flex flex-col items-center justify-center gap-4 farm-card rounded-2xl bg-white p-12 text-center text-gray-500 shadow-md dark:bg-gray-800">
       <span class="i-carbon-network-4 text-4xl text-gray-400" />
       <div>
         <div class="text-lg text-gray-700 font-medium dark:text-gray-300">
