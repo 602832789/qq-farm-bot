@@ -92,6 +92,12 @@ function dogActionLabel(pet: PetInfo) {
   return pet.active ? '收回' : '上场'
 }
 
+function dogActionType(pet: PetInfo): 'default' | 'success' | 'warning' {
+  if (!pet.owned)
+    return 'default'
+  return pet.active ? 'warning' : 'success'
+}
+
 async function handlePetOperation(pet: PetInfo) {
   if (!pet.owned || operatingDogId.value)
     return
@@ -264,8 +270,11 @@ watch(currentAccountId, () => {
                     {{ pet.rarityLabel }}
                   </NTag>
                 </div>
-                <div class="pet-tile__status">
-                  <span :class="pet.owned ? 'status-dot status-dot--owned' : 'status-dot'" />
+                <div
+                  class="pet-tile__status"
+                  :class="{ 'pet-tile__status--active': pet.active, 'pet-tile__status--owned': pet.owned && !pet.active }"
+                >
+                  <span class="status-dot" :class="{ 'status-dot--owned': pet.owned, 'status-dot--active': pet.active }" />
                   {{ pet.active ? '上场中' : (pet.owned ? '已获得' : '未获得') }}
                 </div>
               </div>
@@ -274,6 +283,9 @@ watch(currentAccountId, () => {
               <span class="pet-detail-label">技能</span>
               <div v-for="skill in pet.skills" :key="skill.name" class="pet-skill">
                 <strong>{{ skill.name }}</strong>
+                <span v-if="skill.remainingCount !== undefined && skill.dailyLimit" class="pet-skill__usage">
+                  今日剩余：{{ skill.remainingCount }}/{{ skill.dailyLimit }}
+                </span>
                 <p>{{ skill.description }}</p>
               </div>
             </div>
@@ -282,15 +294,16 @@ watch(currentAccountId, () => {
               <p>{{ pet.obtainCondition }}</p>
             </div>
             <NButton
-              block
               size="small"
+              ghost block
+              :type="dogActionType(pet)"
+              class="pet-action"
+              :class="pet.active ? 'pet-action--withdraw' : (pet.owned ? 'pet-action--deploy' : 'pet-action--locked')"
               :loading="operatingDogId === pet.id"
               :disabled="!pet.owned || !!operatingDogId"
               :title="operationTitle(pet)"
               @click="handlePetOperation(pet)"
             >
-              <span v-if="pet.active" class="i-carbon-logout" />
-              <span v-else class="i-carbon-play-outline" />
               {{ dogActionLabel(pet) }}
             </NButton>
           </article>
@@ -329,9 +342,11 @@ watch(currentAccountId, () => {
               :loading="usingFood"
               :disabled="!canUseFood(food)"
               :title="!activeDog ? '请先上场宠物' : (food.count <= 0 ? '狗盆中没有该狗粮' : '从狗盆喂食')"
+              class="food-feed-button"
               @click="handleUseFood(food)"
             >
-              <span class="i-carbon-add-alt" /> 喂食
+              <span class="i-carbon-add-alt" aria-hidden="true" />
+              <span>喂食</span>
             </NButton>
           </div>
         </div>
@@ -587,6 +602,15 @@ watch(currentAccountId, () => {
   font-size: 11px;
 }
 
+.pet-tile__status--owned {
+  color: #52765e;
+}
+
+.pet-tile__status--active {
+  color: #2f8950;
+  font-weight: 700;
+}
+
 .status-dot {
   width: 6px;
   height: 6px;
@@ -596,6 +620,11 @@ watch(currentAccountId, () => {
 
 .status-dot--owned {
   background: #63a56d;
+}
+
+.status-dot--active {
+  background: #2f9a55;
+  box-shadow: 0 0 0 3px rgba(47, 154, 85, 0.13);
 }
 
 .pet-tile__detail {
@@ -634,8 +663,38 @@ watch(currentAccountId, () => {
   font-size: 11px;
 }
 
+.pet-skill__usage {
+  display: inline-flex;
+  margin-left: 7px;
+  padding: 1px 6px;
+  border: 1px solid rgba(203, 132, 43, 0.25);
+  border-radius: 999px;
+  background: rgba(241, 169, 67, 0.1);
+  color: #a96920;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
 .pet-skill p {
   -webkit-line-clamp: 3;
+}
+
+.pet-action {
+  margin-top: auto;
+  font-weight: 700;
+}
+
+:deep(.pet-action--deploy .n-button__border) {
+  border-color: rgba(57, 145, 83, 0.62);
+}
+
+:deep(.pet-action--withdraw .n-button__border) {
+  border-color: rgba(204, 126, 31, 0.68);
+}
+
+:deep(.pet-action--locked .n-button__border) {
+  border-color: rgba(113, 132, 119, 0.3);
 }
 
 .food-list {
@@ -685,6 +744,10 @@ watch(currentAccountId, () => {
 .food-row__count {
   width: 76px;
   flex: none;
+}
+
+:deep(.food-feed-button .n-button__content) {
+  gap: 6px;
 }
 
 .pet-protocol-note {

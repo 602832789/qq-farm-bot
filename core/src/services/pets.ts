@@ -34,10 +34,13 @@ const PET_OBTAIN_CONDITIONS: Record<number, string> = {
     90021: '限时活动获得',
 };
 interface PetSkillDefinition {
+    skillId?: number;
     name: string;
     description: string;
     triggerRate?: number;
     dailyLimit?: number;
+    usedCount?: number;
+    remainingCount?: number;
     source: 'game-config' | 'client-static';
 }
 
@@ -45,13 +48,14 @@ interface PetSkillDefinition {
 // 不应虚构 DogService 协议。忠心护主概率由 ItemInfo.json 的官方描述提供；
 // 同气连枝文案与用户实际打开的技能说明一致。
 const PET_SKILLS: Record<number, PetSkillDefinition[]> = {
-    90001: [{ name: '忠心护主', description: '10% 概率触发看护技能', triggerRate: 10, source: 'game-config' }],
-    90002: [{ name: '忠心护主', description: '30% 概率触发看护技能', triggerRate: 30, source: 'game-config' }],
-    90003: [{ name: '忠心护主', description: '50% 概率触发看护技能', triggerRate: 50, source: 'game-config' }],
-    90011: [{ name: '忠心护主', description: '50% 概率触发看护技能', triggerRate: 50, source: 'game-config' }],
+    90001: [{ name: '忠心护主', description: '作物被偷时，有10%概率触发看护，成功后扣除偷窃者一定金币。', triggerRate: 10, source: 'game-config' }],
+    90002: [{ name: '忠心护主', description: '作物被偷时，有30%概率触发看护，成功后扣除偷窃者一定金币。', triggerRate: 30, source: 'game-config' }],
+    90003: [{ name: '忠心护主', description: '作物被偷时，有50%概率触发看护，成功后扣除偷窃者一定金币。', triggerRate: 50, source: 'game-config' }],
+    90011: [{ name: '忠心护主', description: '作物被偷时，有50%概率触发看护，成功后扣除偷窃者一定金币。', triggerRate: 50, source: 'game-config' }],
     90021: [
-        { name: '忠心护主', description: '50% 概率触发看护技能', triggerRate: 50, source: 'game-config' },
+        { name: '忠心护主', description: '作物被偷时，有50%概率触发看护，成功后扣除偷窃者一定金币。', triggerRate: 50, source: 'game-config' },
         {
+            skillId: 2001,
             name: '同气连枝',
             description: '好友前来农场互助（浇水/除草/除虫）时，有概率掉落同气连枝礼包（每日限30次），主人与好友均可获得奖励。',
             dailyLimit: 30,
@@ -104,6 +108,33 @@ function getRawFoods(reply: any): any[] {
     return Array.isArray(foods) ? foods : [];
 }
 
+function getRawSkillUsages(reply: any): any[] {
+    const usages = reply?.skill_usages ?? reply?.skillUsages;
+    return Array.isArray(usages) ? usages : [];
+}
+
+function getPetSkills(id: number, info: any, skillUsages: any[]): PetSkillDefinition[] {
+    const definitions = PET_SKILLS[id] || getFallbackSkills(info);
+    return definitions.map((definition: PetSkillDefinition) => {
+        if (!definition.skillId) return { ...definition };
+        const usage = skillUsages.find((entry: any) => (
+            normalizeId(entry?.skill_id ?? entry?.skillId) === definition.skillId
+            && normalizeId(entry?.dog_id ?? entry?.dogId) === id
+        ));
+        if (!usage) return { ...definition };
+
+        const usedCount = Math.max(0, normalizeId(usage?.used_count ?? usage?.usedCount));
+        const protocolLimit = Math.max(0, normalizeId(usage?.daily_limit ?? usage?.dailyLimit));
+        const dailyLimit = protocolLimit || definition.dailyLimit || 0;
+        return {
+            ...definition,
+            dailyLimit,
+            usedCount,
+            remainingCount: Math.max(0, dailyLimit - usedCount),
+        };
+    });
+}
+
 function getBagFoodCounts(bagReply: any): Map<number, number> {
     const counts = new Map<number, number>();
     for (const item of getBagItems(bagReply)) {
@@ -115,14 +146,14 @@ function getBagFoodCounts(bagReply: any): Map<number, number> {
     return counts;
 }
 
-function getDogDefinition(id: number, raw: any, currentDogId: number): any {
+function getDogDefinition(id: number, raw: any, currentDogId: number, skillUsages: any[]): any {
     const info: any = getItemById(id) || {};
     const price = normalizeId(raw?.price);
     const rarity = normalizeId(info?.rarity);
     const obtainCondition = PET_OBTAIN_CONDITIONS[id] || '游戏内活动或购买获得';
     const owned = normalizeId(raw?.owned ?? raw?.field_7) === 1 || id === currentDogId;
 
-    const skills = PET_SKILLS[id] || getFallbackSkills(info);
+    const skills = getPetSkills(id, info, skillUsages);
 
     return {
         id,
@@ -143,14 +174,15 @@ function getDogDefinition(id: number, raw: any, currentDogId: number): any {
 
 function buildPetSnapshot(reply: any, bagReply: any): any {
     const rawDogs = getRawDogs(reply);
+    const skillUsages = getRawSkillUsages(reply);
     const currentDogId = normalizeId(reply?.current_dog_id ?? reply?.currentDogId);
     const byId = new Map<number, any>(rawDogs.map((dog: any) => [normalizeId(dog?.id), dog]));
-    const dogs = PET_IDS.map((id: number) => getDogDefinition(id, byId.get(id) || {}, currentDogId));
+    const dogs = PET_IDS.map((id: number) => getDogDefinition(id, byId.get(id) || {}, currentDogId, skillUsages));
 
     // 保留服务端新增的宠物，避免客户端配置尚未更新时静默丢失数据。
     for (const raw of rawDogs) {
         const id = normalizeId(raw?.id);
-        if (id > 0 && !PET_IDS.includes(id)) dogs.push(getDogDefinition(id, raw, currentDogId));
+        if (id > 0 && !PET_IDS.includes(id)) dogs.push(getDogDefinition(id, raw, currentDogId, skillUsages));
     }
 
     const bagCounts = getBagFoodCounts(bagReply);
@@ -181,7 +213,7 @@ function buildPetSnapshot(reply: any, bagReply: any): any {
         activeControlSupported: true,
         guardianRecordsSupported: true,
         skillCatalog: getPetSkillCatalog(),
-        protocolNote: '宠物列表、拥有状态、上场/收回、狗盆喂食、30 天上限与守护记录均由真实抓包确认；技能文案为客户端静态配置。',
+        protocolNote: '宠物列表、拥有状态、上场/收回、狗盆喂食、30 天上限、技能今日次数与守护记录均由真实抓包确认；技能文案为客户端静态配置。',
     };
 }
 

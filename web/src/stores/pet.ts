@@ -19,10 +19,13 @@ export interface PetInfo {
 }
 
 export interface PetSkillInfo {
+  skillId?: number
   name: string
   description: string
   triggerRate?: number
   dailyLimit?: number
+  usedCount?: number
+  remainingCount?: number
   source: 'game-config' | 'client-static'
 }
 
