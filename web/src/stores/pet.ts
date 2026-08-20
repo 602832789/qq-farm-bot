@@ -51,10 +51,8 @@ export interface PetSnapshot {
     source: 'client-static'
     requestVerified: boolean
     requestMethod: null
-    note: string
     skillsByPetId: Record<number, PetSkillInfo[]>
   }
-  protocolNote: string
 }
 
 export interface PetProtectLog {

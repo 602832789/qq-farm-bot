@@ -77,7 +77,6 @@ function getPetSkillCatalog(): any {
         source: 'client-static',
         requestVerified: true,
         requestMethod: null,
-        note: '实际点击技能图标未触发技能查询 RPC；文案来自客户端静态配置与游戏内说明。',
         skillsByPetId: PET_SKILLS,
     };
 }
@@ -213,7 +212,6 @@ function buildPetSnapshot(reply: any, bagReply: any): any {
         activeControlSupported: true,
         guardianRecordsSupported: true,
         skillCatalog: getPetSkillCatalog(),
-        protocolNote: '宠物列表、拥有状态、上场/收回、狗盆喂食、30 天上限、技能今日次数与守护记录均由真实抓包确认；技能文案为客户端静态配置。',
     };
 }
 
@@ -275,7 +273,7 @@ async function deployDog(dogIdInput: any): Promise<any> {
     const { body: replyBody } = await sendMsgAsync('gamepb.dogpb.DogService', 'DeployDog', body);
     const reply = types.DeployDogReply.decode(replyBody);
     const snapshot = await getPetInfo();
-    if (snapshot.activeDogId !== dogId) throw new Error('服务端未确认宠物上场');
+    if (snapshot.activeDogId !== dogId) throw new Error('宠物上场状态未更新，请稍后重试');
     log('宠物', `上场${dog?.name || `宠物#${dogId}`}`, { module: 'dog', event: '上场宠物', result: 'ok', dogId });
     return { ...snapshot, operation: { type: 'deploy', dogId }, reply };
 }
@@ -291,7 +289,7 @@ async function withdrawDog(): Promise<any> {
     const { body: replyBody } = await sendMsgAsync('gamepb.dogpb.DogService', 'WithdrawDog', body);
     const reply = types.WithdrawDogReply.decode(replyBody);
     const snapshot = await getPetInfo();
-    if (snapshot.activeDogId) throw new Error('服务端未确认宠物收回');
+    if (snapshot.activeDogId) throw new Error('宠物收回状态未更新，请稍后重试');
     log('宠物', '收回当前宠物', { module: 'dog', event: '收回宠物', result: 'ok', dogId: currentDogId });
     return { ...snapshot, operation: { type: 'withdraw', dogId: currentDogId }, reply };
 }
@@ -336,7 +334,7 @@ async function useDogFood(itemIdInput: any, countInput: any = 1, uidInput: any =
         const reply = types.AddFoodReply.decode(replyBody);
         const confirmedDuration = getProtectDuration(reply);
         if (confirmedDuration <= currentDuration) {
-            throw new Error('服务端未确认狗粮剩余时间增加');
+            throw new Error('狗粮剩余时间未更新，请稍后重试');
         }
         log('宠物', `使用${getItemById(itemId)?.name || `狗粮#${itemId}`} x${count}`, {
             module: 'dog',

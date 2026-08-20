@@ -212,7 +212,7 @@ function requestUseInteractionItem() {
   const saleConditionWarning = item.saleConditionSatisfiedCount > 0
     ? `该道具库存中有 ${item.saleConditionSatisfiedCount} 个已满足游戏配置的出售条件，可能已过活动或有效期，`
     : ''
-  interactionConfirmMessage.value = `${saleConditionWarning}将在自己农场的 ${count} 块土地上按编号依次使用“${item.name}”。作物状态、地块限制及道具时效由服务端最终校验，部分地块可能失败；是否继续？`
+  interactionConfirmMessage.value = `${saleConditionWarning}将在自己农场的 ${count} 块土地上按编号依次使用“${item.name}”。若期间作物状态发生变化，部分地块可能使用失败；是否继续？`
   interactionConfirmVisible.value = true
 }
 
@@ -488,7 +488,7 @@ onUnmounted(() => {
             当前没有可展示的土地
           </div>
           <div class="font-body text-sm text-gray-400">
-            这不是“尚未种植”的判断，可重新读取确认协议数据
+            暂未读取到可展示的土地，可重新读取确认
           </div>
           <NButton secondary @click="refreshWithDogGifts">
             重新读取
@@ -536,12 +536,11 @@ onUnmounted(() => {
                   </div>
                   <div v-if="selectedInteractionItem" class="mt-2 text-xs text-amber-800 dark:text-amber-200">
                     {{ selectedInteractionItem.description || '选择土地后按编号依次使用。' }}
-                    <span class="font-medium">是否可用以服务端回包为准。</span>
                     <div v-if="selectedInteractionItem.saleConditionSatisfiedCount > 0" class="mt-1 text-red-700 font-medium dark:text-red-300">
-                      其中 {{ selectedInteractionItem.saleConditionSatisfiedCount }} 个已满足游戏配置中的出售条件，可能已过活动或有效期；仍会保留供提交，是否可用由服务端判断。
+                      其中 {{ selectedInteractionItem.saleConditionSatisfiedCount }} 个已满足游戏配置中的出售条件，可能已过活动或有效期，使用时可能失败。
                     </div>
                     <div class="mt-1 text-gray-600 dark:text-gray-300">
-                      仅可选择仍在生长期的作物；成熟作物点击后只会进入收获流程。
+                      仅可选择生长期作物。
                     </div>
                   </div>
                 </div>

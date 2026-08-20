@@ -346,7 +346,7 @@ function requestUseInteractionItem(friend: any) {
     ? `该道具库存中有 ${item.saleConditionSatisfiedCount} 个已满足游戏配置的出售条件，可能已过活动或有效期，`
     : ''
   confirmAction(
-    `${saleConditionWarning}将在 ${friendName} 的 ${landIds.length} 块土地上按编号依次使用“${item.name}”。作物状态、地块限制及道具时效由服务端最终校验，部分地块可能失败；是否继续？`,
+    `${saleConditionWarning}将在 ${friendName} 的 ${landIds.length} 块土地上按编号依次使用“${item.name}”。若期间作物状态发生变化，部分地块可能使用失败；是否继续？`,
     async () => {
       const result = await friendStore.useInteractionItemBatch(accountId, key, item.itemId, landIds)
       if (!result)
@@ -1067,12 +1067,11 @@ async function handleBatchAddKnownFriendGids() {
                         </div>
                         <div v-if="selectedInteractionItem" class="mt-2 text-xs text-amber-800 dark:text-amber-200">
                           {{ selectedInteractionItem.description || '选择土地后按编号依次使用。' }}
-                          <span class="font-medium">是否可用以服务端回包为准。</span>
                           <div v-if="selectedInteractionItem.saleConditionSatisfiedCount > 0" class="mt-1 text-red-700 font-medium dark:text-red-300">
-                            其中 {{ selectedInteractionItem.saleConditionSatisfiedCount }} 个已满足游戏配置中的出售条件，可能已过活动或有效期；仍会保留供提交，是否可用由服务端判断。
+                            其中 {{ selectedInteractionItem.saleConditionSatisfiedCount }} 个已满足游戏配置中的出售条件，可能已过活动或有效期，使用时可能失败。
                           </div>
                           <div class="mt-1 text-gray-600 dark:text-gray-300">
-                            当前仅选择生长期作物；实测官方客户端点击成熟作物只进入收获/偷取，不会发出道具使用请求。
+                            仅可选择生长期作物。
                           </div>
                         </div>
                       </div>

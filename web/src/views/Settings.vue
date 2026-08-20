@@ -945,6 +945,7 @@ const localOffline = ref({
   channel: 'webhook',
   endpoint: '',
   token: '',
+  secret: '',
   title: '',
   msg: '',
   offlineDeleteSec: 0,
@@ -978,7 +979,7 @@ const CHANNEL_DOCS: Record<string, string> = {
   serverchan: 'https://sct.ftqq.com/',
   pushplus: 'https://www.pushplus.plus/',
   pushplushxtrip: 'https://pushplus.hxtrip.com/',
-  dingtalk: 'https://open.dingtalk.com/document/group/custom-robot-access',
+  dingtalk: 'https://open.dingtalk.com/document/orgapp/customize-robot-security-settings',
   wecom: 'https://guole.fun/posts/626/',
   wecombot: 'https://developer.work.weixin.qq.com/document/path/91770',
   bark: 'https://github.com/Finb/Bark',
@@ -994,10 +995,14 @@ const CHANNEL_DOCS: Record<string, string> = {
   wxpusher: 'https://wxpusher.zjiecode.com/docs/#/',
 }
 
-const currentChannelDocUrl = computed(() => {
-  const key = String(localOffline.value.channel || '').trim().toLowerCase()
-  return CHANNEL_DOCS[key] || ''
-})
+const offlineChannel = computed(() => String(localOffline.value.channel || '').trim().toLowerCase())
+const isDingTalkChannel = computed(() => offlineChannel.value === 'dingtalk')
+const offlineChannelUsesEndpoint = computed(() => offlineChannel.value === 'webhook' || isDingTalkChannel.value)
+const offlineEndpointLabel = computed(() => isDingTalkChannel.value ? 'Webhook 地址' : '接口地址')
+const offlineEndpointPlaceholder = computed(() => isDingTalkChannel.value
+  ? '从钉钉群机器人设置页复制完整 Webhook'
+  : '接收消息的接口地址')
+const currentChannelDocUrl = computed(() => CHANNEL_DOCS[offlineChannel.value] || '')
 
 function openChannelDocs() {
   const url = currentChannelDocUrl.value
@@ -1008,8 +1013,54 @@ function openChannelDocs() {
 
 function syncLocalOfflineSettings() {
   if (settings.value?.offlineReminder) {
-    localOffline.value = JSON.parse(JSON.stringify(settings.value.offlineReminder))
+    const saved = JSON.parse(JSON.stringify(settings.value.offlineReminder))
+    const next = {
+      channel: 'webhook',
+      endpoint: '',
+      token: '',
+      secret: '',
+      title: '',
+      msg: '',
+      offlineDeleteSec: 0,
+      ...saved,
+    }
+
+    if (String(next.channel || '').trim().toLowerCase() === 'dingtalk') {
+      const legacyToken = String(next.token || '').trim()
+      if (!String(next.endpoint || '').trim() && legacyToken) {
+        next.endpoint = /^https?:\/\//i.test(legacyToken)
+          ? legacyToken
+          : `https://oapi.dingtalk.com/robot/send?access_token=${encodeURIComponent(legacyToken)}`
+      }
+      next.token = ''
+    }
+
+    localOffline.value = next
   }
+}
+
+function validateDingTalkWebhook(): string {
+  if (!isDingTalkChannel.value)
+    return ''
+
+  const endpoint = String(localOffline.value.endpoint || '').trim()
+  if (!endpoint)
+    return '请填写钉钉机器人设置页提供的完整 Webhook 地址'
+
+  try {
+    const url = new URL(endpoint)
+    const isOfficialWebhook = url.protocol === 'https:'
+      && url.hostname.toLowerCase() === 'oapi.dingtalk.com'
+      && url.pathname === '/robot/send'
+      && !!url.searchParams.get('access_token')
+    if (!isOfficialWebhook)
+      return '钉钉 Webhook 地址格式不正确，请从群机器人设置页重新复制'
+  }
+  catch {
+    return '钉钉 Webhook 地址格式不正确，请从群机器人设置页重新复制'
+  }
+
+  return ''
 }
 
 watch(settings, () => {
@@ -1052,6 +1103,12 @@ async function handleChangePassword() {
 }
 
 async function handleSaveOffline() {
+  const validationError = validateDingTalkWebhook()
+  if (validationError) {
+    showAlert(validationError, 'danger')
+    return
+  }
+
   offlineSaving.value = true
   try {
     const res = await settingStore.saveOfflineConfig(localOffline.value)
@@ -1069,6 +1126,12 @@ async function handleSaveOffline() {
 }
 
 async function handleTestOffline() {
+  const validationError = validateDingTalkWebhook()
+  if (validationError) {
+    showAlert(validationError, 'danger')
+    return
+  }
+
   offlineTesting.value = true
   try {
     const { data } = await api.post('/api/settings/offline-reminder/test', localOffline.value)
@@ -2039,7 +2102,7 @@ async function handleResetSystemConfig() {
                         :disabled="!currentChannelDocUrl"
                         @click="openChannelDocs"
                       >
-                        官网
+                        官方文档
                       </BaseButton>
                     </div>
                     <BaseSelect
@@ -2050,18 +2113,32 @@ async function handleResetSystemConfig() {
                 </div>
 
                 <BaseInput
+                  v-if="offlineChannelUsesEndpoint"
                   v-model="localOffline.endpoint"
-                  label="接口地址"
+                  :label="offlineEndpointLabel"
                   type="text"
-                  :disabled="localOffline.channel !== 'webhook'"
+                  :placeholder="offlineEndpointPlaceholder"
                 />
 
                 <BaseInput
+                  v-if="!isDingTalkChannel"
                   v-model="localOffline.token"
                   label="Token"
                   type="text"
                   placeholder="接收端 token"
                 />
+
+                <template v-else>
+                  <BaseInput
+                    v-model="localOffline.secret"
+                    label="加签密钥（可选）"
+                    type="password"
+                    placeholder="仅在机器人开启加签时填写 SEC..."
+                  />
+                  <p class="text-xs text-gray-500 leading-relaxed dark:text-gray-400">
+                    从群机器人的设置页复制完整 Webhook；只有开启“加签”时才需要填写加签密钥。
+                  </p>
+                </template>
 
                 <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <BaseInput

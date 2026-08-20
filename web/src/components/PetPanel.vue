@@ -177,22 +177,14 @@ watch(currentAccountId, () => {
       </div>
       <div class="flex items-center gap-2">
         <NButton
-          size="small"
-          secondary
-          :loading="protectLogsLoading"
-          :disabled="!currentAccountId || !isConnected || !snapshot?.guardianRecordsSupported"
-          @click="openProtectLogs"
+          size="small" secondary :loading="protectLogsLoading"
+          :disabled="!currentAccountId || !isConnected || !snapshot?.guardianRecordsSupported" @click="openProtectLogs"
         >
           <span class="i-carbon-document" /> 守护记录
         </NButton>
         <NButton
-          circle
-          quaternary
-          size="small"
-          title="刷新宠物信息"
-          :loading="loading || statusLoading"
-          :disabled="!currentAccountId || !isConnected || !tokenRef"
-          @click="refreshPetInfo"
+          circle quaternary size="small" title="刷新宠物信息" :loading="loading || statusLoading"
+          :disabled="!currentAccountId || !isConnected || !tokenRef" @click="refreshPetInfo"
         >
           <span class="i-carbon-renew" />
         </NButton>
@@ -253,9 +245,7 @@ watch(currentAccountId, () => {
 
         <div class="pet-grid">
           <article
-            v-for="pet in dogs"
-            :key="pet.id"
-            class="pet-tile"
+            v-for="pet in dogs" :key="pet.id" class="pet-tile"
             :class="{ 'pet-tile--locked': !pet.owned, 'pet-tile--active': pet.active }"
           >
             <div class="pet-tile__top">
@@ -274,7 +264,10 @@ watch(currentAccountId, () => {
                   class="pet-tile__status"
                   :class="{ 'pet-tile__status--active': pet.active, 'pet-tile__status--owned': pet.owned && !pet.active }"
                 >
-                  <span class="status-dot" :class="{ 'status-dot--owned': pet.owned, 'status-dot--active': pet.active }" />
+                  <span
+                    class="status-dot"
+                    :class="{ 'status-dot--owned': pet.owned, 'status-dot--active': pet.active }"
+                  />
                   {{ pet.active ? '上场中' : (pet.owned ? '已获得' : '未获得') }}
                 </div>
               </div>
@@ -294,15 +287,10 @@ watch(currentAccountId, () => {
               <p>{{ pet.obtainCondition }}</p>
             </div>
             <NButton
-              size="small"
-              ghost block
-              :type="dogActionType(pet)"
-              class="pet-action"
+              size="small" ghost block :type="dogActionType(pet)" class="pet-action"
               :class="pet.active ? 'pet-action--withdraw' : (pet.owned ? 'pet-action--deploy' : 'pet-action--locked')"
-              :loading="operatingDogId === pet.id"
-              :disabled="!pet.owned || !!operatingDogId"
-              :title="operationTitle(pet)"
-              @click="handlePetOperation(pet)"
+              :loading="operatingDogId === pet.id" :disabled="!pet.owned || !!operatingDogId"
+              :title="operationTitle(pet)" @click="handlePetOperation(pet)"
             >
               {{ dogActionLabel(pet) }}
             </NButton>
@@ -328,21 +316,12 @@ watch(currentAccountId, () => {
               <span>每份增加 {{ formatFoodDuration(food.duration) }} · 库存 {{ food.count }}</span>
             </div>
             <NInputNumber
-              :value="selectedCount(food)"
-              :min="1"
-              :max="Math.max(1, maxUsableCount(food))"
-              size="small"
-              :disabled="!canUseFood(food)"
-              class="food-row__count"
-              @update:value="value => setUseCount(food, value)"
+              :value="selectedCount(food)" :min="1" :max="Math.max(1, maxUsableCount(food))" size="small"
+              :disabled="!canUseFood(food)" class="food-row__count" @update:value="value => setUseCount(food, value)"
             />
             <NButton
-              size="small"
-              type="primary"
-              :loading="usingFood"
-              :disabled="!canUseFood(food)"
-              :title="!activeDog ? '请先上场宠物' : (food.count <= 0 ? '狗盆中没有该狗粮' : '从狗盆喂食')"
-              class="food-feed-button"
+              size="small" type="primary" :loading="usingFood" :disabled="!canUseFood(food)"
+              :title="!activeDog ? '请先上场宠物' : (food.count <= 0 ? '狗盆中没有该狗粮' : '从狗盆喂食')" class="food-feed-button"
               @click="handleUseFood(food)"
             >
               <span class="i-carbon-add-alt" aria-hidden="true" />
@@ -351,13 +330,16 @@ watch(currentAccountId, () => {
           </div>
         </div>
       </section>
-
-      <p class="pet-protocol-note">
-        <span class="i-carbon-information" /> {{ snapshot.protocolNote }}
-      </p>
     </template>
 
-    <NModal v-model:show="showProtectLogs" preset="card" title="守护记录" class="protect-log-modal" :bordered="false">
+    <NModal
+      v-model:show="showProtectLogs"
+      preset="card"
+      title="守护记录"
+      class="protect-log-modal"
+      :bordered="false"
+      :style="{ width: 'min(680px, calc(100vw - 32px))', maxHeight: 'min(760px, calc(100vh - 32px))' }"
+    >
       <div class="protect-log-summary">
         共 {{ protectLogsTotal }} 条记录
       </div>
@@ -366,7 +348,10 @@ watch(currentAccountId, () => {
       </div>
       <div v-else class="protect-log-list">
         <article v-for="logItem in protectLogs" :key="logItem.id" class="protect-log-row">
-          <img v-if="logItem.friendAvatar" :src="logItem.friendAvatar" :alt="logItem.friendName" class="protect-log-avatar">
+          <img
+            v-if="logItem.friendAvatar" :src="logItem.friendAvatar" :alt="logItem.friendName"
+            class="protect-log-avatar"
+          >
           <div v-else class="protect-log-avatar protect-log-avatar--empty">
             <span class="i-carbon-user" />
           </div>
@@ -750,19 +735,7 @@ watch(currentAccountId, () => {
   gap: 6px;
 }
 
-.pet-protocol-note {
-  display: flex;
-  align-items: flex-start;
-  gap: 7px;
-  margin: 0;
-  padding: 0 3px;
-  color: var(--ui-muted, #718477);
-  font-size: 11px;
-  line-height: 1.5;
-}
-
 :deep(.protect-log-modal) {
-  width: min(720px, calc(100vw - 28px));
   max-height: min(760px, calc(100vh - 28px));
   border-radius: 14px;
 }

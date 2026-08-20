@@ -79,6 +79,7 @@ export interface OfflineReminder {
   channel: string;
   endpoint: string;
   token: string;
+  secret: string;
   title: string;
   msg: string;
   offlineDeleteSec: number;

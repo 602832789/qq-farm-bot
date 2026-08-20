@@ -163,7 +163,7 @@ function interactionEffectBadges(land: any) {
     .map((effect: any) => ({
       itemId: String(effect.itemId),
       name: String(effect.itemName || `道具${effect.itemId}`),
-      title: `${String(effect.itemName || `道具${effect.itemId}`)}：服务端土地状态已确认`,
+      title: `${String(effect.itemName || `道具${effect.itemId}`)}：已生效`,
     }))
     .filter((effect: any) => {
       if (seen.has(effect.itemId))

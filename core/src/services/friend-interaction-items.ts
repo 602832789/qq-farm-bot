@@ -207,7 +207,7 @@ async function getFriendInteractionItems(): Promise<any> {
         serverValidationRequired: true,
         confirmationRequired: true,
         message: inventory.items.length > 0
-            ? '特殊互动道具由服务端在实际使用时最终校验'
+            ? '请选择好友农场中符合条件的土地使用'
             : '背包中暂无可用于好友土地的特殊互动道具',
     };
 }
@@ -221,7 +221,7 @@ async function getSelfInteractionItems(): Promise<any> {
         serverValidationRequired: true,
         confirmationRequired: true,
         message: items.length > 0
-            ? '可对自己农场使用的道具由服务端在实际使用时最终校验'
+            ? '请选择自己农场中符合条件的土地使用'
             : '背包中暂无可对自己农场使用的特殊互动道具',
     };
 }

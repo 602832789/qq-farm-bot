@@ -40,6 +40,9 @@ function normalizeOfflineReminder(input: unknown): OfflineReminder {
     const token = (src.token !== undefined && src.token !== null)
         ? String(src.token).trim()
         : DEFAULT_OFFLINE_REMINDER.token;
+    const secret = (src.secret !== undefined && src.secret !== null)
+        ? String(src.secret).trim()
+        : DEFAULT_OFFLINE_REMINDER.secret;
     const title = (src.title !== undefined && src.title !== null)
         ? String(src.title).trim()
         : DEFAULT_OFFLINE_REMINDER.title;
@@ -50,6 +53,7 @@ function normalizeOfflineReminder(input: unknown): OfflineReminder {
         channel,
         endpoint,
         token,
+        secret,
         title,
         msg,
         offlineDeleteSec,

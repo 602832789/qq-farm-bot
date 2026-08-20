@@ -274,6 +274,15 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
     app.post('/api/settings/offline-reminder', async (req: Request, res: Response) => {
         try {
             const body = (req.body && typeof req.body === 'object') ? req.body : {};
+            const channel = String(body.channel || '').trim().toLowerCase();
+            if (channel === 'dingtalk') {
+                try {
+                    const { buildDingTalkWebhook } = require('../../services/push');
+                    buildDingTalkWebhook(body.endpoint, body.token, body.secret);
+                } catch (error: any) {
+                    return res.status(400).json({ ok: false, error: error?.message || '钉钉 Webhook 地址格式无效' });
+                }
+            }
             const data = store.setOfflineReminder ? store.setOfflineReminder(body) : {};
             res.json({ ok: true, data: data || {} });
         } catch (e: any) {
@@ -291,6 +300,7 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
             const channel = String(cfg.channel || '').trim().toLowerCase();
             const endpoint = String(cfg.endpoint || '').trim();
             const token = String(cfg.token || '').trim();
+            const secret = String(cfg.secret || '').trim();
             const titleBase = String(cfg.title || '账号下线提醒').trim();
             const msgBase = String(cfg.msg || '账号下线').trim();
 
@@ -300,6 +310,12 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
             if (channel === 'webhook' && !endpoint) {
                 return res.status(400).json({ ok: false, error: 'Webhook 渠道需要填写接口地址' });
             }
+            if (channel === 'dingtalk' && !endpoint && !token) {
+                return res.status(400).json({ ok: false, error: '钉钉渠道需要填写 Webhook 地址' });
+            }
+            if (channel !== 'webhook' && channel !== 'dingtalk' && !token) {
+                return res.status(400).json({ ok: false, error: '当前推送渠道需要填写 Token' });
+            }
 
             const now = new Date();
             const ts = now.toISOString().replace('T', ' ').slice(0, 19);
@@ -308,6 +324,7 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
                 channel,
                 endpoint,
                 token,
+                secret,
                 title: `${titleBase}（测试）`,
                 content: `${msgBase}\n\n这是一条下线提醒测试消息。\n时间: ${ts}`,
             });
@@ -354,7 +371,7 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
             const ui = store.getUI();
             const offlineReminder = store.getOfflineReminder
                 ? store.getOfflineReminder()
-                : { channel: 'webhook', endpoint: '', token: '', title: '账号下线提醒', msg: '账号下线', offlineDeleteSec: 0 };
+                : { channel: 'webhook', endpoint: '', token: '', secret: '', title: '账号下线提醒', msg: '账号下线', offlineDeleteSec: 0 };
             res.json({ ok: true, data: { intervals, strategy, preferredSeed, friendQuietHours, automation, stealDelaySeconds, plantOrderRandom, plantDelaySeconds, fertilizerBuyOrganicCount, fertilizerBuyOrganicThresholdHours, fertilizerBuyNormalCount, fertilizerBuyNormalThresholdHours, fertilizerBuyCheckIntervalMinutes, bagSeedPriority, bagSeedFallbackStrategy, ui, offlineReminder } });
         } catch (e: any) {
             res.status(500).json({ ok: false, error: e.message });
