@@ -70,6 +70,22 @@ function getPlantMutantConfigIds(plant: any, currentPhase: any = null): string[]
 // 抓包确认：黄金虫和足球由农场主通过自家 Farming 清理，好友帮助务农不能代为清理。
 const OWNER_CLEANABLE_INTERACTION_ITEM_IDS = new Set(['301101', '301102']);
 
+// ItemService.Use 成功回包确认 field_40 的状态码映射。
+// 后续快照可能由 interaction_uses 记录较新的道具，同时在 field_40 保留较早效果，
+// 因此需要合并两个来源，并且只解释已经抓包确认的精确状态码。
+const EXTENDED_STATUS_INTERACTION_ITEM_IDS = new Map<number, string>([
+    [1, '301101'],
+    [2, '301102'],
+    [9, '301103'],
+    [10, '301103'],
+]);
+
+function getExtendedStatusInteractionItemId(plant: any): string {
+    const status = plant?.field_40;
+    if (toNum(status?.value_2) <= 0) return '';
+    return EXTENDED_STATUS_INTERACTION_ITEM_IDS.get(toNum(status?.value_1)) || '';
+}
+
 function getInteractionItemMetadata(itemId: string): { name: string; activityId: number } {
     const item = getItemById(Number(itemId));
     return {
@@ -80,7 +96,10 @@ function getInteractionItemMetadata(itemId: string): { name: string; activityId:
 
 function hasOwnerCleanableInteraction(plant: any): boolean {
     const uses: any[] = Array.isArray(plant?.interaction_uses) ? plant.interaction_uses : [];
-    return uses.some((use: any) => OWNER_CLEANABLE_INTERACTION_ITEM_IDS.has(normalizePositiveId(use?.item_id)));
+    if (uses.some((use: any) => OWNER_CLEANABLE_INTERACTION_ITEM_IDS.has(normalizePositiveId(use?.item_id)))) {
+        return true;
+    }
+    return OWNER_CLEANABLE_INTERACTION_ITEM_IDS.has(getExtendedStatusInteractionItemId(plant));
 }
 
 function getPlantInteractionEffects(plant: any): any[] {
@@ -131,20 +150,17 @@ function getPlantInteractionEffects(plant: any): any[] {
         }
     }
 
-    const qixiDewStatus = plant?.field_40;
-    const qixiRewardValue = toNum(qixiDewStatus?.value_1);
-    const qixiAppliedMarker = toNum(qixiDewStatus?.value_2);
+    const extendedStatusItemId = getExtendedStatusInteractionItemId(plant);
     if (
-        qixiRewardValue > 0
-        && qixiAppliedMarker > 0
-        && !effects.some(effect => String(effect.itemId) === '301103')
+        extendedStatusItemId
+        && !effects.some(effect => String(effect.itemId) === extendedStatusItemId)
     ) {
-        const itemMetadata = getInteractionItemMetadata('301103');
+        const itemMetadata = getInteractionItemMetadata(extendedStatusItemId);
         effects.push({
-            itemId: '301103',
+            itemId: extendedStatusItemId,
             itemName: itemMetadata.name,
             activityId: itemMetadata.activityId,
-            effectType: qixiAppliedMarker,
+            effectType: toNum(plant?.field_40?.value_1),
             landId: '',
             hostGid: '',
             confirmed: true,
@@ -855,6 +871,7 @@ module.exports = {
     getCurrentPhase,
     getPlantStatusFlags,
     getPlantMutantConfigIds,
+    getExtendedStatusInteractionItemId,
     getPlantInteractionEffects,
     hasOwnerCleanableInteraction,
     buildLandDetail,

@@ -101,7 +101,8 @@ message PlantInfo {
     int64 field_37 = 37;                       // unknown new field
     // ItemService.Use 回包中已抓包确认：道具目标记录，field 4 为目标土地 ID。
     repeated PlantInteractionTargetInfo interaction_targets = 38;
-    // 抓包确认 301103 使用前该字段为空，成功后及后续土地快照均为 {9/10, 1}，并与变异配置 13 同时出现。
+    // 互动道具扩展状态：ItemService.Use 回包确认 301101={1,1}、301102={2,1}、301103={9/10,1}。
+    // interaction_uses 记录后放置的道具时，此字段仍可能保留较早效果，因此两者需要独立解析并按道具去重。
     PlantExtendedStatus field_40 = 40;
     // 变异扩展记录；配置 ID 可与 mutant_config_ids / phase.mutants 交叉确认。
     repeated PlantMutationRecord extended_mutations = 41;
@@ -124,7 +125,7 @@ message PlantInteractionTargetInfo {
     int64 land_id = 4;
 }
 
-// PlantInfo.field 40：七夕活动土地状态。字段 1 的精确奖励语义仍保留原始值，字段 2 为已生效标记。
+// PlantInfo.field 40：土地互动道具扩展状态；字段 1 为状态码，字段 2 为已生效标记。
 message PlantExtendedStatus {
     int64 value_1 = 1;
     int64 value_2 = 2;

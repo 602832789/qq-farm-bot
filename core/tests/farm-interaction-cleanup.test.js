@@ -75,6 +75,7 @@ test('qixi mutation uses official effect_name while keeping drought independent'
     const effect = getMutantEffectById(13);
     assert.equal(effect.name, '喜鹊');
     assert.equal(effect.activityId, 2026081801);
+    assert.equal(effect.description, '特殊活动变异，收获时可额外获得鹊羽。');
 
     const detail = buildLandDetail(growingLand(21, 0, {
         dry_num: 1,
@@ -84,7 +85,43 @@ test('qixi mutation uses official effect_name while keeping drought independent'
 
     assert.equal(detail.needWater, true);
     assert.deepEqual(detail.mutantEffects.map(item => item.name), ['喜鹊']);
+    assert.deepEqual(detail.interactionEffects.map(item => item.itemId), ['301103']);
     assert.equal(detail.interactionEffects[0].activityId, effect.activityId);
+});
+
+test('field 40 restores only confirmed interaction item states', () => {
+    const footballOverGoldenLand = growingLand(10, 301102, {
+        field_40: { value_1: 1, value_2: 1 },
+    });
+    const footballLand = growingLand(23, 301102, {
+        field_40: { value_1: 2, value_2: 1 },
+    });
+    const qixiNineLand = growingLand(5, 0, {
+        field_40: { value_1: 9, value_2: 1 },
+    });
+    const qixiTenLand = growingLand(12, 0, {
+        mutant_config_ids: [13],
+        field_40: { value_1: 10, value_2: 1 },
+    });
+    const unknownLand = growingLand(6, 0, {
+        field_40: { value_1: 3, value_2: 1 },
+    });
+
+    const footballOverGoldenDetail = buildLandDetail(footballOverGoldenLand);
+    const footballDetail = buildLandDetail(footballLand);
+    const qixiNineDetail = buildLandDetail(qixiNineLand);
+    const qixiTenDetail = buildLandDetail(qixiTenLand);
+    const unknownDetail = buildLandDetail(unknownLand);
+    assert.deepEqual(footballOverGoldenDetail.interactionEffects.map(item => item.itemId), ['301102', '301101']);
+    assert.deepEqual(footballDetail.interactionEffects.map(item => item.itemId), ['301102']);
+    assert.deepEqual(qixiNineDetail.interactionEffects.map(item => item.itemId), ['301103']);
+    assert.deepEqual(qixiTenDetail.interactionEffects.map(item => item.itemId), ['301103']);
+    assert.deepEqual(unknownDetail.interactionEffects, []);
+    assert.deepEqual(
+        analyzeLands([footballOverGoldenLand, footballLand, qixiNineLand, qixiTenLand], false, 9001)
+            .needInteractionCleanup,
+        [10, 23],
+    );
 });
 
 test('own Farming request keeps the two explicit zero-valued scene fields', async () => {

@@ -136,6 +136,12 @@ const landCoordinateMap = new Map<string, LandConfigItem>();
 let mutantEffectConfig: MutantEffectItem[] | null = null;
 const mutantEffectMap = new Map<number, MutantEffectItem>();
 
+// 官方活动说明确认：变异 13 为鹊羽活动效果，收获时会额外获得鹊羽。
+// 运行时 MutantEffect 暂未下发 tips/description，因此在展示 DTO 层补充说明。
+const MUTANT_EFFECT_DESCRIPTION_FALLBACKS = new Map<number, string>([
+    [13, '特殊活动变异，收获时可额外获得鹊羽。'],
+]);
+
 function getLandCoordinateKey(gridX: number, gridY: number): string {
     return `${gridX},${gridY}`;
 }
@@ -491,7 +497,12 @@ function toMutantEffectDto(effect: MutantEffectItem | undefined, id: number): Mu
         // 土地效果以官方运行时配置的 effect_name 为准；name 可能是“喜鹊事件”等内部事件名。
         name: String(effect.effect_name || effect.name || (numericId > 0 ? `变异 #${numericId}` : '变异')),
         icon: normalizeMutantIconName(effect.icon),
-        description: String(effect.description || effect.tips || ''),
+        description: String(
+            effect.description
+            || effect.tips
+            || MUTANT_EFFECT_DESCRIPTION_FALLBACKS.get(numericId)
+            || '',
+        ),
         tag: String(effect.tag || ''),
         activityId: Number(effect.activity_id) || 0,
     };

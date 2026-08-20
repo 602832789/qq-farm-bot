@@ -157,19 +157,9 @@ function activateSelection() {
 
 function interactionEffectBadges(land: any) {
   const effects = Array.isArray(land?.interactionEffects) ? land.interactionEffects : []
-  const mutantActivityIds = new Set(
-    (Array.isArray(land?.mutantEffects) ? land.mutantEffects : [])
-      .map((effect: any) => Number(effect?.activityId) || 0)
-      .filter((activityId: number) => activityId > 0),
-  )
   const seen = new Set<string>()
   return effects
     .filter((effect: any) => effect?.confirmed && effect?.itemId)
-    // 同一活动已经由官方变异 effect_name 展示时，不再重复显示道具名称。
-    .filter((effect: any) => {
-      const activityId = Number(effect?.activityId) || 0
-      return activityId <= 0 || !mutantActivityIds.has(activityId)
-    })
     .map((effect: any) => ({
       itemId: String(effect.itemId),
       name: String(effect.itemName || `道具${effect.itemId}`),
