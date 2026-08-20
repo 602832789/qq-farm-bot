@@ -42,16 +42,20 @@ export const useAccountStore = defineStore('account', () => {
   const currentAccountId = useStorage('current_account_id', '')
   const loading = ref(false)
   const logs = ref<AccountLog[]>([])
+  let accountsRequestSequence = 0
 
   const currentAccount = computed(() =>
     accounts.value.find(a => String(a.id) === currentAccountId.value),
   )
 
   async function fetchAccounts() {
+    const sequence = ++accountsRequestSequence
     loading.value = true
     try {
       // api interceptor adds x-admin-token
       const res = await api.get('/api/accounts')
+      if (sequence !== accountsRequestSequence)
+        return
       if (res.data.ok && res.data.data && res.data.data.accounts) {
         accounts.value = res.data.data.accounts
 
@@ -75,12 +79,15 @@ export const useAccountStore = defineStore('account', () => {
     }
     catch (e) {
       console.error('获取账号失败', e)
+      if (sequence !== accountsRequestSequence)
+        return
       // 请求失败时也清空状态
       accounts.value = []
       currentAccountId.value = ''
     }
     finally {
-      loading.value = false
+      if (sequence === accountsRequestSequence)
+        loading.value = false
     }
   }
 

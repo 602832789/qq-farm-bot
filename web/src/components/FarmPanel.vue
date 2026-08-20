@@ -8,10 +8,12 @@ import ConfirmModal from '@/components/ConfirmModal.vue'
 import LandCard from '@/components/LandCard.vue'
 import { useAccountStore } from '@/stores/account'
 import { useFarmStore } from '@/stores/farm'
+import { useStatusStore } from '@/stores/status'
 import { useToastStore } from '@/stores/toast'
 
 const farmStore = useFarmStore()
 const accountStore = useAccountStore()
+const statusStore = useStatusStore()
 const toast = useToastStore()
 const {
   lands,
@@ -30,6 +32,17 @@ const {
   dogSkillGiftError,
 } = storeToRefs(farmStore)
 const { currentAccountId, currentAccount } = storeToRefs(accountStore)
+const { status } = storeToRefs(statusStore)
+
+const currentAccountConnected = computed(() => {
+  const accountId = String(currentAccountId.value || '')
+  return !!accountId
+    && String(status.value?.accountId || '') === accountId
+    && !!status.value?.connection?.connected
+})
+const currentAccountRunning = computed(() => (
+  !!currentAccount.value?.running || currentAccountConnected.value
+))
 
 const operating = ref(false)
 const manualRefreshing = ref(false)
@@ -236,7 +249,7 @@ async function executeUseInteractionItem() {
 
 async function refreshFarmData() {
   const accountId = currentAccountId.value
-  if (!accountId || !currentAccount.value?.running)
+  if (!accountId || !currentAccountRunning.value)
     return
   await Promise.all([
     farmStore.fetchLands(accountId),
@@ -246,7 +259,7 @@ async function refreshFarmData() {
 
 async function refreshWithDogGifts() {
   const accountId = currentAccountId.value
-  if (!accountId || !currentAccount.value?.running)
+  if (!accountId || !currentAccountRunning.value)
     return
 
   manualRefreshing.value = true
@@ -298,8 +311,8 @@ watch(interactionItems, (items) => {
     selectedInteractionItemId.value = String(first.itemId)
 })
 
-watch([currentAccountId, () => currentAccount.value?.running], () => {
-  if (!currentAccount.value?.running) {
+watch([currentAccountId, () => currentAccount.value?.running, currentAccountConnected], () => {
+  if (!currentAccountRunning.value) {
     farmStore.resetLandState()
     return
   }
@@ -341,7 +354,7 @@ onUnmounted(() => {
             quaternary
             title="刷新土地和待拾取礼包"
             :loading="manualRefreshing || dogSkillGiftStatusLoading"
-            :disabled="!currentAccountId || !currentAccount?.running"
+            :disabled="!currentAccountId || !currentAccountRunning"
             @click="refreshWithDogGifts"
           >
             <span :class="refreshIconClass" />
@@ -352,7 +365,7 @@ onUnmounted(() => {
             v-for="op in operations"
             :key="op.type"
             :type="op.buttonType"
-            :disabled="operating || !currentAccount?.running"
+            :disabled="operating || !currentAccountRunning"
             @click="handleOperate(op.type)"
           >
             <span :class="op.icon" />
@@ -392,7 +405,7 @@ onUnmounted(() => {
           secondary
           type="error"
           :loading="dogSkillGiftStatusLoading"
-          :disabled="!currentAccountId || !currentAccount?.running"
+          :disabled="!currentAccountId || !currentAccountRunning"
           @click="refreshWithDogGifts"
         >
           重新查询
@@ -437,7 +450,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div v-else-if="!currentAccount?.running" class="flex flex-col items-center justify-center gap-4 farm-card rounded-2xl bg-white p-12 text-center text-gray-500 shadow-md dark:bg-gray-800">
+        <div v-else-if="!currentAccountRunning" class="flex flex-col items-center justify-center gap-4 farm-card rounded-2xl bg-white p-12 text-center text-gray-500 shadow-md dark:bg-gray-800">
           <div class="i-carbon-network-4 text-5xl" />
           <div>
             <div class="text-lg text-gray-700 font-medium font-display dark:text-gray-300">
