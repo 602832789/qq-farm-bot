@@ -251,6 +251,12 @@ export function inFriendQuietHours(now?: Date): boolean {
     return cur >= start || cur < end; // 跨天时段
 }
 
+export function inFarmQuietHours(now?: Date): boolean {
+    if (!inFriendQuietHours(now)) return false;
+    const cfg: any = getFriendQuietHours();
+    return cfg.continueFarm === false;
+}
+
 // ============ 好友土地分析 ============
 
 interface AnalyzeResult {

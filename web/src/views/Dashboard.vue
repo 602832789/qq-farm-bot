@@ -187,6 +187,9 @@ const localUptime = ref(0)
 let localNextFarmRemainSec = 0
 let localNextHelpRemainSec = 0
 let localNextStealRemainSec = 0
+let farmQuiet = false
+let helpQuiet = false
+let stealQuiet = false
 
 function updateCountdowns() {
   // Update uptime
@@ -197,7 +200,10 @@ function updateCountdowns() {
   }
   else {
     localUptime.value++
-    if (localNextFarmRemainSec > 0) {
+    if (farmQuiet) {
+      nextFarmCheck.value = '静默中'
+    }
+    else if (localNextFarmRemainSec > 0) {
       localNextFarmRemainSec--
       nextFarmCheck.value = formatDuration(localNextFarmRemainSec)
     }
@@ -205,7 +211,10 @@ function updateCountdowns() {
       nextFarmCheck.value = '巡查中...'
     }
 
-    if (localNextHelpRemainSec > 0) {
+    if (helpQuiet) {
+      nextHelpCheck.value = '静默中'
+    }
+    else if (localNextHelpRemainSec > 0) {
       localNextHelpRemainSec--
       nextHelpCheck.value = formatDuration(localNextHelpRemainSec)
     }
@@ -213,7 +222,10 @@ function updateCountdowns() {
       nextHelpCheck.value = '巡查中...'
     }
 
-    if (localNextStealRemainSec > 0) {
+    if (stealQuiet) {
+      nextStealCheck.value = '静默中'
+    }
+    else if (localNextStealRemainSec > 0) {
       localNextStealRemainSec--
       nextStealCheck.value = formatDuration(localNextStealRemainSec)
     }
@@ -231,6 +243,9 @@ watch(() => status.value?.nextChecks, (nextChecks) => {
     localNextFarmRemainSec = nextChecks.farmRemainSec || 0
     localNextHelpRemainSec = nextChecks.helpRemainSec || 0
     localNextStealRemainSec = nextChecks.stealRemainSec || 0
+    farmQuiet = !!nextChecks.farmQuiet
+    helpQuiet = !!nextChecks.helpQuiet
+    stealQuiet = !!nextChecks.stealQuiet
     updateCountdowns() // Update immediately
   }
 }, { immediate: true })
