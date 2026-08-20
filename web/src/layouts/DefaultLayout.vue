@@ -131,7 +131,9 @@ const { sidebarOpen } = storeToRefs(appStore)
 
 @media (max-width: 1023px) {
   .page-scroll {
-    padding: 14px 12px calc(96px + env(safe-area-inset-bottom));
+    /* Keep the last card/button above the fixed mobile navigation bar. */
+    padding: 14px 12px calc(132px + env(safe-area-inset-bottom));
+    scroll-padding-bottom: calc(132px + env(safe-area-inset-bottom));
   }
 }
 

@@ -126,7 +126,7 @@ tail -f app_dev.log
 bash ./stop.sh
 ```
 
-`start.sh` 会先执行 `pnpm run install:all`，再后台运行 `pnpm dev`；前端构建产物写入 `web/dist/`，后端日志写入 `app_dev.log`，进程号记录在 `app_dev.pid`。依赖更新后也可以手动执行 `pnpm install`。停止服务使用 `stop.sh`；根目录没有 `pnpm start` 或 `pnpm stop` 命令。
+`start.sh` 会在依赖缺失时执行 `pnpm install --frozen-lockfile`，随后构建 Web 和 Core，并以生产模式后台运行 `node core/client.js`。日志写入 `app_dev.log`，进程号记录在 `app_dev.pid`。`stop.sh` 会校验 PID 对应的工作目录和启动命令，再停止整个服务进程组。
 
 前端类型检查已与生产构建拆分，需要单独检查时执行 `pnpm typecheck:web`。
 
@@ -288,7 +288,7 @@ bash ./clean.sh
 clean-for-pack.bat
 ```
 
-两个脚本默认只删除依赖、构建产物、测试缓存和运行日志，保留 `core/data/` 中的账号与配置。确认要删除运行数据时使用 `--data`；无人值守场景追加 `--yes`。
+`clean.sh` 会停止当前服务，然后删除项目根目录下除 `.git` 以外的全部文件和目录，包括源码、依赖、构建产物、运行数据以及脚本自身。该操作不可撤销，只应用于准备通过 Git 重新检出工作区的场景。Windows 的 `clean-for-pack.bat` 仍只用于清理打包产物。
 
 ### 抓包协议分析
 
@@ -307,37 +307,6 @@ pnpm -C core exec tsx ../tools/audit-capture-compatibility.js <capture-dir>
 - [工具脚本](docs/tools.md)
 - [TSDK Node.js 运行约定](docs/tsdk-runtime.md)
 - [神秘商人、游戏商城与购买协议](docs/shop-protocols.md)
-
-## 常见问题
-
-### 面板能打开，但没有农场数据
-
-确认已在设置页添加并启动账号，且账号 Code 未过期。源码模式只启动后端时，还要确认 `web/dist/` 已通过 `pnpm build:web` 生成。
-
-### Code 登录失败
-
-Code 是短效凭据，过期后需要重新抓取。也可以改用微信小程序扫码登录。
-
-### 修改 Docker 端口后仍访问不了
-
-`PORT` 是宿主机端口，容器内始终监听 `3007`。修改 `.env` 后需要重新创建容器：
-
-```bash
-docker compose up -d --force-recreate
-```
-
-同时确认服务器防火墙只放行实际使用的宿主机端口。
-
-### 化肥自动购买或多季施肥没有生效
-
-检查对应账号是否开启化肥购买开关、购买数量和阈值是否有效；多季作物还需要开启多季自动施肥，并确认施肥土地类型包含目标土地。
-
-## 特别感谢
-
-- 基于 [Penty-d/qq-farm-bot-ui](https://github.com/Penty-d/qq-farm-bot-ui) 二次开发
-- 核心功能：[linguo2625469/qq-farm-bot](https://github.com/linguo2625469/qq-farm-bot)
-- 部分功能：[QianChenJun/qq-farm-bot](https://github.com/QianChenJun/qq-farm-bot)
-- 推送通知：[imaegoo/pushoo](https://github.com/imaegoo/pushoo)
 
 ## 免责声明
 
