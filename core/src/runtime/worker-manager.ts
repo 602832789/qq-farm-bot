@@ -371,7 +371,7 @@ function createWorkerManager(options: WorkerManagerOptions) {
                 }
                 worker.requests.clear();
             }
-            log('系统', `账号 ${worker.name} 连接已断开，已停止运行并等待重新扫码`, {
+            log('系统', `账号 ${worker.name} 连接已断开，已停止运行并等待 Helper 刷新 Code 或重新扫码`, {
                 accountId: String(accountId),
                 accountName: worker.name,
                 source,
@@ -386,7 +386,7 @@ function createWorkerManager(options: WorkerManagerOptions) {
             });
             addAccountLog(
                 'disconnect_stop',
-                `账号 ${worker.name} 连接已断开，已停止运行并等待重新扫码`,
+                `账号 ${worker.name} 连接已断开，已停止运行并等待 Helper 刷新 Code 或重新扫码`,
                 accountId,
                 worker.name,
                 { source, code, reason, phase, connectionId: Number(msg.connectionId) || 0 },

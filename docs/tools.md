@@ -9,6 +9,7 @@
 | `download-game-config.js` | 从微信小程序 CDN 定位、下载并校验游戏 JSON 配置 |
 | `download-game-images.js` | 根据游戏配置和 Cocos manifest 下载准确的 PNG 资源 |
 | `decode-latest-protocols.js` | 解码选定的 WebSocket 抓包并保留未知 protobuf 字段 |
+| `analyze-keepalive-capture.js` | 只输出非敏感的版本、心跳和 Gateway Token 形态统计 |
 | `decode-shop-protocols.js` | 解码神秘商人、商城列表、购买响应及相关通知 |
 | `audit-qingmei-flow.js` | 按时间顺序输出青梅活动抓包的精简审计记录 |
 
@@ -163,7 +164,7 @@ node tools/download-game-images.js --help
 
 ## 协议抓包分析
 
-这三个脚本需要先安装工作区依赖并编译后端，因为它们会加载 `protobufjs` 和 `core/dist/utils/crypto-wasm`：
+这些脚本需要先安装工作区依赖并编译后端，因为它们会加载 `protobufjs` 和 TSDK 运行时：
 
 ```bash
 pnpm install
@@ -177,6 +178,14 @@ pnpm -C core exec node ../tools/decode-latest-protocols.js "D:\path\to\captures"
 ```
 
 脚本会读取目录中的 `.bin` WebSocket 帧，解码背包、物品使用、任务、赛季和活动操作等已选协议，同时输出无法匹配到类型的原始 protobuf 字段。
+
+### 保活协议安全审计
+
+```bash
+pnpm -C core exec tsx ../tools/analyze-keepalive-capture.js "D:\path\to\captures"
+```
+
+脚本会严格比较完整握手中的非敏感参数、Login/Heartbeat 版本、Heartbeat wire 字段、25 秒间隔和 Token 形态。报告不会包含 Code、完整 URL、原始 Token、GID 或业务消息正文，适合直接用于版本与保活回归核对。
 
 ### 商城协议解码
 
