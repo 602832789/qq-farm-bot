@@ -681,6 +681,9 @@ async function handleApiCall(msg: any): Promise<void> {
             case 'getLands':
                 result = await getLandsDetail();
                 break;
+            case 'getIllustratedSnapshot':
+                result = await require('../services/illustrated').getIllustratedSnapshot();
+                break;
             case 'getFriends':
                 result = await getFriendsList(args[0] === true);
                 break;
