@@ -20,6 +20,7 @@ interface AutomationSettings {
     friend_golden_bug: boolean
     friend_help_exp_limit: boolean
     star_passport_claim: boolean
+    star_solar_claim: boolean
     star_record_claim: boolean
     qingmei_seed_claim: boolean
     qingmei_wine_brew: boolean
@@ -225,6 +226,9 @@ watch(() => props.currentAccountId, loadQixiFriends)
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div class="border border-gray-200 rounded-lg bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
             <BaseSwitch v-model="settings.automation.star_passport_claim" label="自动领取千星游记" />
+          </div>
+          <div class="border border-gray-200 rounded-lg bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
+            <BaseSwitch v-model="settings.automation.star_solar_claim" label="自动领取节令小札" />
           </div>
           <div class="border border-gray-200 rounded-lg bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
             <BaseSwitch v-model="settings.automation.star_record_claim" label="自动领取观星礼录" />

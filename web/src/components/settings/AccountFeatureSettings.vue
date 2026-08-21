@@ -56,8 +56,10 @@ const activeInfo = computed(() => activeModule.value ? moduleInfo[activeModule.v
 const fertilizerName = computed(() => props.fertilizerOptions.find(item => item.value === automation.value.automation.fertilizer)?.label || '未设置')
 const selectedLandNames = computed(() => props.fertilizerLandTypeOptions.filter(item => automation.value.automation.fertilizer_land_types?.includes(item.value)).map(item => item.label))
 const selectedLandTypeCount = computed(() => Array.isArray(automation.value.automation.fertilizer_land_types) ? automation.value.automation.fertilizer_land_types.length : 0)
-const activityKeys = ['star_passport_claim', 'star_record_claim', 'qixi_dew_use', 'qixi_bridge_build', 'qixi_sachet_gift'] as const
+const activityKeys = ['star_passport_claim', 'star_solar_claim', 'star_record_claim', 'qixi_dew_use', 'qixi_bridge_build', 'qixi_sachet_gift'] as const
 const activityEnabledCount = computed(() => activityKeys.filter(key => automation.value.automation[key]).length)
+const starFestivalEnabled = computed(() => ['star_passport_claim', 'star_solar_claim', 'star_record_claim'].some(key => automation.value.automation[key]))
+const qixiActivityEnabled = computed(() => ['qixi_dew_use', 'qixi_bridge_build', 'qixi_sachet_gift'].some(key => automation.value.automation[key]))
 
 function intervalTag(min: number, max: number) {
   return `${min}-${max} 秒`
@@ -114,8 +116,10 @@ function summaryTags(key: ModuleKey) {
   }
   return [
     automation.value.automation.task ? '自动完成日常任务' : '不做日常',
-    `活动 ${activityEnabledCount.value} 项`,
-  ]
+    starFestivalEnabled.value && '心许千灯星垂野',
+    qixiActivityEnabled.value && '鹊桥寄情',
+    !starFestivalEnabled.value && !qixiActivityEnabled.value && '未开启活动',
+  ].filter(Boolean)
 }
 
 function moduleEnabled(key: ModuleKey) {
@@ -519,6 +523,7 @@ watch(() => props.currentAccountId, loadQixiFriends)
                 </div>
                 <div class="grid gap-3 sm:grid-cols-2">
                   <BaseSwitch v-model="automation.automation.star_passport_claim" label="领取千星游记" />
+                  <BaseSwitch v-model="automation.automation.star_solar_claim" label="领取节令小札" />
                   <BaseSwitch v-model="automation.automation.star_record_claim" label="领取观星礼录" />
                 </div>
               </section>
