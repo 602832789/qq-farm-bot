@@ -16,6 +16,7 @@ interface WorkerManagerOptions {
     buildConfigSnapshotForAccount: (accountId: string) => any;
     getOfflineAutoDeleteMs: () => number;
     triggerOfflineReminder: (payload: any) => void;
+    sendConfiguredPush?: (payload: any) => Promise<void> | void;
     addOrUpdateAccount: (acc: any) => any;
     deleteAccount: (id: string) => void;
     onStatusSync?: (accountId: string, status: any, accountName?: string) => void;
@@ -38,6 +39,7 @@ function createWorkerManager(options: WorkerManagerOptions) {
         buildConfigSnapshotForAccount,
         getOfflineAutoDeleteMs,
         triggerOfflineReminder,
+        sendConfiguredPush,
         addOrUpdateAccount,
         deleteAccount,
         onStatusSync,
@@ -432,6 +434,18 @@ function createWorkerManager(options: WorkerManagerOptions) {
                 accountId: String(accountId),
                 accountName: worker.name,
                 friendCount: saved.length,
+            });
+        } else if (msg.type === 'push_notify') {
+            const title = String(msg.title || '').trim();
+            const content = String(msg.content || '').trim();
+            if (!title || !content || typeof sendConfiguredPush !== 'function') return;
+            Promise.resolve(sendConfiguredPush({
+                title,
+                content,
+                accountId,
+                accountName: worker.name,
+            })).catch((e: any) => {
+                log('错误', `事件提醒发送异常: ${e && e.message ? e.message : e}`);
             });
         } else if (msg.type === 'known_friend_gid_remove') {
             const { getKnownFriendGids, setKnownFriendGids } = require('../models/store');
