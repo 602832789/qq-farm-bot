@@ -501,12 +501,15 @@ function registerAdminCaptureRoutes({
   app.get("/api/admin/capture-config", requireAdminRole, (req, res) => {
     try {
       const config = store.getCaptureConfig();
+      const embedded = config.embedded !== false;
+      const running = isEmbeddedMode();
       res.json({
         ok: true,
         data: {
-          enabled: config.enabled === true,
-          embedded: config.embedded !== false,
-          running: isEmbeddedMode(),
+          enabled: config.enabled === true
+            && ((embedded && running) || (!embedded && !!config.apiBase && !!config.apiToken)),
+          embedded,
+          running,
           apiBase: config.apiBase,
           apiToken: "",
           tokenConfigured: !!config.apiToken,
