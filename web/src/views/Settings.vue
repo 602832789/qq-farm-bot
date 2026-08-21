@@ -194,7 +194,6 @@ const {
 
 const accountSettingsSaving = ref(false)
 const autoCodeRefreshSaving = ref(false)
-const defaultPlanSaving = ref(false)
 const systemSettingsSaving = ref(false)
 const anySystemSaving = computed(() => systemSettingsSaving.value || systemConfigSaving.value || captureConfigSaving.value || deviceProtocolSaving.value)
 
@@ -241,27 +240,6 @@ async function saveAutoCodeRefreshSettings() {
   }
   finally {
     autoCodeRefreshSaving.value = false
-  }
-}
-
-async function saveCurrentAsDefaultPlan() {
-  if (!currentAccountId.value || defaultPlanSaving.value)
-    return
-  defaultPlanSaving.value = true
-  try {
-    const { data } = await api.put('/api/settings/default-plan', {
-      enabled: true,
-      config: buildCurrentAccountConfig(),
-    })
-    if (!data?.ok)
-      throw new Error(data?.error || '保存失败')
-    showAlert(`已将 ${currentAccountName.value || '当前账号'} 保存为默认方案`)
-  }
-  catch (error: any) {
-    showAlert(error.response?.data?.error || error.message || '默认方案保存失败', 'danger')
-  }
-  finally {
-    defaultPlanSaving.value = false
   }
 }
 
@@ -427,7 +405,6 @@ onMounted(async () => {
           :current-account-id="currentAccountId"
           :loading="settingsLoading"
           :saving="accountSettingsSaving"
-          :default-plan-saving="defaultPlanSaving"
           :planting-strategy-options="plantingStrategyOptions"
           :preferred-seed-options="preferredSeedOptions"
           :bag-fallback-strategy-options="bagFallbackStrategyOptions"
@@ -439,7 +416,6 @@ onMounted(async () => {
           :fertilizer-land-type-options="fertilizerLandTypeOptions"
           :fertilizer-options="fertilizerOptions"
           @save="saveCurrentAccountSettings"
-          @save-default="saveCurrentAsDefaultPlan"
           @reset-bag-seed-priority="resetBagSeedPriority"
           @move-bag-seed="moveBagSeed"
           @remove-bag-seed="removeBagSeedPriority"
