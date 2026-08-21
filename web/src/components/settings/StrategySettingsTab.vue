@@ -25,8 +25,6 @@ interface StrategySettings {
   bagSeedPriority: number[]
   bagSeedFallbackStrategy: string
   stealDelaySeconds: number
-  plantOrderRandom: boolean
-  plantDelaySeconds: number
   intervals: {
     farmMin: number
     farmMax: number

@@ -204,6 +204,7 @@ const DEFAULT_AUTOMATION = {
     farm_push: true,
     land_upgrade: false,
     friend: true,
+    friend_auto_accept: true,
     friend_help_exp_limit: true,
     friend_steal: true,
     friend_help: true,
@@ -272,8 +273,6 @@ const DEFAULT_ACCOUNT_CONFIG = {
     friendBlacklist: [],
     plantBlacklist: DEFAULT_PLANT_BLACKLIST,
     stealDelaySeconds: 1,
-    plantOrderRandom: true,
-    plantDelaySeconds: 2,
     fertilizerBuyOrganicCount: 1,
     fertilizerBuyOrganicThresholdHours: 10,
     fertilizerBuyNormalCount: 1,
@@ -472,8 +471,6 @@ function cloneAccountConfig(config = DEFAULT_ACCOUNT_CONFIG) {
         prioritize2x2Crops: config.prioritize2x2Crops === true,
         plantBlacklist: plantBlacklist.map(Number).filter(n => Number.isFinite(n) && n > 0),
         stealDelaySeconds: Math.max(0, Math.min(60, Number(config.stealDelaySeconds) || 1)),
-        plantOrderRandom: !!config.plantOrderRandom,
-        plantDelaySeconds: Math.max(0, Math.min(60, Number(config.plantDelaySeconds) || 2)),
         fertilizerBuyOrganicCount: Math.max(0, Math.min(999, Number(config.fertilizerBuyOrganicCount) || 1)),
         fertilizerBuyOrganicThresholdHours: Math.max(0, Math.min(720, Number(config.fertilizerBuyOrganicThresholdHours) || 10)),
         fertilizerBuyNormalCount: Math.max(0, Math.min(999, Number(config.fertilizerBuyNormalCount) || 1)),
@@ -631,16 +628,6 @@ function normalizeAccountConfig(raw, fallbackConfig = accountFallbackConfig) {
         cfg.stealDelaySeconds = Math.max(0, Math.min(60, Number.parseInt(input.stealDelaySeconds, 10) || 1));
     }
 
-    // 种植顺序随机
-    if (input.plantOrderRandom !== undefined && input.plantOrderRandom !== null) {
-        cfg.plantOrderRandom = !!input.plantOrderRandom;
-    }
-
-    // 种植延迟
-    if (input.plantDelaySeconds !== undefined && input.plantDelaySeconds !== null) {
-        cfg.plantDelaySeconds = Math.max(0, Math.min(60, Number(input.plantDelaySeconds) || 2));
-    }
-
     // 肥料购买配置
     if (input.fertilizerBuyOrganicCount !== undefined && input.fertilizerBuyOrganicCount !== null) {
         cfg.fertilizerBuyOrganicCount = Math.max(0, Math.min(999, Number(input.fertilizerBuyOrganicCount) || 1));
@@ -696,8 +683,6 @@ function pickDefaultPlanConfig(raw) {
         intervals: { ...cfg.intervals },
         friendQuietHours: { ...cfg.friendQuietHours },
         stealDelaySeconds: cfg.stealDelaySeconds,
-        plantOrderRandom: cfg.plantOrderRandom,
-        plantDelaySeconds: cfg.plantDelaySeconds,
         fertilizerBuyOrganicCount: cfg.fertilizerBuyOrganicCount,
         fertilizerBuyOrganicThresholdHours: cfg.fertilizerBuyOrganicThresholdHours,
         fertilizerBuyNormalCount: cfg.fertilizerBuyNormalCount,
@@ -1037,8 +1022,6 @@ function getConfigSnapshot(accountId) {
         friendBlacklist: [...cfg.friendBlacklist || []],
         plantBlacklist: [...cfg.plantBlacklist || []],
         stealDelaySeconds: Math.max(0, Math.min(60, Number(cfg.stealDelaySeconds) || 1)),
-        plantOrderRandom: !!cfg.plantOrderRandom,
-        plantDelaySeconds: Math.max(0, Math.min(60, Number(cfg.plantDelaySeconds) || 2)),
         fertilizerBuyOrganicCount: Math.max(0, Math.min(999, Number(cfg.fertilizerBuyOrganicCount) || 1)),
         fertilizerBuyOrganicThresholdHours: Math.max(0, Math.min(720, Number(cfg.fertilizerBuyOrganicThresholdHours) || 10)),
         fertilizerBuyNormalCount: Math.max(0, Math.min(999, Number(cfg.fertilizerBuyNormalCount) || 1)),
@@ -1122,12 +1105,6 @@ function applyConfigSnapshot(patch = {}, opts = {}) {
     }
     if (patch.stealDelaySeconds !== undefined && patch.stealDelaySeconds !== null) {
         cfg.stealDelaySeconds = Math.max(0, Math.min(60, Number(patch.stealDelaySeconds) || 1));
-    }
-    if (patch.plantOrderRandom !== undefined && patch.plantOrderRandom !== null) {
-        cfg.plantOrderRandom = !!patch.plantOrderRandom;
-    }
-    if (patch.plantDelaySeconds !== undefined && patch.plantDelaySeconds !== null) {
-        cfg.plantDelaySeconds = Math.max(0, Math.min(60, Number(patch.plantDelaySeconds) || 2));
     }
     if (patch.fertilizerBuyOrganicCount !== undefined && patch.fertilizerBuyOrganicCount !== null) {
         cfg.fertilizerBuyOrganicCount = Math.max(0, Math.min(999, Number(patch.fertilizerBuyOrganicCount) || 1));
@@ -1280,14 +1257,6 @@ function addFriendToBlacklist(accountId, gid) {
 
 function getStealDelaySeconds(accountId) {
     return Math.max(0, Math.min(60, Number(getAccountConfigSnapshot(accountId).stealDelaySeconds) || 1));
-}
-
-function getPlantOrderRandom(accountId) {
-    return !!getAccountConfigSnapshot(accountId).plantOrderRandom;
-}
-
-function getPlantDelaySeconds(accountId) {
-    return Math.max(0, Math.min(60, Number(getAccountConfigSnapshot(accountId).plantDelaySeconds) || 2));
 }
 
 function getAutoAcceptFriendMinLevel(accountId) {
@@ -1836,8 +1805,6 @@ module.exports = {
     setFriendBlacklist,
     addFriendToBlacklist,
     getStealDelaySeconds,
-    getPlantOrderRandom,
-    getPlantDelaySeconds,
     getAutoAcceptFriendMinLevel,
     getFertilizerBuyOrganicCount,
     getFertilizerBuyOrganicThresholdHours,

@@ -13,6 +13,7 @@ const defaultAutomation = {
   task: false,
   sell: false,
   friend: false,
+  friend_auto_accept: true,
   farm_push: false,
   land_upgrade: false,
   friend_steal: false,

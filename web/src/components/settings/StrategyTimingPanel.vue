@@ -4,8 +4,6 @@ import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseSwitch from '@/components/ui/BaseSwitch.vue'
 
 interface StrategyTimingSettings {
-  plantOrderRandom: boolean
-  plantDelaySeconds: number
   stealDelaySeconds: number
   intervals: {
     farmMin: number
@@ -25,14 +23,6 @@ interface StrategyTimingSettings {
 const props = withDefaults(defineProps<{ section?: 'all' | 'planting' | 'friends' | 'steal' }>(), { section: 'all' })
 const settings = defineModel<StrategyTimingSettings>('settings', { required: true })
 type IntervalKey = keyof StrategyTimingSettings['intervals']
-
-const delaySectionTitle = computed(() => {
-  if (props.section === 'planting')
-    return '种植延迟设置'
-  if (props.section === 'steal')
-    return '偷菜延迟设置'
-  return '种植与偷菜延迟设置'
-})
 
 function intervalModel(key: IntervalKey) {
   return computed({
@@ -127,31 +117,16 @@ const stealMax = intervalModel('stealMax')
       </div>
     </div>
 
-    <div v-if="section === 'all' || section === 'planting' || section === 'steal'" class="border-t pt-3 space-y-3 dark:border-gray-700">
+    <div v-if="section === 'all' || section === 'steal'" class="border-t pt-3 space-y-3 dark:border-gray-700">
       <h4 class="text-sm text-gray-700 font-medium dark:text-gray-300">
-        {{ delaySectionTitle }}
+        偷菜延迟设置
       </h4>
-      <BaseSwitch
-        v-if="section === 'all' || section === 'planting'"
-        v-model="settings.plantOrderRandom"
-        label="种植顺序随机"
+      <BaseInput
+        v-model.number="settings.stealDelaySeconds"
+        label="偷菜延迟 (秒)"
+        type="number"
+        min="0"
       />
-      <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <BaseInput
-          v-if="section === 'all' || section === 'planting'"
-          v-model.number="settings.plantDelaySeconds"
-          label="种植延迟 (秒)"
-          type="number"
-          min="0"
-        />
-        <BaseInput
-          v-if="section === 'all' || section === 'steal'"
-          v-model.number="settings.stealDelaySeconds"
-          label="偷菜延迟 (秒)"
-          type="number"
-          min="0"
-        />
-      </div>
     </div>
   </div>
 </template>

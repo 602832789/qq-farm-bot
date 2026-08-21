@@ -11,6 +11,7 @@ export interface SystemConfig {
 export interface CaptureConfig {
   enabled: boolean
   embedded: boolean
+  running?: boolean
   apiBase: string
   apiToken: string
   tokenConfigured: boolean
@@ -40,6 +41,7 @@ const defaultSystemConfigValues: SystemConfig = {
 const defaultCaptureConfig: CaptureConfig = {
   enabled: false,
   embedded: true,
+  running: false,
   apiBase: 'http://127.0.0.1:8450',
   apiToken: '',
   tokenConfigured: false,
@@ -191,8 +193,9 @@ export function useAdminSystemConfig(options: UseAdminSystemConfigOptions) {
     try {
       const { data } = await api.post('/api/admin/capture-config/test', localCaptureConfig.value, { timeout: 20000 })
       if (data?.ok) {
+        const proxyPort = Number(data.data?.proxyPort) || 18000
         const poolSize = Number(data.data?.portPoolSize) || 0
-        options.showAlert(`连接成功${poolSize ? `，可用代理端口 ${poolSize} 个` : ''}`, 'primary')
+        options.showAlert(`连接成功${poolSize ? `，代理端口 ${proxyPort} 可用` : ''}`, 'primary')
       }
       else {
         options.showAlert(data?.error || '连接失败', 'danger')

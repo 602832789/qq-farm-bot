@@ -176,9 +176,13 @@ async function loadCaptureConfig() {
   try {
     const { data } = await api.get('/api/capture/config')
     captureEnabled.value = data?.ok && data.data?.enabled === true
+    if (!captureEnabled.value && activeTab.value === 'capture')
+      activeTab.value = 'manual'
   }
   catch {
     captureEnabled.value = false
+    if (activeTab.value === 'capture')
+      activeTab.value = 'manual'
   }
 }
 
@@ -433,6 +437,10 @@ watch(() => props.show, (newVal) => {
 })
 
 watch(activeTab, (tab) => {
+  if (tab === 'capture' && !captureEnabled.value) {
+    activeTab.value = 'manual'
+    return
+  }
   if (tab === 'wx')
     loadWxQRCode()
   if (tab !== 'capture')

@@ -171,7 +171,7 @@ const localCaptureConfig = defineModel<CaptureConfig>('localCaptureConfig', { re
               添加账号入口
             </div>
             <div class="mt-1 font-semibold">
-              {{ localCaptureConfig.enabled ? '已开放' : '已关闭' }}
+              {{ localCaptureConfig.enabled && localCaptureConfig.running !== false ? '已开放' : '已关闭' }}
             </div>
           </div>
           <div class="rounded-lg bg-gray-50 px-4 py-3 text-sm text-gray-700 dark:bg-gray-900/40 dark:text-gray-200">
@@ -179,7 +179,7 @@ const localCaptureConfig = defineModel<CaptureConfig>('localCaptureConfig', { re
               API Token
             </div>
             <div class="mt-1 font-semibold">
-              {{ localCaptureConfig.apiToken || localCaptureConfig.tokenConfigured ? '已配置' : '未配置' }}
+              {{ localCaptureConfig.embedded ? '嵌入模式' : (localCaptureConfig.apiToken || localCaptureConfig.tokenConfigured ? '已配置' : '未配置') }}
             </div>
           </div>
           <div class="rounded-lg bg-gray-50 px-4 py-3 text-sm text-gray-700 dark:bg-gray-900/40 dark:text-gray-200">
@@ -199,7 +199,7 @@ const localCaptureConfig = defineModel<CaptureConfig>('localCaptureConfig', { re
               label="允许使用抓包登录添加账号"
             />
             <div v-if="localCaptureConfig.embedded" class="mt-1 text-xs opacity-70" style="color: var(--theme-text);">
-              抓包服务已嵌入本进程，开启后 iPhone 设置 Wi-Fi 代理即可使用，无需单独启动服务
+              默认关闭且不运行；开启后才会启动嵌入服务，手机 Wi-Fi 代理端口固定为 18000
             </div>
           </div>
           <template v-if="!localCaptureConfig.embedded">
@@ -231,6 +231,7 @@ const localCaptureConfig = defineModel<CaptureConfig>('localCaptureConfig', { re
             variant="secondary"
             size="sm"
             :loading="captureConfigTesting"
+            :disabled="localCaptureConfig.embedded && localCaptureConfig.running === false"
             @click="$emit('testCapture')"
           >
             <span class="i-carbon-connection-signal" />

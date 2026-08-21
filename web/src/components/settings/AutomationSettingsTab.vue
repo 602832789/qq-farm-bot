@@ -11,6 +11,7 @@ interface AutomationSettings {
     task: boolean
     sell: boolean
     friend: boolean
+    friend_auto_accept: boolean
     farm_push: boolean
     land_upgrade: boolean
     friend_steal: boolean
@@ -316,6 +317,7 @@ watch(() => props.currentAccountId, loadQixiFriends)
         <BaseSwitch v-model="settings.automation.friend_steal" label="自动偷菜" />
         <BaseSwitch v-model="settings.automation.friend_help" label="自动帮忙" />
         <BaseSwitch v-model="settings.automation.friend_bad" label="自动捣乱" />
+        <BaseSwitch v-model="settings.automation.friend_auto_accept" label="自动通过好友申请" />
         <BaseSwitch v-model="settings.automation.friend_golden_bug" label="自动放黄金虫" />
         <BaseSwitch v-model="settings.automation.friend_help_exp_limit" label="经验满只帮护主犬" />
       </div>
@@ -337,7 +339,7 @@ watch(() => props.currentAccountId, loadQixiFriends)
         />
       </div>
 
-      <div v-if="settings.automation.friend" class="rounded bg-sky-50 p-3 text-sm dark:bg-sky-900/20">
+      <div v-if="settings.automation.friend && settings.automation.friend_auto_accept" class="rounded bg-sky-50 p-3 text-sm dark:bg-sky-900/20">
         <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
           <BaseInput
             v-model.number="settings.autoAcceptFriendMinLevel"
@@ -348,7 +350,7 @@ watch(() => props.currentAccountId, loadQixiFriends)
           />
         </div>
         <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-          设为 `0` 表示不限制等级；启用好友相关自动化后，系统会按这里的最低等级自动通过好友申请。
+          设为 `0` 表示不限制等级；开启自动通过好友申请后，系统会按这里的最低等级处理申请。
         </p>
       </div>
 

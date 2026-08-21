@@ -65,7 +65,7 @@ function summary(key: ModuleKey) {
   if (key === 'fertilizer')
     return `${fertilizerName.value} · ${selectedLandNames.value.join('、') || '未选择土地'}`
   if (key === 'friends')
-    return `${automation.value.automation.friend_help ? '帮助' : '不帮助'} · 最低 ${automation.value.autoAcceptFriendMinLevel || 0} 级 · ${strategy.value.intervals.helpMin}～${strategy.value.intervals.helpMax} 秒`
+    return `${automation.value.automation.friend_help ? '帮助' : '不帮助'} · ${automation.value.automation.friend_auto_accept ? `通过申请最低 ${automation.value.autoAcceptFriendMinLevel || 0} 级` : '不自动通过申请'} · ${strategy.value.intervals.helpMin}～${strategy.value.intervals.helpMax} 秒`
   if (key === 'steal')
     return `${automation.value.automation.friend_steal ? '已开启' : '已关闭'} · ${strategy.value.intervals.stealMin}～${strategy.value.intervals.stealMax} 秒 · 延迟 ${strategy.value.stealDelaySeconds} 秒`
   if (key === 'merchant') {
@@ -272,8 +272,8 @@ watch(() => props.currentAccountId, loadQixiFriends)
 
             <div v-else-if="activeModule === 'friends'" class="space-y-5">
               <div class="grid gap-3 sm:grid-cols-2">
-                <BaseSwitch v-model="automation.automation.friend_help" label="帮助好友" /><BaseSwitch v-model="automation.automation.friend_bad" label="好友捣乱" /><BaseSwitch v-model="automation.automation.friend_golden_bug" label="放黄金虫" /><BaseSwitch v-model="automation.automation.friend_help_exp_limit" label="经验满只帮护主犬" />
-              </div><BaseInput v-model.number="automation.autoAcceptFriendMinLevel" label="通过好友最低等级" type="number" min="0" max="200" /><div v-if="automation.automation.friend_golden_bug" class="grid gap-3 sm:grid-cols-2">
+                <BaseSwitch v-model="automation.automation.friend_help" label="帮助好友" /><BaseSwitch v-model="automation.automation.friend_bad" label="好友捣乱" /><BaseSwitch v-model="automation.automation.friend_auto_accept" label="自动通过好友申请" /><BaseSwitch v-model="automation.automation.friend_golden_bug" label="放黄金虫" /><BaseSwitch v-model="automation.automation.friend_help_exp_limit" label="经验满只帮护主犬" />
+              </div><BaseInput v-if="automation.automation.friend_auto_accept" v-model.number="automation.autoAcceptFriendMinLevel" label="自动通过好友最低等级" type="number" min="0" max="200" /><div v-if="automation.automation.friend_golden_bug" class="grid gap-3 sm:grid-cols-2">
                 <BaseInput v-model.number="automation.goldenBugKeepCount" label="黄金虫保留数量" type="number" min="0" /><BaseInput v-model.number="automation.goldenBugRoundLimit" label="黄金虫单轮上限" type="number" min="1" />
               </div><StrategyTimingPanel v-model:settings="strategy" section="friends" />
             </div>
