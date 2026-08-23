@@ -586,6 +586,8 @@ async function processFriendApplications(applications: any[]): Promise<void> {
 
     const config = getApplicationFilterConfig();
     const checkRatio = isHarvestStealFilterEnabled(config);
+    const accountId: string = process.env.FARM_ACCOUNT_ID || '';
+    const blacklist: Set<number> = new Set(getFriendBlacklist(accountId));
     const toAccept: number[] = [];
     const toReject: Array<{ gid: number; name: string; reason: string }> = [];
 
@@ -595,6 +597,11 @@ async function processFriendApplications(applications: any[]): Promise<void> {
         const name: string = (app && app.name) || `GID:${gid}`;
         const level: number = toNum(app && app.level);
         if (!gid) continue;
+
+        if (blacklist.has(gid)) {
+            toReject.push({ gid, name, reason: '已在本地黑名单' });
+            continue;
+        }
 
         const levelDecision = evaluateLevelFilter(level, config);
         if (levelDecision.action === 'reject') {

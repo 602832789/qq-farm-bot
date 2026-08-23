@@ -178,6 +178,8 @@ async function loadProto(): Promise<void> {
     types.AcceptFriendsReply = root.lookupType('gamepb.friendpb.AcceptFriendsReply');
     types.RejectFriendsRequest = root.lookupType('gamepb.friendpb.RejectFriendsRequest');
     types.RejectFriendsReply = root.lookupType('gamepb.friendpb.RejectFriendsReply');
+    types.DelFriendRequest = root.lookupType('gamepb.friendpb.DelFriendRequest');
+    types.DelFriendReply = root.lookupType('gamepb.friendpb.DelFriendReply');
     types.SyncAllFriendsRequest = root.lookupType('gamepb.friendpb.SyncAllRequest');
     types.SyncAllFriendsReply = root.lookupType('gamepb.friendpb.SyncAllReply');
     types.GetGameFriendsRequest = root.lookupType('gamepb.friendpb.GetGameFriendsRequest');

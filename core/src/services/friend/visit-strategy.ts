@@ -26,6 +26,7 @@ const { recordOperation } = require('../stats');
 const { sellAllFruits } = require('../warehouse');
 const {
     getAllFriends,
+    delFriend,
     enterFriendFarm,
     leaveFriendFarm,
     helpFarming,
@@ -981,5 +982,38 @@ export function clearFriendsListCache(): void {
     friendsListCache = null;
     friendsListCacheTime = 0;
     recentHelp.clear();
+}
+
+export function removeFriendFromFriendsListCache(friendGid: any): void {
+    const gid: number = toNum(friendGid);
+    if (!gid || !Array.isArray(friendsListCache)) return;
+    const next: any[] = friendsListCache.filter((friend: any) => toNum(friend.gid) !== gid);
+    if (next.length !== friendsListCache.length) {
+        friendsListCache = next;
+    }
+}
+
+export async function deleteFriend(friendGid: any): Promise<{ ok: true; gid: number }> {
+    const gid: number = toNum(friendGid);
+    if (!gid) throw new Error('无效的好友 GID');
+
+    const cached: any = Array.isArray(friendsListCache)
+        ? friendsListCache.find((friend: any) => toNum(friend.gid) === gid)
+        : null;
+    const name: string = String((cached && cached.name) || '').trim() || `GID:${gid}`;
+
+    await delFriend(gid);
+    removeFriendFromFriendsListCache(gid);
+    removeKnownFriendGid(gid, name, '手动删除好友');
+    addFriendToBlacklist(gid, name, '手动删除好友');
+
+    log('好友', `已删除好友: ${name}`, {
+        module: 'friend',
+        event: '删除好友',
+        result: 'ok',
+        friendName: name,
+        friendGid: gid,
+    });
+    return { ok: true, gid };
 }
 

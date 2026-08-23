@@ -82,6 +82,20 @@ export async function getApplications(): Promise<any> {
     return types.GetApplicationsReply.decode(replyBody);
 }
 
+export async function delFriend(gid: number): Promise<any> {
+    const numericGid: number = toNum(gid);
+    if (!numericGid) throw new Error('无效的好友 GID');
+    if (!types.DelFriendRequest || !types.DelFriendReply) {
+        throw new Error('DelFriend 接口类型未加载');
+    }
+
+    const body: Uint8Array = types.DelFriendRequest.encode(types.DelFriendRequest.create({
+        friend_gid: toLong(numericGid),
+    })).finish();
+    const { body: replyBody } = await sendMsgAsync('gamepb.friendpb.FriendService', 'DelFriend', body);
+    return types.DelFriendReply.decode(replyBody);
+}
+
 export async function enterFriendFarm(friendGid: number): Promise<any> {
     const body: Uint8Array = types.VisitEnterRequest.encode(types.VisitEnterRequest.create({
         host_gid: toLong(friendGid),

@@ -115,6 +115,36 @@ function mountFriendRoutes(app: Application, ctx: AdminContext): void {
         }
     });
 
+    // API: 游戏内删除好友
+    app.post('/api/friend/:gid/delete', async (req: Request, res: Response) => {
+        const id = getAccId(ctx, req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+
+        try {
+            const gid = Number(req.params.gid);
+            if (!Number.isFinite(gid) || gid <= 0) {
+                return res.status(400).json({ ok: false, error: '无效的好友 GID' });
+            }
+            const data = await ctx.provider.delFriend(id, gid);
+            if (store.addFriendToBlacklist) {
+                store.addFriendToBlacklist(id, gid);
+            }
+            if (store.getKnownFriendGids && store.setKnownFriendGids) {
+                const current = store.getKnownFriendGids(id) || [];
+                const next = current.filter((item: any) => Number(item) !== gid);
+                if (next.length !== current.length) {
+                    store.setKnownFriendGids(id, next);
+                }
+            }
+            if (ctx.provider && typeof ctx.provider.broadcastConfig === 'function') {
+                ctx.provider.broadcastConfig(id);
+            }
+            res.json({ ok: true, message: '删除好友成功', data });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    });
+
     // API: 好友黑名单
     app.get('/api/friend-blacklist', async (req: Request, res: Response) => {
         const id = getAccId(ctx, req);

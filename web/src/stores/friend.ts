@@ -370,6 +370,65 @@ export const useFriendStore = defineStore('friend', () => {
     }
   }
 
+  async function deleteFriend(accountId: string, friend: { gid: number; name?: string; avatarUrl?: string }) {
+    const gid = Number(friend?.gid)
+    if (!accountId || !gid)
+      return { ok: false, message: '参数无效' }
+    try {
+      const res = await api.post(`/api/friend/${gid}/delete`, {}, {
+        headers: { 'x-account-id': accountId },
+        skipErrorToast: true,
+      } as any)
+      if (!res.data?.ok)
+        return { ok: false, message: res.data?.error || '删除好友失败' }
+
+      const key = String(gid)
+      friends.value = friends.value.filter(item => Number(item.gid) !== gid)
+      const nextLands = { ...friendLands.value }
+      const nextLandsLoading = { ...friendLandsLoading.value }
+      const nextLandsError = { ...friendLandsError.value }
+      const nextLandsLoaded = { ...friendLandsLoaded.value }
+      const nextCareer = { ...friendCareer.value }
+      delete nextLands[key]
+      delete nextLandsLoading[key]
+      delete nextLandsError[key]
+      delete nextLandsLoaded[key]
+      delete nextCareer[key]
+      friendLands.value = nextLands
+      friendLandsLoading.value = nextLandsLoading
+      friendLandsError.value = nextLandsError
+      friendLandsLoaded.value = nextLandsLoaded
+      friendCareer.value = nextCareer
+
+      await Promise.all([
+        fetchBlacklist(accountId),
+        fetchKnownFriendSettings(accountId),
+      ])
+      const displayName = String(friend.name || '').trim()
+      const displayAvatar = String(friend.avatarUrl || '').trim()
+      const existing = blacklist.value.find(item => Number(item.gid) === gid)
+      if (!existing) {
+        blacklist.value = [
+          ...blacklist.value,
+          { gid, name: displayName, avatarUrl: displayAvatar },
+        ]
+      }
+      else if ((!existing.name && displayName) || (!existing.avatarUrl && displayAvatar)) {
+        blacklist.value = blacklist.value.map(item => Number(item.gid) === gid
+          ? {
+              ...item,
+              name: item.name || displayName,
+              avatarUrl: item.avatarUrl || displayAvatar,
+            }
+          : item)
+      }
+      return { ok: true, message: res.data?.message || '删除好友成功' }
+    }
+    catch (e: any) {
+      return { ok: false, message: e?.response?.data?.error || e?.message || '删除好友失败' }
+    }
+  }
+
   async function fetchFriendLands(accountId: string, friendId: string) {
     if (!accountId || !friendId)
       return false
@@ -674,6 +733,7 @@ export const useFriendStore = defineStore('friend', () => {
     fetchFriends,
     fetchBlacklist,
     toggleBlacklist,
+    deleteFriend,
     fetchInteractRecords,
     fetchFriendLands,
     resetFriendLandState,
