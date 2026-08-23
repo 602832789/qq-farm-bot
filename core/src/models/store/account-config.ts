@@ -16,6 +16,9 @@ const {
     normalizeBagSeedFallbackStrategy,
     normalizeIntervals,
     normalizeTimeString,
+    normalizeAutoAcceptFriendMinLevel,
+    normalizeAutoAcceptHarvestStealHarvest,
+    normalizeAutoAcceptHarvestStealSteal,
     ALLOWED_PLANTING_STRATEGIES,
 } = sharedState;
 
@@ -87,6 +90,11 @@ function getConfigSnapshot(accountId?: unknown): AccountConfig & { ui: typeof gl
         fertilizerBuyCheckIntervalMinutes: Math.max(1, Math.min(1440, Number(cfg.fertilizerBuyCheckIntervalMinutes) || 30)),
         bagSeedPriority: [...(cfg.bagSeedPriority || [])],
         bagSeedFallbackStrategy: cfg.bagSeedFallbackStrategy,
+        autoAcceptFriendMinLevel: cfg.autoAcceptFriendMinLevel,
+        autoAcceptRequireOwnLevel: !!cfg.autoAcceptRequireOwnLevel,
+        autoAcceptHarvestStealEnabled: !!cfg.autoAcceptHarvestStealEnabled,
+        autoAcceptHarvestStealHarvest: cfg.autoAcceptHarvestStealHarvest,
+        autoAcceptHarvestStealSteal: cfg.autoAcceptHarvestStealSteal,
         ui: { ...globalConfig.ui },
     } as any;
 }
@@ -215,6 +223,32 @@ function applyConfigSnapshot(snapshot: Record<string, any> | undefined, options:
 
     if (cfg.bagSeedFallbackStrategy !== undefined && cfg.bagSeedFallbackStrategy !== null) {
         next.bagSeedFallbackStrategy = normalizeBagSeedFallbackStrategy(cfg.bagSeedFallbackStrategy, next.bagSeedFallbackStrategy);
+    }
+
+    if (cfg.autoAcceptFriendMinLevel !== undefined && cfg.autoAcceptFriendMinLevel !== null) {
+        next.autoAcceptFriendMinLevel = normalizeAutoAcceptFriendMinLevel(cfg.autoAcceptFriendMinLevel, next.autoAcceptFriendMinLevel);
+    }
+
+    if (cfg.autoAcceptRequireOwnLevel !== undefined && cfg.autoAcceptRequireOwnLevel !== null) {
+        next.autoAcceptRequireOwnLevel = !!cfg.autoAcceptRequireOwnLevel;
+    }
+
+    if (cfg.autoAcceptHarvestStealEnabled !== undefined && cfg.autoAcceptHarvestStealEnabled !== null) {
+        next.autoAcceptHarvestStealEnabled = !!cfg.autoAcceptHarvestStealEnabled;
+    }
+
+    if (cfg.autoAcceptHarvestStealHarvest !== undefined && cfg.autoAcceptHarvestStealHarvest !== null) {
+        next.autoAcceptHarvestStealHarvest = normalizeAutoAcceptHarvestStealHarvest(
+            cfg.autoAcceptHarvestStealHarvest,
+            next.autoAcceptHarvestStealHarvest,
+        );
+    }
+
+    if (cfg.autoAcceptHarvestStealSteal !== undefined && cfg.autoAcceptHarvestStealSteal !== null) {
+        next.autoAcceptHarvestStealSteal = normalizeAutoAcceptHarvestStealSteal(
+            cfg.autoAcceptHarvestStealSteal,
+            next.autoAcceptHarvestStealSteal,
+        );
     }
 
     if (cfg.ui && typeof cfg.ui === 'object') {
@@ -373,6 +407,26 @@ function getFertilizerBuyCheckIntervalMinutes(accountId?: unknown): number {
     return Math.max(1, Math.min(1440, Number(getAccountConfigSnapshot(accountId).fertilizerBuyCheckIntervalMinutes) || 30));
 }
 
+function getAutoAcceptFriendMinLevel(accountId?: unknown): number {
+    return normalizeAutoAcceptFriendMinLevel(getAccountConfigSnapshot(accountId).autoAcceptFriendMinLevel);
+}
+
+function getAutoAcceptRequireOwnLevel(accountId?: unknown): boolean {
+    return !!getAccountConfigSnapshot(accountId).autoAcceptRequireOwnLevel;
+}
+
+function getAutoAcceptHarvestStealEnabled(accountId?: unknown): boolean {
+    return !!getAccountConfigSnapshot(accountId).autoAcceptHarvestStealEnabled;
+}
+
+function getAutoAcceptHarvestStealHarvest(accountId?: unknown): number {
+    return normalizeAutoAcceptHarvestStealHarvest(getAccountConfigSnapshot(accountId).autoAcceptHarvestStealHarvest);
+}
+
+function getAutoAcceptHarvestStealSteal(accountId?: unknown): number {
+    return normalizeAutoAcceptHarvestStealSteal(getAccountConfigSnapshot(accountId).autoAcceptHarvestStealSteal);
+}
+
 function getPlantBlacklist(accountId?: unknown): number[] {
     return [...(getAccountConfigSnapshot(accountId).plantBlacklist || [])];
 }
@@ -422,6 +476,11 @@ module.exports = {
     getFertilizerBuyNormalCount,
     getFertilizerBuyNormalThresholdHours,
     getFertilizerBuyCheckIntervalMinutes,
+    getAutoAcceptFriendMinLevel,
+    getAutoAcceptRequireOwnLevel,
+    getAutoAcceptHarvestStealEnabled,
+    getAutoAcceptHarvestStealHarvest,
+    getAutoAcceptHarvestStealSteal,
     getPlantBlacklist,
     setPlantBlacklist,
     getDefaultAccountConfig,

@@ -240,6 +240,11 @@ function createDataProvider(options: DataProviderOptions) {
                 'fertilizerBuyCheckIntervalMinutes',
                 'bagSeedPriority',
                 'bagSeedFallbackStrategy',
+                'autoAcceptFriendMinLevel',
+                'autoAcceptRequireOwnLevel',
+                'autoAcceptHarvestStealEnabled',
+                'autoAcceptHarvestStealHarvest',
+                'autoAcceptHarvestStealSteal',
             ]) {
                 copyIfPresent(key);
             }

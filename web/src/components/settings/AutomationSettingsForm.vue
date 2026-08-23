@@ -14,6 +14,11 @@ export type AutomationSettingsFormModel = Pick<
   | 'fertilizerBuyNormalCount'
   | 'fertilizerBuyNormalThresholdHours'
   | 'fertilizerBuyCheckIntervalMinutes'
+  | 'autoAcceptFriendMinLevel'
+  | 'autoAcceptRequireOwnLevel'
+  | 'autoAcceptHarvestStealEnabled'
+  | 'autoAcceptHarvestStealHarvest'
+  | 'autoAcceptHarvestStealSteal'
 >
 
 defineProps<{
@@ -131,6 +136,50 @@ const settings = defineModel<AutomationSettingsFormModel>({ required: true })
         <BaseSwitch v-model="settings.automation.friend_help" label="自动帮忙" />
         <BaseSwitch v-model="settings.automation.friend_bad" label="自动捣乱" />
         <BaseSwitch v-model="settings.automation.friend_help_exp_limit" label="经验满不帮忙" />
+      </div>
+      <div class="mt-3 space-y-3 rounded bg-blue-50 p-3 text-sm dark:bg-blue-900/20">
+        <BaseSwitch v-model="settings.automation.friend_auto_accept" label="自动通过好友申请" />
+        <template v-if="settings.automation.friend_auto_accept">
+          <div class="flex flex-wrap gap-4">
+            <BaseInput
+              v-model.number="settings.autoAcceptFriendMinLevel"
+              label="最低等级"
+              type="number"
+              min="0"
+              max="200"
+              class="w-40"
+            />
+            <BaseSwitch v-model="settings.autoAcceptRequireOwnLevel" label="不低于自己等级" />
+          </div>
+          <p class="text-xs text-gray-500 dark:text-gray-400">
+            最低等级设为 0 表示不按固定等级限制。两项都开时取更严的：必须同时达到手动下限，且不低于自己当前等级。
+          </p>
+          <div class="flex flex-wrap items-end gap-4">
+            <BaseSwitch v-model="settings.autoAcceptHarvestStealEnabled" label="收偷比过滤" />
+            <BaseInput
+              v-model.number="settings.autoAcceptHarvestStealHarvest"
+              label="收获"
+              type="number"
+              min="0"
+              max="9999"
+              class="w-28"
+              :disabled="!settings.autoAcceptHarvestStealEnabled"
+            />
+            <span class="pb-2 text-xs text-gray-500 dark:text-gray-400">:</span>
+            <BaseInput
+              v-model.number="settings.autoAcceptHarvestStealSteal"
+              label="偷菜"
+              type="number"
+              min="1"
+              max="9999"
+              class="w-28"
+              :disabled="!settings.autoAcceptHarvestStealEnabled"
+            />
+          </div>
+          <p class="text-xs text-gray-500 dark:text-gray-400">
+            按申请人生涯收获/偷菜数量比较，默认 8:1。收获设为 0 或关闭开关则不做这项过滤。不合格会直接拒绝申请。
+          </p>
+        </template>
       </div>
     </section>
 

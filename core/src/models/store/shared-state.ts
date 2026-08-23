@@ -50,6 +50,7 @@ const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
         farm_push: true,
         land_upgrade: true,
         friend: true,
+        friend_auto_accept: true,
         friend_help_exp_limit: true,
         friend_steal: true,
         friend_help: true,
@@ -112,6 +113,11 @@ const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
     fertilizerBuyCheckIntervalMinutes: 60,
     bagSeedPriority: [],
     bagSeedFallbackStrategy: 'level',
+    autoAcceptFriendMinLevel: 0,
+    autoAcceptRequireOwnLevel: false,
+    autoAcceptHarvestStealEnabled: true,
+    autoAcceptHarvestStealHarvest: 8,
+    autoAcceptHarvestStealSteal: 1,
 };
 
 const ALLOWED_AUTOMATION_KEYS: Set<string> = new Set(Object.keys(DEFAULT_ACCOUNT_CONFIG.automation));
@@ -140,6 +146,24 @@ function normalizeFriendsListCacheTtlSec(input: unknown, fallback: number = DEFA
     const value = Number.parseInt(input as string, 10);
     const base = Number.isFinite(value) ? value : fallback;
     return Math.max(10, Math.min(INTERVAL_MAX_SEC, base));
+}
+
+function normalizeAutoAcceptFriendMinLevel(input: unknown, fallback: number = 0): number {
+    const value = Number.parseInt(input as string, 10);
+    const base = Number.isFinite(value) ? value : fallback;
+    return Math.max(0, Math.min(200, base));
+}
+
+function normalizeAutoAcceptHarvestStealHarvest(input: unknown, fallback: number = 8): number {
+    const value = Number.parseInt(input as string, 10);
+    const base = Number.isFinite(value) ? value : fallback;
+    return Math.max(0, Math.min(9999, base));
+}
+
+function normalizeAutoAcceptHarvestStealSteal(input: unknown, fallback: number = 1): number {
+    const value = Number.parseInt(input as string, 10);
+    const base = Number.isFinite(value) ? value : fallback;
+    return Math.max(1, Math.min(9999, base));
 }
 
 function normalizeBagSeedPriority(input: unknown): number[] {
@@ -256,6 +280,13 @@ function cloneAccountConfig(base: Partial<AccountConfig> = DEFAULT_ACCOUNT_CONFI
         fertilizerBuyCheckIntervalMinutes: Math.max(1, Math.min(1440, Number(base.fertilizerBuyCheckIntervalMinutes) || 30)),
         bagSeedPriority: normalizeBagSeedPriority(base.bagSeedPriority),
         bagSeedFallbackStrategy: normalizeBagSeedFallbackStrategy(base.bagSeedFallbackStrategy),
+        autoAcceptFriendMinLevel: normalizeAutoAcceptFriendMinLevel(base.autoAcceptFriendMinLevel, DEFAULT_ACCOUNT_CONFIG.autoAcceptFriendMinLevel),
+        autoAcceptRequireOwnLevel: !!base.autoAcceptRequireOwnLevel,
+        autoAcceptHarvestStealEnabled: base.autoAcceptHarvestStealEnabled !== undefined
+            ? !!base.autoAcceptHarvestStealEnabled
+            : DEFAULT_ACCOUNT_CONFIG.autoAcceptHarvestStealEnabled,
+        autoAcceptHarvestStealHarvest: normalizeAutoAcceptHarvestStealHarvest(base.autoAcceptHarvestStealHarvest, DEFAULT_ACCOUNT_CONFIG.autoAcceptHarvestStealHarvest),
+        autoAcceptHarvestStealSteal: normalizeAutoAcceptHarvestStealSteal(base.autoAcceptHarvestStealSteal, DEFAULT_ACCOUNT_CONFIG.autoAcceptHarvestStealSteal),
     };
 }
 
@@ -373,6 +404,26 @@ function normalizeAccountConfig(input: unknown, fallback: AccountConfig = accoun
 
     if (src.bagSeedFallbackStrategy !== undefined && src.bagSeedFallbackStrategy !== null) {
         cfg.bagSeedFallbackStrategy = normalizeBagSeedFallbackStrategy(src.bagSeedFallbackStrategy, cfg.bagSeedFallbackStrategy);
+    }
+
+    if (src.autoAcceptFriendMinLevel !== undefined && src.autoAcceptFriendMinLevel !== null) {
+        cfg.autoAcceptFriendMinLevel = normalizeAutoAcceptFriendMinLevel(src.autoAcceptFriendMinLevel, cfg.autoAcceptFriendMinLevel);
+    }
+
+    if (src.autoAcceptRequireOwnLevel !== undefined && src.autoAcceptRequireOwnLevel !== null) {
+        cfg.autoAcceptRequireOwnLevel = !!src.autoAcceptRequireOwnLevel;
+    }
+
+    if (src.autoAcceptHarvestStealEnabled !== undefined && src.autoAcceptHarvestStealEnabled !== null) {
+        cfg.autoAcceptHarvestStealEnabled = !!src.autoAcceptHarvestStealEnabled;
+    }
+
+    if (src.autoAcceptHarvestStealHarvest !== undefined && src.autoAcceptHarvestStealHarvest !== null) {
+        cfg.autoAcceptHarvestStealHarvest = normalizeAutoAcceptHarvestStealHarvest(src.autoAcceptHarvestStealHarvest, cfg.autoAcceptHarvestStealHarvest);
+    }
+
+    if (src.autoAcceptHarvestStealSteal !== undefined && src.autoAcceptHarvestStealSteal !== null) {
+        cfg.autoAcceptHarvestStealSteal = normalizeAutoAcceptHarvestStealSteal(src.autoAcceptHarvestStealSteal, cfg.autoAcceptHarvestStealSteal);
     }
 
     return cfg;
@@ -507,6 +558,9 @@ module.exports = {
     normalizeFertilizerLandTypes,
     normalizeTimeString,
     normalizeIntervals,
+    normalizeAutoAcceptFriendMinLevel,
+    normalizeAutoAcceptHarvestStealHarvest,
+    normalizeAutoAcceptHarvestStealSteal,
     normalizeAccountConfig,
     cloneAccountConfig,
     isManagedDefaultClientVersion,

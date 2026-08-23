@@ -13,13 +13,25 @@ const { setOperationLimitsCallback } = require('../farm');
 const {
     isAutomationOn,
     getFriendBlacklist,
+    getAutoAcceptFriendMinLevel,
+    getAutoAcceptRequireOwnLevel,
+    getAutoAcceptHarvestStealEnabled,
+    getAutoAcceptHarvestStealHarvest,
+    getAutoAcceptHarvestStealSteal,
 } = require('../../models/store');
 const { sellAllFruits } = require('../warehouse');
+const { getCareerInfo } = require('../career');
 const {
     getAllFriends,
     acceptFriends,
+    rejectFriends,
     getApplications,
 } = require('./api');
+const {
+    isHarvestStealFilterEnabled,
+    evaluateLevelFilter,
+    evaluateHarvestStealFilter,
+} = require('./application-filter');
 const {
     extractReplyFriends,
     clearAllInvalidKnownFriendGidCooldowns,
@@ -518,22 +530,42 @@ export function refreshFriendCheckLoop(delayMs: number = 200): void {
 
 // ============ 自动同意好友申请 (微信同玩) ============
 
+let applicationQueue: Promise<void> = Promise.resolve();
+
+function getApplicationFilterConfig(): any {
+    return {
+        minLevel: getAutoAcceptFriendMinLevel(),
+        requireOwnLevel: getAutoAcceptRequireOwnLevel(),
+        ownLevel: toNum((getUserState() || {}).level),
+        harvestStealEnabled: getAutoAcceptHarvestStealEnabled(),
+        harvestPart: getAutoAcceptHarvestStealHarvest(),
+        stealPart: getAutoAcceptHarvestStealSteal(),
+    };
+}
+
+function enqueueApplications(applications: any[]): void {
+    applicationQueue = applicationQueue
+        .then(() => processFriendApplications(applications))
+        .catch((e: any) => {
+            logWarn('申请', `处理好友申请失败: ${e && e.message ? e.message : e}`);
+        });
+}
+
 /**
  * 处理服务器推送的好友申请
  */
 export function onFriendApplicationReceived(applications: any[]): void {
+    if (!Array.isArray(applications) || applications.length === 0) return;
     const names: string = applications.map((a: any) => a.name || `GID:${toNum(a.gid)}`).join(', ');
     log('申请', `收到 ${applications.length} 个好友申请: ${names}`);
-
-    // 自动同意
-    const gids: number[] = applications.map((a: any) => toNum(a.gid));
-    acceptFriendsWithRetry(gids);
+    enqueueApplications(applications);
 }
 
 /**
- * 检查并同意所有待处理的好友申请
+ * 检查并处理所有待处理的好友申请
  */
 async function checkAndAcceptApplications(): Promise<void> {
+    if (!isAutomationOn('friend_auto_accept')) return;
     try {
         const reply: any = await getApplications();
         const applications: any[] = reply.applications || [];
@@ -541,11 +573,72 @@ async function checkAndAcceptApplications(): Promise<void> {
 
         const names: string = applications.map((a: any) => a.name || `GID:${toNum(a.gid)}`).join(', ');
         log('申请', `发现 ${applications.length} 个待处理申请: ${names}`);
-
-        const gids: number[] = applications.map((a: any) => toNum(a.gid));
-        await acceptFriendsWithRetry(gids);
+        await processFriendApplications(applications);
     } catch {
         // 静默失败，可能是 QQ 平台不支持
+    }
+}
+
+async function processFriendApplications(applications: any[]): Promise<void> {
+    if (!isAutomationOn('friend_auto_accept')) return;
+    const list: any[] = Array.isArray(applications) ? applications : [];
+    if (list.length === 0) return;
+
+    const config = getApplicationFilterConfig();
+    const checkRatio = isHarvestStealFilterEnabled(config);
+    const toAccept: number[] = [];
+    const toReject: Array<{ gid: number; name: string; reason: string }> = [];
+
+    for (let i = 0; i < list.length; i++) {
+        const app: any = list[i];
+        const gid: number = toNum(app && app.gid);
+        const name: string = (app && app.name) || `GID:${gid}`;
+        const level: number = toNum(app && app.level);
+        if (!gid) continue;
+
+        const levelDecision = evaluateLevelFilter(level, config);
+        if (levelDecision.action === 'reject') {
+            toReject.push({ gid, name, reason: levelDecision.reason || '等级不足' });
+            continue;
+        }
+
+        if (!checkRatio) {
+            toAccept.push(gid);
+            continue;
+        }
+
+        try {
+            const career = await getCareerInfo(gid);
+            const ratioDecision = evaluateHarvestStealFilter(career.harvest, career.steal, config);
+            if (ratioDecision.action === 'reject') {
+                toReject.push({ gid, name, reason: ratioDecision.reason || '收偷比不足' });
+            } else {
+                toAccept.push(gid);
+            }
+        } catch (e: any) {
+            logWarn('申请', `${name} 生涯查询失败，暂不处理: ${e && e.message ? e.message : e}`);
+        }
+
+        if (i < list.length - 1 && checkRatio) {
+            await randomDelay(150, 300);
+        }
+    }
+
+    for (const item of toReject) {
+        log('申请', `拒绝 ${item.name}: ${item.reason}`);
+    }
+
+    await rejectFriendsWithRetry(toReject.map((item) => item.gid));
+    await acceptFriendsWithRetry(toAccept);
+}
+
+async function rejectFriendsWithRetry(gids: number[]): Promise<void> {
+    if (gids.length === 0) return;
+    try {
+        await rejectFriends(gids);
+        log('申请', `已拒绝 ${gids.length} 人`);
+    } catch (e: any) {
+        logWarn('申请', `拒绝失败: ${e.message}`);
     }
 }
 

@@ -68,6 +68,14 @@ export async function acceptFriends(gids: number[]): Promise<any> {
     return types.AcceptFriendsReply.decode(replyBody);
 }
 
+export async function rejectFriends(gids: number[]): Promise<any> {
+    const body: Uint8Array = types.RejectFriendsRequest.encode(types.RejectFriendsRequest.create({
+        friend_gids: gids.map((g: number) => toLong(g)),
+    })).finish();
+    const { body: replyBody } = await sendMsgAsync('gamepb.friendpb.FriendService', 'RejectFriends', body);
+    return types.RejectFriendsReply.decode(replyBody);
+}
+
 export async function getApplications(): Promise<any> {
     const body: Uint8Array = types.GetApplicationsRequest.encode(types.GetApplicationsRequest.create({})).finish();
     const { body: replyBody } = await sendMsgAsync('gamepb.friendpb.FriendService', 'GetApplications', body);
