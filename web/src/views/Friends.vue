@@ -5,6 +5,7 @@ import { NButton, NButtonGroup, NCard, NModal, NPagination, NSpin, NTab, NTabs }
 import { storeToRefs } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import api from '@/api'
+import CareerHarvestSteal from '@/components/CareerHarvestSteal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import LandCard from '@/components/LandCard.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
@@ -30,6 +31,7 @@ const {
   friendLandsLoading,
   friendLandsError,
   friendLandsLoaded,
+  friendCareer,
   blacklist,
   interactRecords,
   interactLoading,
@@ -1062,6 +1064,12 @@ async function handleBatchAddKnownFriendGids() {
                 </NButton>
               </div>
               <template v-else>
+                <div
+                  v-if="friendCareer[friend.gid]"
+                  class="mb-3 flex flex-wrap gap-x-5 gap-y-2 text-sm"
+                >
+                  <CareerHarvestSteal :career="friendCareer[friend.gid]" />
+                </div>
                 <div class="mb-3 border border-amber-200 rounded-xl bg-amber-50/80 p-3 dark:border-amber-800 dark:bg-amber-950/25">
                   <div v-if="interactionItemsLoading" class="flex items-center justify-center gap-2 py-2 text-sm text-amber-700 dark:text-amber-300">
                     <span class="i-svg-spinners-90-ring-with-bg" />

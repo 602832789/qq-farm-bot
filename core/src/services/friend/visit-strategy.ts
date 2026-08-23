@@ -21,6 +21,7 @@ const {
     getPlantStatusFlags,
     isOccupiedSlaveLand,
 } = require('../farm');
+const { getCareerInfoOrNull } = require('../career');
 const { recordOperation } = require('../stats');
 const { sellAllFruits } = require('../warehouse');
 const {
@@ -445,6 +446,7 @@ export async function getFriendLandsDetail(friendGid: number): Promise<any> {
         return {
             lands: landsList,
             summary: analyzed,
+            career: await getCareerInfoOrNull(friendGid),
         };
     } finally {
         if (entered) await leaveFriendFarm(friendGid);

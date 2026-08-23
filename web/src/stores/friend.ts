@@ -1,3 +1,4 @@
+import type { CareerHarvestSteal } from '@/components/CareerHarvestSteal.vue'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api from '@/api'
@@ -78,6 +79,7 @@ export const useFriendStore = defineStore('friend', () => {
   const friendLandsLoading = ref<Record<string, boolean>>({})
   const friendLandsError = ref<Record<string, string>>({})
   const friendLandsLoaded = ref<Record<string, boolean>>({})
+  const friendCareer = ref<Record<string, CareerHarvestSteal | null>>({})
   const blacklist = ref<BlacklistItem[]>([])
   const interactRecords = ref<any[]>([])
   const interactLoading = ref(false)
@@ -387,10 +389,12 @@ export const useFriendStore = defineStore('friend', () => {
         const lands = applyFriendLandOverlay(key, res.data.data.lands || [])
         const summary = res.data.data.summary || null
         friendLands.value[key] = lands
+        friendCareer.value = { ...friendCareer.value, [key]: res.data.data.career || null }
         syncFriendPlantSummary(key, lands, summary)
         return true
       }
       friendLands.value[key] = []
+      friendCareer.value = { ...friendCareer.value, [key]: null }
       friendLandsError.value[key] = String(res.data?.error || '无法读取好友土地')
       return false
     }
@@ -398,6 +402,7 @@ export const useFriendStore = defineStore('friend', () => {
       if (sequence !== friendLandRequestSequence)
         return false
       friendLands.value[key] = []
+      friendCareer.value = { ...friendCareer.value, [key]: null }
       const rawMessage = String(error?.response?.data?.error || error?.message || '')
       friendLandsError.value[key] = /gamepb\.|code=\d+|GatewayError/.test(rawMessage)
         ? '无法进入该好友农场，好友状态可能已变化，请刷新后重试'
@@ -418,6 +423,7 @@ export const useFriendStore = defineStore('friend', () => {
     friendLandsLoading.value = {}
     friendLandsError.value = {}
     friendLandsLoaded.value = {}
+    friendCareer.value = {}
     friendLandOverlays.value = {}
   }
 
@@ -650,6 +656,7 @@ export const useFriendStore = defineStore('friend', () => {
     friendLandsLoading,
     friendLandsError,
     friendLandsLoaded,
+    friendCareer,
     blacklist,
     interactRecords,
     interactLoading,
