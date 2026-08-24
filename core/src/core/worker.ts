@@ -699,7 +699,7 @@ function handleTerminalDisconnect(payload: any): void {
         connectionId: Number(payload?.connectionId) || 0,
         at: Number(payload?.at) || Date.now(),
     });
-    setTimeout(() => exitWorker(0), 300);
+    setTimeout(exitWorker, 300, 0);
 }
 
 function onKickout(payload: any): void {
@@ -709,7 +709,7 @@ function onKickout(payload: any): void {
     saveStats();
     quiesceBot(`踢下线: ${reason}`);
     sendToMaster({ type: 'account_kicked', reason });
-    setTimeout(() => exitWorker(0), 300);
+    setTimeout(exitWorker, 300, 0);
 }
 
 // 处理来自 Admin 面板的直接调用请求 (如: 购买种子、开关设置等)
@@ -986,8 +986,8 @@ async function getDailyGiftOverview(): Promise<any> {
                 enabled: true,
                 doneToday: !!vip.doneToday,
                 lastAt: Number(vip.lastClaimAt || vip.lastCheckAt || 0),
-                hasGift: Object.prototype.hasOwnProperty.call(vip, 'hasGift') ? !!vip.hasGift : undefined,
-                canClaim: Object.prototype.hasOwnProperty.call(vip, 'canClaim') ? !!vip.canClaim : undefined,
+                hasGift: Object.hasOwn(vip, 'hasGift') ? !!vip.hasGift : undefined,
+                canClaim: Object.hasOwn(vip, 'canClaim') ? !!vip.canClaim : undefined,
                 result: vip.result || '',
             },
             {
@@ -996,8 +996,8 @@ async function getDailyGiftOverview(): Promise<any> {
                 enabled: true,
                 doneToday: !!month.doneToday,
                 lastAt: Number(month.lastClaimAt || month.lastCheckAt || 0),
-                hasCard: Object.prototype.hasOwnProperty.call(month, 'hasCard') ? !!month.hasCard : undefined,
-                hasClaimable: Object.prototype.hasOwnProperty.call(month, 'hasClaimable') ? !!month.hasClaimable : undefined,
+                hasCard: Object.hasOwn(month, 'hasCard') ? !!month.hasCard : undefined,
+                hasClaimable: Object.hasOwn(month, 'hasClaimable') ? !!month.hasClaimable : undefined,
                 result: month.result || '',
             },
         ],

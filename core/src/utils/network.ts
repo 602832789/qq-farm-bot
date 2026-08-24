@@ -241,7 +241,7 @@ function clearWsErrorState(): void {
 }
 
 function hasOwn(obj: any, key: string): boolean {
-    return !!obj && Object.prototype.hasOwnProperty.call(obj, key);
+    return !!obj && Object.hasOwn(obj, key);
 }
 
 // 登录后获取用户设置
