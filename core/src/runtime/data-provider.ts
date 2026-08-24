@@ -131,6 +131,7 @@ function createDataProvider(options: DataProviderOptions) {
             callWorkerApi(resolveAccountRefId(accountRef), 'useSelfInteractionItemBatch', itemId, landIds)
         ),
         doFriendOp: (accountRef: string, gid: number, opType: string) => callWorkerApi(resolveAccountRefId(accountRef), 'doFriendOp', gid, opType),
+        delFriend: (accountRef: string, gid: number) => callWorkerApi(resolveAccountRefId(accountRef), 'delFriend', gid),
         getBag: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getBag'),
         getBagSeeds: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getBagSeeds'),
         getDiamondBalance: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getDiamondBalance'),
@@ -240,6 +241,11 @@ function createDataProvider(options: DataProviderOptions) {
                 'fertilizerBuyCheckIntervalMinutes',
                 'bagSeedPriority',
                 'bagSeedFallbackStrategy',
+                'autoAcceptFriendMinLevel',
+                'autoAcceptRequireOwnLevel',
+                'autoAcceptHarvestStealEnabled',
+                'autoAcceptHarvestStealHarvest',
+                'autoAcceptHarvestStealSteal',
             ]) {
                 copyIfPresent(key);
             }

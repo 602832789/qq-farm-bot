@@ -4,6 +4,7 @@ import { useIntervalFn } from '@vueuse/core'
 import { NButton } from 'naive-ui'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import CareerHarvestSteal from '@/components/CareerHarvestSteal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import LandCard from '@/components/LandCard.vue'
 import { useAccountStore } from '@/stores/account'
@@ -18,6 +19,7 @@ const toast = useToastStore()
 const {
   lands,
   summary,
+  career,
   loading,
   loaded,
   error,
@@ -430,6 +432,7 @@ onUnmounted(() => {
           <div class="i-carbon-warning" />
           <span class="font-body font-semibold">枯萎: {{ loaded && !error ? (summary?.dead || 0) : '--' }}</span>
         </div>
+        <CareerHarvestSteal v-if="loaded && !error" :career="career" />
       </div>
 
       <!-- Grid -->

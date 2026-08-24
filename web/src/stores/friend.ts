@@ -1,3 +1,4 @@
+import type { CareerHarvestSteal } from '@/components/CareerHarvestSteal.vue'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api from '@/api'
@@ -78,6 +79,7 @@ export const useFriendStore = defineStore('friend', () => {
   const friendLandsLoading = ref<Record<string, boolean>>({})
   const friendLandsError = ref<Record<string, string>>({})
   const friendLandsLoaded = ref<Record<string, boolean>>({})
+  const friendCareer = ref<Record<string, CareerHarvestSteal | null>>({})
   const blacklist = ref<BlacklistItem[]>([])
   const interactRecords = ref<any[]>([])
   const interactLoading = ref(false)
@@ -368,6 +370,65 @@ export const useFriendStore = defineStore('friend', () => {
     }
   }
 
+  async function deleteFriend(accountId: string, friend: { gid: number; name?: string; avatarUrl?: string }) {
+    const gid = Number(friend?.gid)
+    if (!accountId || !gid)
+      return { ok: false, message: '参数无效' }
+    try {
+      const res = await api.post(`/api/friend/${gid}/delete`, {}, {
+        headers: { 'x-account-id': accountId },
+        skipErrorToast: true,
+      } as any)
+      if (!res.data?.ok)
+        return { ok: false, message: res.data?.error || '删除好友失败' }
+
+      const key = String(gid)
+      friends.value = friends.value.filter(item => Number(item.gid) !== gid)
+      const nextLands = { ...friendLands.value }
+      const nextLandsLoading = { ...friendLandsLoading.value }
+      const nextLandsError = { ...friendLandsError.value }
+      const nextLandsLoaded = { ...friendLandsLoaded.value }
+      const nextCareer = { ...friendCareer.value }
+      delete nextLands[key]
+      delete nextLandsLoading[key]
+      delete nextLandsError[key]
+      delete nextLandsLoaded[key]
+      delete nextCareer[key]
+      friendLands.value = nextLands
+      friendLandsLoading.value = nextLandsLoading
+      friendLandsError.value = nextLandsError
+      friendLandsLoaded.value = nextLandsLoaded
+      friendCareer.value = nextCareer
+
+      await Promise.all([
+        fetchBlacklist(accountId),
+        fetchKnownFriendSettings(accountId),
+      ])
+      const displayName = String(friend.name || '').trim()
+      const displayAvatar = String(friend.avatarUrl || '').trim()
+      const existing = blacklist.value.find(item => Number(item.gid) === gid)
+      if (!existing) {
+        blacklist.value = [
+          ...blacklist.value,
+          { gid, name: displayName, avatarUrl: displayAvatar },
+        ]
+      }
+      else if ((!existing.name && displayName) || (!existing.avatarUrl && displayAvatar)) {
+        blacklist.value = blacklist.value.map(item => Number(item.gid) === gid
+          ? {
+              ...item,
+              name: item.name || displayName,
+              avatarUrl: item.avatarUrl || displayAvatar,
+            }
+          : item)
+      }
+      return { ok: true, message: res.data?.message || '删除好友成功' }
+    }
+    catch (e: any) {
+      return { ok: false, message: e?.response?.data?.error || e?.message || '删除好友失败' }
+    }
+  }
+
   async function fetchFriendLands(accountId: string, friendId: string) {
     if (!accountId || !friendId)
       return false
@@ -387,10 +448,12 @@ export const useFriendStore = defineStore('friend', () => {
         const lands = applyFriendLandOverlay(key, res.data.data.lands || [])
         const summary = res.data.data.summary || null
         friendLands.value[key] = lands
+        friendCareer.value = { ...friendCareer.value, [key]: res.data.data.career || null }
         syncFriendPlantSummary(key, lands, summary)
         return true
       }
       friendLands.value[key] = []
+      friendCareer.value = { ...friendCareer.value, [key]: null }
       friendLandsError.value[key] = String(res.data?.error || '无法读取好友土地')
       return false
     }
@@ -398,6 +461,7 @@ export const useFriendStore = defineStore('friend', () => {
       if (sequence !== friendLandRequestSequence)
         return false
       friendLands.value[key] = []
+      friendCareer.value = { ...friendCareer.value, [key]: null }
       const rawMessage = String(error?.response?.data?.error || error?.message || '')
       friendLandsError.value[key] = /gamepb\.|code=\d+|GatewayError/.test(rawMessage)
         ? '无法进入该好友农场，好友状态可能已变化，请刷新后重试'
@@ -418,6 +482,7 @@ export const useFriendStore = defineStore('friend', () => {
     friendLandsLoading.value = {}
     friendLandsError.value = {}
     friendLandsLoaded.value = {}
+    friendCareer.value = {}
     friendLandOverlays.value = {}
   }
 
@@ -650,6 +715,7 @@ export const useFriendStore = defineStore('friend', () => {
     friendLandsLoading,
     friendLandsError,
     friendLandsLoaded,
+    friendCareer,
     blacklist,
     interactRecords,
     interactLoading,
@@ -667,6 +733,7 @@ export const useFriendStore = defineStore('friend', () => {
     fetchFriends,
     fetchBlacklist,
     toggleBlacklist,
+    deleteFriend,
     fetchInteractRecords,
     fetchFriendLands,
     resetFriendLandState,

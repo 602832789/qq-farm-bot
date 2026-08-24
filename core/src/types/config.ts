@@ -19,6 +19,7 @@ export interface AutomationConfig {
   farm_push: boolean;
   land_upgrade: boolean;
   friend: boolean;
+  friend_auto_accept: boolean;
   friend_help_exp_limit: boolean;
   friend_steal: boolean;
   friend_help: boolean;
@@ -81,6 +82,11 @@ export interface AccountConfig {
   fertilizerBuyCheckIntervalMinutes: number;
   bagSeedPriority: number[];
   bagSeedFallbackStrategy: BagSeedFallbackStrategy;
+  autoAcceptFriendMinLevel: number;
+  autoAcceptRequireOwnLevel: boolean;
+  autoAcceptHarvestStealEnabled: boolean;
+  autoAcceptHarvestStealHarvest: number;
+  autoAcceptHarvestStealSteal: number;
 }
 
 export interface OfflineReminder {

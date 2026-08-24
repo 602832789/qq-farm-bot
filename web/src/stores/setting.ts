@@ -7,6 +7,7 @@ export interface AutomationConfig {
   farm_push?: boolean
   land_upgrade?: boolean
   friend?: boolean
+  friend_auto_accept?: boolean
   task?: boolean
   sell?: boolean
   fertilizer?: string
@@ -82,6 +83,11 @@ export interface SettingsState {
   fertilizerBuyNormalCount: number
   fertilizerBuyNormalThresholdHours: number
   fertilizerBuyCheckIntervalMinutes: number
+  autoAcceptFriendMinLevel: number
+  autoAcceptRequireOwnLevel: boolean
+  autoAcceptHarvestStealEnabled: boolean
+  autoAcceptHarvestStealHarvest: number
+  autoAcceptHarvestStealSteal: number
 }
 
 type SaveableSettingsKey
@@ -100,6 +106,11 @@ type SaveableSettingsKey
     | 'fertilizerBuyNormalCount'
     | 'fertilizerBuyNormalThresholdHours'
     | 'fertilizerBuyCheckIntervalMinutes'
+    | 'autoAcceptFriendMinLevel'
+    | 'autoAcceptRequireOwnLevel'
+    | 'autoAcceptHarvestStealEnabled'
+    | 'autoAcceptHarvestStealHarvest'
+    | 'autoAcceptHarvestStealSteal'
 
 export type SettingsSavePayload = Partial<Pick<SettingsState, SaveableSettingsKey>>
 
@@ -119,6 +130,11 @@ const SAVEABLE_SETTINGS_KEYS: SaveableSettingsKey[] = [
   'fertilizerBuyNormalCount',
   'fertilizerBuyNormalThresholdHours',
   'fertilizerBuyCheckIntervalMinutes',
+  'autoAcceptFriendMinLevel',
+  'autoAcceptRequireOwnLevel',
+  'autoAcceptHarvestStealEnabled',
+  'autoAcceptHarvestStealHarvest',
+  'autoAcceptHarvestStealSteal',
 ]
 
 function createDefaultSettings(): SettingsState {
@@ -148,6 +164,11 @@ function createDefaultSettings(): SettingsState {
     fertilizerBuyNormalCount: 10,
     fertilizerBuyNormalThresholdHours: 10,
     fertilizerBuyCheckIntervalMinutes: 30,
+    autoAcceptFriendMinLevel: 0,
+    autoAcceptRequireOwnLevel: false,
+    autoAcceptHarvestStealEnabled: true,
+    autoAcceptHarvestStealHarvest: 8,
+    autoAcceptHarvestStealSteal: 1,
   }
 }
 
@@ -201,6 +222,11 @@ export const useSettingStore = defineStore('setting', () => {
       fertilizerBuyNormalCount: data.fertilizerBuyNormalCount ?? defaults.fertilizerBuyNormalCount,
       fertilizerBuyNormalThresholdHours: data.fertilizerBuyNormalThresholdHours ?? defaults.fertilizerBuyNormalThresholdHours,
       fertilizerBuyCheckIntervalMinutes: data.fertilizerBuyCheckIntervalMinutes ?? defaults.fertilizerBuyCheckIntervalMinutes,
+      autoAcceptFriendMinLevel: data.autoAcceptFriendMinLevel ?? defaults.autoAcceptFriendMinLevel,
+      autoAcceptRequireOwnLevel: data.autoAcceptRequireOwnLevel ?? defaults.autoAcceptRequireOwnLevel,
+      autoAcceptHarvestStealEnabled: data.autoAcceptHarvestStealEnabled ?? defaults.autoAcceptHarvestStealEnabled,
+      autoAcceptHarvestStealHarvest: data.autoAcceptHarvestStealHarvest ?? defaults.autoAcceptHarvestStealHarvest,
+      autoAcceptHarvestStealSteal: data.autoAcceptHarvestStealSteal ?? defaults.autoAcceptHarvestStealSteal,
     }
   }
 

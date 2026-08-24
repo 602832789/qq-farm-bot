@@ -1,3 +1,4 @@
+import type { CareerHarvestSteal } from '@/components/CareerHarvestSteal.vue'
 import type {
   FriendInteractionBatchDto,
   FriendInteractionEffectDto,
@@ -27,6 +28,7 @@ export const useFarmStore = defineStore('farm', () => {
   const lands = ref<Land[]>([])
   const seeds = ref<any[]>([])
   const summary = ref<any>({})
+  const career = ref<CareerHarvestSteal | null>(null)
   const loading = ref(false)
   const loaded = ref(false)
   const error = ref('')
@@ -137,14 +139,17 @@ export const useFarmStore = defineStore('farm', () => {
       if (data && data.ok) {
         lands.value = applyLandOverlay(data.data.lands || [])
         summary.value = data.data.summary || {}
+        career.value = data.data.career || null
         return true
       }
+      career.value = null
       error.value = String(data?.error || '无法读取土地数据')
       return false
     }
     catch (cause: any) {
       if (sequence !== landRequestSequence)
         return false
+      career.value = null
       error.value = String(cause?.response?.data?.error || cause?.message || '无法读取土地数据，请稍后重试')
       return false
     }
@@ -160,6 +165,7 @@ export const useFarmStore = defineStore('farm', () => {
     landRequestSequence++
     lands.value = []
     summary.value = {}
+    career.value = null
     loading.value = false
     loaded.value = false
     error.value = ''
@@ -373,6 +379,7 @@ export const useFarmStore = defineStore('farm', () => {
   return {
     lands,
     summary,
+    career,
     seeds,
     loading,
     loaded,

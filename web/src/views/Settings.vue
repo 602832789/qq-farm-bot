@@ -793,6 +793,7 @@ const localAutomationSettings = ref({
     task: false,
     sell: true,
     friend: false,
+    friend_auto_accept: true,
     farm_push: false,
     land_upgrade: true,
     friend_steal: false,
@@ -820,6 +821,11 @@ const localAutomationSettings = ref({
   fertilizerBuyNormalCount: 10,
   fertilizerBuyNormalThresholdHours: 10,
   fertilizerBuyCheckIntervalMinutes: 30,
+  autoAcceptFriendMinLevel: 0,
+  autoAcceptRequireOwnLevel: false,
+  autoAcceptHarvestStealEnabled: true,
+  autoAcceptHarvestStealHarvest: 8,
+  autoAcceptHarvestStealSteal: 1,
 })
 
 const fertilizerOptions = [
@@ -838,6 +844,7 @@ function syncLocalAutomationSettings() {
         task: false,
         sell: false,
         friend: false,
+        friend_auto_accept: true,
         farm_push: false,
         land_upgrade: false,
         friend_steal: false,
@@ -867,6 +874,7 @@ function syncLocalAutomationSettings() {
         task: false,
         sell: false,
         friend: false,
+        friend_auto_accept: true,
         farm_push: false,
         land_upgrade: false,
         friend_steal: false,
@@ -903,6 +911,11 @@ function syncLocalAutomationSettings() {
     localAutomationSettings.value.fertilizerBuyNormalCount = settings.value.fertilizerBuyNormalCount ?? 10
     localAutomationSettings.value.fertilizerBuyNormalThresholdHours = settings.value.fertilizerBuyNormalThresholdHours ?? 10
     localAutomationSettings.value.fertilizerBuyCheckIntervalMinutes = settings.value.fertilizerBuyCheckIntervalMinutes ?? 30
+    localAutomationSettings.value.autoAcceptFriendMinLevel = settings.value.autoAcceptFriendMinLevel ?? 0
+    localAutomationSettings.value.autoAcceptRequireOwnLevel = settings.value.autoAcceptRequireOwnLevel ?? false
+    localAutomationSettings.value.autoAcceptHarvestStealEnabled = settings.value.autoAcceptHarvestStealEnabled ?? true
+    localAutomationSettings.value.autoAcceptHarvestStealHarvest = settings.value.autoAcceptHarvestStealHarvest ?? 8
+    localAutomationSettings.value.autoAcceptHarvestStealSteal = settings.value.autoAcceptHarvestStealSteal ?? 1
   }
 }
 

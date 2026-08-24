@@ -68,10 +68,32 @@ export async function acceptFriends(gids: number[]): Promise<any> {
     return types.AcceptFriendsReply.decode(replyBody);
 }
 
+export async function rejectFriends(gids: number[]): Promise<any> {
+    const body: Uint8Array = types.RejectFriendsRequest.encode(types.RejectFriendsRequest.create({
+        friend_gids: gids.map((g: number) => toLong(g)),
+    })).finish();
+    const { body: replyBody } = await sendMsgAsync('gamepb.friendpb.FriendService', 'RejectFriends', body);
+    return types.RejectFriendsReply.decode(replyBody);
+}
+
 export async function getApplications(): Promise<any> {
     const body: Uint8Array = types.GetApplicationsRequest.encode(types.GetApplicationsRequest.create({})).finish();
     const { body: replyBody } = await sendMsgAsync('gamepb.friendpb.FriendService', 'GetApplications', body);
     return types.GetApplicationsReply.decode(replyBody);
+}
+
+export async function delFriend(gid: number): Promise<any> {
+    const numericGid: number = toNum(gid);
+    if (!numericGid) throw new Error('无效的好友 GID');
+    if (!types.DelFriendRequest || !types.DelFriendReply) {
+        throw new Error('DelFriend 接口类型未加载');
+    }
+
+    const body: Uint8Array = types.DelFriendRequest.encode(types.DelFriendRequest.create({
+        friend_gid: toLong(numericGid),
+    })).finish();
+    const { body: replyBody } = await sendMsgAsync('gamepb.friendpb.FriendService', 'DelFriend', body);
+    return types.DelFriendReply.decode(replyBody);
 }
 
 export async function enterFriendFarm(friendGid: number): Promise<any> {

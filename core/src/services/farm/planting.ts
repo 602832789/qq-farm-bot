@@ -12,6 +12,7 @@ const { types } = require('../../utils/proto');
 const { getPlantRankings } = require('../analytics');
 const { recordOperation } = require('../stats');
 const { getBagSeeds } = require('../warehouse');
+const { getCareerInfoOrNull } = require('../career');
 const { getAllLands, buyGoods, removePlant } = require('./api');
 const {
     buildLandDetail,
@@ -515,26 +516,31 @@ async function getAvailableSeeds(): Promise<any[]> {
     });
 }
 
-async function getLandsDetail(): Promise<{ lands: any[]; summary: any }> {
+async function getLandsDetail(): Promise<{ lands: any[]; summary: any; career: any }> {
+    let lands: any[] = [];
+    let summary: any = {};
     try {
         const landsReply = await getAllLands();
-        if (!landsReply.lands) return { lands: [], summary: {} };
-        const nowSec: number = getServerTimeSec();
-        const landsMap = buildLandMap(landsReply.lands);
-        const lands: any[] = landsReply.lands.map((land: any) => buildLandDetail(land, {
-            friendMode: false,
-            landsMap,
-            nowSec,
-        }));
-
-        return {
-            lands,
-
-            summary: summarizeLandDetails(lands),
-        };
+        if (landsReply.lands) {
+            const nowSec: number = getServerTimeSec();
+            const landsMap = buildLandMap(landsReply.lands);
+            lands = landsReply.lands.map((land: any) => buildLandDetail(land, {
+                friendMode: false,
+                landsMap,
+                nowSec,
+            }));
+            summary = summarizeLandDetails(lands);
+        }
     } catch {
-        return { lands: [], summary: {} };
+        lands = [];
+        summary = {};
     }
+
+    return {
+        lands,
+        summary,
+        career: await getCareerInfoOrNull(getUserState().gid),
+    };
 }
 
 async function autoPlantEmptyLands(deadLandIds: number[], emptyLandIds: number[]): Promise<any> {

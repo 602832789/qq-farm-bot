@@ -5,6 +5,7 @@ import { NButton, NButtonGroup, NCard, NModal, NPagination, NSpin, NTab, NTabs }
 import { storeToRefs } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import api from '@/api'
+import CareerHarvestSteal from '@/components/CareerHarvestSteal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import LandCard from '@/components/LandCard.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
@@ -30,6 +31,7 @@ const {
   friendLandsLoading,
   friendLandsError,
   friendLandsLoaded,
+  friendCareer,
   blacklist,
   interactRecords,
   interactLoading,
@@ -533,6 +535,32 @@ async function handleToggleBlacklist(friend: any, e: Event) {
   await friendStore.toggleBlacklist(currentAccountId.value, Number(friend.gid))
 }
 
+async function handleDeleteFriend(friend: any, e: Event) {
+  e.stopPropagation()
+  if (!currentAccountId.value)
+    return
+  const gid = Number(friend?.gid) || 0
+  const name = String(friend?.name || `GID:${gid}`).trim()
+  confirmAction(
+    `确定删除好友 ${name} 吗？这会真正解除游戏好友关系且不可恢复，并加入本地黑名单。之后自动偷菜、帮忙、捣乱和自动同意申请都会跳过该好友。`,
+    async () => {
+      const result = await friendStore.deleteFriend(currentAccountId.value!, {
+        gid,
+        name: friend?.name,
+        avatarUrl: friend?.avatarUrl,
+      })
+      if (result?.ok) {
+        expandedFriends.value.delete(String(gid))
+        toast.success(result.message || `已删除好友: ${name}`)
+      }
+      else {
+        toast.error(result?.message || '删除好友失败')
+      }
+      return result
+    },
+  )
+}
+
 function getFriendStatusText(friend: any) {
   const p = friend.plant || {}
   const info = []
@@ -1016,6 +1044,15 @@ async function handleBatchAddKnownFriendGids() {
                   {{ blacklistGidSet.has(Number(friend.gid)) ? '移出黑名单' : '加入黑名单' }}
                 </NButton>
                 <NButton
+                  type="error"
+                  secondary
+                  size="small"
+                  :disabled="!currentAccountRunning"
+                  @click="handleDeleteFriend(friend, $event)"
+                >
+                  删除好友
+                </NButton>
+                <NButton
                   v-if="isQqAccount && knownFriendGidSet.has(Number(friend.gid))"
                   type="warning"
                   secondary
@@ -1062,6 +1099,12 @@ async function handleBatchAddKnownFriendGids() {
                 </NButton>
               </div>
               <template v-else>
+                <div
+                  v-if="friendCareer[friend.gid]"
+                  class="mb-3 flex flex-wrap gap-x-5 gap-y-2 text-sm"
+                >
+                  <CareerHarvestSteal :career="friendCareer[friend.gid]" />
+                </div>
                 <div class="mb-3 border border-amber-200 rounded-xl bg-amber-50/80 p-3 dark:border-amber-800 dark:bg-amber-950/25">
                   <div v-if="interactionItemsLoading" class="flex items-center justify-center gap-2 py-2 text-sm text-amber-700 dark:text-amber-300">
                     <span class="i-svg-spinners-90-ring-with-bg" />
@@ -1169,7 +1212,7 @@ async function handleBatchAddKnownFriendGids() {
       <div v-else-if="activeTab === 'blacklist'" class="space-y-4">
         <div class="farm-card rounded-2xl bg-white p-4 shadow-md dark:bg-gray-800">
           <p class="text-sm text-gray-500 dark:text-gray-400">
-            加入黑名单的好友在自动偷菜和帮助时会被跳过。
+            加入黑名单的好友在自动偷菜和帮助时会被跳过。游戏内删除好友后也会自动加入这里。
           </p>
         </div>
 
