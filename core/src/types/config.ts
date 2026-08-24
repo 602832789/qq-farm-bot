@@ -41,6 +41,7 @@ export interface AutomationConfig {
   fertilizer_land_types: FertilizerLandType[];
   fertilizer_smart_seconds: number;
   skip_own_weed_bug: boolean;
+  show_manual_fertilizer: boolean;
 }
 
 export interface IntervalConfig {

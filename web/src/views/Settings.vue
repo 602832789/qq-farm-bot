@@ -817,6 +817,7 @@ const localAutomationSettings = ref({
     fertilizer_multi_season: false,
     fertilizer_land_types: [...allFertilizerLandTypes],
     fertilizer_smart_seconds: 300,
+    show_manual_fertilizer: true,
   },
   fertilizerBuyOrganicCount: 10,
   fertilizerBuyOrganicThresholdHours: 10,
@@ -868,6 +869,7 @@ function syncLocalAutomationSettings() {
         fertilizer_multi_season: false,
         fertilizer_land_types: [...allFertilizerLandTypes],
         fertilizer_smart_seconds: 300,
+        show_manual_fertilizer: true,
       }
     }
     else {
@@ -898,6 +900,7 @@ function syncLocalAutomationSettings() {
         fertilizer_multi_season: false,
         fertilizer_land_types: [...allFertilizerLandTypes],
         fertilizer_smart_seconds: 300,
+        show_manual_fertilizer: true,
       }
       localAutomationSettings.value.automation = {
         ...defaults,
@@ -907,6 +910,9 @@ function syncLocalAutomationSettings() {
     localAutomationSettings.value.automation.fertilizer_land_types = normalizeFertilizerLandTypes(localAutomationSettings.value.automation.fertilizer_land_types)
     if (localAutomationSettings.value.automation.fertilizer_smart_seconds === undefined) {
       localAutomationSettings.value.automation.fertilizer_smart_seconds = 300
+    }
+    if (localAutomationSettings.value.automation.show_manual_fertilizer === undefined) {
+      localAutomationSettings.value.automation.show_manual_fertilizer = true
     }
     localAutomationSettings.value.fertilizerBuyOrganicCount = settings.value.fertilizerBuyOrganicCount ?? 10
     localAutomationSettings.value.fertilizerBuyOrganicThresholdHours = settings.value.fertilizerBuyOrganicThresholdHours ?? 10

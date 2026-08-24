@@ -402,7 +402,7 @@ function mutantIconUrl(icon: string) {
         <span class="i-carbon-wheat" /> 成熟不可偷
       </span>
       <span
-        v-if="organicRemainingText"
+        v-if="showFertilizerActions && organicRemainingText"
         class="inline-flex items-center gap-0.5 rounded-full bg-lime-100 px-1.5 py-0.5 text-[10px] text-lime-800 font-bold dark:bg-lime-900/40 dark:text-lime-300"
       >
         <span class="i-carbon-chemistry" /> {{ organicRemainingText }}

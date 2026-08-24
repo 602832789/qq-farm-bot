@@ -72,6 +72,7 @@ const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
         fertilizer_land_types: [...DEFAULT_FERTILIZER_LAND_TYPES],
         fertilizer_smart_seconds: 300,
         skip_own_weed_bug: true,
+        show_manual_fertilizer: true,
     },
     plantingStrategy: 'max_exp',
     preferredSeedId: 0,

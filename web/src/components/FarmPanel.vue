@@ -10,11 +10,13 @@ import ConfirmModal from '@/components/ConfirmModal.vue'
 import LandCard from '@/components/LandCard.vue'
 import { useAccountStore } from '@/stores/account'
 import { useFarmStore } from '@/stores/farm'
+import { useSettingStore } from '@/stores/setting'
 import { useStatusStore } from '@/stores/status'
 import { useToastStore } from '@/stores/toast'
 
 const farmStore = useFarmStore()
 const accountStore = useAccountStore()
+const settingStore = useSettingStore()
 const statusStore = useStatusStore()
 const toast = useToastStore()
 const {
@@ -37,6 +39,7 @@ const {
   fertilizeError,
 } = storeToRefs(farmStore)
 const { currentAccountId, currentAccount } = storeToRefs(accountStore)
+const { settings } = storeToRefs(settingStore)
 const { status } = storeToRefs(statusStore)
 
 const currentAccountConnected = computed(() => {
@@ -69,6 +72,8 @@ const interactionConfirmMessage = ref('')
 const selectedInteractionItem = computed<FriendInteractionItemDto | null>(() => (
   interactionItems.value.find(item => String(item.itemId) === selectedInteractionItemId.value) || null
 ))
+
+const showManualFertilizerButtons = computed(() => settings.value.automation?.show_manual_fertilizer !== false)
 
 async function executeOperate() {
   if (!currentAccountId.value || !confirmConfig.value.opType)
@@ -312,6 +317,7 @@ async function refreshFarmData() {
   await Promise.all([
     farmStore.fetchLands(accountId),
     farmStore.fetchInteractionItems(accountId),
+    settingStore.fetchSettings(accountId),
   ])
 }
 
@@ -326,6 +332,7 @@ async function refreshWithDogGifts() {
       farmStore.fetchLands(accountId),
       farmStore.fetchInteractionItems(accountId),
       farmStore.fetchDogSkillGiftStatus(accountId),
+      settingStore.fetchSettings(accountId),
     ])
   }
   finally {
@@ -636,7 +643,7 @@ onUnmounted(() => {
               :selected="isInteractionLandSelected(land)"
               :selection-disabled="isInteractionLandDisabled(land)"
               :selection-label="interactionLandSelectionLabel(land)"
-              :show-fertilizer-actions="isFertilizeCandidate(land)"
+              :show-fertilizer-actions="showManualFertilizerButtons && isFertilizeCandidate(land)"
               :fertilizer-pending="fertilizePending && fertilizingLandId === land.id"
               :normal-fertilizer-disabled="fertilizePending"
               :organic-fertilizer-disabled="fertilizePending || !canOrganicFertilize(land)"

@@ -29,6 +29,7 @@ export interface AutomationConfig {
   mystery_shop_arrival_notify?: boolean
   mystery_shop_purchase_notify?: boolean
   skip_own_weed_bug?: boolean
+  show_manual_fertilizer?: boolean
 }
 
 export interface IntervalsConfig {
