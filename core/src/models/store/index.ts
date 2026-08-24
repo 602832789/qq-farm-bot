@@ -14,6 +14,7 @@ module.exports = {
     getPreferredSeed: accountConfig.getPreferredSeed,
     getPlantingStrategy: accountConfig.getPlantingStrategy,
     getBagSeedPriority: accountConfig.getBagSeedPriority,
+    getBagSeedLandTypes: accountConfig.getBagSeedLandTypes,
     getBagSeedFallbackStrategy: accountConfig.getBagSeedFallbackStrategy,
     getIntervals: accountConfig.getIntervals,
     getFriendQuietHours: accountConfig.getFriendQuietHours,

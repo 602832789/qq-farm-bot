@@ -23,7 +23,7 @@ function int64String(value: any): string {
 }
 
 function getLeftInorcFertTimes(plant: any): number | null {
-    if (!plant || !Object.prototype.hasOwnProperty.call(plant, 'left_inorc_fert_times')) {
+    if (!plant || !Object.hasOwn(plant, 'left_inorc_fert_times')) {
         return null;
     }
     return toNum(plant.left_inorc_fert_times);
@@ -375,7 +375,7 @@ function getOrganicFertilizerTargetsFromLands(lands: any[]): number[] {
         if (currentPhase.phase === PlantPhase.DEAD) continue;
 
         // 服务端有该字段时，<=0 说明该地当前不能再施有机肥
-        if (Object.prototype.hasOwnProperty.call(plant, 'left_inorc_fert_times')) {
+        if (Object.hasOwn(plant, 'left_inorc_fert_times')) {
             const leftTimes = toNum(plant.left_inorc_fert_times);
             if (leftTimes <= 0) continue;
         }
@@ -412,7 +412,7 @@ function getFastMatureLands(lands: any[], thresholdSec: number = 300): number[] 
         const timeToMature = matureBeginTime - nowSec;
 
         if (timeToMature <= threshold && timeToMature >= 0) {
-            if (Object.prototype.hasOwnProperty.call(plant, 'left_inorc_fert_times')) {
+            if (Object.hasOwn(plant, 'left_inorc_fert_times')) {
                 const leftTimes = toNum(plant.left_inorc_fert_times);
                 if (leftTimes <= 0) continue;
             }
@@ -930,6 +930,7 @@ module.exports = {
     buildSlaveToMasterMap,
     isOccupiedSlaveLandWithMap,
     summarizeLandDetails,
+    ALL_FERTILIZER_LAND_TYPES,
     getLandTypeByLevel,
     normalizeFertilizerLandTypes,
     filterLandIdsByTypes,

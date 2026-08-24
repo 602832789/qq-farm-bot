@@ -221,15 +221,15 @@ function createDataProvider(options: DataProviderOptions) {
             const body = (payload && typeof payload === 'object') ? payload : {};
             const snapshot: Record<string, any> = {};
             const copyIfPresent = (sourceKey: string, targetKey: string = sourceKey): void => {
-                if (Object.prototype.hasOwnProperty.call(body, sourceKey)) {
+                if (Object.hasOwn(body, sourceKey)) {
                     snapshot[targetKey] = body[sourceKey];
                 }
             };
 
             copyIfPresent('plantingStrategy');
-            if (!Object.prototype.hasOwnProperty.call(snapshot, 'plantingStrategy')) copyIfPresent('strategy', 'plantingStrategy');
+            if (!Object.hasOwn(snapshot, 'plantingStrategy')) copyIfPresent('strategy', 'plantingStrategy');
             copyIfPresent('preferredSeedId');
-            if (!Object.prototype.hasOwnProperty.call(snapshot, 'preferredSeedId')) copyIfPresent('seedId', 'preferredSeedId');
+            if (!Object.hasOwn(snapshot, 'preferredSeedId')) copyIfPresent('seedId', 'preferredSeedId');
             for (const key of [
                 'automation',
                 'intervals',
@@ -243,6 +243,7 @@ function createDataProvider(options: DataProviderOptions) {
                 'fertilizerBuyNormalThresholdHours',
                 'fertilizerBuyCheckIntervalMinutes',
                 'bagSeedPriority',
+                'bagSeedLandTypes',
                 'bagSeedFallbackStrategy',
                 'autoAcceptFriendMinLevel',
                 'autoAcceptRequireOwnLevel',
