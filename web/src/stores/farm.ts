@@ -8,6 +8,8 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api from '@/api'
 
+export type FertilizerType = 'normal' | 'organic'
+
 export interface Land {
   id: number
   plantName?: string
@@ -18,7 +20,23 @@ export interface Land {
   needWater?: boolean
   needWeed?: boolean
   needBug?: boolean
+  leftInorcFertTimes?: number | null
   [key: string]: any
+}
+
+export interface FertilizeLandResult {
+  landId: number
+  fertilizerType: FertilizerType
+  fertilizerRemainingSec: number
+  updatedLand?: Land | null
+}
+
+function userFacingFertilizeError(raw: unknown, fallback = '施肥失败') {
+  const text = String(raw || '').trim()
+  if (!text)
+    return fallback
+  const chinese = text.match(/错误:\s*code=\d+\s+(.+)$/)?.[1]
+  return (chinese || text).trim() || fallback
 }
 
 // UseReply.land 是刚成功操作后的权威快照，短期内不允许被随后的 AllLands 旧快照覆盖。
@@ -44,6 +62,8 @@ export const useFarmStore = defineStore('farm', () => {
   const dogSkillGiftClaiming = ref(false)
   const dogSkillGiftError = ref('')
   const dogSkillGiftAccountId = ref('')
+  const fertilizePending = ref(false)
+  const fertilizeError = ref('')
   let landRequestSequence = 0
   let interactionItemsRequestSequence = 0
   let dogSkillGiftRequestSequence = 0
@@ -170,6 +190,8 @@ export const useFarmStore = defineStore('farm', () => {
     loaded.value = false
     error.value = ''
     landOverlay = null
+    fertilizePending.value = false
+    fertilizeError.value = ''
     resetInteractionState()
     resetDogSkillGiftState()
   }
@@ -366,6 +388,39 @@ export const useFarmStore = defineStore('farm', () => {
       seeds.value = data.data || []
   }
 
+  async function fertilizeLand(accountId: string, landId: number, fertilizerType: FertilizerType) {
+    if (!accountId || !landId || fertilizePending.value)
+      return false
+    fertilizePending.value = true
+    fertilizeError.value = ''
+    try {
+      const res = await api.post('/api/farm/fertilize', {
+        landId,
+        fertilizerType,
+      }, {
+        headers: { 'x-account-id': accountId },
+        skipErrorToast: true,
+      } as any)
+      if (!res.data?.ok) {
+        fertilizeError.value = userFacingFertilizeError(res.data?.error)
+        return false
+      }
+      const result = res.data.data as FertilizeLandResult
+      if (result?.updatedLand)
+        recordLandUpdates([result.updatedLand])
+      else
+        await fetchLands(accountId)
+      return result
+    }
+    catch (cause: any) {
+      fertilizeError.value = userFacingFertilizeError(cause?.response?.data?.error || cause?.message)
+      return false
+    }
+    finally {
+      fertilizePending.value = false
+    }
+  }
+
   async function operate(accountId: string, opType: string) {
     if (!accountId)
       return
@@ -393,6 +448,8 @@ export const useFarmStore = defineStore('farm', () => {
     dogSkillGiftStatusLoading,
     dogSkillGiftClaiming,
     dogSkillGiftError,
+    fertilizePending,
+    fertilizeError,
     fetchLands,
     resetLandState,
     fetchSeeds,
@@ -404,5 +461,6 @@ export const useFarmStore = defineStore('farm', () => {
     fetchDogSkillGiftStatus,
     claimDogSkillGifts,
     resetDogSkillGiftState,
+    fertilizeLand,
   }
 })

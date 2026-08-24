@@ -7,15 +7,26 @@ const props = withDefaults(defineProps<{
   selected?: boolean
   selectionDisabled?: boolean
   selectionLabel?: string
+  showFertilizerActions?: boolean
+  fertilizerPending?: boolean
+  normalFertilizerDisabled?: boolean
+  organicFertilizerDisabled?: boolean
+  organicFertilizerLabel?: string
 }>(), {
   selectable: false,
   selected: false,
   selectionDisabled: false,
   selectionLabel: '',
+  showFertilizerActions: false,
+  fertilizerPending: false,
+  normalFertilizerDisabled: false,
+  organicFertilizerDisabled: false,
+  organicFertilizerLabel: '',
 })
 
 const emit = defineEmits<{
   select: [land: any]
+  fertilize: [land: any, fertilizerType: 'normal' | 'organic']
 }>()
 
 const land = computed(() => props.land)
@@ -154,6 +165,24 @@ function activateSelection() {
   if (props.selectable && !props.selectionDisabled)
     emit('select', props.land)
 }
+
+function requestFertilize(event: Event, fertilizerType: 'normal' | 'organic') {
+  event.stopPropagation()
+  if (props.fertilizerPending)
+    return
+  if (fertilizerType === 'normal' && props.normalFertilizerDisabled)
+    return
+  if (fertilizerType === 'organic' && props.organicFertilizerDisabled)
+    return
+  emit('fertilize', props.land, fertilizerType)
+}
+
+const organicRemainingText = computed(() => {
+  const left = land.value?.leftInorcFertTimes
+  if (left == null || Number.isNaN(Number(left)))
+    return ''
+  return `有机剩 ${Math.max(0, Number(left))}`
+})
 
 function interactionEffectBadges(land: any) {
   const effects = Array.isArray(land?.interactionEffects) ? land.interactionEffects : []
@@ -372,6 +401,37 @@ function mutantIconUrl(icon: string) {
       >
         <span class="i-carbon-wheat" /> 成熟不可偷
       </span>
+      <span
+        v-if="organicRemainingText"
+        class="inline-flex items-center gap-0.5 rounded-full bg-lime-100 px-1.5 py-0.5 text-[10px] text-lime-800 font-bold dark:bg-lime-900/40 dark:text-lime-300"
+      >
+        <span class="i-carbon-chemistry" /> {{ organicRemainingText }}
+      </span>
+    </div>
+
+    <div v-if="showFertilizerActions" class="fertilizer-actions mt-2 w-full" @click.stop>
+      <button
+        type="button"
+        class="fertilizer-action fertilizer-action--normal"
+        :disabled="fertilizerPending || normalFertilizerDisabled"
+        title="对该地块施一次普通化肥"
+        @click="requestFertilize($event, 'normal')"
+      >
+        <span v-if="fertilizerPending" class="i-svg-spinners-90-ring-with-bg" />
+        <span v-else class="i-carbon-chemistry" />
+        普通
+      </button>
+      <button
+        type="button"
+        class="fertilizer-action fertilizer-action--organic"
+        :disabled="fertilizerPending || organicFertilizerDisabled"
+        :title="organicFertilizerDisabled ? (organicFertilizerLabel || '已无法再施有机肥') : '对该地块施一次有机化肥'"
+        @click="requestFertilize($event, 'organic')"
+      >
+        <span v-if="fertilizerPending" class="i-svg-spinners-90-ring-with-bg" />
+        <span v-else class="i-carbon-sprout" />
+        有机
+      </button>
     </div>
   </div>
 </template>
@@ -898,5 +958,55 @@ function mutantIconUrl(icon: string) {
 .badge-bug,
 .badge-harvest {
   animation: none;
+}
+
+.fertilizer-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.fertilizer-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 26px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.fertilizer-action--normal {
+  color: #5b4630;
+  background: #fff4d6;
+  border-color: #ead28a;
+}
+
+.fertilizer-action--organic {
+  color: #245f4b;
+  background: #e8f7ea;
+  border-color: #b5dcb8;
+}
+
+.fertilizer-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+:global(.dark) .fertilizer-action--normal {
+  color: #fde68a;
+  background: rgba(120, 90, 20, 0.35);
+  border-color: rgba(234, 210, 138, 0.4);
+}
+
+:global(.dark) .fertilizer-action--organic {
+  color: #bbf7d0;
+  background: rgba(20, 80, 50, 0.35);
+  border-color: rgba(181, 220, 184, 0.35);
 }
 </style>

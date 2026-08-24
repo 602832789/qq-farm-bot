@@ -13,7 +13,7 @@ const { getPlantRankings } = require('../analytics');
 const { recordOperation } = require('../stats');
 const { getBagSeeds } = require('../warehouse');
 const { getCareerInfoOrNull } = require('../career');
-const { getAllLands, buyGoods, removePlant } = require('./api');
+const { getAllLands, buyGoods, removePlant, fertilizeOne } = require('./api');
 const {
     buildLandDetail,
     analyzeLands,
@@ -44,6 +44,7 @@ interface PlantSeedsResult {
 }
 
 const NORMAL_FERTILIZER_ID: number = 1011;
+const ORGANIC_FERTILIZER_ID: number = 1012;
 const ALL_FERTILIZER_LAND_TYPES: string[] = ['gold', 'black', 'red', 'normal'];
 
 function confirmsPlantedFootprint(
@@ -871,6 +872,56 @@ async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNo
     return { normal: fertilizedNormal, organic: fertilizedOrganic };
 }
 
+async function fertilizeOwnLand(landIdInput: unknown, fertilizerTypeInput: unknown): Promise<any> {
+    const landId = toNum(landIdInput);
+    if (!landId || landId <= 0) {
+        throw new Error('地块编号无效');
+    }
+
+    const fertilizerType = String(fertilizerTypeInput || '').trim().toLowerCase();
+    if (fertilizerType !== 'normal' && fertilizerType !== 'organic') {
+        throw new Error('化肥类型必须是 normal 或 organic');
+    }
+
+    const fertilizerId = fertilizerType === 'organic' ? ORGANIC_FERTILIZER_ID : NORMAL_FERTILIZER_ID;
+    const typeName = fertilizerType === 'organic' ? '有机化肥' : '普通化肥';
+    let reply: any;
+    try {
+        reply = await fertilizeOne(landId, fertilizerId);
+    }
+    catch (error: any) {
+        const message = String(error?.errorMessage || '').trim()
+            || String(error?.message || '').replace(/^[\s\S]*错误:\s*code=\d+\s+/, '').trim()
+            || `${typeName}使用失败`;
+        throw new Error(message);
+    }
+    const replyLands = Array.isArray(reply && reply.land) ? reply.land : [];
+    const updatedRaw = replyLands.find((land: any) => toNum(land?.id) === landId) || replyLands[0] || null;
+    const nowSec = getServerTimeSec();
+    const landsMap = updatedRaw ? buildLandMap([updatedRaw]) : new Map();
+    const updatedLand = updatedRaw
+        ? buildLandDetail(updatedRaw, { friendMode: false, landsMap, nowSec })
+        : null;
+    const fertilizerRemainingSec = toNum(reply && reply.fertilizer);
+
+    recordOperation('fertilize', 1);
+    log('施肥', `手动施肥：第 ${landId} 块地已施${typeName}`, {
+        module: 'farm',
+        event: '手动施肥',
+        result: 'ok',
+        type: fertilizerType,
+        landId,
+        remainingSec: fertilizerRemainingSec,
+    });
+
+    return {
+        landId,
+        fertilizerType,
+        fertilizerRemainingSec,
+        updatedLand,
+    };
+}
+
 module.exports = {
     getPlantSizeBySeedId,
     plantSeeds,
@@ -883,4 +934,5 @@ module.exports = {
     autoPlantEmptyLands,
     plantFromShop,
     runFertilizerByConfig,
+    fertilizeOwnLand,
 };

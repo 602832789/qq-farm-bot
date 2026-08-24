@@ -86,6 +86,19 @@ const ORGANIC_FERTILIZER_ID: number = 1012;
 const MAX_ORGANIC_FERTILIZE_OPERATIONS: number = 240;
 const MAX_ORGANIC_FERTILIZE_ROUNDS: number = 20;
 
+async function fertilizeOne(landId: number, fertilizerId: number = NORMAL_FERTILIZER_ID): Promise<any> {
+    const body = types.FertilizeRequest.encode(types.FertilizeRequest.create({
+        land_ids: [toLong(landId)],
+        fertilizer_id: toLong(fertilizerId),
+    })).finish();
+    const { body: replyBody } = await sendMsgAsync('gamepb.plantpb.PlantService', 'Fertilize', body);
+    const reply = types.FertilizeReply.decode(replyBody);
+    if (reply.operation_limits && onOperationLimitsUpdate) {
+        onOperationLimitsUpdate(reply.operation_limits);
+    }
+    return reply;
+}
+
 /**
  * 施肥 - 必须逐块进行，服务器不支持批量
  * 游戏中拖动施肥间隔很短，这里用 50ms
@@ -224,6 +237,7 @@ module.exports = {
     waterLand,
     farming,
     encodeOwnFarmingRequest,
+    fertilizeOne,
     fertilize,
     fertilizeOrganicLoop,
     removePlant,

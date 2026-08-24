@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { FertilizerType } from '@/stores/farm'
 import type { FriendInteractionItemDto, FriendInteractionResultDto } from '@/stores/friend'
 import { useIntervalFn } from '@vueuse/core'
 import { NButton } from 'naive-ui'
@@ -32,6 +33,8 @@ const {
   dogSkillGiftStatusLoading,
   dogSkillGiftClaiming,
   dogSkillGiftError,
+  fertilizePending,
+  fertilizeError,
 } = storeToRefs(farmStore)
 const { currentAccountId, currentAccount } = storeToRefs(accountStore)
 const { status } = storeToRefs(statusStore)
@@ -47,6 +50,7 @@ const currentAccountRunning = computed(() => (
 ))
 
 const operating = ref(false)
+const fertilizingLandId = ref<number | null>(null)
 const manualRefreshing = ref(false)
 const refreshIconClass = 'i-carbon-renew'
 const confirmVisible = ref(false)
@@ -206,6 +210,58 @@ function interactionFailures() {
   return results.filter(result => !result.ok)
 }
 
+function isFertilizeCandidate(land: any) {
+  return !!land?.unlocked
+    && !land?.occupiedByMaster
+    && String(land?.status || '') === 'growing'
+    && Number(land?.matureInSec) > 0
+}
+
+function canOrganicFertilize(land: any) {
+  const left = land?.leftInorcFertTimes
+  return left == null || Number(left) > 0
+}
+
+function organicFertilizerLabel(land: any) {
+  const left = land?.leftInorcFertTimes
+  if (left != null && Number(left) <= 0)
+    return '已无法再施有机肥'
+  return ''
+}
+
+function formatFertilizerRemaining(sec: number) {
+  const remaining = Number(sec) || 0
+  if (remaining <= 0)
+    return ''
+  return `剩余 ${(remaining / 3600).toFixed(1)}h`
+}
+
+async function handleFertilize(land: any, fertilizerType: FertilizerType) {
+  if (!currentAccountId.value || fertilizePending.value || !isFertilizeCandidate(land))
+    return
+  if (fertilizerType === 'organic' && !canOrganicFertilize(land)) {
+    toast.info('该地块已无法再施有机肥')
+    return
+  }
+
+  const typeName = fertilizerType === 'organic' ? '有机化肥' : '普通化肥'
+  const landId = Number(land.id)
+  fertilizingLandId.value = landId
+  try {
+    const result = await farmStore.fertilizeLand(currentAccountId.value, landId, fertilizerType)
+    if (!result) {
+      toast.error(fertilizeError.value || `${typeName}使用失败`)
+      return
+    }
+    const remainingText = formatFertilizerRemaining(Number(result.fertilizerRemainingSec || 0))
+    toast.success(remainingText ? `已施${typeName}，${remainingText}` : `已施${typeName}`)
+  }
+  finally {
+    if (fertilizingLandId.value === landId)
+      fertilizingLandId.value = null
+  }
+}
+
 function requestUseInteractionItem() {
   const item = selectedInteractionItem.value
   if (!currentAccountId.value || !item || selectedInteractionIds(item.itemId).length === 0)
@@ -298,6 +354,7 @@ async function claimDogSkillGifts() {
 
 watch(currentAccountId, () => {
   farmStore.resetLandState()
+  fertilizingLandId.value = null
   selectedInteractionItemId.value = ''
   selectedInteractionLandIds.value = {}
   lastInteractionResults.value = {}
@@ -579,7 +636,13 @@ onUnmounted(() => {
               :selected="isInteractionLandSelected(land)"
               :selection-disabled="isInteractionLandDisabled(land)"
               :selection-label="interactionLandSelectionLabel(land)"
+              :show-fertilizer-actions="isFertilizeCandidate(land)"
+              :fertilizer-pending="fertilizePending && fertilizingLandId === land.id"
+              :normal-fertilizer-disabled="fertilizePending"
+              :organic-fertilizer-disabled="fertilizePending || !canOrganicFertilize(land)"
+              :organic-fertilizer-label="organicFertilizerLabel(land)"
               @select="toggleInteractionLand(land)"
+              @fertilize="handleFertilize"
             />
           </div>
         </div>

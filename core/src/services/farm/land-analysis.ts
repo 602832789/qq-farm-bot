@@ -22,6 +22,13 @@ function int64String(value: any): string {
     return /^-?\d+$/.test(text) ? text : '0';
 }
 
+function getLeftInorcFertTimes(plant: any): number | null {
+    if (!plant || !Object.prototype.hasOwnProperty.call(plant, 'left_inorc_fert_times')) {
+        return null;
+    }
+    return toNum(plant.left_inorc_fert_times);
+}
+
 function normalizePositiveId(value: any): string {
     const text = int64String(value);
     return /^\d+$/.test(text) && text !== '0' ? text : '';
@@ -234,6 +241,7 @@ function buildLandDetail(land: any, options: { friendMode?: boolean; landsMap?: 
         isMutated: false,
         interactionEffects: [],
         protocolField40: null,
+        leftInorcFertTimes: null,
     };
     if (!base.unlocked) {
         return {
@@ -315,6 +323,7 @@ function buildLandDetail(land: any, options: { friendMode?: boolean; landsMap?: 
         isMutated: mutantConfigIds.length > 0,
         interactionEffects: getPlantInteractionEffects(plant),
         protocolField40: protocolField40.length > 0 ? protocolField40 : null,
+        leftInorcFertTimes: getLeftInorcFertTimes(plant),
     };
 }
 

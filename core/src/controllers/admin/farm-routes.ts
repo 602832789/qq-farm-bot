@@ -514,6 +514,19 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
         }
     });
 
+    // API: 对自己农场的指定地块手动施一次化肥。
+    app.post('/api/farm/fertilize', async (req: Request, res: Response) => {
+        const id = getAccId(ctx, req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+
+        try {
+            const data = await ctx.provider.fertilizeOwnLand(id, req.body?.landId, req.body?.fertilizerType);
+            res.json({ ok: true, data });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    });
+
     // API: 农场一键操作
     app.post('/api/farm/operate', async (req: Request, res: Response) => {
         const id = getAccId(ctx, req);
