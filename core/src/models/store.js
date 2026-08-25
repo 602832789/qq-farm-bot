@@ -257,6 +257,17 @@ const DEFAULT_QUIET_HOURS = {
 
 /** 默认植物黑名单（一些特殊/活动作物ID） */
 const DEFAULT_PLANT_BLACKLIST = [20002, 26739, 20059, 20065, 20064, 20060, 20061];
+const DEFAULT_CAPITAL_MODE = { enabled: false, dogId: 0, leadSeconds: 10 };
+
+function normalizeCapitalMode(value, fallback = DEFAULT_CAPITAL_MODE) {
+    const input = value && typeof value === 'object' ? value : {};
+    const base = fallback && typeof fallback === 'object' ? fallback : DEFAULT_CAPITAL_MODE;
+    return {
+        enabled: input.enabled !== undefined ? input.enabled === true : base.enabled === true,
+        dogId: Math.max(0, Number(input.dogId ?? input.selectedDogId ?? base.dogId) || 0),
+        leadSeconds: Math.max(5, Math.min(300, Number(input.leadSeconds ?? input.secondsBeforeMature ?? base.leadSeconds) || 10))
+    };
+}
 
 /** 默认账号配置 */
 const DEFAULT_ACCOUNT_CONFIG = {
@@ -284,7 +295,8 @@ const DEFAULT_ACCOUNT_CONFIG = {
     bagSeedFallbackStrategy: 'level',
     autoAcceptFriendMinLevel: 0,
     goldenBugKeepCount: 0,
-    goldenBugRoundLimit: 24
+    goldenBugRoundLimit: 24,
+    capitalMode: DEFAULT_CAPITAL_MODE
 };
 
 const ALLOWED_AUTOMATION_KEYS = new Set(Object.keys(DEFAULT_ACCOUNT_CONFIG.automation));
@@ -521,7 +533,8 @@ function cloneAccountConfig(config = DEFAULT_ACCOUNT_CONFIG) {
         goldenBugRoundLimit: Math.max(1, Math.min(100, Number(config.goldenBugRoundLimit) || 24)),
         bagSeedPriority: normalizeBagSeedPriority(config.bagSeedPriority),
         bagSeedKnownIds: normalizeBagSeedPriority(config.bagSeedKnownIds),
-        bagSeedFallbackStrategy: normalizeBagSeedFallbackStrategy(config.bagSeedFallbackStrategy)
+        bagSeedFallbackStrategy: normalizeBagSeedFallbackStrategy(config.bagSeedFallbackStrategy),
+        capitalMode: normalizeCapitalMode(config.capitalMode)
     };
 }
 
@@ -609,6 +622,10 @@ function normalizeAccountConfig(raw, fallbackConfig = accountFallbackConfig) {
             enabled: input.autoCodeRefresh.enabled === true,
             intervalMinutes: Math.max(1, Math.min(1440, Number(input.autoCodeRefresh.intervalMinutes) || 60))
         };
+    }
+
+    if (input.capitalMode && typeof input.capitalMode === 'object') {
+        cfg.capitalMode = normalizeCapitalMode(input.capitalMode, cfg.capitalMode);
     }
 
     // 种植策略
@@ -1172,6 +1189,9 @@ function applyConfigSnapshot(patch = {}, opts = {}) {
     if (patch.bagSeedFallbackStrategy !== undefined && patch.bagSeedFallbackStrategy !== null) {
         cfg.bagSeedFallbackStrategy = normalizeBagSeedFallbackStrategy(patch.bagSeedFallbackStrategy);
     }
+    if (patch.capitalMode && typeof patch.capitalMode === 'object') {
+        cfg.capitalMode = normalizeCapitalMode(patch.capitalMode, cfg.capitalMode);
+    }
     if (patch.ui && typeof patch.ui === 'object') {
         const theme = String(patch.ui.theme || '').toLowerCase();
         if (theme === 'dark' || theme === 'light') {
@@ -1209,6 +1229,14 @@ function setAutoCodeRefresh(accountId, config) {
         }
     }, { accountId });
     return result.autoCodeRefresh;
+}
+
+function getCapitalMode(accountId) {
+    return normalizeCapitalMode(getAccountConfigSnapshot(accountId).capitalMode);
+}
+
+function setCapitalMode(accountId, config) {
+    return applyConfigSnapshot({ capitalMode: config || {} }, { accountId }).capitalMode;
 }
 
 function isAutomationOn(key, accountId) {
@@ -1819,6 +1847,8 @@ module.exports = {
     setAutomation,
     getAutoCodeRefresh,
     setAutoCodeRefresh,
+    getCapitalMode,
+    setCapitalMode,
     isAutomationOn,
     getPlantingStrategy,
     getPrioritize2x2Crops,
@@ -1894,3 +1924,5 @@ module.exports = {
     setAntiResaleConfig,
     DEFAULT_ANTI_RESALE_CONFIG
 };
+
+module.exports._test = { ...(module.exports._test || {}), normalizeCapitalMode };

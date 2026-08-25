@@ -738,12 +738,15 @@ function stopUnifiedScheduler() {
 
 function applyRuntimeConfig(config, syncStatusAfter = false) {
     const prevAuto = getAutomation();
+    const prevCapitalMode = require('../models/store').getCapitalMode();
     const accountId = process.env.FARM_ACCOUNT_ID || '';
 
     applyConfigSnapshot(config || {}, {
         persist: false,
         accountId
     });
+    const nextCapitalMode = require('../models/store').getCapitalMode();
+    require('../services/capital-mode').reconcileConfigChange(prevCapitalMode, nextCapitalMode).catch(() => null);
 
     const revision = Number((config || {}).__revision || 0);
     if (revision > 0) appliedConfigRevision = revision;
@@ -1195,6 +1198,23 @@ async function handleApiCall(msg) {
             }
             case 'claimDogSkillGifts':
                 result = await require('../services/dog-skill-gifts').checkAndClaimDogSkillGifts();
+                break;
+            case 'getPetOverview':
+                result = await require('../services/pets').getPetOverview();
+                break;
+            case 'deployDog':
+                require('../services/capital-mode').releaseForManualCommand();
+                result = await require('../services/pets').deployDog(args[0]);
+                break;
+            case 'withdrawDog':
+                require('../services/capital-mode').releaseForManualCommand();
+                result = await require('../services/pets').withdrawDog();
+                break;
+            case 'feedDog':
+                result = await require('../services/pets').feedDog(args[0], args[1]);
+                break;
+            case 'getProtectLogs':
+                result = await require('../services/pets').getProtectLogs();
                 break;
             case 'useItem': {
                 const { useItem } = require('../services/warehouse');
