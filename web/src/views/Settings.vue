@@ -254,7 +254,7 @@ const localStrategySettings = ref({
   stealDelaySeconds: 0,
   plantOrderRandom: false,
   plantDelaySeconds: 0,
-  intervals: { farmMin: 2, farmMax: 5, helpMin: 10, helpMax: 15, stealMin: 10, stealMax: 15 },
+  intervals: { farmMin: 2, farmMax: 5, friendMin: 10, friendMax: 15 },
   friendQuietHours: { enabled: false, start: '23:00', end: '07:00', continueFarm: true },
 })
 
@@ -1733,29 +1733,14 @@ async function handleResetSystemConfig() {
 
             <div class="grid grid-cols-2 gap-3 md:grid-cols-2">
               <BaseInput
-                v-model.number="localStrategySettings.intervals.helpMin"
-                label="帮助巡查最小 (秒)"
+                v-model.number="localStrategySettings.intervals.friendMin"
+                label="好友任务最小 (秒)"
                 type="number"
                 min="1"
               />
               <BaseInput
-                v-model.number="localStrategySettings.intervals.helpMax"
-                label="帮助巡查最大 (秒)"
-                type="number"
-                min="1"
-              />
-            </div>
-
-            <div class="grid grid-cols-2 gap-3 md:grid-cols-2">
-              <BaseInput
-                v-model.number="localStrategySettings.intervals.stealMin"
-                label="偷菜巡查最小 (秒)"
-                type="number"
-                min="1"
-              />
-              <BaseInput
-                v-model.number="localStrategySettings.intervals.stealMax"
-                label="偷菜巡查最大 (秒)"
+                v-model.number="localStrategySettings.intervals.friendMax"
+                label="好友任务最大 (秒)"
                 type="number"
                 min="1"
               />

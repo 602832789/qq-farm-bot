@@ -32,6 +32,18 @@ function mountFriendRoutes(app: Application, ctx: AdminContext): void {
         }
     });
 
+    // 仅读取 Worker 内存/JSON 宠物缓存，不触发任何游戏协议请求。
+    app.get('/api/friends/cache', async (req: Request, res: Response) => {
+        const id = getAccId(ctx, req);
+        if (!id) return res.status(400).json({ ok: false });
+        try {
+            const data = await ctx.provider.getFriendsCache(id);
+            res.json({ ok: true, data });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    });
+
     // 清除好友列表缓存
     app.post('/api/friends/clear-cache', async (req: Request, res: Response) => {
         const id = getAccId(ctx, req);

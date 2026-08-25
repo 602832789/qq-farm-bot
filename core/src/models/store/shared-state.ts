@@ -80,6 +80,8 @@ const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
         farm: 2,
         farmMin: 20,
         farmMax: 25,
+        friendMin: 20,
+        friendMax: 25,
         helpMin: 20,
         helpMax: 25,
         stealMin: 20,
@@ -247,11 +249,18 @@ function normalizeIntervals(intervals: Partial<IntervalConfig> | undefined): Int
     let stealMax = toSec(src.stealMax, 10);
     if (stealMin > stealMax) [stealMin, stealMax] = [stealMax, stealMin];
 
+    // 新配置使用统一好友任务间隔；旧账号自动取帮助/偷菜两组间隔中较快的一组。
+    let friendMin = toSec(src.friendMin, Math.min(helpMin, stealMin));
+    let friendMax = toSec(src.friendMax, Math.min(helpMax, stealMax));
+    if (friendMin > friendMax) [friendMin, friendMax] = [friendMax, friendMin];
+
     return {
         ...src,
         farm,
         farmMin,
         farmMax,
+        friendMin,
+        friendMax,
         helpMin,
         helpMax,
         stealMin,

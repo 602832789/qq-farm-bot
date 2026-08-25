@@ -48,6 +48,8 @@ export interface IntervalConfig {
   farm: number;
   farmMin: number;
   farmMax: number;
+  friendMin: number;
+  friendMax: number;
   helpMin: number;
   helpMax: number;
   stealMin: number;

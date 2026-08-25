@@ -14,15 +14,18 @@ export {
     isHelpExpLimitReached,
     onFriendApplicationReceived,
     refreshFriendCheckLoop,
-    runBadOnceOnStartup,
     startFriendCheckLoop,
     stopFriendCheckLoop,
 } from './scheduler';
 
 export {
     clearFriendsListCache,
+    cacheFriendsListFromReply,
     deleteFriend,
     doFriendOperation,
     getFriendLandsDetail,
     getFriendsList,
+    getFriendsListCacheOnly,
+    syncOneFriendDog,
+    syncAllFriendDogsDaily,
 } from './visit-strategy';

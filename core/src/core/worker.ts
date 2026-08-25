@@ -10,7 +10,7 @@ const { getAutomation, getPreferredSeed, getConfigSnapshot, applyConfigSnapshot 
 const { checkAndClaimEmails } = require('../services/email');
 const { getEmailDailyState } = require('../services/email');
 const { checkFarm, startFarmCheckLoop, stopFarmCheckLoop, refreshFarmCheckLoop, getLandsDetail, getAvailableSeeds, runFarmOperation, runFertilizerByConfig, fertilizeOwnLand } = require('../services/farm');
-const { checkFriends, startFriendCheckLoop, stopFriendCheckLoop, refreshFriendCheckLoop, runBadOnceOnStartup, isHelpExpLimitReached, getFriendsList, getFriendLandsDetail, doFriendOperation, deleteFriend } = require('../services/friend');
+const { checkFriends, startFriendCheckLoop, stopFriendCheckLoop, refreshFriendCheckLoop, getFriendsList, getFriendsListCacheOnly, syncOneFriendDog, getFriendLandsDetail, doFriendOperation, deleteFriend } = require('../services/friend');
 const { getInteractRecords } = require('../services/interact');
 const { processInviteCodes } = require('../services/invite');
 const { autoBuyFertilizer, checkAndBuyFertilizerBoth, buyFreeGifts, getFreeGiftDailyState } = require('../services/mall');
@@ -29,12 +29,10 @@ const { connect, cleanup, getWs, getUserState, networkEvents } = require('../uti
 const { loadProto } = require('../utils/proto');
 const { setLogHook, log, logWarn, toNum, getSystemDateKey, formatSystemDateTime24 } = require('../utils/utils');
 
-// Extend CONFIG with help/steal interval properties used by this worker
+// Extend CONFIG with the unified friend-task interval used by this worker.
 interface WorkerRuntimeConfig {
-    helpCheckIntervalMin: number;
-    helpCheckIntervalMax: number;
-    stealCheckIntervalMin: number;
-    stealCheckIntervalMax: number;
+    friendCheckIntervalMin: number;
+    friendCheckIntervalMax: number;
     [key: string]: any;
 }
 
@@ -103,10 +101,8 @@ let appliedConfigRevision: number = 0;
 let unifiedSchedulerRunning: boolean = false;
 let farmTaskRunning: boolean = false;
 let nextFarmRunAt: number = 0;
-let helpTaskRunning: boolean = false;
-let nextHelpRunAt: number = 0;
-let stealTaskRunning: boolean = false;
-let nextStealRunAt: number = 0;
+let friendTaskRunning: boolean = false;
+let nextFriendRunAt: number = 0;
 let lastStatusHash: string = '';
 let lastStatusSentAt: number = 0;
 let onSellGain: ((deltaGold: any) => void) | null = null;
@@ -138,11 +134,11 @@ function stopDailyRoutineTimer(): void {
     workerScheduler.clear('daily_routine_interval');
 }
 
-function startDailyRoutineTimer(): void {
+function startDailyRoutineTimer(runImmediately: boolean = true): void {
     stopDailyRoutineTimer();
     lastDailyRunDate = getSystemDateKey();
     // 新账号登录后强制执行一次领取
-    runDailyRoutines(true).catch(() => null);
+    if (runImmediately) runDailyRoutines(true).catch(() => null);
     workerScheduler.setIntervalTask('daily_routine_interval', 30 * 1000, () => {
         if (!loginReady) return;
         const today = getSystemDateKey();
@@ -169,14 +165,16 @@ function applyIntervalsToRuntime(intervals: any): void {
     CONFIG.farmCheckIntervalMax = farmRange.max * 1000;
     CONFIG.farmCheckInterval = CONFIG.farmCheckIntervalMin;
 
-    // 帮助和偷菜的独立间隔
-    const helpRange = normalizeIntervalRangeSec(data.helpMin, data.helpMax, 10);
-    workerConfig.helpCheckIntervalMin = helpRange.min * 1000;
-    workerConfig.helpCheckIntervalMax = helpRange.max * 1000;
-
-    const stealRange = normalizeIntervalRangeSec(data.stealMin, data.stealMax, 10);
-    workerConfig.stealCheckIntervalMin = stealRange.min * 1000;
-    workerConfig.stealCheckIntervalMax = stealRange.max * 1000;
+    // 好友帮助、偷菜、放虫放草、宠物同步共用一个好友任务间隔。
+    const helpMin = Number.parseInt(data.helpMin, 10) || 12;
+    const helpMax = Number.parseInt(data.helpMax, 10) || 15;
+    const stealMin = Number.parseInt(data.stealMin, 10) || 12;
+    const stealMax = Number.parseInt(data.stealMax, 10) || 15;
+    const friendMin = data.friendMin ?? Math.min(helpMin, stealMin);
+    const friendMax = data.friendMax ?? Math.min(helpMax, stealMax);
+    const friendRange = normalizeIntervalRangeSec(friendMin, friendMax, 12);
+    workerConfig.friendCheckIntervalMin = friendRange.min * 1000;
+    workerConfig.friendCheckIntervalMax = friendRange.max * 1000;
 }
 
 function randomIntervalMs(minMs: number, maxMs: number): number {
@@ -192,18 +190,13 @@ function resetUnifiedSchedule(): void {
         CONFIG.farmCheckIntervalMin || CONFIG.farmCheckInterval || 2000,
         CONFIG.farmCheckIntervalMax || CONFIG.farmCheckInterval || 2000
     );
-    const helpMs = randomIntervalMs(
-        workerConfig.helpCheckIntervalMin || 10000,
-        workerConfig.helpCheckIntervalMax || 10000
-    );
-    const stealMs = randomIntervalMs(
-        workerConfig.stealCheckIntervalMin || 10000,
-        workerConfig.stealCheckIntervalMax || 10000
+    const friendMs = randomIntervalMs(
+        workerConfig.friendCheckIntervalMin || 12000,
+        workerConfig.friendCheckIntervalMax || 15000
     );
     const now = Date.now();
     nextFarmRunAt = now + farmMs;
-    nextHelpRunAt = now + helpMs;
-    nextStealRunAt = now + stealMs;
+    nextFriendRunAt = now + friendMs;
 }
 
 async function runFarmTick(auto: any): Promise<void> {
@@ -226,60 +219,30 @@ async function runFarmTick(auto: any): Promise<void> {
     }
 }
 
-// ============ 帮助巡查（独立调度） ============
-async function runHelpTick(auto: any): Promise<void> {
-    if (helpTaskRunning) {
-        return;
-    }
-    if (!auto.friend_help) {
-        return;
-    }
-    // 检查是否开启了经验满不帮忙，且经验已达上限
-    const stopWhenExpLimit = !!auto.friend_help_exp_limit;
-    if (stopWhenExpLimit && isHelpExpLimitReached()) {
-        // 计算下次调度时间，但不执行巡查
-        const helpMs = randomIntervalMs(
-            workerConfig.helpCheckIntervalMin || 10000,
-            workerConfig.helpCheckIntervalMax || 10000
-        );
-        nextHelpRunAt = Date.now() + helpMs;
-        return;
-    }
-    helpTaskRunning = true;
-    const helpMs = randomIntervalMs(
-        workerConfig.helpCheckIntervalMin || 10000,
-        workerConfig.helpCheckIntervalMax || 10000
+// ============ 好友统一任务：偷菜、帮助、放虫放草、宠物同步 ============
+async function runFriendTick(auto: any): Promise<void> {
+    if (friendTaskRunning) return;
+    const friendMs = randomIntervalMs(
+        workerConfig.friendCheckIntervalMin || 12000,
+        workerConfig.friendCheckIntervalMax || 15000
     );
-    try {
-        await checkFriends({ onlyHelp: true });
-    } catch (e: any) {
-        log('系统', `帮助巡查执行失败: ${e.message}`, { module: 'system', event: '帮助巡查', result: 'error' });
-    } finally {
-        nextHelpRunAt = Date.now() + helpMs;
-        helpTaskRunning = false;
+    // friend 总开关仍控制好友任务总入口；关闭时也要推进到期时间，避免调度器每秒空转。
+    if (!auto.friend) {
+        nextFriendRunAt = Date.now() + friendMs;
+        return;
     }
-}
 
-// ============ 偷菜巡查（独立调度） ============
-async function runStealTick(auto: any): Promise<void> {
-    if (stealTaskRunning) {
-        return;
-    }
-    if (!auto.friend_steal) {
-        return;
-    }
-    stealTaskRunning = true;
-    const stealMs = randomIntervalMs(
-        workerConfig.stealCheckIntervalMin || 10000,
-        workerConfig.stealCheckIntervalMax || 10000
-    );
+    friendTaskRunning = true;
     try {
-        await checkFriends({ onlySteal: true });
+        // checkFriends 内部保留各自开关、经验上限、黑名单和每日捣乱次数判断。
+        await checkFriends();
+        // 宠物同步独立受缓存/每日状态控制，每轮最多处理一个好友，且使用低优先级请求。
+        if (auto.friend) await syncOneFriendDog().catch(() => null);
     } catch (e: any) {
-        log('系统', `偷菜巡查执行失败: ${e.message}`, { module: 'system', event: '偷菜巡查', result: 'error' });
+        log('系统', `好友统一任务执行失败: ${e.message}`, { module: 'system', event: '好友统一任务', result: 'error' });
     } finally {
-        nextStealRunAt = Date.now() + stealMs;
-        stealTaskRunning = false;
+        nextFriendRunAt = Date.now() + friendMs;
+        friendTaskRunning = false;
     }
 }
 
@@ -287,15 +250,13 @@ async function runUnifiedTick(): Promise<void> {
     if (!unifiedSchedulerRunning || !loginReady) return;
     const now = Date.now();
     const dueFarm = now >= nextFarmRunAt;
-    const dueHelp = now >= nextHelpRunAt;
-    const dueSteal = now >= nextStealRunAt;
-    if (!dueFarm && !dueHelp && !dueSteal) return;
+    const dueFriend = now >= nextFriendRunAt;
+    if (!dueFarm && !dueFriend) return;
 
     const auto = getAutomation();
     // 串行执行而非并行，避免并发请求过多导致超时
     if (dueFarm) await runFarmTick(auto);
-    if (dueHelp) await runHelpTick(auto);
-    if (dueSteal) await runStealTick(auto);
+    if (dueFriend) await runFriendTick(auto);
 }
 
 function scheduleUnifiedNextTick(): void {
@@ -306,8 +267,7 @@ function scheduleUnifiedNextTick(): void {
     const now = Date.now();
     const nextAt = Math.min(
         Number(nextFarmRunAt) || (now + 1000),
-        Number(nextHelpRunAt) || (now + 1000),
-        Number(nextStealRunAt) || (now + 1000)
+        Number(nextFriendRunAt) || (now + 1000)
     );
     const delayMs = Math.max(1000, nextAt - now); // 最低 1 秒
 
@@ -330,8 +290,7 @@ function startUnifiedScheduler(): void {
 function stopUnifiedScheduler(): void {
     unifiedSchedulerRunning = false;
     farmTaskRunning = false;
-    helpTaskRunning = false;
-    stealTaskRunning = false;
+    friendTaskRunning = false;
     workerScheduler.clear('unified_next_tick');
 }
 
@@ -339,6 +298,45 @@ function stopMysteryShopTimer(): void {
     workerScheduler.clear('mystery_shop_initial');
     workerScheduler.clear('mystery_shop_interval');
     workerScheduler.clear('mystery_shop_after_save');
+}
+
+function clearStartupStaggerTasks(): void {
+    for (const name of [
+        'startup_start_farm',
+        'startup_start_friend',
+        'startup_daily_routines',
+        'startup_mystery_shop',
+    ]) {
+        workerScheduler.clear(name);
+    }
+}
+
+function scheduleStartupStaggeredTasks(): void {
+    clearStartupStaggerTasks();
+
+    // 先让连接和登录初始化稳定下来，再启动农场主流程。
+    workerScheduler.setTimeoutTask('startup_start_farm', 2000, () => {
+        if (!loginReady) return;
+        startFarmCheckLoop({ externalScheduler: true });
+        startUnifiedScheduler();
+    });
+
+    // 好友申请监听和好友巡田晚于农场启动，避免登录瞬间同时拉好友链路。
+    workerScheduler.setTimeoutTask('startup_start_friend', 8000, () => {
+        if (!loginReady) return;
+        startFriendCheckLoop({ externalScheduler: true });
+    });
+
+    // 好友统一任务包含偷菜、帮助、放虫放草和宠物同步；这里仅启动统一调度，不单独启动子任务。
+    // 每日礼包/任务不参与登录启动关键路径。
+    workerScheduler.setTimeoutTask('startup_daily_routines', 45000, () => {
+        if (loginReady) startDailyRoutineTimer(true);
+    });
+
+    // 神秘商店属于低频后台能力，最后启动。
+    workerScheduler.setTimeoutTask('startup_mystery_shop', 60000, () => {
+        if (loginReady) startMysteryShopTimer();
+    });
 }
 
 function runMysteryShopTick(): Promise<void> {
@@ -606,22 +604,8 @@ async function startBot(config: any): Promise<void> {
             if (!canContinueLogin()) return;
         }
 
-        // 启动时执行一次放虫放草（只在账号启动时执行）
-        workerScheduler.setTimeoutTask('bad_startup_once', 10000, async () => {
-            try {
-                await runBadOnceOnStartup();
-            } catch (e: any) {
-                log('好友', `启动时放虫放草执行失败: ${e.message}`, { module: 'friend', event: '启动放虫放草失败', error: e.message });
-            }
-        });
-
         if (!canContinueLogin()) return;
-        startFarmCheckLoop({ externalScheduler: true });
-        startFriendCheckLoop({ externalScheduler: true });
-        startUnifiedScheduler();
-        // 每日礼包/任务改为跨日调度，不在农场轮询内执行
-        startDailyRoutineTimer();
-        startMysteryShopTimer();
+        scheduleStartupStaggeredTasks();
 
         // 立即发送一次状态
         syncStatus();
@@ -735,6 +719,9 @@ async function handleApiCall(msg: any): Promise<void> {
                 break;
             case 'getFriends':
                 result = await getFriendsList(args[0] === true);
+                break;
+            case 'getFriendsCache':
+                result = getFriendsListCacheOnly();
                 break;
             case 'clearFriendsCache':
                 require('../services/friend').clearFriendsListCache();
@@ -1023,17 +1010,17 @@ function syncStatus(force: boolean = false): void {
     const fullStats = require('../services/stats').getStats(statusData, userState, connected, limits);
     const nowMs = Date.now();
     const farmRemainSec = Math.max(0, Math.ceil((Number(nextFarmRunAt || 0) - nowMs) / 1000));
-    const helpRemainSec = Math.max(0, Math.ceil((Number(nextHelpRunAt || 0) - nowMs) / 1000));
-    const stealRemainSec = Math.max(0, Math.ceil((Number(nextStealRunAt || 0) - nowMs) / 1000));
+    const friendRemainSec = Math.max(0, Math.ceil((Number(nextFriendRunAt || 0) - nowMs) / 1000));
     const visitStrategy = require('../services/friend/visit-strategy');
     const friendQuiet = !!visitStrategy.inFriendQuietHours();
     const farmQuiet = !!visitStrategy.inFarmQuietHours();
     fullStats.nextChecks = {
         farmRemainSec,
-        helpRemainSec,
-        stealRemainSec,
-        friendRemainSec: Math.max(helpRemainSec, stealRemainSec),
+        helpRemainSec: friendRemainSec,
+        stealRemainSec: friendRemainSec,
+        friendRemainSec,
         farmQuiet,
+        friendQuiet,
         helpQuiet: friendQuiet,
         stealQuiet: friendQuiet,
     };

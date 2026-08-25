@@ -3,7 +3,7 @@
  */
 
 const { PlantPhase } = require('../../config/config');
-const { getPlantName, getPlantById } = require('../../config/gameConfig');
+const { getItemById, getPlantName, getPlantById } = require('../../config/gameConfig');
 const {
     isAutomationOn,
     getFriendQuietHours,
@@ -12,7 +12,7 @@ const {
     getFriendsListCacheTtlSec,
 } = require('../../models/store');
 const { getUserState } = require('../../utils/network');
-const { toNum, getServerTimeSec, getSystemClockMinutes, log, logWarn, sleep, randomDelay } = require('../../utils/utils');
+const { toNum, getServerTimeSec, getSystemDateKey, getSystemClockMinutes, log, logWarn, sleep, randomDelay } = require('../../utils/utils');
 const { types } = require('../../utils/proto');
 const {
     getCurrentPhase,
@@ -37,9 +37,18 @@ const {
     putWeedsDetailed,
 } = require('./api');
 const {
+    extractReplyFriends,
     postToMaster,
     removeKnownFriendGid,
 } = require('./gid-manager');
+const {
+    getFriendDogCacheEntry,
+    reloadFriendDogCache,
+    setFriendDogCacheEntry,
+    isFriendDogSyncedOn,
+    isFriendDogCacheReady,
+    saveFriendDogCache,
+} = require('../friend-dog-cache');
 
 // 延迟引用 scheduler 模块，避免循环依赖
 let _scheduler: any = null;
@@ -51,6 +60,55 @@ function schedulerRef(): any {
 // ============ 内部状态 ============
 let friendsListCache: any[] | null = null;
 let friendsListCacheTime: number = 0;
+
+interface FriendDogCacheEntry {
+    dogId: number;
+    syncDate: string;
+    checkedAt: number;
+}
+
+const friendDogRetryAfter = new Map<number, number>();
+const FRIEND_DOG_FAILURE_RETRY_MS = 5 * 60 * 1000;
+const FRIEND_DOG_BETWEEN_VISITS_MS = 1000;
+let friendDogSyncInFlight: Promise<any> | null = null;
+let friendDogSyncCursor = 0;
+
+function getFriendDogName(dogId: number): string {
+    if (!dogId) return '';
+    const info: any = getItemById(dogId);
+    if (info && info.name) return String(info.name);
+    return `宠物#${dogId}`;
+}
+
+function getFriendDogFields(gid: number): any {
+    const entry: FriendDogCacheEntry | null = getFriendDogCacheEntry(gid);
+    return {
+        dogId: entry ? entry.dogId : 0,
+        dogName: entry ? getFriendDogName(entry.dogId) : '',
+        dogCheckedAt: entry ? entry.checkedAt : 0,
+    };
+}
+
+export function recordFriendDogFromEnterReply(friendGid: any, enterReply: any, persist: boolean = true): void {
+    const gid: number = toNum(friendGid);
+    if (!gid) return;
+    const dogId: number = toNum(enterReply && enterReply.brief_dog_info && enterReply.brief_dog_info.dog_id);
+    const syncDate: string = getSystemDateKey();
+    const previous: FriendDogCacheEntry | null = getFriendDogCacheEntry(gid);
+    if (!previous || previous.dogId !== dogId || previous.syncDate !== syncDate) {
+        setFriendDogCacheEntry(gid, dogId, syncDate, persist);
+        if (persist) saveFriendDogCache();
+    }
+    friendDogRetryAfter.delete(gid);
+    if (Array.isArray(friendsListCache)) {
+        const friend: any = friendsListCache.find((item: any) => toNum(item.gid) === gid);
+        if (friend) Object.assign(friend, getFriendDogFields(gid));
+    }
+}
+
+function friendDogNeedsSync(gid: number, date: string): boolean {
+    return !isFriendDogSyncedOn(gid, date);
+}
 
 interface FarmingOutcome {
     effect: 'confirmed' | 'noop' | 'uncertain';
@@ -361,49 +419,57 @@ export function analyzeFriendLands(lands: any[], myGid: number, friendName: stri
 /**
  * 获取好友列表 (供面板)
  */
-export async function getFriendsList(forceSync: boolean = false): Promise<any[]> {
+export function cacheFriendsListFromReply(reply: any): any[] {
+    reloadFriendDogCache();
+    const state: any = getUserState();
+    const result: any[] = extractReplyFriends(reply)
+        .filter((f: any) => toNum(f.gid) !== state.gid && f.name !== '小小农夫' && f.remark !== '小小农夫')
+        .map((f: any) => ({
+            gid: toNum(f.gid),
+            name: f.remark || f.name || `GID:${toNum(f.gid)}`,
+            avatarUrl: String(f.avatar_url || '').trim(),
+            level: toNum(f.level),
+            gold: toNum(f.gold),
+            ...getFriendDogFields(toNum(f.gid)),
+            plant: f.plant ? {
+                stealNum: toNum(f.plant.steal_plant_num),
+                dryNum: toNum(f.plant.dry_num),
+                weedNum: toNum(f.plant.weed_num),
+                insectNum: toNum(f.plant.insect_num),
+            } : null,
+        }))
+        .sort((a: any, b: any) => {
+            // 固定顺序：先按名称，再按 GID，避免刷新时顺序抖动
+            const an: string = String(a.name || '');
+            const bn: string = String(b.name || '');
+            const byName: number = an.localeCompare(bn, 'zh-CN');
+            if (byName !== 0) return byName;
+            return Number(a.gid || 0) - Number(b.gid || 0);
+        });
+
+    friendsListCache = result;
+    friendsListCacheTime = Date.now();
+    return result;
+}
+
+export async function getFriendsList(forceSync: boolean = false, priority: 'low' | 'normal' = 'normal'): Promise<any[]> {
     try {
+        reloadFriendDogCache();
         // 检查缓存
         const now: number = Date.now();
         if (!forceSync && friendsListCache && (now - friendsListCacheTime) < getFriendsListCacheTtlMs()) {
-
-            return friendsListCache;
+            return friendsListCache.map((friend: any) => ({
+                ...friend,
+                ...getFriendDogFields(toNum(friend.gid)),
+            }));
         }
 
         log('好友', '开始获取好友列表', {
             module: 'friend',
             event: '获取好友列表',
         });
-        const reply: any = await getAllFriends(forceSync);
-        const friends: any[] = reply.game_friends || [];
-        const state: any = getUserState();
-        const result: any[] = friends
-            .filter((f: any) => toNum(f.gid) !== state.gid && f.name !== '小小农夫' && f.remark !== '小小农夫')
-            .map((f: any) => ({
-                gid: toNum(f.gid),
-                name: f.remark || f.name || `GID:${toNum(f.gid)}`,
-                avatarUrl: String(f.avatar_url || '').trim(),
-                level: toNum(f.level),
-                gold: toNum(f.gold),
-                plant: f.plant ? {
-                    stealNum: toNum(f.plant.steal_plant_num),
-                    dryNum: toNum(f.plant.dry_num),
-                    weedNum: toNum(f.plant.weed_num),
-                    insectNum: toNum(f.plant.insect_num),
-                } : null,
-            }))
-            .sort((a: any, b: any) => {
-                // 固定顺序：先按名称，再按 GID，避免刷新时顺序抖动
-                const an: string = String(a.name || '');
-                const bn: string = String(b.name || '');
-                const byName: number = an.localeCompare(bn, 'zh-CN');
-                if (byName !== 0) return byName;
-                return Number(a.gid || 0) - Number(b.gid || 0);
-            });
-
-        // 更新缓存
-        friendsListCache = result;
-        friendsListCacheTime = now;
+        const reply: any = await getAllFriends(forceSync, priority);
+        const result: any[] = cacheFriendsListFromReply(reply);
 
         log('好友', `获取好友列表成功，共 ${result.length} 位好友`, {
             module: 'friend',
@@ -423,6 +489,124 @@ export async function getFriendsList(forceSync: boolean = false): Promise<any[]>
     }
 }
 
+export function getFriendsListCacheOnly(): any[] {
+    reloadFriendDogCache();
+    if (!Array.isArray(friendsListCache)) return [];
+    return friendsListCache.map((friend: any) => ({
+        ...friend,
+        ...getFriendDogFields(toNum(friend.gid)),
+    }));
+}
+
+/**
+ * 按轮转顺序探测一个好友当前上场的狗。该接口严格串行，避免把好友 Enter
+ * 请求堆积到网关；调用方可以低频轮询，返回的好友对象会只更新一个。
+ */
+export async function syncNextFriendDog(): Promise<any> {
+    if (friendDogSyncInFlight) return friendDogSyncInFlight;
+
+    friendDogSyncInFlight = (async () => {
+        // 宠物同步使用已经展示的列表缓存，不因列表 TTL 到期额外阻塞一次好友列表请求。
+        const friends: any[] = await getFriendsList(false, 'low');
+        if (!friends.length) return { updated: false, complete: true, friend: null, remaining: 0 };
+
+        const now: number = Date.now();
+        const syncDate: string = getSystemDateKey(now);
+        let target: any = null;
+        for (let i = 0; i < friends.length; i++) {
+            const index = (friendDogSyncCursor + i) % friends.length;
+            const candidate: any = friends[index];
+            const candidateGid: number = toNum(candidate.gid);
+            if (friendDogNeedsSync(candidateGid, syncDate) && (friendDogRetryAfter.get(candidateGid) || 0) <= now) {
+                target = candidate;
+                friendDogSyncCursor = (index + 1) % friends.length;
+                break;
+            }
+        }
+        if (!target) {
+            const staleGids: number[] = friends
+                .map((friend: any) => toNum(friend.gid))
+                .filter((gid: number) => friendDogNeedsSync(gid, syncDate));
+            const retryAt: number = staleGids.reduce((earliest: number, gid: number) => {
+                const value: number = friendDogRetryAfter.get(gid) || 0;
+                return value > now && (!earliest || value < earliest) ? value : earliest;
+            }, 0);
+            return {
+                updated: false,
+                complete: staleGids.length === 0,
+                busy: staleGids.length > 0,
+                friend: null,
+                remaining: staleGids.length,
+                retryAfterMs: retryAt > now ? retryAt - now : 0,
+            };
+        }
+
+        const gid: number = toNum(target.gid);
+        let entered = false;
+        try {
+            const enterReply: any = await enterFriendFarm(gid, 'low');
+            entered = true;
+            recordFriendDogFromEnterReply(gid, enterReply, false);
+            const updatedFriend: any = friendsListCache
+                ? friendsListCache.find((friend: any) => toNum(friend.gid) === gid)
+                : null;
+            const remaining: number = friends.filter((friend: any) => friendDogNeedsSync(toNum(friend.gid), syncDate)).length;
+            return {
+                updated: true,
+                complete: remaining === 0,
+                friend: updatedFriend ? { ...updatedFriend } : { ...target, ...getFriendDogFields(gid) },
+                remaining,
+            };
+        } catch (error: any) {
+            friendDogRetryAfter.set(gid, Date.now() + FRIEND_DOG_FAILURE_RETRY_MS);
+            return {
+                updated: false,
+                complete: false,
+                friend: null,
+                remaining: friends.filter((friend: any) => friendDogNeedsSync(toNum(friend.gid), syncDate)).length,
+                retryAfterMs: FRIEND_DOG_FAILURE_RETRY_MS,
+                error: String(error?.message || error || '好友宠物同步失败'),
+            };
+        } finally {
+            if (entered) await leaveFriendFarm(gid, 'low');
+        }
+    })();
+
+    try {
+        return await friendDogSyncInFlight;
+    } finally {
+        friendDogSyncInFlight = null;
+    }
+}
+
+export async function syncAllFriendDogsDaily(): Promise<any> {
+    if (friendDogSyncInFlight) return friendDogSyncInFlight;
+    const date = getSystemDateKey();
+    const friends: any[] = await getFriendsList(false, 'low');
+    const gids: number[] = friends.map((friend: any) => toNum(friend.gid)).filter((gid: number) => gid > 0);
+    if (gids.length === 0) return { complete: true, skipped: true, processed: 0, date };
+    if (isFriendDogCacheReady(date, gids)) return { complete: true, skipped: true, processed: 0, date };
+    let processed = 0;
+    let failed = 0;
+    let result: any;
+    do {
+        result = await syncNextFriendDog();
+        if (result?.updated) processed++;
+        if (result?.error) failed++;
+        if (result?.busy || result?.error) break;
+        else if (!result?.complete) await sleep(FRIEND_DOG_BETWEEN_VISITS_MS);
+    } while (!result?.complete && processed < 10000);
+    saveFriendDogCache();
+    return { complete: !!result?.complete, processed, failed, date };
+}
+
+// 供统一好友任务每轮推进一个宠物同步，避免一次性遍历全部好友占满连接。
+export async function syncOneFriendDog(): Promise<any> {
+    const result = await syncNextFriendDog();
+    saveFriendDogCache();
+    return result;
+}
+
 /**
  * 获取指定好友的农田详情 (进入-获取-离开)
  */
@@ -431,6 +615,7 @@ export async function getFriendLandsDetail(friendGid: number): Promise<any> {
     try {
         const enterReply: any = await enterFriendFarm(friendGid);
         entered = true;
+        recordFriendDogFromEnterReply(friendGid, enterReply, false);
         const lands: any[] = enterReply.lands || [];
         const state: any = getUserState();
         const plantBlacklist: number[] = getPlantBlacklist(state.accountId);
@@ -550,6 +735,7 @@ export async function doFriendOperation(friendGid: any, opType: string): Promise
     let enterReply: any;
     try {
         enterReply = await enterFriendFarm(gid);
+        recordFriendDogFromEnterReply(gid, enterReply, false);
     } catch (e: any) {
         const handled: { handled: boolean; kind: string } = handleFriendEnterError(gid, `GID:${gid}`, e);
         if (handled.handled && handled.kind === 'blacklist') {
@@ -677,6 +863,7 @@ export async function visitFriend(friend: any, totalActions: any, myGid: number,
     let enterReply: any;
     try {
         enterReply = await enterFriendFarm(gid);
+        recordFriendDogFromEnterReply(gid, enterReply, false);
     } catch (e: any) {
         const handled: { handled: boolean; kind: string } = handleFriendEnterError(gid, name, e);
         if (handled.handled && handled.kind === 'blacklist') {
@@ -805,6 +992,7 @@ export async function visitFriendForSteal(friend: any, totalActions: any, myGid:
     let enterReply: any;
     try {
         enterReply = await enterFriendFarm(gid);
+        recordFriendDogFromEnterReply(gid, enterReply, false);
     } catch (e: any) {
         const handled: { handled: boolean; kind: string } = handleFriendEnterError(gid, name, e);
         if (handled.handled) {
@@ -928,6 +1116,7 @@ export async function visitFriendForHelp(friend: any, totalActions: any, myGid: 
     let enterReply: any;
     try {
         enterReply = await enterFriendFarm(gid);
+        recordFriendDogFromEnterReply(gid, enterReply, false);
     } catch (e: any) {
         const handled: { handled: boolean; kind: string } = handleFriendEnterError(gid, name, e);
         if (handled.handled) {
@@ -986,7 +1175,9 @@ export function clearFriendsListCache(): void {
 
 export function removeFriendFromFriendsListCache(friendGid: any): void {
     const gid: number = toNum(friendGid);
-    if (!gid || !Array.isArray(friendsListCache)) return;
+    if (!gid) return;
+    friendDogRetryAfter.delete(gid);
+    if (!Array.isArray(friendsListCache)) return;
     const next: any[] = friendsListCache.filter((friend: any) => toNum(friend.gid) !== gid);
     if (next.length !== friendsListCache.length) {
         friendsListCache = next;

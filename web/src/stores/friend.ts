@@ -319,6 +319,18 @@ export const useFriendStore = defineStore('friend', () => {
       loading.value = false
     }
   }
+
+  async function fetchFriendsCache(accountId: string) {
+    if (!accountId)
+      return
+    try {
+      const res = await api.get('/api/friends/cache', { headers: { 'x-account-id': accountId } })
+      if (res.data.ok && Array.isArray(res.data.data) && res.data.data.length > 0)
+        friends.value = res.data.data
+    }
+    catch { /* 仅缓存刷新失败时保持现有列表 */ }
+  }
+
   async function fetchInteractRecords(accountId: string) {
     if (!accountId)
       return
@@ -731,6 +743,7 @@ export const useFriendStore = defineStore('friend', () => {
     knownFriendSettingsLoading,
     knownFriendSettingsSaving,
     fetchFriends,
+    fetchFriendsCache,
     fetchBlacklist,
     toggleBlacklist,
     deleteFriend,

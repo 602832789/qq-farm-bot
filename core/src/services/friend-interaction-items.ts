@@ -19,6 +19,7 @@ const {
     getPlantInteractionEffects,
 } = require('./farm/land-analysis');
 const { enterFriendFarm, leaveFriendFarm } = require('./friend/api');
+const { recordFriendDogFromEnterReply } = require('./friend/visit-strategy');
 const { getBag, getBagItems } = require('./warehouse');
 
 const SPECIAL_INTERACTION_TYPE = 'additemuseitem';
@@ -483,6 +484,7 @@ async function performFriendInteractionItemBatch(friendGidInput: unknown, itemId
     const stacks = await resolveUsableStacks(itemId, info, landIds.length);
 
     const enterReply = await enterFriendFarm(friendGidNumber);
+    recordFriendDogFromEnterReply(friendGidNumber, enterReply, false);
     let attempts: any[] = [];
     try {
         const actualGid = int64String(enterReply?.basic?.gid);

@@ -18,7 +18,8 @@ const networkEvents = new EventEmitter();
 
 // ============ 内部状态 ============
 type ConnectionPhase = 'connecting' | 'login' | 'online';
-type RequestPriority = 'normal' | 'high';
+type RequestPriority = 'low' | 'normal' | 'high';
+type CriticalLane = 'heartbeat' | 'ace';
 
 interface ConnectionContext {
     id: number;
@@ -33,6 +34,8 @@ interface SendMsgOptions {
     timeoutMs?: number;
     expectedErrorCodes?: readonly number[];
     priority?: RequestPriority;
+    criticalLane?: CriticalLane;
+    expectReply?: boolean;
 }
 
 interface PendingRequest {
@@ -42,6 +45,7 @@ interface PendingRequest {
     methodName?: string;
     startedAt?: number;
     priority?: RequestPriority;
+    criticalLane?: CriticalLane;
 }
 
 interface QueuedRequest {
@@ -56,6 +60,8 @@ interface QueuedRequest {
     seq: number | null;
     settled: boolean;
     priority: RequestPriority;
+    criticalLane?: CriticalLane;
+    expectReply: boolean;
 }
 
 class GatewayError extends Error {
@@ -87,8 +93,11 @@ let clientSeq: number = 1;
 let serverSeq: number = 0;
 const pendingCallbacks = new Map<number, PendingRequest>();
 const requestQueue: QueuedRequest[] = [];
-const MAX_NORMAL_IN_FLIGHT_REQUESTS = 5;
+// Gateway 是单连接复用：普通业务保守并发，心跳和 ACE 各保留一个独立关键槽位。
+const MAX_NORMAL_IN_FLIGHT_REQUESTS = 2;
 const MAX_HIGH_IN_FLIGHT_REQUESTS = 2;
+const MAX_LOW_IN_FLIGHT_REQUESTS = 1;
+// 普通/关键流量的总预算；低优先级另有独立 1 个槽位，不占用该预算。
 const MAX_IN_FLIGHT_REQUESTS = MAX_NORMAL_IN_FLIGHT_REQUESTS + MAX_HIGH_IN_FLIGHT_REQUESTS;
 const MAX_QUEUED_REQUESTS = 100;
 const MAX_HIGH_PRIORITY_QUEUED_REQUESTS = 10;
@@ -117,20 +126,35 @@ function pendingPriorityCount(priority: RequestPriority): number {
     return count;
 }
 
+function pendingCriticalLaneCount(lane: CriticalLane): number {
+    let count = 0;
+    for (const pending of pendingCallbacks.values()) {
+        if (pending.priority === 'high' && pending.criticalLane === lane) count += 1;
+    }
+    return count;
+}
+
 function takeDispatchableRequest(): QueuedRequest | null {
     for (let index = requestQueue.length - 1; index >= 0; index--) {
         if (requestQueue[index].settled) requestQueue.splice(index, 1);
     }
-    if (pendingCallbacks.size >= MAX_IN_FLIGHT_REQUESTS) return null;
-
-    if (pendingPriorityCount('high') < MAX_HIGH_IN_FLIGHT_REQUESTS) {
-        const highIndex = requestQueue.findIndex(request => request.priority === 'high');
-        if (highIndex >= 0) return requestQueue.splice(highIndex, 1)[0];
+    // 两类关键流量各占一个槽位，避免 AntiData 或未来新增的高优先级请求挤掉心跳。
+    for (const lane of ['heartbeat', 'ace'] as const) {
+        if (pendingCriticalLaneCount(lane) >= 1) continue;
+        const laneIndex = requestQueue.findIndex(request => request.priority === 'high' && request.criticalLane === lane);
+        if (laneIndex >= 0) return requestQueue.splice(laneIndex, 1)[0];
     }
+    // 未标记关键通道的 high 请求不占用心跳/ACE 的保留槽位；当前业务没有此类请求。
     if (pendingPriorityCount('normal') < MAX_NORMAL_IN_FLIGHT_REQUESTS) {
         const normalIndex = requestQueue.findIndex(request => request.priority === 'normal');
         if (normalIndex >= 0) return requestQueue.splice(normalIndex, 1)[0];
     }
+    // 低优先级任务不能挤占任何高/普通请求；只有网关当前没有主流程请求时才发送。
+    if (requestQueue.some(request => request.priority !== 'low')) return null;
+    if (pendingPriorityCount('high') > 0 || pendingPriorityCount('normal') > 0) return null;
+    if (pendingPriorityCount('low') >= MAX_LOW_IN_FLIGHT_REQUESTS) return null;
+    const lowIndex = requestQueue.findIndex(request => request.priority === 'low');
+    if (lowIndex >= 0) return requestQueue.splice(lowIndex, 1)[0];
     return null;
 }
 
@@ -146,19 +170,27 @@ function drainRequestQueue(): void {
 
         const seq = clientSeq;
         request.seq = seq;
-        sendMsg(request.context, request.serviceName, request.methodName, request.bodyBytes, {
+        const pending: PendingRequest | undefined = request.expectReply ? {
             serviceName: request.serviceName,
             methodName: request.methodName,
             startedAt: Date.now(),
             priority: request.priority,
+            criticalLane: request.criticalLane,
             expectedErrorCodes: request.expectedErrorCodes,
             callback: (err, body, meta) => {
                 if (err) settleQueuedRequest(request, err);
                 else settleQueuedRequest(request, undefined, { body: body!, meta });
                 drainRequestQueue();
             },
-        }).then((sent) => {
-            if (sent) return;
+        } : undefined;
+        sendMsg(request.context, request.serviceName, request.methodName, request.bodyBytes, pending).then((sent) => {
+            if (sent) {
+                if (!request.expectReply) {
+                    settleQueuedRequest(request, undefined, { body: Buffer.alloc(0), meta: {} });
+                    drainRequestQueue();
+                }
+                return;
+            }
             pendingCallbacks.delete(seq);
             settleQueuedRequest(request, new Error(`发送失败: ${request.methodName}`));
             drainRequestQueue();
@@ -206,7 +238,12 @@ function describeQueuedRequests(): string {
     if (requestQueue.length === 0) return 'none';
     return requestQueue
         .slice(0, 8)
-        .map((request) => `${request.priority === 'high' ? '!' : ''}${request.methodName || 'unknown'}`)
+        .map((request) => {
+            const marker = request.criticalLane === 'heartbeat'
+                ? '!H:'
+                : request.criticalLane === 'ace' ? '!A:' : request.priority === 'high' ? '!' : request.priority === 'low' ? '~' : '';
+            return `${marker}${request.methodName || 'unknown'}`;
+        })
         .join(',');
 }
 
@@ -319,7 +356,13 @@ function sendMsgAsync(serviceName: string, methodName: string, bodyBytes: Buffer
         : (timeoutOrOptions || {});
     const timeoutMs = Math.max(1, Number(options.timeoutMs) || 20000);
     const expectedErrorCodes = new Set((options.expectedErrorCodes || []).map(Number).filter(Number.isFinite));
-    const priority: RequestPriority = options.priority === 'high' ? 'high' : 'normal';
+    const criticalLane: CriticalLane | undefined = options.criticalLane === 'heartbeat' || options.criticalLane === 'ace'
+        ? options.criticalLane
+        : undefined;
+    const expectReply = options.expectReply !== false;
+    const priority: RequestPriority = criticalLane || options.priority === 'high'
+        ? 'high'
+        : options.priority === 'low' ? 'low' : 'normal';
     return new Promise((resolve, reject) => {
         const context = currentConnection;
         if (!context || !isCurrentConnection(context) || context.socket.readyState !== WebSocket.OPEN) {
@@ -332,7 +375,7 @@ function sendMsgAsync(serviceName: string, methodName: string, bodyBytes: Buffer
         }
 
         const highPriorityQueued = requestQueue.filter(request => request.priority === 'high').length;
-        if ((priority === 'normal' && requestQueue.length >= MAX_QUEUED_REQUESTS)
+        if ((priority !== 'high' && requestQueue.length >= MAX_QUEUED_REQUESTS)
             || (priority === 'high' && highPriorityQueued >= MAX_HIGH_PRIORITY_QUEUED_REQUESTS)) {
             reject(new Error(`请求等待队列已满: ${methodName} (queued=${requestQueue.length}, pending=${pendingCallbacks.size})`));
             return;
@@ -351,6 +394,8 @@ function sendMsgAsync(serviceName: string, methodName: string, bodyBytes: Buffer
             seq: null,
             settled: false,
             priority,
+            criticalLane,
+            expectReply,
         };
         requestQueue.push(request);
         networkScheduler.setTimeoutTask(request.timeoutKey, timeoutMs, () => {
@@ -367,16 +412,8 @@ function sendMsgAsync(serviceName: string, methodName: string, bodyBytes: Buffer
 }
 
 async function sendMsgNoReply(serviceName: string, methodName: string, bodyBytes: Buffer): Promise<void> {
-    const context = currentConnection;
-    if (!context || !isCurrentConnection(context) || context.socket.readyState !== WebSocket.OPEN) {
-        throw new Error(`连接未打开: ${methodName}`);
-    }
-    if (context.phase !== 'online') {
-        throw new Error(`账号尚未登录: ${methodName}`);
-    }
-    if (!await sendMsg(context, serviceName, methodName, bodyBytes)) {
-        throw new Error(`发送失败: ${methodName}`);
-    }
+    // 即使调用方不需要回包，也必须经过同一调度器，不能绕过心跳/ACE保护和并发上限。
+    await sendMsgAsync(serviceName, methodName, bodyBytes, { priority: 'normal', expectReply: false });
 }
 
 // ============ 消息处理 ============
@@ -777,10 +814,12 @@ async function sendLogin(context: ConnectionContext, onLoginSuccess?: () => void
             networkScheduler.clear('login_timeout');
             context.phase = 'online';
             startAceRuntime((service: string, method: string, body: Buffer, timeoutMs?: number) => (
-                sendMsgAsync(service, method, body, { timeoutMs, priority: 'high' })
+                sendMsgAsync(service, method, body, { timeoutMs, priority: 'high', criticalLane: 'ace' })
             ));
-            fetchUserSettings();
             startHeartbeat(context);
+            // 登录引导阶段串行完成普通请求，避免和后续活动、背包初始化同时挤入 Gateway。
+            await fetchUserSettings();
+            if (!isCurrentConnection(context)) return;
             if (onLoginSuccess) await onLoginSuccess();
         } catch (e: any) {
             logWarn('登录', `登录初始化失败: ${e.message}`);
@@ -816,7 +855,7 @@ function startHeartbeat(context: ConnectionContext): void {
                 'gamepb.userpb.UserService',
                 'Heartbeat',
                 body,
-                { timeoutMs: HEARTBEAT_REQUEST_TIMEOUT, priority: 'high' },
+                { timeoutMs: HEARTBEAT_REQUEST_TIMEOUT, priority: 'high', criticalLane: 'heartbeat' },
             );
             if (!isCurrentConnection(context)) return;
             lastHeartbeatResponse = Date.now();
