@@ -26,6 +26,8 @@ const store = require("../models/store");
 const { addOrUpdateAccount, deleteAccount } = store;
 const { findAccountByRef } = require("../services/account-resolver");
 const { createModuleLogger } = require("../services/logger");
+const { createScheduler } = require("../services/scheduler");
+const adminScheduler = createScheduler("admin");
 const { registerAdminActivityRoutes } = require("./admin-activity-routes");
 const {
   registerAdminAccountRuntimeRoutes,
@@ -404,7 +406,9 @@ function startAdminServer(dataProvider) {
     }),
   );
   app.use("/login-assets", (req, res) => res.sendStatus(404));
-  setInterval(cleanupInvalidAdminSessions, FIVE_MINUTES_MS);
+  adminScheduler.setIntervalTask("session_cleanup", FIVE_MINUTES_MS, cleanupInvalidAdminSessions, {
+    preventOverlap: true,
+  });
 
   registerAdminAuthRoutes({
     app,
