@@ -31,10 +31,6 @@ const {
   interactionItemsError,
   interactionUsePending,
   interactionUseError,
-  dogSkillGiftPendingCount,
-  dogSkillGiftStatusLoading,
-  dogSkillGiftClaiming,
-  dogSkillGiftError,
   fertilizePending,
   fertilizeError,
 } = storeToRefs(farmStore)
@@ -321,7 +317,7 @@ async function refreshFarmData() {
   ])
 }
 
-async function refreshWithDogGifts() {
+async function refreshFarm() {
   const accountId = currentAccountId.value
   if (!accountId || !currentAccountRunning.value)
     return
@@ -331,7 +327,6 @@ async function refreshWithDogGifts() {
     await Promise.all([
       farmStore.fetchLands(accountId),
       farmStore.fetchInteractionItems(accountId),
-      farmStore.fetchDogSkillGiftStatus(accountId),
       settingStore.fetchSettings(accountId),
     ])
   }
@@ -339,24 +334,6 @@ async function refreshWithDogGifts() {
     if (currentAccountId.value === accountId)
       manualRefreshing.value = false
   }
-}
-
-async function claimDogSkillGifts() {
-  const accountId = currentAccountId.value
-  if (!accountId)
-    return
-
-  const result = await farmStore.claimDogSkillGifts(accountId)
-  if (!result) {
-    toast.error(dogSkillGiftError.value || '拾取同气连枝礼包失败')
-    return
-  }
-
-  const claimed = Math.max(0, Number(result.claimed || 0))
-  if (claimed > 0)
-    toast.success(`已拾取同气连枝礼包 x${claimed}`)
-  else
-    toast.warning('当前没有待拾取的同气连枝礼包')
 }
 
 watch(currentAccountId, () => {
@@ -382,8 +359,7 @@ watch([currentAccountId, () => currentAccount.value?.running, currentAccountConn
     farmStore.resetLandState()
     return
   }
-  farmStore.resetDogSkillGiftState()
-  void refreshWithDogGifts()
+  void refreshFarm()
 }, { immediate: true })
 
 const { pause, resume } = useIntervalFn(() => {
@@ -418,10 +394,10 @@ onUnmounted(() => {
           <NButton
             circle
             quaternary
-            title="刷新土地和待拾取礼包"
-            :loading="manualRefreshing || dogSkillGiftStatusLoading"
+            title="刷新土地"
+            :loading="manualRefreshing"
             :disabled="!currentAccountId || !currentAccountRunning"
-            @click="refreshWithDogGifts"
+            @click="refreshFarm"
           >
             <span :class="refreshIconClass" />
           </NButton>
@@ -438,44 +414,6 @@ onUnmounted(() => {
             {{ op.label }}
           </NButton>
         </div>
-      </div>
-
-      <div
-        v-if="dogSkillGiftPendingCount > 0"
-        class="flex flex-col gap-3 border-b border-amber-200 bg-amber-50 px-5 py-3 sm:flex-row sm:items-center dark:border-amber-800 dark:bg-amber-950/30"
-      >
-        <span class="i-carbon-gift shrink-0 text-2xl text-amber-600 dark:text-amber-300" />
-        <div class="min-w-0 flex-1">
-          <div class="flex flex-wrap items-baseline gap-2 text-amber-950 dark:text-amber-100">
-            <strong>待拾取同气连枝礼包</strong>
-            <span>x{{ dogSkillGiftPendingCount }}</span>
-          </div>
-          <div class="text-xs text-amber-700 dark:text-amber-300">
-            护主犬技能掉落，等待主人拾取
-          </div>
-        </div>
-        <NButton type="warning" size="small" :loading="dogSkillGiftClaiming" @click="claimDogSkillGifts">
-          <span class="i-carbon-download mr-1" />
-          拾取
-        </NButton>
-      </div>
-
-      <div
-        v-if="dogSkillGiftError"
-        class="flex flex-col gap-3 border-b border-red-200 bg-red-50 px-5 py-3 text-sm text-red-700 sm:flex-row sm:items-center dark:border-red-800 dark:bg-red-950/30 dark:text-red-300"
-      >
-        <span class="i-carbon-warning-alt shrink-0 text-lg" />
-        <span class="min-w-0 flex-1">{{ dogSkillGiftError }}</span>
-        <NButton
-          size="small"
-          secondary
-          type="error"
-          :loading="dogSkillGiftStatusLoading"
-          :disabled="!currentAccountId || !currentAccountRunning"
-          @click="refreshWithDogGifts"
-        >
-          重新查询
-        </NButton>
       </div>
 
       <!-- Summary -->
@@ -534,7 +472,7 @@ onUnmounted(() => {
           <div class="max-w-xl text-sm">
             {{ error }}
           </div>
-          <NButton secondary type="error" @click="refreshWithDogGifts">
+          <NButton secondary type="error" @click="refreshFarm">
             重新读取
           </NButton>
         </div>
@@ -544,7 +482,7 @@ onUnmounted(() => {
           <div class="text-lg font-display">
             尚未读取土地详情
           </div>
-          <NButton secondary @click="refreshWithDogGifts">
+          <NButton secondary @click="refreshFarm">
             立即读取
           </NButton>
         </div>
@@ -557,7 +495,7 @@ onUnmounted(() => {
           <div class="font-body text-sm text-gray-400">
             暂未读取到可展示的土地，可重新读取确认
           </div>
-          <NButton secondary @click="refreshWithDogGifts">
+          <NButton secondary @click="refreshFarm">
             重新读取
           </NButton>
         </div>

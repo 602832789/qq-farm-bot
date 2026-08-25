@@ -438,14 +438,6 @@ useIntervalFn(() => {
   }
 }, 1000)
 
-// 后台宠物同步完成后刷新当前列表；此请求只读 Worker 缓存，不触发游戏协议。
-useIntervalFn(() => {
-  if (document.visibilityState !== 'visible' || !currentAccountId.value || !currentAccountRunning.value)
-    return
-  if (friends.value.some(friend => Number(friend?.dogCheckedAt || 0) <= 0))
-    void friendStore.fetchFriendsCache(currentAccountId.value)
-}, 5000, { immediate: false })
-
 watch(currentAccountId, () => {
   expandedFriends.value.clear()
   selectedInteractionItemId.value = ''
@@ -608,12 +600,6 @@ function formatFriendGold(value: unknown) {
   if (!Number.isFinite(gold) || gold < 0)
     return '0'
   return gold.toLocaleString('zh-CN')
-}
-
-function getFriendDogLabel(friend: any) {
-  if (Number(friend?.dogCheckedAt || 0) <= 0)
-    return '宠物同步中'
-  return Number(friend?.dogId || 0) > 0 ? String(friend?.dogName || `宠物#${friend.dogId}`) : '未上场宠物'
 }
 
 function getFriendAvatar(friend: any) {
@@ -1009,12 +995,6 @@ async function handleBatchAddKnownFriendGids() {
                       class="rounded bg-amber-50 px-1.5 py-0.5 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
                     >
                       金币 {{ formatFriendGold(friend.gold) }}
-                    </span>
-                    <span
-                      class="inline-flex items-center rounded bg-blue-50 px-1.5 py-0.5 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300"
-                      :class="Number(friend?.dogCheckedAt || 0) > 0 ? '' : 'opacity-70'"
-                    >
-                      <span class="i-carbon-dog-walker mr-0.5" />{{ getFriendDogLabel(friend) }}
                     </span>
                   </div>
                   <div class="text-sm" :class="getFriendStatusText(friend) !== '无操作' ? 'text-green-500 font-medium' : 'text-gray-400'">

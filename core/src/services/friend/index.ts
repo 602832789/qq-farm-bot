@@ -19,13 +19,11 @@ export {
 } from './scheduler';
 
 export {
-    clearFriendsListCache,
     cacheFriendsListFromReply,
+    clearFriendsListCache,
     deleteFriend,
     doFriendOperation,
     getFriendLandsDetail,
     getFriendsList,
     getFriendsListCacheOnly,
-    syncOneFriendDog,
-    syncAllFriendDogsDaily,
 } from './visit-strategy';

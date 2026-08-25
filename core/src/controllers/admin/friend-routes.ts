@@ -32,7 +32,7 @@ function mountFriendRoutes(app: Application, ctx: AdminContext): void {
         }
     });
 
-    // 仅读取 Worker 内存/JSON 宠物缓存，不触发任何游戏协议请求。
+    // 仅读取 Worker 内存中的好友列表缓存，不触发任何游戏协议请求。
     app.get('/api/friends/cache', async (req: Request, res: Response) => {
         const id = getAccId(ctx, req);
         if (!id) return res.status(400).json({ ok: false });

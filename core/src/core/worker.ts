@@ -10,7 +10,7 @@ const { getAutomation, getPreferredSeed, getConfigSnapshot, applyConfigSnapshot 
 const { checkAndClaimEmails } = require('../services/email');
 const { getEmailDailyState } = require('../services/email');
 const { checkFarm, startFarmCheckLoop, stopFarmCheckLoop, refreshFarmCheckLoop, getLandsDetail, getAvailableSeeds, runFarmOperation, runFertilizerByConfig, fertilizeOwnLand } = require('../services/farm');
-const { checkFriends, startFriendCheckLoop, stopFriendCheckLoop, refreshFriendCheckLoop, getFriendsList, getFriendsListCacheOnly, syncOneFriendDog, getFriendLandsDetail, doFriendOperation, deleteFriend } = require('../services/friend');
+const { checkFriends, startFriendCheckLoop, stopFriendCheckLoop, refreshFriendCheckLoop, getFriendsList, getFriendsListCacheOnly, getFriendLandsDetail, doFriendOperation, deleteFriend } = require('../services/friend');
 const { getInteractRecords } = require('../services/interact');
 const { processInviteCodes } = require('../services/invite');
 const { autoBuyFertilizer, checkAndBuyFertilizerBoth, buyFreeGifts, getFreeGiftDailyState } = require('../services/mall');
@@ -165,7 +165,7 @@ function applyIntervalsToRuntime(intervals: any): void {
     CONFIG.farmCheckIntervalMax = farmRange.max * 1000;
     CONFIG.farmCheckInterval = CONFIG.farmCheckIntervalMin;
 
-    // 好友帮助、偷菜、放虫放草、宠物同步共用一个好友任务间隔。
+    // 好友帮助、偷菜、放虫放草共用一个好友任务间隔。
     const helpMin = Number.parseInt(data.helpMin, 10) || 12;
     const helpMax = Number.parseInt(data.helpMax, 10) || 15;
     const stealMin = Number.parseInt(data.stealMin, 10) || 12;
@@ -219,7 +219,7 @@ async function runFarmTick(auto: any): Promise<void> {
     }
 }
 
-// ============ 好友统一任务：偷菜、帮助、放虫放草、宠物同步 ============
+// ============ 好友统一任务：偷菜、帮助、放虫放草 ============
 async function runFriendTick(auto: any): Promise<void> {
     if (friendTaskRunning) return;
     const friendMs = randomIntervalMs(
@@ -236,8 +236,6 @@ async function runFriendTick(auto: any): Promise<void> {
     try {
         // checkFriends 内部保留各自开关、经验上限、黑名单和每日捣乱次数判断。
         await checkFriends();
-        // 宠物同步独立受缓存/每日状态控制，每轮最多处理一个好友，且使用低优先级请求。
-        if (auto.friend) await syncOneFriendDog().catch(() => null);
     } catch (e: any) {
         log('系统', `好友统一任务执行失败: ${e.message}`, { module: 'system', event: '好友统一任务', result: 'error' });
     } finally {
@@ -327,7 +325,7 @@ function scheduleStartupStaggeredTasks(): void {
         startFriendCheckLoop({ externalScheduler: true });
     });
 
-    // 好友统一任务包含偷菜、帮助、放虫放草和宠物同步；这里仅启动统一调度，不单独启动子任务。
+    // 好友统一任务包含偷菜、帮助和放虫放草；这里仅启动统一调度，不单独启动子任务。
     // 每日礼包/任务不参与登录启动关键路径。
     workerScheduler.setTimeoutTask('startup_daily_routines', 45000, () => {
         if (loginReady) startDailyRoutineTimer(true);

@@ -57,16 +57,10 @@ export const useFarmStore = defineStore('farm', () => {
   const interactionUseError = ref('')
   const interactionItemsAccountId = ref('')
   const interactionUsedLandIds = ref<Record<string, string[]>>({})
-  const dogSkillGiftPendingCount = ref(0)
-  const dogSkillGiftStatusLoading = ref(false)
-  const dogSkillGiftClaiming = ref(false)
-  const dogSkillGiftError = ref('')
-  const dogSkillGiftAccountId = ref('')
   const fertilizePending = ref(false)
   const fertilizeError = ref('')
   let landRequestSequence = 0
   let interactionItemsRequestSequence = 0
-  let dogSkillGiftRequestSequence = 0
   let landOverlay: { lands: any[], effects: FriendInteractionEffectDto[], updatedAt: number } | null = null
 
   function normalizeLandId(value: unknown) {
@@ -193,89 +187,6 @@ export const useFarmStore = defineStore('farm', () => {
     fertilizePending.value = false
     fertilizeError.value = ''
     resetInteractionState()
-    resetDogSkillGiftState()
-  }
-
-  function resetDogSkillGiftState() {
-    dogSkillGiftRequestSequence++
-    dogSkillGiftPendingCount.value = 0
-    dogSkillGiftStatusLoading.value = false
-    dogSkillGiftClaiming.value = false
-    dogSkillGiftError.value = ''
-    dogSkillGiftAccountId.value = ''
-  }
-
-  async function fetchDogSkillGiftStatus(accountId: string) {
-    const requestedAccountId = String(accountId || '').trim()
-    if (!requestedAccountId)
-      return false
-
-    const sequence = ++dogSkillGiftRequestSequence
-    if (dogSkillGiftAccountId.value !== requestedAccountId) {
-      dogSkillGiftPendingCount.value = 0
-      dogSkillGiftAccountId.value = requestedAccountId
-    }
-    dogSkillGiftStatusLoading.value = true
-    dogSkillGiftError.value = ''
-    try {
-      const res = await api.get('/api/dog/skill-gifts', {
-        headers: { 'x-account-id': requestedAccountId },
-        skipErrorToast: true,
-      } as any)
-      if (sequence !== dogSkillGiftRequestSequence || dogSkillGiftAccountId.value !== requestedAccountId)
-        return false
-      if (!res.data?.ok) {
-        dogSkillGiftError.value = String(res.data?.error || '无法读取待拾取礼包')
-        return false
-      }
-      dogSkillGiftPendingCount.value = Math.max(0, Number(res.data?.data?.pendingCount || 0))
-      return true
-    }
-    catch (cause: any) {
-      if (sequence !== dogSkillGiftRequestSequence || dogSkillGiftAccountId.value !== requestedAccountId)
-        return false
-      dogSkillGiftError.value = String(cause?.response?.data?.error || cause?.message || '无法读取待拾取礼包')
-      return false
-    }
-    finally {
-      if (sequence === dogSkillGiftRequestSequence && dogSkillGiftAccountId.value === requestedAccountId)
-        dogSkillGiftStatusLoading.value = false
-    }
-  }
-
-  async function claimDogSkillGifts(accountId: string) {
-    const requestedAccountId = String(accountId || '').trim()
-    if (!requestedAccountId || dogSkillGiftClaiming.value)
-      return false
-
-    const sequence = ++dogSkillGiftRequestSequence
-    dogSkillGiftAccountId.value = requestedAccountId
-    dogSkillGiftClaiming.value = true
-    dogSkillGiftError.value = ''
-    try {
-      const res = await api.post('/api/dog/skill-gifts/claim', {}, {
-        headers: { 'x-account-id': requestedAccountId },
-        skipErrorToast: true,
-      } as any)
-      if (sequence !== dogSkillGiftRequestSequence || dogSkillGiftAccountId.value !== requestedAccountId)
-        return false
-      if (!res.data?.ok || res.data?.data?.error) {
-        dogSkillGiftError.value = String(res.data?.data?.error || res.data?.error || '拾取礼包失败')
-        return false
-      }
-      dogSkillGiftPendingCount.value = Math.max(0, Number(res.data?.data?.pending || 0))
-      return res.data.data
-    }
-    catch (cause: any) {
-      if (sequence !== dogSkillGiftRequestSequence || dogSkillGiftAccountId.value !== requestedAccountId)
-        return false
-      dogSkillGiftError.value = String(cause?.response?.data?.error || cause?.message || '拾取礼包失败')
-      return false
-    }
-    finally {
-      if (sequence === dogSkillGiftRequestSequence && dogSkillGiftAccountId.value === requestedAccountId)
-        dogSkillGiftClaiming.value = false
-    }
   }
 
   function interactionUsageKey(accountId: string, itemId: unknown) {
@@ -444,10 +355,6 @@ export const useFarmStore = defineStore('farm', () => {
     interactionItemsError,
     interactionUsePending,
     interactionUseError,
-    dogSkillGiftPendingCount,
-    dogSkillGiftStatusLoading,
-    dogSkillGiftClaiming,
-    dogSkillGiftError,
     fertilizePending,
     fertilizeError,
     fetchLands,
@@ -458,9 +365,6 @@ export const useFarmStore = defineStore('farm', () => {
     useInteractionItemBatch,
     getInteractionUsedLandIds,
     resetInteractionState,
-    fetchDogSkillGiftStatus,
-    claimDogSkillGifts,
-    resetDogSkillGiftState,
     fertilizeLand,
   }
 })

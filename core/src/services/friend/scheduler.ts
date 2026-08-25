@@ -293,7 +293,7 @@ export async function checkFriends(options: CheckFriendsOptions = {}): Promise<b
 
     try {
         const friendsReply: any = await getAllFriends();
-        // 统一好友任务后，巡查和宠物同步复用这一份列表，避免同一轮再次请求。
+        // 巡查结果同时刷新面板好友列表缓存，避免页面再次请求同一份列表。
         cacheFriendsListFromReply(friendsReply);
         const friends: any[] = extractReplyFriends(friendsReply);
         if (friends.length === 0) {
