@@ -72,6 +72,7 @@ const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
         fertilizer_land_types: [...DEFAULT_FERTILIZER_LAND_TYPES],
         fertilizer_smart_seconds: 300,
         skip_own_weed_bug: true,
+        show_manual_fertilizer: true,
     },
     plantingStrategy: 'max_exp',
     preferredSeedId: 0,
@@ -112,6 +113,7 @@ const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
     fertilizerBuyNormalThresholdHours: 10,
     fertilizerBuyCheckIntervalMinutes: 60,
     bagSeedPriority: [],
+    bagSeedLandTypes: {},
     bagSeedFallbackStrategy: 'level',
     autoAcceptFriendMinLevel: 0,
     autoAcceptRequireOwnLevel: false,
@@ -174,6 +176,29 @@ function normalizeBagSeedPriority(input: unknown): number[] {
         if (!Number.isFinite(value) || value <= 0) continue;
         if (normalized.includes(value)) continue;
         normalized.push(value);
+    }
+    return normalized;
+}
+
+/**
+ * seedId -> 允许的土地类型。缺 key、空数组、全类型三者等价于不限制，统一省略该 key。
+ */
+function normalizeBagSeedLandTypes(input: unknown): Record<string, FertilizerLandType[]> {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
+    const normalized: Record<string, FertilizerLandType[]> = {};
+    for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+        const seedId = Number.parseInt(key, 10);
+        if (!Number.isFinite(seedId) || seedId <= 0) continue;
+        if (!Array.isArray(value)) continue;
+        const types: FertilizerLandType[] = [];
+        for (const item of value) {
+            const type = String(item || '').trim().toLowerCase();
+            if (!FERTILIZER_LAND_TYPE_SET.has(type)) continue;
+            if (types.includes(type as FertilizerLandType)) continue;
+            types.push(type as FertilizerLandType);
+        }
+        if (types.length === 0 || types.length === DEFAULT_FERTILIZER_LAND_TYPES.length) continue;
+        normalized[String(seedId)] = types;
     }
     return normalized;
 }
@@ -279,6 +304,7 @@ function cloneAccountConfig(base: Partial<AccountConfig> = DEFAULT_ACCOUNT_CONFI
         fertilizerBuyNormalThresholdHours: Math.max(0, Math.min(990, Number(base.fertilizerBuyNormalThresholdHours) || 0)),
         fertilizerBuyCheckIntervalMinutes: Math.max(1, Math.min(1440, Number(base.fertilizerBuyCheckIntervalMinutes) || 30)),
         bagSeedPriority: normalizeBagSeedPriority(base.bagSeedPriority),
+        bagSeedLandTypes: normalizeBagSeedLandTypes(base.bagSeedLandTypes),
         bagSeedFallbackStrategy: normalizeBagSeedFallbackStrategy(base.bagSeedFallbackStrategy),
         autoAcceptFriendMinLevel: normalizeAutoAcceptFriendMinLevel(base.autoAcceptFriendMinLevel, DEFAULT_ACCOUNT_CONFIG.autoAcceptFriendMinLevel),
         autoAcceptRequireOwnLevel: !!base.autoAcceptRequireOwnLevel,
@@ -400,6 +426,10 @@ function normalizeAccountConfig(input: unknown, fallback: AccountConfig = accoun
 
     if (src.bagSeedPriority !== undefined && src.bagSeedPriority !== null) {
         cfg.bagSeedPriority = normalizeBagSeedPriority(src.bagSeedPriority);
+    }
+
+    if (src.bagSeedLandTypes !== undefined && src.bagSeedLandTypes !== null) {
+        cfg.bagSeedLandTypes = normalizeBagSeedLandTypes(src.bagSeedLandTypes);
     }
 
     if (src.bagSeedFallbackStrategy !== undefined && src.bagSeedFallbackStrategy !== null) {
@@ -554,6 +584,7 @@ module.exports = {
     normalizeKnownFriendGidSyncCooldownSec,
     normalizeFriendsListCacheTtlSec,
     normalizeBagSeedPriority,
+    normalizeBagSeedLandTypes,
     normalizeBagSeedFallbackStrategy,
     normalizeFertilizerLandTypes,
     normalizeTimeString,

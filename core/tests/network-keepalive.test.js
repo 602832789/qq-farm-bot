@@ -33,7 +33,7 @@ test('legacy defaults migrate while explicit custom client versions survive', ()
 
 test('ordinary gateway tokens retain the official random format', () => {
     for (let index = 0; index < 256; index += 1) {
-        assert.match(createGatewayToken(), /^[A-Za-z0-9]{64,127}=$/);
+        assert.match(createGatewayToken(), /^[A-Z0-9]{64,127}=$/i);
     }
 });
 
@@ -43,7 +43,7 @@ test('the TSDK initialization credential is consumed exactly once', () => {
 
     assert.equal(provider.stageInitToken(initToken), 152);
     assert.equal(provider.next(), initToken);
-    assert.match(provider.next(), /^[A-Za-z0-9]{64,127}=$/);
+    assert.match(provider.next(), /^[A-Z0-9]{64,127}=$/i);
 
     provider.stageInitToken(initToken);
     provider.clear();

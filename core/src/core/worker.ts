@@ -9,7 +9,7 @@ const { getLevelExpProgress, loadConfigs } = require('../config/gameConfig');
 const { getAutomation, getPreferredSeed, getConfigSnapshot, applyConfigSnapshot } = require('../models/store');
 const { checkAndClaimEmails } = require('../services/email');
 const { getEmailDailyState } = require('../services/email');
-const { checkFarm, startFarmCheckLoop, stopFarmCheckLoop, refreshFarmCheckLoop, getLandsDetail, getAvailableSeeds, runFarmOperation, runFertilizerByConfig } = require('../services/farm');
+const { checkFarm, startFarmCheckLoop, stopFarmCheckLoop, refreshFarmCheckLoop, getLandsDetail, getAvailableSeeds, runFarmOperation, runFertilizerByConfig, fertilizeOwnLand } = require('../services/farm');
 const { checkFriends, startFriendCheckLoop, stopFriendCheckLoop, refreshFriendCheckLoop, runBadOnceOnStartup, isHelpExpLimitReached, getFriendsList, getFriendLandsDetail, doFriendOperation, deleteFriend } = require('../services/friend');
 const { getInteractRecords } = require('../services/interact');
 const { processInviteCodes } = require('../services/invite');
@@ -699,7 +699,7 @@ function handleTerminalDisconnect(payload: any): void {
         connectionId: Number(payload?.connectionId) || 0,
         at: Number(payload?.at) || Date.now(),
     });
-    setTimeout(() => exitWorker(0), 300);
+    setTimeout(exitWorker, 300, 0);
 }
 
 function onKickout(payload: any): void {
@@ -709,7 +709,7 @@ function onKickout(payload: any): void {
     saveStats();
     quiesceBot(`踢下线: ${reason}`);
     sendToMaster({ type: 'account_kicked', reason });
-    setTimeout(() => exitWorker(0), 300);
+    setTimeout(exitWorker, 300, 0);
 }
 
 // 处理来自 Admin 面板的直接调用请求 (如: 购买种子、开关设置等)
@@ -830,6 +830,9 @@ async function handleApiCall(msg: any): Promise<void> {
             }
             case 'doFarmOp':
                 result = await runFarmOperation(args[0]); // opType
+                break;
+            case 'fertilizeOwnLand':
+                result = await fertilizeOwnLand(args[0], args[1]);
                 break;
             case 'buyFertilizer': {
                 const fertilizerType = args[0] || 'organic';
@@ -983,8 +986,8 @@ async function getDailyGiftOverview(): Promise<any> {
                 enabled: true,
                 doneToday: !!vip.doneToday,
                 lastAt: Number(vip.lastClaimAt || vip.lastCheckAt || 0),
-                hasGift: Object.prototype.hasOwnProperty.call(vip, 'hasGift') ? !!vip.hasGift : undefined,
-                canClaim: Object.prototype.hasOwnProperty.call(vip, 'canClaim') ? !!vip.canClaim : undefined,
+                hasGift: Object.hasOwn(vip, 'hasGift') ? !!vip.hasGift : undefined,
+                canClaim: Object.hasOwn(vip, 'canClaim') ? !!vip.canClaim : undefined,
                 result: vip.result || '',
             },
             {
@@ -993,8 +996,8 @@ async function getDailyGiftOverview(): Promise<any> {
                 enabled: true,
                 doneToday: !!month.doneToday,
                 lastAt: Number(month.lastClaimAt || month.lastCheckAt || 0),
-                hasCard: Object.prototype.hasOwnProperty.call(month, 'hasCard') ? !!month.hasCard : undefined,
-                hasClaimable: Object.prototype.hasOwnProperty.call(month, 'hasClaimable') ? !!month.hasClaimable : undefined,
+                hasCard: Object.hasOwn(month, 'hasCard') ? !!month.hasCard : undefined,
+                hasClaimable: Object.hasOwn(month, 'hasClaimable') ? !!month.hasClaimable : undefined,
                 result: month.result || '',
             },
         ],

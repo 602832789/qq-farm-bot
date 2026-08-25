@@ -59,6 +59,7 @@ const settings = defineModel<AutomationSettingsFormModel>({ required: true })
         <BaseSwitch v-model="settings.automation.fertilizer_buy_organic" label="自动购买有机化肥" />
         <BaseSwitch v-model="settings.automation.fertilizer_buy_normal" label="自动购买无机化肥" />
         <BaseSwitch v-model="settings.automation.fertilizer_multi_season" label="多季补肥" />
+        <BaseSwitch v-model="settings.automation.show_manual_fertilizer" label="显示地块手动施肥按钮" />
       </div>
 
       <div v-if="settings.automation.fertilizer_buy_organic || settings.automation.fertilizer_buy_normal" class="mt-3 rounded bg-green-50 p-3 text-sm space-y-3 dark:bg-green-900/20">
