@@ -89,8 +89,8 @@
 
 | 运行方式 | 要求 |
 | --- | --- |
-| 源码运行 | Node.js 20+、pnpm 10+ |
-| Docker | Docker 20+、Docker Compose 2+ |
+| 源码运行 | Node.js 20.19+、pnpm 10+ |
+| Docker | Docker 20+、Docker Compose 2+、Node 20.19.6（镜像内置） |
 | 二进制发布版 | 无需安装 Node.js |
 
 推荐通过 Corepack 启用项目指定版本的 pnpm：
@@ -174,7 +174,15 @@ TZ=Asia/Shanghai
 
 Docker 数据保存在 `qq-farm-data` 和 `qq-farm-logs` 命名卷中。执行 `docker compose down` 不会删除这些卷；不要使用 `docker compose down -v`，除非确认要删除运行数据。
 
-Compose 使用根目录作为构建上下文，Dockerfile 位于 `core/Dockerfile`。镜像构建阶段会先构建 Web 前端和 Core 后端，运行阶段只保留生产依赖、编译产物、协议定义、游戏配置和 TSDK WASM。容器内部固定监听 `3007`，根目录 `.env` 中的 `PORT` 只用于宿主机端口映射。
+Compose 使用根目录作为构建上下文，Dockerfile 位于 `core/Dockerfile`。镜像构建阶段固定使用 Node `20.19.6` 和 pnpm `10.30.2`，先构建 Web 前端和 Core 后端，运行阶段只保留生产依赖、编译产物、协议定义、游戏配置和 TSDK WASM。容器内部固定监听 `3007`，根目录 `.env` 中的 `PORT` 只用于宿主机端口映射。
+
+依赖源默认使用 npm 官方源；网络受限时可以在根目录 `.env` 中覆盖构建参数后重新构建：
+
+```dotenv
+NPM_REGISTRY=https://registry.npmmirror.com/
+```
+
+如需显式指定基础镜像或 pnpm 版本，也可以配置 `NODE_IMAGE` 和 `PNPM_VERSION`。修改构建参数或排查旧缓存问题时请执行 `docker compose build --pull --no-cache`，确保重新拉取基础镜像并安装依赖。
 
 ### 二进制发布版
 

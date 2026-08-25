@@ -1,14 +1,23 @@
-FROM node:20-alpine AS builder
+ARG NODE_IMAGE=node:20.19.6-alpine3.21
+ARG PNPM_VERSION=10.30.2
+ARG NPM_REGISTRY=https://registry.npmjs.org/
+
+FROM ${NODE_IMAGE} AS builder
+
+ARG PNPM_VERSION
+ARG NPM_REGISTRY
 
 WORKDIR /app
 
-RUN corepack enable
+RUN npm config set registry "${NPM_REGISTRY}" \
+    && npm install --global "pnpm@${PNPM_VERSION}" \
+    && pnpm --version
 
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY core/package.json ./core/
 COPY web/package.json ./web/
 
-RUN pnpm config set registry https://registry.npmmirror.com/
+RUN pnpm config set registry "${NPM_REGISTRY}"
 RUN pnpm install --frozen-lockfile
 
 COPY core ./core
@@ -18,22 +27,27 @@ RUN pnpm build:web
 RUN pnpm -C core build:ts
 
 # ==========================================
-FROM node:20-alpine AS prod-deps
+FROM ${NODE_IMAGE} AS prod-deps
+
+ARG PNPM_VERSION
+ARG NPM_REGISTRY
 
 WORKDIR /app
 
-RUN corepack enable
+RUN npm config set registry "${NPM_REGISTRY}" \
+    && npm install --global "pnpm@${PNPM_VERSION}" \
+    && pnpm --version
 
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY core/package.json ./core/
 COPY web/package.json ./web/
 
-RUN pnpm config set registry https://registry.npmmirror.com/
+RUN pnpm config set registry "${NPM_REGISTRY}"
 RUN pnpm -C core install --prod --frozen-lockfile
 
 # ==========================================
 
-FROM node:20-alpine AS runner
+FROM ${NODE_IMAGE} AS runner
 
 WORKDIR /app/core
 
