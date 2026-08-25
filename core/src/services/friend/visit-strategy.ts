@@ -67,6 +67,8 @@ interface FriendDogCacheEntry {
     checkedAt: number;
 }
 
+const PROTECT_DOG_ID = 90021;
+
 const friendDogRetryAfter = new Map<number, number>();
 const FRIEND_DOG_FAILURE_RETRY_MS = 5 * 60 * 1000;
 const FRIEND_DOG_BETWEEN_VISITS_MS = 1000;
@@ -87,6 +89,15 @@ function getFriendDogFields(gid: number): any {
         dogName: entry ? getFriendDogName(entry.dogId) : '',
         dogCheckedAt: entry ? entry.checkedAt : 0,
     };
+}
+
+function isProtectDog(dogInfo: any): boolean {
+    return toNum(dogInfo && (dogInfo.dog_id ?? dogInfo.dogId)) === PROTECT_DOG_ID;
+}
+
+function canBypassHelpExpLimitForProtectDog(enterReply: any): boolean {
+    return !!isAutomationOn('friend_help_protect_dog_ignore_exp_limit')
+        && isProtectDog(enterReply && (enterReply.brief_dog_info ?? enterReply.briefDogInfo));
 }
 
 export function recordFriendDogFromEnterReply(friendGid: any, enterReply: any, persist: boolean = true): void {
@@ -893,15 +904,17 @@ export async function visitFriend(friend: any, totalActions: any, myGid: number,
     // 1. 帮助操作 (除草/除虫/浇水)
     const helpEnabled: boolean = !!isAutomationOn('friend_help');
     const stopWhenExpLimit: boolean = !!isAutomationOn('friend_help_exp_limit');
+    const protectDogBypass: boolean = canBypassHelpExpLimitForProtectDog(enterReply);
+    const effectiveStopWhenExpLimit: boolean = stopWhenExpLimit && !protectDogBypass;
     if (!stopWhenExpLimit) schedulerRef().setCanGetHelpExp(true);
     if (!helpEnabled) {
         // 自动帮忙关闭，直接跳过帮助操作
-    } else if (stopWhenExpLimit && !schedulerRef().getCanGetHelpExp()) {
+    } else if (effectiveStopWhenExpLimit && !schedulerRef().getCanGetHelpExp()) {
         // 今日已达到经验上限后停止帮忙
     } else {
         const allHelpLandIds: number[] = [...new Set([...status.needWeed, ...status.needBug, ...status.needWater])];
         const allExpIds: number[] = [10005, 10006, 10007];
-        const allowByExp: boolean = (!stopWhenExpLimit) || (schedulerRef().canGetExpByCandidates(allExpIds) && schedulerRef().getCanGetHelpExp());
+        const allowByExp: boolean = (!effectiveStopWhenExpLimit) || (schedulerRef().canGetExpByCandidates(allExpIds) && schedulerRef().getCanGetHelpExp());
         if (allHelpLandIds.length > 0 && allowByExp) {
             const outcome: FarmingOutcome = await runFarmingWithFallback(gid, allHelpLandIds, stopWhenExpLimit, getHelpSnapshotKey(lands));
             if (outcome.landCount > 0) {
@@ -1109,7 +1122,8 @@ export async function visitFriendForHelp(friend: any, totalActions: any, myGid: 
 
     const stopWhenExpLimit: boolean = !!isAutomationOn('friend_help_exp_limit') && !ignoreExpLimit;
     if (!stopWhenExpLimit) schedulerRef().setCanGetHelpExp(true);
-    if (stopWhenExpLimit && !schedulerRef().getCanGetHelpExp()) {
+    const protectDogBypassEnabled: boolean = !!isAutomationOn('friend_help_protect_dog_ignore_exp_limit');
+    if (stopWhenExpLimit && !schedulerRef().getCanGetHelpExp() && !protectDogBypassEnabled) {
         return { acted: false, entered: false };
     }
 
@@ -1135,12 +1149,19 @@ export async function visitFriendForHelp(friend: any, totalActions: any, myGid: 
     }
 
     const status: AnalyzeResult = analyzeFriendLands(lands, myGid, name, {});
+    const protectDogBypass: boolean = protectDogBypassEnabled && canBypassHelpExpLimitForProtectDog(enterReply);
+    const effectiveStopWhenExpLimit: boolean = stopWhenExpLimit && !protectDogBypass;
+
+    if (effectiveStopWhenExpLimit && !schedulerRef().getCanGetHelpExp()) {
+        await leaveFriendFarm(gid);
+        return { acted: false, entered: true };
+    }
 
     const actions: string[] = [];
 
     const allHelpLandIds: number[] = [...new Set([...status.needWeed, ...status.needBug, ...status.needWater])];
     const allExpIds: number[] = [10005, 10006, 10007];
-    const allowByExp: boolean = (!stopWhenExpLimit) || (schedulerRef().canGetExpByCandidates(allExpIds) && schedulerRef().getCanGetHelpExp());
+    const allowByExp: boolean = (!effectiveStopWhenExpLimit) || (schedulerRef().canGetExpByCandidates(allExpIds) && schedulerRef().getCanGetHelpExp());
     if (allHelpLandIds.length > 0 && allowByExp) {
         const outcome: FarmingOutcome = await runFarmingWithFallback(gid, allHelpLandIds, stopWhenExpLimit, getHelpSnapshotKey(lands));
         if (outcome.landCount > 0) {

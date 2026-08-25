@@ -24,6 +24,7 @@ export interface AutomationConfig {
   friend_steal: boolean;
   friend_help: boolean;
   friend_bad: boolean;
+  friend_help_protect_dog_ignore_exp_limit: boolean;
   task: boolean;
   fertilizer_gift: boolean;
   fertilizer_buy_organic: boolean;

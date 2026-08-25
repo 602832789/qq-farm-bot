@@ -380,7 +380,8 @@ export async function checkFriends(options: CheckFriendsOptions = {}): Promise<b
                 // 检查是否还能获得帮助经验
                 // const stopWhenExpLimit = !!isAutomationOn('friend_help_exp_limit');
                 const stopWhenExpLimit: boolean = !!isAutomationOn('friend_help_exp_limit') && !ignoreExpLimit;
-                if (stopWhenExpLimit && !canGetHelpExp) {
+                const protectDogBypassEnabled: boolean = !!isAutomationOn('friend_help_protect_dog_ignore_exp_limit');
+                if (stopWhenExpLimit && !canGetHelpExp && !protectDogBypassEnabled) {
                     log('好友', `批量帮助中断：经验已达上限`, { module: 'friend', event: '批量帮助中断', reason: 'exp_limit' });
                     break;
                 }

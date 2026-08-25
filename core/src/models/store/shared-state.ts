@@ -55,6 +55,7 @@ const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
         friend_steal: true,
         friend_help: true,
         friend_bad: true,
+        friend_help_protect_dog_ignore_exp_limit: true,
         task: true,
         fertilizer_gift: false,
         fertilizer_buy_organic: false,

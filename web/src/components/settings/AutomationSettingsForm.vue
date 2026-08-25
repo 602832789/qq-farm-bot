@@ -214,6 +214,9 @@ const settings = defineModel<AutomationSettingsFormModel>({ required: true })
               <div class="automation-setting-item">
                 <BaseSwitch v-model="settings.automation.friend_help_exp_limit" label="经验满不帮忙" />
               </div>
+              <div class="automation-setting-item">
+                <BaseSwitch v-model="settings.automation.friend_help_protect_dog_ignore_exp_limit" label="护主犬经验满仍帮忙" />
+              </div>
             </div>
           </div>
 

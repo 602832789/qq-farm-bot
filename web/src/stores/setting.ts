@@ -18,6 +18,7 @@ export interface AutomationConfig {
   friend_help?: boolean
   friend_bad?: boolean
   friend_help_exp_limit?: boolean
+  friend_help_protect_dog_ignore_exp_limit?: boolean
   fertilizer_gift?: boolean
   fertilizer_buy_organic?: boolean
   fertilizer_buy_normal?: boolean
