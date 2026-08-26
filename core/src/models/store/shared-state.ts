@@ -26,6 +26,7 @@ const DEFAULT_FRIENDS_LIST_CACHE_TTL_SEC: number = 60;
 const LEGACY_DEFAULT_CLIENT_VERSIONS: ReadonlySet<string> = new Set([
     '1.13.2.8_20260723',
     '1.13.2.9_20260723',
+    '1.13.2.10_20260723',
 ]);
 function isManagedDefaultClientVersion(value: unknown): boolean {
     const version = String(value || '').trim();

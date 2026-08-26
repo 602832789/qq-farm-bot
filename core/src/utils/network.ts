@@ -500,6 +500,18 @@ function handleNotify(msg: any): void {
             return;
         }
 
+        // 特殊天气变化。通知携带天气所属农场 GID；空 weather 表示天气结束。
+        if (type.includes('WeatherChangeNotify')) {
+            try {
+                const notify = types.WeatherChangeNotify.decode(eventBody);
+                networkEvents.emit('weatherChanged', {
+                    hostGid: toNum(notify.host_gid),
+                    weather: notify.weather || null,
+                });
+            } catch {}
+            return;
+        }
+
         // 护主犬“同气连枝”主人侧待拾取礼包数量。
         if (type.includes('PendingGiftCountNotify')) {
             try {

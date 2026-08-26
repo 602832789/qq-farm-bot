@@ -183,6 +183,21 @@ function createDataProvider(options: DataProviderOptions) {
         giftQixiSachet: (accountRef: string, friendGid: unknown, messageTextId: unknown = 15) => (
             callWorkerApi(resolveAccountRefId(accountRef), 'giftQixiSachet', friendGid, messageTextId)
         ),
+        getCurrentWeatherActivity: (accountRef: string) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'getCurrentWeatherActivity')
+        ),
+        exchangeWeatherCollectorBottle: (accountRef: string) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'exchangeWeatherCollectorBottle')
+        ),
+        useWeatherCollectorBottle: (accountRef: string, friendGid: unknown) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'useWeatherCollectorBottle', friendGid)
+        ),
+        useWeatherSummonBottle: (accountRef: string) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'useWeatherSummonBottle')
+        ),
+        advanceWeatherResearch: (accountRef: string, nodeId: unknown) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'advanceWeatherResearch', nodeId)
+        ),
         getMallCatalog: (accountRef: string, slotType: unknown, subSlotType: unknown) => (
             callWorkerApi(resolveAccountRefId(accountRef), 'getMallCatalog', slotType, subSlotType)
         ),

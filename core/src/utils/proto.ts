@@ -22,6 +22,7 @@ async function loadProto(): Promise<void> {
         getResourcePath('proto', 'corepb.proto'),
         getResourcePath('proto', 'shoppb.proto'),
         getResourcePath('proto', 'friendpb.proto'),
+        getResourcePath('proto', 'weatherpb.proto'),
         getResourcePath('proto', 'visitpb.proto'),
         getResourcePath('proto', 'notifypb.proto'),
         getResourcePath('proto', 'taskpb.proto'),
@@ -240,6 +241,8 @@ async function loadProto(): Promise<void> {
     types.QueryActivityRequest = root.lookupType('gamepb.activitypb.QueryActivityRequest');
     types.ExchangeShopOperateParams = root.lookupType('gamepb.activitypb.ExchangeShopOperateParams');
     types.ExchangeShopRequest = root.lookupType('gamepb.activitypb.ExchangeShopRequest');
+    types.WeatherResearchOperateParams = root.lookupType('gamepb.activitypb.WeatherResearchOperateParams');
+    types.AdvanceWeatherResearchRequest = root.lookupType('gamepb.activitypb.AdvanceWeatherResearchRequest');
     types.OperateConstellationRequest = root.lookupType('gamepb.activitypb.OperateConstellationRequest');
     types.ClaimQingMeiDailySeedRequest = root.lookupType('gamepb.activitypb.ClaimQingMeiDailySeedRequest');
     types.StartQingMeiBrewRequest = root.lookupType('gamepb.activitypb.StartQingMeiBrewRequest');
@@ -248,6 +251,8 @@ async function loadProto(): Promise<void> {
     types.ClaimQixiBridgeRewardsRequest = root.lookupType('gamepb.activitypb.ClaimQixiBridgeRewardsRequest');
     types.GiftQixiSachetRequest = root.lookupType('gamepb.activitypb.GiftQixiSachetRequest');
     types.ActivityOperateReply = root.lookupType('gamepb.activitypb.ActivityOperateReply');
+    types.GetWeatherStatusRequest = root.lookupType('gamepb.weatherpb.GetWeatherStatusRequest');
+    types.GetWeatherStatusReply = root.lookupType('gamepb.weatherpb.GetWeatherStatusReply');
     types.GetSeasonInfoRequest = root.lookupType('gamepb.seasonpb.GetSeasonInfoRequest');
     types.GetSeasonInfoReply = root.lookupType('gamepb.seasonpb.GetSeasonInfoReply');
     types.ClaimBattlePassRewardsRequest = root.lookupType('gamepb.seasonpb.ClaimBattlePassRewardsRequest');
@@ -370,6 +375,7 @@ async function loadProto(): Promise<void> {
     types.ProductsHasChangedNotify = root.lookupType('gamepb.mallpb.ProductsHasChangedNotify');
     types.ActiviesChangeNotify = root.lookupType('gamepb.activitypb.ActiviesChangeNotify');
     types.SkinChangeNotify = root.lookupType('gamepb.skinpb.SkinChangeNotify');
+    types.WeatherChangeNotify = root.lookupType('gamepb.weatherpb.WeatherChangeNotify');
 
     // Proto 加载完成
     log('系统', 'Protobuf 定义加载完成');

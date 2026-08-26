@@ -25,6 +25,20 @@ const ACTIVITY_ERROR_MESSAGES: Record<string, string> = {
     INVALID_QIXI_MESSAGE_TEXT_ID: '祝福文案信息无效，请刷新活动后重试',
     QIXI_RESPONSE_INVALID: '鹊桥活动数据已经变化，请刷新页面后重试',
     QIXI_GIFT_FAILED: '鹊羽香囊赠送失败，请刷新后重试',
+    WEATHER_ACTIVITY_UNAVAILABLE: '雨落成诗活动尚未开放或已经结束',
+    WEATHER_SHOP_UNAVAILABLE: '天气采集瓶商店当前不可用',
+    WEATHER_SHOP_ALREADY_EXCHANGED: '今日已经兑换过天气采集瓶',
+    INVALID_WEATHER_FRIEND_GID: '好友信息无效，请刷新活动后重新选择',
+    WEATHER_COLLECTOR_UNAVAILABLE: '背包中没有可用的天气采集瓶',
+    WEATHER_FRIEND_NOT_THUNDERSTORM: '该好友农场当前不是雷雨天气',
+    WEATHER_SUMMON_UNAVAILABLE: '背包中没有可用的雷雨召唤瓶',
+    WEATHER_ALREADY_ACTIVE: '自己的农场当前已有特殊天气',
+    WEATHER_ACCOUNT_UNAVAILABLE: '当前账号尚未就绪，请稍后重试',
+    INVALID_WEATHER_RESEARCH_NODE: '气象研究节点信息无效，请刷新后重试',
+    WEATHER_RESEARCH_UNAVAILABLE: '气象研究数据暂不可用，请刷新后重试',
+    WEATHER_RESEARCH_ALREADY_COMPLETED: '该气象研究节点已经完成',
+    WEATHER_RESEARCH_LOCKED: '请先完成前置气象研究节点',
+    INSUFFICIENT_LIGHTNING_BADGES: '雷电徽章不足',
 };
 
 function activityErrorResponse(error: any): { code: string; message: string } {
@@ -108,6 +122,7 @@ function mountActivityCenterRoutes(app: Application, ctx: AdminContext): void {
     mountGet('/api/activity-center/solar-terms', 'getCurrentSolarTerms');
     mountGet('/api/activity-center/qingmei', 'getCurrentQingMeiActivity');
     mountGet('/api/activity-center/qixi', 'getCurrentQixiActivity');
+    mountGet('/api/activity-center/weather', 'getCurrentWeatherActivity');
 
     app.post('/api/activity-center/pass/claim', withAccount((accountId: string) => (
         ctx.provider.claimBattlePassRewards(accountId)
@@ -153,6 +168,27 @@ function mountActivityCenterRoutes(app: Application, ctx: AdminContext): void {
     app.post('/api/activity-center/qixi/gift', withAccount((accountId: string, req: Request) => (
         ctx.provider.giftQixiSachet(accountId, req.body?.friendGid, req.body?.messageTextId ?? 15)
     )));
+
+    app.post('/api/activity-center/weather/shop/exchange', withAccount((accountId: string) => (
+        ctx.provider.exchangeWeatherCollectorBottle(accountId)
+    )));
+
+    app.post('/api/activity-center/weather/collect', withAccount((accountId: string, req: Request) => (
+        ctx.provider.useWeatherCollectorBottle(accountId, req.body?.friendGid)
+    )));
+
+    app.post('/api/activity-center/weather/summon', withAccount((accountId: string) => (
+        ctx.provider.useWeatherSummonBottle(accountId)
+    )));
+
+    app.post('/api/activity-center/weather/research/:nodeId/advance', withAccount((accountId: string, req: Request, res: Response) => {
+        const nodeId = String(req.params.nodeId || '');
+        if (!/^[1-9]\d*$/.test(nodeId)) {
+            res.status(400).json({ ok: false, error: 'nodeId 必须是正十进制整数' });
+            return Promise.resolve(undefined);
+        }
+        return ctx.provider.advanceWeatherResearch(accountId, nodeId);
+    }));
 }
 
 module.exports = { mountActivityCenterRoutes };

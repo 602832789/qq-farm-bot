@@ -17,14 +17,14 @@ const {
     redactHandshakeCode,
 } = require('../../tools/analyze-keepalive-capture');
 
-test('official client version is the capture-verified 1.13.2.10 build', () => {
-    assert.equal(DEFAULT_CLIENT_VERSION, '1.13.2.10_20260723');
+test('official client version is the capture-verified 1.13.3.11 build', () => {
+    assert.equal(DEFAULT_CLIENT_VERSION, '1.13.3.11_20260826');
 });
 
 test('legacy defaults migrate while explicit custom client versions survive', () => {
     assert.deepEqual(
         [...LEGACY_DEFAULT_CLIENT_VERSIONS],
-        ['1.13.2.8_20260723', '1.13.2.9_20260723'],
+        ['1.13.2.8_20260723', '1.13.2.9_20260723', '1.13.2.10_20260723'],
     );
     assert.equal(isManagedDefaultClientVersion('1.13.2.9_20260723'), true);
     assert.equal(isManagedDefaultClientVersion(DEFAULT_CLIENT_VERSION), true);

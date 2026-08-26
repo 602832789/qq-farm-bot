@@ -66,6 +66,56 @@ message ConstellationData {
     repeated ConstellationGroup groups = 5;
 }
 
+// 雨落成诗：天气采集瓶的产出配置。尚未抓到语义的字段保留协议字段名，
+// 避免把客户端静态配置误当成账号动态进度。
+message WeatherBottleReward {
+    int64 reward_id = 1;
+    ActivityItem reward = 3;
+    int64 status = 4;
+    string probability = 6;
+}
+
+message WeatherBottleConfig {
+    int64 field_3 = 3;
+    int64 field_4 = 4;
+    int64 collector_item_id = 5;
+    int64 collector_item_count = 6;
+    repeated WeatherBottleReward rewards = 8;
+    int64 field_9 = 9;
+}
+
+message WeatherActivityTask {
+    int64 task_id = 1;
+    int64 trigger_item_id = 2;
+    ActivityItem reward = 3;
+    string title = 4;
+    int64 daily_limit = 5;
+}
+
+message WeatherActivityTasks {
+    repeated WeatherActivityTask tasks = 1;
+}
+
+message WeatherResearchNode {
+    int64 node_id = 1;
+    repeated int64 prerequisite_node_ids = 2 [packed = true];
+    int64 status = 3;
+    int64 field_5 = 5;
+    ActivityItem cost = 6;
+    ActivityItem reward = 7;
+    int64 field_8 = 8;
+    int64 field_9 = 9;
+}
+
+message WeatherResearchTrack {
+    int64 current_stage = 1;
+    repeated WeatherResearchNode nodes = 2;
+}
+
+message WeatherResearchData {
+    WeatherResearchTrack track = 1;
+}
+
 message ActivityData {
     ActivityContent activity = 1;
     repeated ActivityData children = 2;
@@ -76,6 +126,9 @@ message ActivityData {
     QixiBridgeConfig qixi_bridge = 112;
     QixiGiftProgress qixi_gift = 113;
     QingMeiQuote qingmei_quote = 114;
+    WeatherBottleConfig weather_bottle = 105;
+    WeatherActivityTasks weather_tasks = 117;
+    WeatherResearchData weather_research = 118;
 }
 
 message ActivityWindow {
@@ -188,6 +241,18 @@ message ExchangeShopRequest {
     int64 activity_id = 1;
     int64 operate_type = 2;
     ExchangeShopOperateParams exchange_shop_operate = 101;
+}
+
+// 雨落成诗：推进一个气象研究节点。
+// 实机协议为 operate_type=40，选择器位于 field 140。
+message WeatherResearchOperateParams {
+    int64 node_id = 1;
+}
+
+message AdvanceWeatherResearchRequest {
+    int64 activity_id = 1;
+    int64 operate_type = 2;
+    WeatherResearchOperateParams weather_research_operate = 140;
 }
 
 message OperateConstellationRequest {

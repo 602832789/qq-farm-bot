@@ -13,6 +13,7 @@ const { getActivityWindows, getSellConditionContext } = require('./activity-wind
 const { buildActivityGameplayBindings, resolveActivityGameplays } = require('./activity-gameplay-registry');
 const { reportActivityShare } = require('./share');
 const { getSystemDateKey } = require('../utils/utils');
+const weatherActivityService = require('./weather-activity');
 const {
     mergeConstellationStates,
     stateRecordKey,
@@ -1002,8 +1003,8 @@ function buildActions(season: any, solarTerms: any, constellation: any = null, s
     };
 }
 
-function buildActivityDirectory(windows: any[], season: any, shop: any, solarTerms: any, constellation: any, qixi: any = null) {
-    const gameplayBindings = buildActivityGameplayBindings({ season, shop, solarTerms, constellation, qixi });
+function buildActivityDirectory(windows: any[], season: any, shop: any, solarTerms: any, constellation: any, qixi: any = null, weather: any = null) {
+    const gameplayBindings = buildActivityGameplayBindings({ season, shop, solarTerms, constellation, qixi, weather });
     const groups: any[] = [];
     for (const window of windows) {
         const id = String(window?.id || '').trim();
@@ -1045,10 +1046,12 @@ async function buildActivityCenterSnapshot(shopOverride: any = null) {
     const solarResult = await settleRequest(querySolarTerms);
     const activityListResult = await settleRequest(getActivityWindows);
     const qixiResult = await settleRequest(getCurrentQixiActivity);
+    const weatherResult = await settleRequest(weatherActivityService.getCurrentWeatherActivity);
     const rawSeason = settledValue(seasonResult);
     const season = rawSeason ? normalizeSeason(rawSeason) : null;
     const solarTerms = solarResult.status === 'fulfilled' ? normalizeSolarTerms(solarResult.value) : null;
     const qixi = settledValue(qixiResult);
+    const weather = settledValue(weatherResult);
 
     let shopResult: SettledEntry;
     if (shopOverride) {
@@ -1076,16 +1079,21 @@ async function buildActivityCenterSnapshot(shopOverride: any = null) {
         qixiBridge: qixi?.actions?.bridge || { enabled: false, available: false, availabilityKnown: false },
         qixiGift: qixi?.actions?.gift || { enabled: false, available: false, availabilityKnown: false },
         qixiDew: qixi?.actions?.dew || { enabled: false, available: false, availabilityKnown: false },
+        weatherExchange: weather?.actions?.exchangeCollector || { enabled: false },
+        weatherCollect: weather?.actions?.collectWeather || { enabled: false, friendCount: 0 },
+        weatherSummon: weather?.actions?.summonThunderstorm || { enabled: false },
+        weatherResearch: weather?.actions?.advanceResearch || { enabled: false },
     };
     const activityWindows = settledValue(activityListResult) || [];
     return {
         serverTime: getServerTimeSec(),
-        activities: buildActivityDirectory(activityWindows, season, shop, solarTerms, constellation, qixi),
+        activities: buildActivityDirectory(activityWindows, season, shop, solarTerms, constellation, qixi, weather),
         season,
         constellation,
         shop,
         solarTerms,
         qixi,
+        weather,
         capabilities: {
             claimPass: actions.claimPass.supported,
             lightConstellation: actions.lightConstellation.supported,
@@ -1094,6 +1102,7 @@ async function buildActivityCenterSnapshot(shopOverride: any = null) {
             qixiBridge: !!qixi,
             qixiGift: !!qixi,
             qixiDew: !!qixi,
+            weather: !!weather,
         },
         actions,
         errors: {
@@ -1101,6 +1110,7 @@ async function buildActivityCenterSnapshot(shopOverride: any = null) {
             shop: settledError(shopResult),
             solarTerms: settledError(solarResult),
             qixi: settledError(qixiResult),
+            weather: settledError(weatherResult),
             activities: settledError(activityListResult),
         },
     };
@@ -1605,6 +1615,7 @@ module.exports = {
     getCurrentStarSandShop,
     getCurrentSolarTerms,
     getCurrentQixiActivity,
+    getCurrentWeatherActivity: weatherActivityService.getCurrentWeatherActivity,
     claimBattlePassRewards,
     exchangeStarSandGoods,
     lightConstellation,
@@ -1616,4 +1627,8 @@ module.exports = {
     settleQingMeiBrew,
     claimQixiBridgeRewards,
     giftQixiSachet,
+    exchangeWeatherCollectorBottle: weatherActivityService.exchangeWeatherCollectorBottle,
+    useWeatherCollectorBottle: weatherActivityService.useWeatherCollectorBottle,
+    useWeatherSummonBottle: weatherActivityService.useWeatherSummonBottle,
+    advanceWeatherResearch: weatherActivityService.advanceWeatherResearch,
 };

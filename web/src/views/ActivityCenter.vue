@@ -11,6 +11,7 @@ import BottomNav from '@/components/activity/BottomNav.vue'
 import { activityHasGameplay, resolveActivityGameplay } from '@/components/activity/gameplays'
 import QixiActivityView from '@/components/activity/gameplays/qixi/QixiActivityView.vue'
 import { ConstellationTab, SolarTermsTab, StarSandExchangeDialog, StarSandShopTab, TravelPassTab } from '@/components/activity/gameplays/stellar'
+import WeatherActivityView from '@/components/activity/gameplays/weather/WeatherActivityView.vue'
 import { useAccountStore } from '@/stores/account'
 import { useActivityCenterStore } from '@/stores/activity-center'
 import { useFriendStore } from '@/stores/friend'
@@ -21,7 +22,7 @@ const accountStore = useAccountStore()
 const activityStore = useActivityCenterStore()
 const friendStore = useFriendStore()
 const { currentAccountId } = storeToRefs(accountStore)
-const { activities, season, shop, solarTerms, constellation, qixi, actions, tabBadges, loading, error, actionError, notice, loadedAccountId, serverClockOffset, pendingActions } = storeToRefs(activityStore)
+const { activities, season, shop, solarTerms, constellation, qixi, weather, actions, tabBadges, loading, error, actionError, notice, loadedAccountId, serverClockOffset, pendingActions } = storeToRefs(activityStore)
 const { friends, loading: friendsLoading } = storeToRefs(friendStore)
 const activeTab = ref<ActivityTab>('travel')
 const selectedActivity = ref<ActivityGameplayKey | null>(null)
@@ -72,6 +73,8 @@ const hasActivities = computed(() => displayActivities.value.length > 0)
 const pageTitle = computed(() => currentData.value?.title || season.value?.title || '—')
 const theme = computed(() => activeTab.value === 'solar' ? 'day' : 'night')
 const endTime = computed(() => {
+  if (selectedActivity.value === 'weather')
+    return weather.value?.endTime
   if (activeTab.value === 'shop')
     return shop.value?.endTime
   if (selectedActivity.value === 'qixi')
@@ -161,6 +164,21 @@ function refreshQixiFriends() {
 async function refreshQixiActivity() {
   await load(true)
 }
+function exchangeWeatherCollector() {
+  activityStore.exchangeWeatherCollectorBottle(accountId())
+}
+function collectWeather(friendGid: string) {
+  activityStore.collectWeather(accountId(), friendGid)
+}
+function summonThunderstorm() {
+  activityStore.summonThunderstorm(accountId())
+}
+function advanceWeatherResearch(nodeId: string) {
+  activityStore.advanceWeatherResearch(accountId(), nodeId)
+}
+async function refreshWeatherActivity() {
+  await load(true)
+}
 function selectShopGoods(goods: ShopGoodsDto) {
   selectedShopGoods.value = goods
 }
@@ -214,6 +232,10 @@ watch(stellarDetailsAvailable, (available) => {
 })
 watch(qixi, (activity) => {
   if (selectedActivity.value === 'qixi' && !activity && !loading.value)
+    selectedActivity.value = null
+})
+watch(weather, (activity) => {
+  if (selectedActivity.value === 'weather' && !activity && !loading.value)
     selectedActivity.value = null
 })
 onMounted(() => {
@@ -354,6 +376,48 @@ onUnmounted(() => {
             @claim-bridge="claimQixiBridge"
             @gift="giftQixiSachet"
             @refresh-friends="refreshQixiFriends"
+          />
+        </main>
+      </template>
+    </div>
+  </ActivityShell>
+
+  <ActivityShell v-else-if="selectedActivity === 'weather'" theme="day">
+    <div class="activity-center">
+      <ActivityHeader
+        :title="weather?.name || '雨落成诗'"
+        :remaining="remaining"
+        :balance="weather?.research?.badgeBalance || '0'"
+        currency-name="雷电徽章"
+        :loading="loading"
+        show-refresh
+        @back="goBack"
+        @refresh="refreshWeatherActivity"
+      />
+      <div v-if="!currentAccountId" class="activity-state weather-state">
+        <strong>请先选择账号</strong><span>活动数据按当前账号加载</span>
+      </div>
+      <div v-else-if="loading && !weather" class="activity-state weather-state">
+        <div class="activity-spinner" /><strong>正在连接气象观测站</strong>
+      </div>
+      <template v-else>
+        <div v-if="error || actionError || notice" class="activity-message" :class="{ success: notice && !error && !actionError }" role="status">
+          <span>{{ actionError || error || notice }}</span><button v-if="error" type="button" :disabled="loading" @click="load(true)">
+            重试
+          </button>
+        </div>
+        <main class="activity-content weather-content">
+          <WeatherActivityView
+            :activity="weather"
+            :now="serverNow"
+            :pending-exchange="pendingActions.exchangeWeatherCollector"
+            :pending-collect="pendingActions.collectWeather"
+            :pending-summon="pendingActions.summonThunderstorm"
+            :pending-research="pendingActions.advanceWeatherResearch"
+            @exchange="exchangeWeatherCollector"
+            @collect="collectWeather"
+            @summon="summonThunderstorm"
+            @advance-research="advanceWeatherResearch"
           />
         </main>
       </template>
@@ -594,7 +658,8 @@ onUnmounted(() => {
     transform: rotate(360deg);
   }
 }
-.qixi-content {
+.qixi-content,
+.weather-content {
   inset: 0;
   min-height: 0;
   overflow-x: hidden;
@@ -605,7 +670,8 @@ onUnmounted(() => {
   touch-action: pan-y;
   -webkit-overflow-scrolling: touch;
 }
-.qixi-state {
+.qixi-state,
+.weather-state {
   inset: calc(86px + env(safe-area-inset-top)) 0 0;
 }
 @media (max-width: 1100px) and (min-width: 901px) {
@@ -655,11 +721,13 @@ onUnmounted(() => {
     right: 18px;
     left: 18px;
   }
-  .qixi-content {
+  .qixi-content,
+  .weather-content {
     inset: 0;
     border-radius: 0;
   }
-  .qixi-state {
+  .qixi-state,
+  .weather-state {
     inset: calc(72px + env(safe-area-inset-top)) 0 0;
   }
 }
@@ -980,12 +1048,14 @@ onUnmounted(() => {
     grid-template-columns: 1fr;
   }
 }
-.qixi-content {
+.qixi-content,
+.weather-content {
   border: 0 !important;
   border-radius: 0 !important;
   background: transparent !important;
 }
-.qixi-state {
+.qixi-state,
+.weather-state {
   border-radius: 0 !important;
 }
 </style>

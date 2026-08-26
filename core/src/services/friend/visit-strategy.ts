@@ -389,6 +389,14 @@ export function cacheFriendsListFromReply(reply: any): any[] {
                 weedNum: toNum(f.plant.weed_num),
                 insectNum: toNum(f.plant.insect_num),
             } : null,
+            weather: f.weather ? {
+                type: toNum(f.weather.weather_type),
+                status: toNum(f.weather.status),
+                beginTime: toNum(f.weather.begin_time),
+                endTime: toNum(f.weather.end_time),
+                source: toNum(f.weather.source),
+                friendMarker: toNum(f.weather.field_8),
+            } : null,
         }))
         .sort((a: any, b: any) => {
             // 固定顺序：先按名称，再按 GID，避免刷新时顺序抖动
