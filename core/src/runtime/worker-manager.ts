@@ -127,6 +127,8 @@ function createWorkerManager(options: WorkerManagerOptions) {
                 code: account.code,
                 platform: account.platform,
                 systemTimeZone: initialConfigSnapshot.systemTimeZone,
+                systemServerUrl: initialConfigSnapshot.systemServerUrl,
+                systemClientVersion: initialConfigSnapshot.systemClientVersion,
             },
         });
         child.send({ type: 'config_sync', config: initialConfigSnapshot });

@@ -1,7 +1,7 @@
 import type { AccountConfig, AutomationConfig, BagSeedFallbackStrategy, FertilizerLandType, GlobalConfig, IntervalConfig, OfflineReminder, PlantingStrategy, QuietHoursConfig } from '../../types/config';
 export {};
 
-const { DEFAULT_CLIENT_VERSION, DEFAULT_TIME_ZONE, normalizeTimeZone } = require('../../config/config');
+const { DEFAULT_TIME_ZONE, normalizeTimeZone, resolveClientVersion } = require('../../config/config');
 const { getDataFile, ensureDataDir } = require('../../config/runtime-paths');
 const { readJsonFile } = require('../../services/json-db');
 
@@ -23,15 +23,6 @@ const FERTILIZER_LAND_TYPE_SET: Set<string> = new Set(DEFAULT_FERTILIZER_LAND_TY
 const INTERVAL_MAX_SEC: number = 86400;
 const DEFAULT_KNOWN_FRIEND_GID_SYNC_COOLDOWN_SEC: number = 300;
 const DEFAULT_FRIENDS_LIST_CACHE_TTL_SEC: number = 60;
-const LEGACY_DEFAULT_CLIENT_VERSIONS: ReadonlySet<string> = new Set([
-    '1.13.2.8_20260723',
-    '1.13.2.9_20260723',
-    '1.13.2.10_20260723',
-]);
-function isManagedDefaultClientVersion(value: unknown): boolean {
-    const version = String(value || '').trim();
-    return version === DEFAULT_CLIENT_VERSION || LEGACY_DEFAULT_CLIENT_VERSIONS.has(version);
-}
 let systemConfigMigrated: boolean = false;
 let accountFallbackConfig: AccountConfig;
 
@@ -534,14 +525,16 @@ function loadGlobalConfig(): void {
                 const deviceOs = String(srcDevice.os || data.systemConfig.os || 'Windows').trim();
                 const savedTopVersion = String(data.systemConfig.clientVersion || '').trim();
                 const savedDeviceVersion = String(srcDevice.clientVersion || '').trim();
-                const customDeviceVersion = savedDeviceVersion && !isManagedDefaultClientVersion(savedDeviceVersion)
-                    ? savedDeviceVersion : '';
-                const customTopVersion = savedTopVersion && !isManagedDefaultClientVersion(savedTopVersion)
-                    ? savedTopVersion : '';
-                const deviceClientVersion = customDeviceVersion || customTopVersion || DEFAULT_CLIENT_VERSION;
+                const savedVersion = savedDeviceVersion || savedTopVersion;
+                const savedVersionUpdatedAt = Number(data.systemConfig.clientVersionUpdatedAt);
+                const {
+                    clientVersion: deviceClientVersion,
+                    clientVersionUpdatedAt: deviceClientVersionUpdatedAt,
+                } = resolveClientVersion(savedVersion, savedVersionUpdatedAt);
                 const normalizedSystemConfig = {
                     serverUrl: String(data.systemConfig.serverUrl || '').trim(),
                     clientVersion: deviceClientVersion,
+                    clientVersionUpdatedAt: deviceClientVersionUpdatedAt,
                     platform: String(data.systemConfig.platform || 'qq').trim(),
                     os: deviceOs,
                     timeZone: normalizeTimeZone(data.systemConfig.timeZone || DEFAULT_TIME_ZONE),
@@ -557,6 +550,7 @@ function loadGlobalConfig(): void {
                 };
                 systemConfigMigrated = savedTopVersion !== deviceClientVersion
                     || savedDeviceVersion !== deviceClientVersion
+                    || Number(data.systemConfig.clientVersionUpdatedAt) !== deviceClientVersionUpdatedAt
                     || data.systemConfig.timeZone !== normalizedSystemConfig.timeZone;
                 globalConfig.systemConfig = normalizedSystemConfig;
             }
@@ -582,7 +576,6 @@ module.exports = {
     DEFAULT_FRIENDS_LIST_CACHE_TTL_SEC,
     DEFAULT_OFFLINE_REMINDER,
     DEFAULT_ACCOUNT_CONFIG,
-    LEGACY_DEFAULT_CLIENT_VERSIONS,
     ALLOWED_AUTOMATION_KEYS,
     // Mutable shared state (by reference)
     globalConfig,
@@ -605,7 +598,6 @@ module.exports = {
     normalizeAutoAcceptHarvestStealSteal,
     normalizeAccountConfig,
     cloneAccountConfig,
-    isManagedDefaultClientVersion,
     resolveAccountId,
     loadGlobalConfig,
 };

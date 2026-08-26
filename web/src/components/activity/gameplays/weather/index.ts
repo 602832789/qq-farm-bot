@@ -1,7 +1,9 @@
 import type { ActivityGameplayModule } from '../types'
 
-export const weatherGameplay = {
+export { default as WeatherActivityView } from './WeatherActivityView.vue'
+
+export const weatherGameplay: ActivityGameplayModule = {
   key: 'weather',
   defaultTab: 'weather',
   tabs: ['weather'],
-} as const satisfies ActivityGameplayModule
+}

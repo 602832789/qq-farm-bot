@@ -113,6 +113,19 @@ function mountFriendRoutes(app: Application, ctx: AdminContext): void {
         }
     });
 
+    // API: 对指定好友农场使用不需要地块目标的特殊互动道具（例如青蛙使坏瓶）。
+    app.post('/api/friend/:gid/interaction-items/use-farm', async (req: Request, res: Response) => {
+        const id = getAccId(ctx, req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+
+        try {
+            const data = await ctx.provider.useFriendFarmInteractionItem(id, req.params.gid, req.body?.itemId);
+            res.json({ ok: true, data });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    });
+
     // API: 对指定好友执行单次操作（偷菜/浇水/除草/捣乱）
     app.post('/api/friend/:gid/op', async (req: Request, res: Response) => {
         const id = getAccId(ctx, req);

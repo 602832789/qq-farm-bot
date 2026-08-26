@@ -28,7 +28,7 @@ const FROG_MISCHIEF_BOTTLE_ID = 5005;
 const CLOUD_MISCHIEF_BOTTLE_ID = 5006;
 const LIGHTNING_BADGE_ID = 1027;
 const LIGHTNING_MUTANT_CONFIG_ID = 12;
-const WEATHER_ITEM_IDS = [5001, 5002, 5003, 5004, 5005, 5006, 5007, 5008];
+const WEATHER_ITEM_IDS = [4002, 4003, 5001, 5002, 5003, 5004, 5005, 5006, 5007, 5008];
 const THUNDERSTORM_TYPE = 1;
 // EnterReply.field 13.field 9 is scoped to the current thunderstorm instance.
 // It is not a per-friend daily collection record and resets for a later storm.
@@ -235,7 +235,8 @@ function tasksDto(child: any): any[] {
         title: String(task.title || ''),
         reward: itemDto(task.reward),
         dailyLimit: int64String(task.daily_limit),
-        progressKnown: false,
+        current: int64String(task.current),
+        progressKnown: true,
     }));
 }
 
@@ -247,7 +248,7 @@ function researchDto(child: any, balances: Map<string, string>): any {
         const cost = itemDto(node.cost);
         const statusCode = int64String(node.status);
         const availableByStatus = statusCode === '2';
-        const completed = statusCode === '4';
+        const completed = statusCode === '4' || !!node.claimed;
         return {
             id: int64String(node.node_id),
             prerequisiteNodeIds: (Array.isArray(node.prerequisite_node_ids) ? node.prerequisite_node_ids : []).map(int64String),

@@ -90,6 +90,7 @@ message WeatherActivityTask {
     ActivityItem reward = 3;
     string title = 4;
     int64 daily_limit = 5;
+    int64 current = 6;
 }
 
 message WeatherActivityTasks {
@@ -100,6 +101,7 @@ message WeatherResearchNode {
     int64 node_id = 1;
     repeated int64 prerequisite_node_ids = 2 [packed = true];
     int64 status = 3;
+    bool claimed = 4;
     int64 field_5 = 5;
     ActivityItem cost = 6;
     ActivityItem reward = 7;
@@ -268,6 +270,25 @@ message CollectWeatherRequest {
     WeatherCollectOperateParams weather_collect_operate = 107;
 }
 
+// Compatibility aliases used by the upstream activity-center implementation.
+// The verified wire selectors remain field 107 for friend collection and
+// field 140 for weather research.
+message WeatherResearchOperateRequest {
+    int64 activity_id = 1;
+    int64 operate_type = 2;
+    WeatherResearchOperateParams params = 140;
+}
+
+message WeatherTaskOperateParams {
+    int64 target_gid = 3;
+}
+
+message WeatherTaskOperateRequest {
+    int64 activity_id = 1;
+    int64 operate_type = 2;
+    WeatherTaskOperateParams params = 107;
+}
+
 message OperateConstellationRequest {
     message Empty {}
 
@@ -345,6 +366,31 @@ message ActivityOperateReply {
     QingMeiSettlement qingmei_settlement = 115;
     QixiGiftResult qixi_gift_result = 125;
     QixiBridgeRewardResult qixi_bridge_result = 126;
+    ExchangeShopResult weather_exchange_result = 101;
+    WeatherTaskOperateResult weather_task_result = 108;
+    WeatherResearchOperateResult weather_research_result = 140;
+}
+
+message ExchangeShopResult {
+    corepb.Item item = 1;
+    ActivityItem cost = 2;
+}
+
+message WeatherTaskRewardLink {
+    int64 task_id = 1;
+    ActivityItem item = 2;
+}
+
+message WeatherTaskOperateResult {
+    WeatherTaskRewardLink task_reward = 1;
+    corepb.Item gained = 2;
+    corepb.Item consumed = 3;
+}
+
+message WeatherResearchOperateResult {
+    int64 node_id = 1;
+    corepb.Item reward = 2;
+    repeated int64 unlocked_node_ids = 3 [packed = true];
 }
 
 message ActiviesChangeNotify {

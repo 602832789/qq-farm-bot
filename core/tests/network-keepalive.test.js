@@ -1,7 +1,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { DEFAULT_CLIENT_VERSION } = require('../dist/config/config');
+const {
+    DEFAULT_CLIENT_VERSION,
+    DEFAULT_CLIENT_VERSION_UPDATED_AT,
+    resolveClientVersion,
+    resolveClientVersionUpdatedAt,
+} = require('../dist/config/config');
 const { GatewayTokenProvider, createGatewayToken } = require('../dist/utils/gateway-token');
 const {
     HEARTBEAT_STALE_AFTER_MS,
@@ -9,26 +14,51 @@ const {
     shouldTerminateForHeartbeat,
 } = require('../dist/utils/keepalive-policy');
 const {
-    LEGACY_DEFAULT_CLIENT_VERSIONS,
-    isManagedDefaultClientVersion,
-} = require('../dist/models/store/shared-state');
-const {
     compareHandshakeUrls,
     redactHandshakeCode,
 } = require('../../tools/analyze-keepalive-capture');
 
-test('official client version is the capture-verified 1.13.3.11 build', () => {
+test('default client version has a release timestamp', () => {
     assert.equal(DEFAULT_CLIENT_VERSION, '1.13.3.11_20260826');
+    assert.equal(DEFAULT_CLIENT_VERSION_UPDATED_AT, 1787673600000);
 });
 
-test('legacy defaults migrate while explicit custom client versions survive', () => {
-    assert.deepEqual(
-        [...LEGACY_DEFAULT_CLIENT_VERSIONS],
-        ['1.13.2.8_20260723', '1.13.2.9_20260723', '1.13.2.10_20260723'],
+test('newer timestamp wins when resolving the client version', () => {
+    const older = DEFAULT_CLIENT_VERSION_UPDATED_AT - 1;
+    const newer = DEFAULT_CLIENT_VERSION_UPDATED_AT + 1;
+    assert.deepEqual(resolveClientVersion('stored-without-time', undefined), {
+        clientVersion: DEFAULT_CLIENT_VERSION,
+        clientVersionUpdatedAt: DEFAULT_CLIENT_VERSION_UPDATED_AT,
+    });
+    assert.deepEqual(resolveClientVersion('stored-older', older), {
+        clientVersion: DEFAULT_CLIENT_VERSION,
+        clientVersionUpdatedAt: DEFAULT_CLIENT_VERSION_UPDATED_AT,
+    });
+    assert.deepEqual(resolveClientVersion('stored-equal', DEFAULT_CLIENT_VERSION_UPDATED_AT), {
+        clientVersion: DEFAULT_CLIENT_VERSION,
+        clientVersionUpdatedAt: DEFAULT_CLIENT_VERSION_UPDATED_AT,
+    });
+    assert.deepEqual(resolveClientVersion('stored-newer', newer), {
+        clientVersion: 'stored-newer',
+        clientVersionUpdatedAt: newer,
+    });
+});
+
+test('client version timestamp changes only when the version changes', () => {
+    const currentUpdatedAt = DEFAULT_CLIENT_VERSION_UPDATED_AT + 10;
+    const now = currentUpdatedAt + 20;
+    assert.equal(
+        resolveClientVersionUpdatedAt('same', 'same', currentUpdatedAt, undefined, now),
+        currentUpdatedAt,
     );
-    assert.equal(isManagedDefaultClientVersion('1.13.2.9_20260723'), true);
-    assert.equal(isManagedDefaultClientVersion(DEFAULT_CLIENT_VERSION), true);
-    assert.equal(isManagedDefaultClientVersion('custom-client-version'), false);
+    assert.equal(
+        resolveClientVersionUpdatedAt('changed', 'same', currentUpdatedAt, undefined, now),
+        now,
+    );
+    assert.equal(
+        resolveClientVersionUpdatedAt('default', 'custom', currentUpdatedAt, DEFAULT_CLIENT_VERSION_UPDATED_AT, now),
+        DEFAULT_CLIENT_VERSION_UPDATED_AT,
+    );
 });
 
 test('ordinary gateway tokens retain the official random format', () => {

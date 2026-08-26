@@ -38,9 +38,8 @@ const emit = defineEmits<{
 
 const land = computed(() => props.land)
 
-// 官方配置里的变异图标没有全部导出 PNG，缺图的用图标字形顶上，避免出现裂图。
-const MUTANT_GLYPH_NAMES = new Set(['lightning', 'butterfly'])
-const failedMutantIcons = ref(new Set<string>())
+// 上游资源已统一按变异 ID 命名；仍保留加载失败回退，兼容尚无 PNG 的变异。
+const failedMutantIcons = ref(new Set<number>())
 
 const mutantEffects = computed(() => {
   const effects = Array.isArray(land.value?.mutantEffects) ? land.value.mutantEffects : []
@@ -67,6 +66,11 @@ const mutantEffects = computed(() => {
     })
     .filter((effect: { name: string }) => !!effect.name)
 })
+
+const purpleCrystalResonance = computed(() => (
+  Number(land.value?.level) === 5
+  && (mutantEffects.value.length > 0 || !!land.value?.isMutated)
+))
 
 const growProgress = computed(() => {
   const matureInSec = land.value.matureInSec || 0
@@ -257,24 +261,24 @@ function mutantBadgeClass(effect: { icon?: string }) {
   return map[icon] || 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300'
 }
 
-function mutantIconUrl(icon: string) {
-  const name = String(icon || '').trim()
-  return name ? `/game-config/seed_images_named/mutant/${name}.png` : ''
+function mutantIconUrl(id: number) {
+  const numericId = Number(id) || 0
+  return numericId > 0 ? `/game-config/seed_images_named/mutant/${numericId}.png` : ''
 }
 
 function mutantIconName(effect: { icon?: string }) {
   return String(effect?.icon || '').trim().toLowerCase()
 }
 
-function showMutantImage(effect: { icon?: string }) {
-  const name = mutantIconName(effect)
-  return !!name && !MUTANT_GLYPH_NAMES.has(name) && !failedMutantIcons.value.has(name)
+function showMutantImage(effect: { id?: number }) {
+  const id = Number(effect?.id) || 0
+  return id > 0 && !failedMutantIcons.value.has(id)
 }
 
-function markMutantIconFailed(effect: { icon?: string }) {
-  const name = mutantIconName(effect)
-  if (name)
-    failedMutantIcons.value = new Set(failedMutantIcons.value).add(name)
+function markMutantIconFailed(effect: { id?: number }) {
+  const id = Number(effect?.id) || 0
+  if (id > 0)
+    failedMutantIcons.value = new Set(failedMutantIcons.value).add(id)
 }
 </script>
 
@@ -377,6 +381,13 @@ function markMutantIconFailed(effect: { icon?: string }) {
     <!-- Status Badges (game-style) -->
     <div class="mt-auto flex flex-wrap items-center justify-center gap-1 pt-1">
       <span
+        v-if="purpleCrystalResonance"
+        class="badge-purple-crystal inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold"
+        title="紫金土地上的任意变异作物经验 +25%"
+      >
+        <span class="i-carbon-flash-filled" /> 紫晶共鸣
+      </span>
+      <span
         v-for="effect in mutantEffects"
         :key="effect.id || effect.name"
         class="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold"
@@ -385,7 +396,7 @@ function markMutantIconFailed(effect: { icon?: string }) {
       >
         <img
           v-if="showMutantImage(effect)"
-          :src="mutantIconUrl(effect.icon)"
+          :src="mutantIconUrl(effect.id)"
           :alt="effect.name"
           class="h-3 w-3 object-contain"
           @error="markMutantIconFailed(effect)"
@@ -1011,6 +1022,19 @@ function markMutantIconFailed(effect: { icon?: string }) {
 .badge-bug,
 .badge-harvest {
   animation: none;
+}
+
+.badge-purple-crystal {
+  color: #6d3da0;
+  border: 1px solid rgba(146, 103, 190, 0.35);
+  background: linear-gradient(135deg, rgba(239, 225, 255, 0.96), rgba(218, 244, 255, 0.92));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+}
+
+:global(.dark) .badge-purple-crystal {
+  color: #e9d5ff;
+  border-color: rgba(196, 151, 255, 0.34);
+  background: linear-gradient(135deg, rgba(88, 49, 121, 0.58), rgba(33, 82, 102, 0.52));
 }
 
 .fertilizer-actions {

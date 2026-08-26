@@ -1,779 +1,1044 @@
 <script setup lang="ts">
-import type { CSSProperties } from 'vue'
-import type { ActivityItemDto, WeatherActivityDto, WeatherFriendDto, WeatherResearchNodeDto } from '@/stores/activity-center'
+import type { WeatherActivityDto } from '@/stores/activity-center'
 import { computed, ref } from 'vue'
+import RewardItem from '@/components/activity/RewardItem.vue'
+import { useRouter } from 'vue-router'
+
+interface FriendOption {
+  gid?: string | number
+  name?: string
+  remark?: string
+  avatarUrl?: string
+  avatar_url?: string
+  level?: string | number
+}
 
 const props = defineProps<{
   activity: WeatherActivityDto | null
-  now: number
-  pendingExchange: boolean
-  pendingScan: boolean
-  pendingCollect: boolean
-  pendingFrog: boolean
-  pendingCloud: boolean
-  pendingSummon: boolean
+  friends: FriendOption[]
   pendingResearch: boolean
+  pendingBuy: boolean
+  pendingCollect: boolean
+  pendingSummon: boolean
 }>()
+const router = useRouter()
 
 const emit = defineEmits<{
-  exchange: []
-  scanFriends: []
-  collect: [friendGid: string]
-  frog: [friendGid: string]
-  cloud: [friendGid: string, landId: string]
+  light: [nodeId: string]
+  buy: []
+  collect: [targetGid: string]
   summon: []
-  advanceResearch: [nodeId: string]
 }>()
 
+const friendSearch = ref('')
+const selectedFriendGid = ref('')
 const failedAvatars = ref(new Set<string>())
-const primaryItemIds = ['1027', '5001', '5002', '5005', '5006']
-const knownItemNames: Record<string, string> = {
-  1027: '雷电徽章',
-  5001: '天气采集瓶',
-  5002: '雷雨召唤瓶',
-  5003: '闪电变异瓶',
-  5004: '雷击木瓶',
-  5005: '青蛙使坏瓶',
-  5006: '乌云使坏瓶',
-  5007: '雷纹礼盒',
-  5008: '天气礼盒',
-}
 
-const resourceItems = computed(() => primaryItemIds.map(itemById))
-const badgeItem = computed(() => itemById('1027'))
-const summonBottle = computed(() => itemById('5002'))
-const collectorBottle = computed(() => itemById('5001'))
-const frogBottle = computed(() => itemById('5005'))
-const cloudBottle = computed(() => itemById('5006'))
-const ownRemainingSec = computed(() => remainingSeconds(props.activity?.ownWeather.endTime))
-const ownDurationSec = computed(() => props.activity?.ownWeather.durationSec || 7200)
-const weatherProgress = computed(() => {
-  if (!props.activity?.ownWeather.isThunderstorm || !ownDurationSec.value)
-    return 0
-  return Math.min(100, Math.max(0, ownRemainingSec.value / ownDurationSec.value * 100))
-})
-const friendActionPending = computed(() => props.pendingCollect || props.pendingFrog || props.pendingCloud)
-const inspectedCount = computed(() => props.activity?.friends.filter(friend => friend.inspected).length || 0)
-const availableFriendCount = computed(() => props.activity?.friends.filter(friend => friend.canCollect).length || 0)
-const weatherState = computed(() => {
-  if (!props.activity?.active)
-    return { label: '活动已结束', detail: '活动天气操作已关闭', className: 'ended', icon: 'i-carbon-time' }
-  if (props.activity.ownWeather.isThunderstorm)
-    return { label: '雷雨进行中', detail: '闪电变异窗口开启', className: 'storm', icon: 'i-carbon-thunderstorm' }
-  if (props.activity.ownWeather.active)
-    return { label: '特殊天气进行中', detail: '结束前不能重复召唤雷雨', className: 'special', icon: 'i-carbon-cloud' }
-  return { label: '当前无雷雨', detail: '作物按普通天气生长', className: 'clear', icon: 'i-carbon-sun' }
-})
-const mutationName = computed(() => {
-  const id = props.activity?.mutation.mutantConfigId || 0
-  return ({ 12: '闪电', 13: '喜鹊', 14: '晶辉' } as Record<number, string>)[id] || '活动'
+const filteredFriends = computed(() => {
+  const keyword = friendSearch.value.trim().toLowerCase()
+  const source = props.friends.filter(friend => Number(friend.gid) > 0)
+  if (!keyword)
+    return source.slice(0, 60)
+  return source.filter((friend) => {
+    const name = String(friend.remark || friend.name || '').toLowerCase()
+    return name.includes(keyword) || String(friend.gid || '').includes(keyword)
+  }).slice(0, 60)
 })
 
-function itemById(id: string): ActivityItemDto {
-  const source = props.activity?.inventory.find(item => item.id === id)
-  return source
-    ? { ...source, name: source.name || knownItemNames[id] || `物品 ${id}` }
-    : { id, name: knownItemNames[id] || `物品 ${id}`, count: '0', image: '', rarity: null }
+const selectedFriend = computed(() => props.friends.find(friend => String(friend.gid || '') === selectedFriendGid.value) || null)
+const catalogGoods = computed(() => props.activity?.catalog?.[0] || null)
+const collectionBottleUnavailable = computed(() => !!props.activity?.inventory.known && Number(props.activity.inventory.collectionBottle.count || 0) <= 0)
+const rainBottleUnavailable = computed(() => !!props.activity?.inventory.known && Number(props.activity.inventory.rainBottle.count || 0) <= 0)
+const collectDisabled = computed(() => !selectedFriend.value || props.pendingCollect || collectionBottleUnavailable.value)
+const currentWeather = computed(() => props.activity?.weather || null)
+const weatherActive = computed(() => !!currentWeather.value && !['', '0'].includes(currentWeather.value.id))
+const summonDisabled = computed(() => props.pendingSummon || weatherActive.value || rainBottleUnavailable.value)
+const weatherTaskNames: Record<string, string> = {
+  '5001': '使用天气采集瓶',
+  '5002': '使用雷雨召唤瓶',
+  '5003': '收获闪电变异作物',
+  '5004': '使用雷雨引雷瓶',
+  '5005': '使用青蛙使坏瓶',
+  '5006': '使用乌云使坏瓶',
 }
 
-function countOf(item: ActivityItemDto) {
-  const value = Number(item.count || 0)
-  return Number.isFinite(value) ? value : 0
+function taskName(task: { id: string, itemId: string, name: string }) {
+  return task.name || weatherTaskNames[task.itemId] || `活动任务 ${task.id}`
 }
 
-function remainingSeconds(endTime: number | null | undefined) {
-  if (!endTime)
-    return 0
-  return Math.max(0, Math.ceil((endTime - props.now) / 1000))
+function isInventoryTask(itemId: string) {
+  return itemId === '5001' || itemId === '5002'
 }
 
-function formatDuration(seconds: number) {
-  const safe = Math.max(0, Math.floor(seconds || 0))
-  const hours = Math.floor(safe / 3600)
-  const minutes = Math.floor(safe % 3600 / 60)
-  const secs = safe % 60
-  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+function inventoryTaskCount(itemId: string) {
+  const inventory = props.activity?.inventory
+  if (!inventory?.known)
+    return '--'
+  return itemId === '5001'
+    ? inventory.collectionBottle.count || '0'
+    : inventory.rainBottle.count || '0'
 }
 
-function friendRemaining(friend: WeatherFriendDto) {
-  return formatDuration(remainingSeconds(friend.weather.endTime))
+function taskCurrent(task: { id: string, itemId: string, current: string, active: boolean }) {
+  const progress = props.activity?.progress
+  if (!progress)
+    return Number(task.current) || 0
+  const isCurrent = task.active
+    || task.id === progress.taskId
+    || (!!progress.item.id && progress.item.id === task.itemId)
+  return isCurrent ? (Number(progress.current) || 0) : (Number(task.current) || 0)
 }
 
-function friendState(friend: WeatherFriendDto) {
-  if (friend.scanError)
-    return { label: '检查失败', className: 'error', detail: friend.scanError }
-  if (friend.availability === 'available')
-    return { label: '可采雨', className: 'available', detail: `雷雨剩余 ${friendRemaining(friend)}` }
-  if (friend.availability === 'collected')
-    return { label: '本轮已采', className: 'collected', detail: '下轮雷雨可再次采集' }
-  if (friend.availability === 'expired')
-    return { label: '已失效', className: 'expired', detail: '这场雷雨已经结束' }
-  if (friend.availability === 'unavailable')
-    return { label: '晴天', className: 'clear', detail: '当前不是雷雨天气' }
-  return { label: '待检查', className: 'unknown', detail: '扫描后确认现场天气' }
+function taskTarget(task: { target: string }) {
+  const target = Number(task.target)
+  return Number.isFinite(target) && target > 0 ? target : 0
 }
 
-function collectDisabled(friend: WeatherFriendDto) {
-  return friendActionPending.value || !props.activity?.active || !friend.canCollect || countOf(collectorBottle.value) < 1
+function taskPercent(task: { id: string, itemId: string, current: string, active: boolean, target: string }) {
+  const target = taskTarget(task)
+  return target > 0 ? Math.min(100, Math.max(0, taskCurrent(task) / target * 100)) : 0
 }
 
-function frogDisabled(friend: WeatherFriendDto) {
-  return friendActionPending.value || !props.activity?.active || !friend.gid || countOf(frogBottle.value) < 1
+function taskCompleted(task: { id: string, itemId: string, current: string, active: boolean, target: string }) {
+  const target = taskTarget(task)
+  return target > 0 && taskCurrent(task) >= target
 }
 
-function cloudDisabled(friend: WeatherFriendDto) {
-  return friendActionPending.value || !props.activity?.active || countOf(cloudBottle.value) < 1 || friend.eligibleCloudLandIds.length < 1
-}
-
-function markAvatarFailed(friend: WeatherFriendDto) {
-  failedAvatars.value = new Set(failedAvatars.value).add(friend.gid)
-}
-
-function researchState(node: WeatherResearchNodeDto) {
-  if (node.completed)
+function taskStatus(task: { id: string, itemId: string, current: string, active: boolean, target: string }) {
+  if (taskCompleted(task))
     return '已完成'
-  if (node.availableByStatus)
-    return node.affordable ? '可推进' : '徽章不足'
-  return '待解锁'
+  return taskCurrent(task) > 0 ? '进行中' : '未开始'
 }
 
-function researchDisabled(node: WeatherResearchNodeDto) {
-  return props.pendingResearch || !node.availableByStatus || !node.affordable || !props.activity?.research?.operateSupported
+function formatWeatherTime(value: number | null) {
+  const timestamp = Number(value)
+  if (!Number.isFinite(timestamp) || !Number.isFinite(new Date(timestamp).getTime()))
+    return ''
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(timestamp))
 }
 
-function rainStyle(index: number): CSSProperties {
-  return {
-    '--rain-left': `${(index * 19 + 5) % 103}%`,
-    '--rain-delay': `${-((index * 0.31) % 2.4)}s`,
-    '--rain-duration': `${1.45 + (index % 4) * 0.17}s`,
-  } as CSSProperties
+function friendName(friend: FriendOption) {
+  return String(friend.remark || friend.name || `好友 ${friend.gid || ''}`)
+}
+
+function friendAvatar(friend: FriendOption) {
+  return String(friend.avatarUrl || friend.avatar_url || '')
+}
+
+function chooseFriend(friend: FriendOption) {
+  selectedFriendGid.value = String(friend.gid || '')
+}
+
+function markAvatarFailed(friend: FriendOption) {
+  failedAvatars.value = new Set(failedAvatars.value).add(String(friend.gid || ''))
+}
+
+function submitCollect() {
+  if (!collectDisabled.value)
+    emit('collect', selectedFriendGid.value)
+}
+
+function openInteractionItem(path: string, itemId: string) {
+  void router.push({ path, query: { interactionItem: itemId } })
 }
 </script>
 
 <template>
   <div class="weather-page">
-    <section v-if="activity" class="resource-band" aria-label="活动物资">
-      <div class="resource-band__title">
-        <span class="i-carbon-rain-drop" />
-        <div>
-          <strong>活动物资</strong>
-          <small>实时背包数量</small>
+    <section v-if="activity" class="weather-status" :class="{ active: weatherActive }">
+      <span class="weather-status__icon" :class="weatherActive ? 'i-carbon-thunderstorm' : 'i-carbon-sun'" />
+      <div class="weather-status__content">
+        <small>当前农场天气</small>
+        <strong>{{ weatherActive ? '特殊天气进行中' : (currentWeather ? '当前无特殊天气' : '天气状态暂未读取') }}</strong>
+        <span v-if="weatherActive && currentWeather">
+          {{ currentWeather.typeName || `未知天气（ID ${currentWeather.id || '--'}）` }}<template v-if="currentWeather.id"> · 天气 ID {{ currentWeather.id }}</template><template v-if="currentWeather.type"> · 协议类型 {{ currentWeather.type }}</template>
+        </span>
+      </div>
+      <div v-if="weatherActive && currentWeather" class="weather-status__period">
+        <small>持续时间</small>
+        <strong v-if="currentWeather.endTime">至 {{ formatWeatherTime(currentWeather.endTime) }}</strong>
+        <strong v-else>进行中</strong>
+        <span v-if="currentWeather.beginTime">开始于 {{ formatWeatherTime(currentWeather.beginTime) }}</span>
+      </div>
+      <span class="weather-status__badge">{{ weatherActive ? '生效中' : '空闲' }}</span>
+    </section>
+
+    <section v-if="activity" class="panel collect-panel">
+      <header>
+        <h2>好友天气采集与活动任务</h2>
+        <span>{{ activity.balances.known ? `雷电徽章 ${activity.balances.badge || '0'}` : '徽章数量未知' }}</span>
+      </header>
+      <div class="collect-workspace">
+        <div class="friend-picker">
+          <label class="search-field">
+            <span class="i-carbon-search" />
+            <input v-model="friendSearch" type="search" placeholder="搜索好友名称或 GID">
+          </label>
+          <div v-if="filteredFriends.length === 0" class="operation-empty">
+            暂无可采集的好友
+          </div>
+          <div v-else class="friend-list">
+            <button
+              v-for="friend in filteredFriends"
+              :key="String(friend.gid)"
+              type="button"
+              class="friend-option"
+              :class="{ selected: selectedFriendGid === String(friend.gid) }"
+              @click="chooseFriend(friend)"
+            >
+              <img v-if="friendAvatar(friend) && !failedAvatars.has(String(friend.gid))" :src="friendAvatar(friend)" alt="" @error="markAvatarFailed(friend)">
+              <span v-else class="friend-avatar-fallback i-carbon-user-avatar" />
+              <span class="friend-option__name"><strong>{{ friendName(friend) }}</strong><small>GID {{ friend.gid }}</small></span>
+              <span class="friend-option__mark" :class="selectedFriendGid === String(friend.gid) ? 'i-carbon-checkmark-filled' : 'i-carbon-chevron-right'" />
+            </button>
+          </div>
+        </div>
+        <div class="collect-composer">
+          <div class="inventory-item">
+            <img v-if="activity.inventory.collectionBottle.image" :src="activity.inventory.collectionBottle.image" alt="">
+            <span>{{ activity.inventory.collectionBottle.name || '天气采集瓶' }}</span>
+            <strong>{{ activity.inventory.known ? activity.inventory.collectionBottle.count : '--' }}</strong>
+          </div>
+          <div v-if="selectedFriend" class="selected-friend">
+            <span>采集对象</span><strong>{{ friendName(selectedFriend) }}</strong><small>GID {{ selectedFriend.gid }}</small>
+          </div>
+          <div v-else class="selected-friend selected-friend--empty">
+            <span class="i-carbon-user-follow" /><strong>选择一位好友</strong>
+          </div>
+          <button type="button" class="operation-button" :disabled="collectDisabled" @click="submitCollect">
+            <span v-if="pendingCollect" class="i-carbon-circle-dash animate-spin" />
+            <span v-else class="i-carbon-sun" />
+            {{ pendingCollect ? '采集中…' : (collectionBottleUnavailable ? '天气采集瓶不足' : '采集天气瓶') }}
+          </button>
         </div>
       </div>
-      <div class="resource-list">
-        <article v-for="item in resourceItems" :key="item.id" class="resource-item">
-          <img v-if="item.image" :src="item.image" alt="">
-          <span v-else-if="item.id === '1027'" class="resource-fallback i-carbon-flash-filled" />
-          <span v-else class="resource-fallback i-carbon-bottles-container" />
+      <div class="task-progress">
+        <div class="task-progress__title">
+          <strong>活动任务</strong>
+          <span>完成天气相关目标可获得右侧奖励</span>
+        </div>
+        <div v-for="task in activity.tasks" :key="task.id" class="task-row">
+          <div class="task-row__main" :class="{ 'task-row__main--inventory': isInventoryTask(task.itemId) }">
+            <div class="task-row__heading">
+              <strong>{{ taskName(task) }}</strong>
+              <span v-if="isInventoryTask(task.itemId)" class="task-stock">持有 {{ inventoryTaskCount(task.itemId) }}</span>
+              <span v-else :class="{ completed: taskCompleted(task) }">{{ taskStatus(task) }} · {{ taskCurrent(task) }} / {{ taskTarget(task) }}</span>
+            </div>
+            <div v-if="!isInventoryTask(task.itemId)" class="task-meter"><i :class="{ completed: taskCompleted(task) }" :style="{ width: `${taskPercent(task)}%` }" /></div>
+          </div>
+          <RewardItem v-if="task.reward.id !== '0'" :name="task.reward.name || task.reward.id" :count="task.reward.count" :image="task.reward.image" :rarity="task.reward.rarity" compact />
+        </div>
+        <div v-if="!activity.tasks.length" class="task-empty">暂无活动任务数据</div>
+      </div>
+    </section>
+
+    <section v-if="activity" class="panel item-panel">
+      <header>
+        <h2>天气活动道具</h2>
+        <span>主动道具按目标使用，闪电感应为被动加成</span>
+      </header>
+      <div class="weather-items">
+        <button type="button" class="weather-item" @click="openInteractionItem('/personal', '5003')">
+          <img :src="activity.inventory.lightningMutationBottle.image" alt="">
+          <span><strong>闪电变异瓶</strong><small>我的未成熟 1×1 作物 · 库存 {{ activity.inventory.known ? activity.inventory.lightningMutationBottle.count : '--' }}</small></span>
+          <em>去我的农场</em>
+        </button>
+        <button type="button" class="weather-item" @click="openInteractionItem('/friends', '5004')">
+          <img :src="activity.inventory.lightningAttractBottle.image" alt="">
+          <span><strong>霹雳引雷瓶</strong><small>好友作物变雷击木，售价 ×1.5 · 库存 {{ activity.inventory.known ? activity.inventory.lightningAttractBottle.count : '--' }}</small></span>
+          <em>去好友</em>
+        </button>
+        <button type="button" class="weather-item" @click="openInteractionItem('/friends', '5005')">
+          <img :src="activity.inventory.frogBottle.image" alt="">
+          <span><strong>青蛙使坏瓶</strong><small>好友农场整体放青蛙，获得 30 经验 · 库存 {{ activity.inventory.known ? activity.inventory.frogBottle.count : '--' }}</small></span>
+          <em>去好友</em>
+        </button>
+        <button type="button" class="weather-item" @click="openInteractionItem('/friends', '5006')">
+          <img :src="activity.inventory.darkCloudBottle.image" alt="">
+          <span><strong>乌云使坏瓶</strong><small>好友作物放乌云，获得 30 经验 · 库存 {{ activity.inventory.known ? activity.inventory.darkCloudBottle.count : '--' }}</small></span>
+          <em>去好友</em>
+        </button>
+        <div class="weather-item weather-item--passive">
+          <img :src="activity.inventory.lightningSense.image" alt="">
+          <span><strong>闪电感应</strong><small>无需主动使用，每份提升 {{ activity.inventory.lightningSense.effectPerItemPercent || 2 }}% 闪电变异概率</small></span>
+          <em>{{ activity.inventory.lightningSense.active ? `当前 +${activity.inventory.lightningSense.effectPercent || 0}%` : '未获得' }}</em>
+        </div>
+      </div>
+    </section>
+
+    <section v-if="activity" class="weather-grid operation-grid">
+      <article class="panel operation-panel">
+        <header><h2>天气瓶补给</h2><span v-if="catalogGoods">{{ catalogGoods.name || '天气瓶' }}</span></header>
+        <div v-if="catalogGoods" class="operation-item">
+          <img v-if="catalogGoods.item.image" :src="catalogGoods.item.image" alt="">
           <div>
-            <small>{{ item.name }}</small>
-            <strong>{{ item.count || '0' }}</strong>
+            <strong>{{ catalogGoods.item.name || '天气瓶' }} ×{{ catalogGoods.item.count || '1' }}</strong>
+            <span>消耗 {{ catalogGoods.cost.name || catalogGoods.cost.id }} ×{{ catalogGoods.cost.count || '0' }}</span>
+          </div>
+        </div>
+        <p v-else class="operation-empty">
+          暂未读取到补给目录
+        </p>
+        <button type="button" class="operation-button" :disabled="pendingBuy || !catalogGoods" @click="emit('buy')">
+          <span v-if="pendingBuy" class="i-carbon-circle-dash animate-spin" />
+          <span v-else class="i-carbon-shopping-cart" />
+          {{ pendingBuy ? '购买中…' : '购买天气瓶' }}
+        </button>
+      </article>
+
+      <article class="panel operation-panel">
+        <header><h2>召唤降雨</h2><span>{{ weatherActive ? '已有特殊天气' : '使用降雨瓶' }}</span></header>
+        <div class="inventory-item">
+          <img v-if="activity.inventory.rainBottle.image" :src="activity.inventory.rainBottle.image" alt="">
+          <span>{{ activity.inventory.rainBottle.name || '雷雨召唤瓶' }}</span>
+          <strong>{{ activity.inventory.known ? activity.inventory.rainBottle.count : '--' }}</strong>
+        </div>
+        <p class="operation-description">
+          {{ weatherActive ? '当前特殊天气结束后，才能再次召唤降雨。' : '使用好友采集获得的降雨瓶，为当前农场召唤一场天气。' }}
+        </p>
+        <button type="button" class="operation-button" :disabled="summonDisabled" @click="emit('summon')">
+          <span v-if="pendingSummon" class="i-carbon-circle-dash animate-spin" />
+          <span v-else-if="weatherActive" class="i-carbon-time" />
+          <span v-else class="i-carbon-rain-drop" />
+          {{ pendingSummon ? '召唤中…' : (weatherActive ? '特殊天气进行中' : (rainBottleUnavailable ? '雷雨召唤瓶不足' : '召唤降雨')) }}
+        </button>
+      </article>
+    </section>
+    <section v-if="activity" class="panel research-panel">
+      <header><h2>气象研究</h2><span>按路径依次解锁</span></header>
+      <div class="research-grid">
+        <article v-for="node in activity.research" :key="node.id" class="research-node" :class="{ done: node.claimed, active: node.claimable }">
+          <RewardItem
+            :name="node.reward.name || node.reward.id"
+            :count="node.reward.count"
+            :image="node.reward.image"
+            :rarity="node.reward.rarity"
+            :locked="!node.claimable && !node.claimed"
+            :claimed="node.claimed"
+            compact
+          />
+          <div class="research-node__content">
+            <small>研究节点 {{ node.id }}</small>
+            <strong>{{ node.reward.name || node.reward.id }}</strong>
+            <span class="research-node__cost">
+              <img v-if="node.cost.image" :src="node.cost.image" alt="">
+              消耗 {{ node.cost.count }} {{ node.cost.name || '雷电徽章' }}
+            </span>
+          </div>
+          <div class="research-node__action">
+            <button v-if="node.claimable" type="button" :disabled="pendingResearch" @click="emit('light', node.id)">
+              {{ pendingResearch ? '研究中…' : '推进' }}
+            </button>
+            <em v-else>{{ node.claimed ? '已完成' : '未解锁' }}</em>
           </div>
         </article>
       </div>
     </section>
 
-    <template v-if="activity">
-      <section class="weather-section own-weather-section">
-        <div class="storm-board" :class="`storm-board--${weatherState.className}`">
-          <div class="rain-field" aria-hidden="true">
-            <i v-for="index in 18" :key="index" :style="rainStyle(index)" />
-          </div>
-          <div class="storm-copy">
-            <span class="section-kicker">自家实时天气</span>
-            <div class="weather-state-line">
-              <span class="weather-state-icon" :class="weatherState.icon" />
-              <div>
-                <strong>{{ weatherState.label }}</strong>
-                <small>{{ weatherState.detail }}</small>
-              </div>
-            </div>
-            <div class="weather-clock" :aria-label="weatherState.label">
-              {{ activity.ownWeather.isThunderstorm ? formatDuration(ownRemainingSec) : '--:--:--' }}
-            </div>
-            <div class="weather-progress" aria-hidden="true">
-              <span :style="{ width: `${weatherProgress}%` }" />
-            </div>
-            <p>
-              {{ activity.ownWeather.isThunderstorm ? '倒计时结束前，成长中的作物均处于闪电变异判定窗口。' : '可等待系统随机雷雨，或使用雷雨召唤瓶开启一场 2 小时雷雨。' }}
-            </p>
-          </div>
-
-          <div class="mutation-sheet">
-            <span class="mutation-sheet__eyebrow">本次活动变异</span>
-            <strong>{{ mutationName }}变异 <em>#{{ activity.mutation.mutantConfigId }}</em></strong>
-            <dl>
-              <div><dt>基础概率</dt><dd>{{ activity.mutation.baseRatePercent }}%</dd></div>
-              <div><dt>成熟售价</dt><dd>{{ activity.mutation.sellMultiplier }} 倍</dd></div>
-              <div><dt>不参与</dt><dd>1 品、2 品</dd></div>
-              <div><dt>天气时长</dt><dd>2 小时</dd></div>
-            </dl>
-          </div>
-        </div>
-
-        <aside class="weather-command-card">
-          <span class="section-kicker">主动召唤</span>
-          <div class="command-item">
-            <img v-if="summonBottle.image" :src="summonBottle.image" alt="">
-            <span v-else class="i-carbon-thunderstorm" />
-            <div><strong>{{ summonBottle.name }}</strong><small>可用 {{ summonBottle.count || '0' }} 瓶</small></div>
-          </div>
-          <p>仅自己的农场可用；已有特殊天气时不能重复召唤。</p>
-          <button
-            type="button"
-            class="primary-command"
-            :disabled="pendingSummon || !activity.actions.summonThunderstorm.enabled"
-            @click="emit('summon')"
-          >
-            <span v-if="pendingSummon" class="i-carbon-circle-dash animate-spin" />
-            <span v-else class="i-carbon-thunderstorm" />
-            {{ pendingSummon ? '正在召唤' : activity.ownWeather.isThunderstorm ? '雷雨进行中' : activity.ownWeather.active ? '已有特殊天气' : '召唤 2 小时雷雨' }}
-          </button>
-          <small class="command-reason">{{ activity.actions.summonThunderstorm.reason }}</small>
-        </aside>
-      </section>
-
-      <section class="weather-section friend-weather-section">
-        <header class="section-heading">
-          <div>
-            <span class="section-kicker">好友现场天气</span>
-            <h2>找一场可以采的雨</h2>
-            <p>现场天气以进入好友农场后的实时状态为准；同一轮雷雨采过后不可重复采集，下轮雷雨可再次采集。</p>
-          </div>
-          <button
-            type="button"
-            class="scan-command"
-            :disabled="pendingScan || !activity.actions.scanFriendWeather.enabled"
-            @click="emit('scanFriends')"
-          >
-            <span v-if="pendingScan" class="i-carbon-circle-dash animate-spin" />
-            <span v-else class="i-carbon-radar" />
-            {{ pendingScan ? `正在检查 ${activity.friends.length} 位好友` : '重新扫描现场天气' }}
-          </button>
-        </header>
-
-        <div class="friend-summary" role="status">
-          <span><i class="status-dot status-dot--available" /> 可采 {{ availableFriendCount }}</span>
-          <span><i class="status-dot status-dot--checked" /> 已检查 {{ inspectedCount }}/{{ activity.friends.length }}</span>
-          <span><i class="i-carbon-bottles-container" /> 采集瓶 {{ collectorBottle.count || '0' }} · 每日上限 {{ activity.actions.collectWeather.dailyLimit || 10 }}</span>
-          <span><i class="i-carbon-information" /> 采雨成功必得雷雨召唤瓶 ×1</span>
-        </div>
-
-        <div v-if="pendingScan && activity.friends.length === 0" class="friend-empty">
-          <span class="i-carbon-circle-dash animate-spin" />
-          <strong>正在逐个检查好友农场</strong>
-          <small>扫描按官方客户端顺序进入并离开好友农场</small>
-        </div>
-        <div v-else-if="activity.friends.length" class="friend-grid">
-          <article v-for="friend in activity.friends" :key="friend.gid" class="friend-card" :class="`friend-card--${friendState(friend).className}`">
-            <header>
-              <div class="friend-avatar">
-                <img v-if="friend.avatarUrl && !failedAvatars.has(friend.gid)" :src="friend.avatarUrl" alt="" @error="markAvatarFailed(friend)">
-                <span v-else class="i-carbon-user-avatar" />
-              </div>
-              <div class="friend-name">
-                <strong>{{ friend.name || `好友 ${friend.gid}` }}</strong>
-                <small>Lv.{{ friend.level || '--' }} · GID {{ friend.gid }}</small>
-              </div>
-              <span class="friend-state">{{ friendState(friend).label }}</span>
-            </header>
-            <p>{{ friendState(friend).detail }}</p>
-            <div class="friend-actions">
-              <button type="button" class="collect-command" :disabled="collectDisabled(friend)" @click="emit('collect', friend.gid)">
-                <span v-if="pendingCollect" class="i-carbon-circle-dash animate-spin" />
-                <span v-else class="i-carbon-rain-drop" />
-                {{ friend.availability === 'collected' ? '本轮已采' : '采雨' }}
-              </button>
-              <button type="button" :disabled="frogDisabled(friend)" :title="`青蛙使坏瓶：库存 ${frogBottle.count}，每日上限 ${activity.actions.frogMischief.dailyLimit || 100}`" @click="emit('frog', friend.gid)">
-                <span v-if="pendingFrog" class="i-carbon-circle-dash animate-spin" />
-                <span v-else class="i-carbon-pedestrian-child" />
-                青蛙 · 30经验
-              </button>
-              <button type="button" :disabled="cloudDisabled(friend)" :title="friend.eligibleCloudLandIds.length ? `乌云使坏瓶：库存 ${cloudBottle.count}，每日上限 ${activity.actions.cloudMischief.dailyLimit || 100}` : '当前没有可放乌云的作物'" @click="emit('cloud', friend.gid, friend.eligibleCloudLandIds[0] || '')">
-                <span v-if="pendingCloud" class="i-carbon-circle-dash animate-spin" />
-                <span v-else class="i-carbon-cloud" />
-                乌云 · 30经验
-              </button>
-            </div>
-          </article>
-        </div>
-        <div v-else class="friend-empty">
-          <span class="i-carbon-cloud-offline" />
-          <strong>还没有现场天气记录</strong>
-          <small>点击“重新扫描现场天气”检查好友列表</small>
-        </div>
-      </section>
-
-      <section class="support-grid">
-        <article class="weather-section supply-section">
-          <header class="compact-heading">
-            <div><span class="section-kicker">每日补给</span><h2>观测站商城</h2></div>
-            <span class="i-carbon-store" />
-          </header>
-          <div v-if="activity.shop" class="supply-card">
-            <div class="supply-product">
-              <img v-if="activity.shop.item.image" :src="activity.shop.item.image" alt="">
-              <span v-else class="i-carbon-bottles-container" />
-              <div><strong>{{ activity.shop.item.name || '天气采集瓶' }}</strong><small>每日限兑 {{ activity.shop.dailyLimit }} 次</small></div>
-            </div>
-            <div class="supply-cost">
-              <span>需要</span>
-              <strong>{{ activity.shop.cost.count }} {{ activity.shop.cost.name }}</strong>
-              <small>现有 {{ activity.shop.balance }}</small>
-            </div>
-            <button type="button" :disabled="pendingExchange || !activity.actions.exchangeCollector.enabled" @click="emit('exchange')">
-              <span v-if="pendingExchange" class="i-carbon-circle-dash animate-spin" />
-              <span v-else class="i-carbon-shopping-cart" />
-              {{ pendingExchange ? '兑换中' : activity.shop.owned ? '今日已兑换' : '兑换采集瓶' }}
-            </button>
-            <p v-if="activity.shop.reason">{{ activity.shop.reason }}</p>
-          </div>
-          <div v-else class="compact-empty">服务端暂未返回观测站商品</div>
-        </article>
-
-        <article class="weather-section task-section">
-          <header class="compact-heading">
-            <div><span class="section-kicker">每日任务</span><h2>获取雷电徽章</h2></div>
-            <span class="i-carbon-task-complete" />
-          </header>
-          <div v-if="activity.tasks.length" class="task-list">
-            <article v-for="task in activity.tasks" :key="task.id">
-              <span class="task-icon">
-                <img v-if="task.reward.image" :src="task.reward.image" alt="">
-                <i v-else class="i-carbon-flash-filled" />
-              </span>
-              <div><strong>{{ task.title }}</strong><small>{{ task.dailyLimit && task.dailyLimit !== '0' ? `每日最多 ${task.dailyLimit} 次` : '完成后发放' }}</small></div>
-              <span class="task-reward">{{ task.reward.name || '雷电徽章' }} ×{{ task.reward.count }}</span>
-            </article>
-          </div>
-          <div v-else class="compact-empty">当前没有可展示的气象任务</div>
-        </article>
-      </section>
-
-      <section v-if="activity.research" class="weather-section research-section">
-        <header class="section-heading">
-          <div>
-            <span class="section-kicker">依次解锁</span>
-            <h2>气象研究线路</h2>
-            <p>完成活动任务获得雷电徽章，再按节点顺序推进研究并领取奖励。</p>
-          </div>
-          <div class="badge-balance">
-            <img v-if="badgeItem.image" :src="badgeItem.image" alt="">
-            <span v-else class="i-carbon-flash-filled" />
-            <div><small>雷电徽章</small><strong>{{ activity.research.badgeBalance }}</strong></div>
-          </div>
-        </header>
-        <div class="research-track">
-          <article
-            v-for="(node, index) in activity.research.nodes"
-            :key="node.id"
-            class="research-node"
-            :class="{ complete: node.completed, current: node.availableByStatus, locked: node.locked }"
-          >
-            <span class="node-index"><i v-if="node.completed" class="i-carbon-checkmark" /><template v-else>{{ index + 1 }}</template></span>
-            <div class="node-card">
-              <header><span>研究 {{ node.id }}</span><strong>{{ researchState(node) }}</strong></header>
-              <div class="node-reward">
-                <img v-if="node.reward.image" :src="node.reward.image" alt="">
-                <span v-else class="i-carbon-gift" />
-                <div><small>节点奖励</small><strong>{{ node.reward.name || node.reward.id }} ×{{ node.reward.count }}</strong></div>
-              </div>
-              <footer>
-                <span>
-                  <img v-if="node.cost.image" :src="node.cost.image" alt="">
-                  <i v-else class="i-carbon-flash-filled" />
-                  {{ node.cost.count }}
-                </span>
-                <button v-if="node.availableByStatus" type="button" :disabled="researchDisabled(node)" @click="emit('advanceResearch', node.id)">
-                  <span v-if="pendingResearch" class="i-carbon-circle-dash animate-spin" />
-                  {{ pendingResearch ? '推进中' : '推进研究' }}
-                </button>
-              </footer>
-            </div>
-          </article>
-        </div>
-        <p v-if="!activity.research.operateSupported" class="research-note">{{ activity.research.operateReason }}</p>
-      </section>
-
-      <details class="rules-section" open>
-        <summary>
-          <span><i class="i-carbon-notebook" /> {{ activity.rules.title || '活动说明' }}</span>
-          <i class="i-carbon-chevron-down" />
-        </summary>
-        <div v-if="activity.rules.paragraphs.length" class="rules-copy">
-          <p v-for="(line, index) in activity.rules.paragraphs" :key="`${index}-${line}`">{{ line }}</p>
-        </div>
-        <div v-else class="rules-copy">
-          <p>活动期间农场会随机迎来雷雨；成长中的作物有机会发生闪电变异，1 品和 2 品作物除外，变异果实售价为普通果实的 4 倍。</p>
-          <p>天气采集瓶在雷雨好友农场使用；雷雨召唤瓶在自己的农场使用；青蛙和乌云使坏瓶在好友农场使用并各获得 30 经验。</p>
-        </div>
-      </details>
-    </template>
-
-    <div v-else class="weather-empty">
-      <span class="i-carbon-radar-weather" />
-      <strong>当前账号暂未发现雨落成诗活动</strong>
-    </div>
   </div>
 </template>
 
 <style scoped>
 .weather-page {
-  /* Shared activity-center palette; only the storm accents stay local to this gameplay. */
-  --ink: #26373a;
-  --muted: #6d7c7d;
-  --subtle: #80908f;
-  --line: #d8dfdc;
-  --paper: #fff;
-  --page: #f3f5f2;
-  --storm: #214a50;
-  --command: #315d63;
-  --electric: #f2c66e;
-  --electric-ink: #8a6414;
-  --caution: #8a5c52;
-  --green: #438d63;
   min-height: 100%;
-  overflow: visible;
-  padding: 86px 0 60px;
-  color: var(--ink);
-  background: var(--page);
+  padding: 28px;
+  color: #203a32;
+  background: linear-gradient(
+    145deg,
+    rgba(225, 241, 235, 0.96),
+    rgba(246, 248, 247, 0.98) 48%,
+    rgba(235, 239, 247, 0.96)
+  );
 }
-.resource-band {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  padding: 20px 28px;
-  color: #f8faf7;
-  background: var(--storm);
-}
-.resource-band__title {
-  min-width: 170px;
-  display: flex;
-  align-items: center;
-  gap: 11px;
-}
-.resource-band__title > span {
-  color: var(--electric);
-  font-size: 26px;
-}
-.resource-band__title div,
-.resource-item div,
-.command-item div,
-.friend-name,
-.supply-product div,
-.badge-balance div,
-.task-list article > div,
-.node-reward div {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-.resource-band__title strong { font-size: 17px; }
-.resource-band__title small,
-.resource-item small { color: #c9d9d7; font-size: 11px; }
-.resource-list {
-  min-width: 0;
+.weather-grid {
   display: grid;
-  flex: 1;
-  grid-template-columns: repeat(5, minmax(104px, 1fr));
+  grid-template-columns: 1.4fr 0.6fr;
+  gap: 16px;
+}
+.item-panel {
+  margin-top: 16px;
+}
+.weather-items {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: 84px;
   gap: 10px;
-}
-.resource-item {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  border-left: 1px solid rgba(255, 255, 255, 0.18);
-}
-.resource-item img,
-.resource-fallback { width: 36px; height: 36px; flex: 0 0 auto; object-fit: contain; }
-.resource-fallback { display: grid; place-items: center; color: var(--electric); font-size: 24px; }
-.resource-item small,
-.resource-item strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.resource-item strong { margin-top: 2px; font-size: 19px; font-variant-numeric: tabular-nums; }
-.weather-section { border-bottom: 1px solid var(--line); background: var(--paper); }
-.own-weather-section {
-  display: grid;
-  grid-template-columns: minmax(0, 1.65fr) minmax(250px, 0.55fr);
-  gap: 18px;
-  padding: 26px 28px;
-}
-.storm-board {
-  position: relative;
-  min-height: 262px;
-  display: grid;
-  grid-template-columns: minmax(250px, 1fr) minmax(232px, 0.72fr);
   align-items: stretch;
-  gap: 26px;
-  overflow: hidden;
-  padding: 26px;
-  border-radius: 8px;
-  color: #f5faf9;
-  background: var(--storm);
-  isolation: isolate;
 }
-.storm-copy { display: flex; flex-direction: column; justify-content: center; }
-.storm-board--clear { background: #3f6a6f; }
-.storm-board--special { background: #4a626b; }
-.storm-board--ended { background: #4c5a5c; }
-.storm-board--clear .rain-field,
-.storm-board--special .rain-field,
-.storm-board--ended .rain-field { opacity: 0; }
-.rain-field,
-.rain-field i { position: absolute; pointer-events: none; }
-.rain-field { z-index: -2; inset: 0; overflow: hidden; opacity: 0.4; }
-.rain-field i {
-  top: -45px;
-  left: var(--rain-left);
-  width: 1px;
-  height: 35px;
-  background: linear-gradient(transparent, rgba(217, 241, 243, 0.8));
-  transform: rotate(16deg);
-  animation: rainfall var(--rain-duration) linear var(--rain-delay) infinite;
-}
-.section-kicker { display: block; color: #5c7f86; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; }
-.storm-copy .section-kicker,
-.mutation-sheet__eyebrow { color: #a9c8ce; }
-.mutation-sheet__eyebrow { display: block; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; }
-.weather-state-line { display: flex; align-items: center; gap: 11px; margin-top: 12px; }
-.weather-state-icon { color: var(--electric); font-size: 28px; }
-.weather-state-line div { display: flex; flex-direction: column; }
-.weather-state-line strong { font-size: 19px; }
-.weather-state-line small { margin-top: 3px; color: #bdd2d6; font-size: 11px; }
-.weather-clock {
-  margin: 16px 0 10px;
-  font-size: clamp(34px, 4.4vw, 46px);
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
-  line-height: 1;
-}
-.weather-progress { height: 6px; overflow: hidden; border-radius: 3px; background: rgba(255, 255, 255, 0.14); }
-.weather-progress span { height: 100%; display: block; border-radius: 3px; background: var(--electric); transition: width 0.4s linear; }
-.storm-copy > p { margin: 13px 0 0; color: #c4d6d8; font-size: 11px; line-height: 1.65; }
-.mutation-sheet {
-  align-self: center;
-  padding: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.07);
-}
-.mutation-sheet > strong { display: block; margin: 7px 0 14px; font-size: 20px; }
-.mutation-sheet > strong em { margin-left: 5px; color: var(--electric); font-size: 13px; font-style: normal; font-variant-numeric: tabular-nums; }
-.mutation-sheet dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0; }
-.mutation-sheet dl div { padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.14); }
-.mutation-sheet dt { color: #aac0c4; font-size: 10px; }
-.mutation-sheet dd { margin: 3px 0 0; font-size: 12px; font-weight: 700; }
-.mutation-sheet > p { margin: 13px 0 0; color: #cddcde; font-size: 10px; line-height: 1.6; }
-.weather-command-card {
+.weather-item {
+  width: 100%;
+  height: 84px;
+  display: grid;
   min-width: 0;
-  align-self: stretch;
-  display: flex;
-  flex-direction: column;
-  padding: 18px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #f9faf8;
+  grid-template-columns: 48px minmax(0, 1fr) minmax(68px, auto);
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 1px solid rgba(49, 82, 70, 0.14);
+  border-radius: 12px;
+  color: #203a32;
+  background: rgba(255, 255, 255, 0.78);
+  text-align: left;
+  cursor: pointer;
 }
-.command-item { display: flex; align-items: center; gap: 11px; margin-top: 14px; }
-.command-item img,
-.command-item > span { width: 48px; height: 48px; flex: 0 0 auto; border-radius: 7px; object-fit: contain; }
-.command-item > span { display: grid; place-items: center; color: var(--command); background: #e5f0f1; font-size: 25px; }
-.command-item strong { font-size: 14px; }
-.command-item small,
-.weather-command-card > p { color: var(--muted); font-size: 11px; }
-.command-item small { margin-top: 3px; font-size: 10px; }
-.weather-command-card > p { margin: 14px 0; line-height: 1.7; }
-.primary-command,
-.scan-command,
-.supply-card button,
-.node-card button,
-.friend-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 0; border-radius: 6px; font-weight: 700; cursor: pointer; }
-.primary-command { min-height: 38px; margin-top: auto; color: #fff; background: var(--command); }
-.command-reason { min-height: 15px; margin-top: 8px; color: var(--caution); font-size: 10px; text-align: center; }
-button:disabled { opacity: 0.48; cursor: not-allowed; }
-button:focus-visible,
-summary:focus-visible { outline: 3px solid rgba(49, 93, 99, 0.38); outline-offset: 2px; }
-.friend-weather-section,
-.research-section { padding: 26px 28px; }
-.section-heading,
-.compact-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-.section-heading h2,
-.compact-heading h2 { margin: 2px 0 0; color: var(--ink); font-size: 20px; font-weight: 700; letter-spacing: 0; }
-.section-heading p { margin: 8px 0 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
-.scan-command { min-height: 38px; flex: 0 0 auto; padding: 0 14px; border: 1px solid #cdd7d3; color: var(--command); background: #fff; font-size: 12px; }
-.friend-summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 18px;
-  margin: 16px 0 12px;
-  padding: 11px 13px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  color: var(--muted);
-  background: #f4f8f6;
-  font-size: 11px;
+.weather-item--passive {
+  cursor: default;
+  background: rgba(238, 235, 255, 0.78);
 }
-.friend-summary span { display: inline-flex; align-items: center; gap: 6px; }
-.status-dot { width: 8px; height: 8px; border-radius: 50%; }
-.status-dot--available { background: var(--green); }
-.status-dot--checked { background: var(--command); }
-.friend-grid { max-height: 520px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; overflow: auto; padding-right: 3px; }
-.friend-card { min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
-.friend-card--available { border-color: #94bda6; box-shadow: inset 3px 0 var(--green); }
-.friend-card--collected { background: #f7f9f7; }
-.friend-card--expired,
-.friend-card--clear,
-.friend-card--unknown { color: #637174; }
-.friend-card--error { border-color: #dcae95; }
-.friend-card > header { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 10px; }
-.friend-avatar {
+.weather-item img {
   width: 42px;
   height: 42px;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  border-radius: 50%;
-  color: #7c8e8d;
-  background: #e7ecea;
-  font-size: 22px;
+  object-fit: contain;
 }
-.friend-avatar img { width: 100%; height: 100%; object-fit: cover; }
-.friend-name strong,
-.friend-name small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.friend-name strong { font-size: 12px; }
-.friend-name small { margin-top: 3px; color: var(--subtle); font-size: 9px; }
-.friend-state { padding: 5px 8px; border-radius: 5px; color: var(--muted); background: #eef1ee; font-size: 10px; font-weight: 700; }
-.friend-card--available .friend-state { color: #2f6146; background: #e3f0e8; }
-.friend-card--collected .friend-state { color: #815f28; background: #f7ecd7; }
-.friend-card > p { min-height: 17px; margin: 9px 0; overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.friend-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-.friend-actions button { min-width: 0; min-height: 32px; padding: 0 8px; color: #41565a; background: #eef2f0; font-size: 10px; }
-.friend-actions .collect-command { color: #fff; background: var(--green); }
-.friend-empty,
-.compact-empty { display: grid; place-content: center; justify-items: center; color: var(--muted); text-align: center; }
-.friend-empty { min-height: 220px; gap: 8px; border: 1px dashed #cbd6d2; border-radius: 8px; }
-.friend-empty > span { font-size: 30px; }
-.friend-empty strong { font-size: 13px; }
-.friend-empty small { font-size: 10px; }
-.support-grid { display: grid; align-items: start; grid-template-columns: minmax(300px, 0.85fr) minmax(0, 1.15fr); gap: 18px; padding: 26px 28px; border-bottom: 1px solid var(--line); }
-.support-grid > .weather-section { min-width: 0; padding: 20px; border: 1px solid var(--line); border-radius: 8px; }
-.compact-heading > span { color: #6e9095; font-size: 24px; }
-.supply-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; margin-top: 16px; }
-.supply-product { min-width: 0; display: flex; align-items: center; gap: 11px; }
-.supply-product img,
-.supply-product > span { width: 48px; height: 48px; flex: 0 0 auto; border-radius: 7px; object-fit: contain; }
-.supply-product > span { display: grid; place-items: center; color: var(--command); background: #e5f0f1; font-size: 24px; }
-.supply-product strong { font-size: 13px; }
-.supply-product small,
-.supply-cost span,
-.supply-cost small { color: var(--muted); font-size: 10px; }
-.supply-product small { margin-top: 3px; }
-.supply-cost { display: flex; flex-direction: column; justify-content: center; padding-left: 14px; border-left: 1px dashed #cbd5d2; text-align: right; }
-.supply-cost strong { margin: 3px 0; font-size: 13px; }
-.supply-card button { min-height: 38px; grid-column: 1 / -1; color: #fff; background: var(--command); }
-.supply-card > p { grid-column: 1 / -1; margin: -6px 0 0; color: var(--caution); font-size: 10px; text-align: center; }
-.task-list { display: grid; gap: 8px; margin-top: 16px; }
-.task-list article { min-width: 0; display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 7px; background: #f7f9f7; }
-.task-icon { width: 32px; height: 32px; display: grid; place-items: center; overflow: hidden; border-radius: 6px; color: #a87800; background: #fdf1c8; font-size: 17px; }
-.task-icon img { width: 100%; height: 100%; object-fit: contain; }
-.task-list strong { font-size: 11px; }
-.task-list small { margin-top: 2px; color: var(--subtle); font-size: 9px; }
-.task-reward { color: var(--electric-ink); font-size: 10px; font-weight: 700; }
-.compact-empty { min-height: 130px; font-size: 11px; }
-.research-section { border-top: 1px solid var(--line); }
-.badge-balance { min-width: 126px; display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 7px; color: #5d470f; background: #fdf1c8; }
-.badge-balance > span,
-.badge-balance > img { width: 26px; height: 26px; flex: 0 0 auto; object-fit: contain; }
-.badge-balance > span { display: grid; place-items: center; color: #b37d00; font-size: 22px; }
-.badge-balance small { font-size: 9px; }
-.badge-balance strong { margin-top: 1px; font-size: 17px; font-variant-numeric: tabular-nums; }
-.research-track { position: relative; display: grid; grid-template-columns: repeat(9, minmax(138px, 1fr)); gap: 10px; overflow-x: auto; margin-top: 20px; padding: 0 2px 12px; }
-.research-track::before { position: absolute; top: 17px; right: 62px; left: 18px; height: 2px; background: #d5ded9; content: ''; }
-.research-node { position: relative; min-width: 138px; }
-.node-index {
-  position: relative;
-  z-index: 1;
-  width: 34px;
-  height: 34px;
+.weather-item span {
+  display: flex;
+  min-width: 0;
+  min-height: 54px;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  overflow: hidden;
+}
+.weather-item strong {
+  min-height: 1.35em;
+  display: -webkit-box;
+  overflow: hidden;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.weather-item small {
+  min-height: 2.7em;
+  display: -webkit-box;
+  overflow: hidden;
+  color: #5e7068;
+  font-size: 12px;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.weather-item em {
+  min-width: 68px;
+  color: #357b62;
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.35;
+  text-align: right;
+  white-space: nowrap;
+}
+.weather-status {
   display: grid;
+  min-height: 84px;
+  grid-template-columns: 46px minmax(0, 1fr) minmax(150px, auto) auto;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 15px 18px;
+  border: 1px solid rgba(49, 82, 70, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.66);
+  box-shadow: 0 10px 26px rgba(38, 68, 57, 0.07);
+}
+.weather-status.active {
+  border-color: rgba(181, 135, 42, 0.24);
+  background: rgba(255, 249, 228, 0.82);
+}
+.weather-status__icon {
+  display: grid;
+  width: 46px;
+  height: 46px;
   place-items: center;
-  margin-bottom: 8px;
-  border: 3px solid var(--paper);
   border-radius: 50%;
-  color: var(--muted);
-  background: #dbe2de;
+  color: #2f7d5f;
+  background: rgba(226, 244, 237, 0.9);
+  font-size: 25px;
+}
+.weather-status.active .weather-status__icon {
+  color: #956816;
+  background: rgba(247, 229, 176, 0.72);
+}
+.weather-status__content,
+.weather-status__period {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.weather-status small,
+.weather-status__content span,
+.weather-status__period span {
+  color: #71817a;
+  font-size: 11px;
+}
+.weather-status__content strong,
+.weather-status__period strong {
+  overflow-wrap: anywhere;
+}
+.weather-status__badge {
+  padding: 5px 9px;
+  border-radius: 6px;
+  color: #2f7459;
+  background: rgba(221, 241, 233, 0.9);
   font-size: 11px;
   font-weight: 700;
-  font-variant-numeric: tabular-nums;
 }
-.research-node.complete .node-index { color: #fff; background: var(--green); }
-.research-node.current .node-index { color: #5d470f; background: var(--electric); box-shadow: 0 0 0 4px rgba(242, 198, 110, 0.28); }
-.node-card { min-height: 156px; display: flex; flex-direction: column; padding: 11px; border: 1px solid var(--line); border-radius: 8px; background: #f7f9f7; }
-.research-node.current .node-card { border-color: #d8a443; box-shadow: inset 0 3px var(--electric); }
-.research-node.locked .node-card { opacity: 0.6; }
-.node-card > header { display: flex; justify-content: space-between; gap: 6px; color: var(--subtle); font-size: 9px; }
-.node-card > header strong { color: var(--muted); }
-.node-reward { display: flex; align-items: center; gap: 9px; margin-top: 13px; }
-.node-reward img,
-.node-reward > span { width: 34px; height: 34px; flex: 0 0 auto; border-radius: 6px; object-fit: contain; }
-.node-reward > span { display: grid; place-items: center; color: #6d8588; background: #e7edeb; font-size: 17px; }
-.node-reward small { color: var(--subtle); font-size: 9px; }
-.node-reward strong { margin-top: 2px; overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.node-card footer { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: auto; padding-top: 10px; }
-.node-card footer > span { display: inline-flex; align-items: center; gap: 4px; color: var(--electric-ink); font-size: 10px; font-weight: 700; }
-.node-card footer > span img { width: 15px; height: 15px; flex: 0 0 auto; object-fit: contain; }
-.node-card button { min-height: 29px; padding: 0 9px; color: #fff; background: var(--command); font-size: 10px; }
-.research-note { margin: 10px 0 0; color: var(--caution); font-size: 10px; }
-.rules-section { padding: 18px 28px 28px; color: var(--muted); background: #eef1ee; font-size: 11px; line-height: 1.7; }
-.rules-section summary { display: flex; align-items: center; justify-content: space-between; color: #314245; font-size: 13px; font-weight: 700; cursor: pointer; list-style: none; }
-.rules-section summary::-webkit-details-marker { display: none; }
-.rules-section summary span { display: inline-flex; align-items: center; gap: 8px; }
-.rules-section summary > i { color: var(--subtle); transition: transform 0.2s ease; }
-.rules-section[open] summary > i { transform: rotate(180deg); }
-.rules-copy { display: grid; gap: 7px; margin-top: 12px; }
-.rules-copy p { margin: 0; white-space: pre-line; }
-.weather-empty { min-height: 440px; display: grid; place-content: center; justify-items: center; gap: 10px; color: var(--muted); }
-.weather-empty > span { font-size: 34px; }
-@keyframes rainfall {
-  from { transform: translate3d(0, 0, 0) rotate(16deg); }
-  to { transform: translate3d(-55px, 390px, 0) rotate(16deg); }
+.weather-status.active .weather-status__badge {
+  color: #79530e;
+  background: rgba(245, 222, 157, 0.72);
 }
-@media (max-width: 1050px) {
-  .own-weather-section { grid-template-columns: 1fr; }
-  .weather-command-card { min-height: 220px; }
-  .support-grid { grid-template-columns: 1fr; }
+.panel {
+  margin-bottom: 16px;
+  padding: 20px;
+  border: 1px solid rgba(49, 82, 70, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.66);
+  box-shadow: 0 10px 26px rgba(38, 68, 57, 0.07);
 }
-@media (max-width: 900px) {
-  .weather-page { padding-top: 72px; }
-  .resource-band { align-items: stretch; flex-direction: column; gap: 12px; padding: 16px; }
-  .resource-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .resource-item { border-top: 1px solid rgba(255, 255, 255, 0.16); border-left: 0; }
-  .own-weather-section,
-  .friend-weather-section,
-  .research-section,
-  .support-grid { padding: 20px 16px; }
-  .storm-board { grid-template-columns: 1fr; padding: 22px 18px; }
-  .friend-grid { grid-template-columns: 1fr; }
-  .section-heading { align-items: stretch; flex-direction: column; }
-  .scan-command { align-self: flex-start; }
-  .rules-section { padding: 16px 16px 24px; }
+.panel header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
 }
-@media (max-width: 380px) {
-  .resource-list { grid-template-columns: 1fr; }
-  .weather-clock { font-size: 36px; }
-  .mutation-sheet dl { grid-template-columns: 1fr; }
-  .friend-card > header { grid-template-columns: 40px minmax(0, 1fr); }
-  .friend-state { grid-column: 1 / -1; justify-self: start; }
-  .friend-actions { grid-template-columns: 1fr; }
-  .supply-card { grid-template-columns: 1fr; }
-  .supply-cost { padding: 10px 0 0; border-top: 1px dashed #cbd5d2; border-left: 0; text-align: left; }
-  .primary-command,
-  .scan-command { width: 100%; }
+.panel header > span {
+  max-width: 68%;
+  color: #6c7d76;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: right;
+  overflow-wrap: anywhere;
 }
-@media (prefers-reduced-motion: reduce) {
-  .rain-field i { animation: none; }
-  .weather-progress span { transition: none; }
+.panel h2 {
+  flex: none;
+  margin: 0;
+  font-size: 19px;
+}
+.meter {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: rgba(67, 113, 95, 0.12);
+}
+.meter i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #3b9a73;
+}
+.task-progress {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(48, 79, 68, 0.1);
+}
+.task-progress__title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.task-progress__title strong {
+  color: #273d36;
+  font-size: 15px;
+}
+.task-progress__title span {
+  color: #6c7d76;
+  font-size: 12px;
+}
+.task-row {
+  display: flex;
+  min-height: 64px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 8px 0;
+  border-top: 1px solid rgba(48, 79, 68, 0.1);
+}
+.task-row__main {
+  width: 100%;
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.task-row__heading {
+  width: 100%;
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.task-row__heading strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #273d36;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-row__heading span {
+  flex: none;
+  color: #6c7d76;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.task-row__heading span.completed {
+  color: #2e8a66;
+  font-weight: 700;
+}
+.task-stock {
+  display: block;
+  margin-left: auto;
+  color: #236e52 !important;
+  font-weight: 700;
+  text-align: right !important;
+}
+.task-meter {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: rgba(67, 113, 95, 0.12);
+}
+.task-meter i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #3b9a73;
+  transition: width 0.2s ease;
+}
+.task-meter i.completed {
+  background: #d39a32;
+}
+.task-row > .reward-item {
+  flex: 0 0 auto;
+}
+.task-empty {
+  padding: 16px 0 6px;
+  color: #6c7d76;
+  font-size: 12px;
+  text-align: center;
+}
+.operation-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.operation-panel {
+  display: flex;
+  min-height: 205px;
+  flex-direction: column;
+}
+.operation-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.inventory-item {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 12px;
+  padding: 7px 9px;
+  border: 1px solid rgba(49, 82, 70, 0.1);
+  border-radius: 8px;
+  background: rgba(245, 250, 247, 0.78);
+}
+.inventory-item img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+}
+.inventory-item span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: #536b61;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.inventory-item strong {
+  color: #236e52;
+  font-size: 18px;
+}
+.operation-item img {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+}
+.operation-item div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+.operation-item span,
+.operation-description,
+.operation-empty {
+  color: #6c7d76;
+  font-size: 13px;
+}
+.operation-description {
+  margin: 0;
+  line-height: 1.7;
+}
+.operation-empty {
+  padding: 18px 0;
+  text-align: center;
+}
+.operation-button {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: auto;
+  padding: 9px 14px;
+  border: 0;
+  border-radius: 7px;
+  color: white;
+  background: #2e8a66;
+  box-shadow: 0 8px 18px rgba(35, 113, 83, 0.18);
+  cursor: pointer;
+}
+.operation-button:disabled,
+.research-node button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.collect-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(210px, 0.4fr);
+  gap: 18px;
+}
+.search-field {
+  display: flex;
+  height: 38px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 11px;
+  border: 1px solid rgba(49, 82, 70, 0.16);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.82);
+}
+.search-field input {
+  width: 100%;
+  border: 0;
+  outline: none;
+  color: inherit;
+  background: transparent;
+}
+.friend-list {
+  display: grid;
+  max-height: 250px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  overflow: auto;
+  margin-top: 10px;
+}
+.friend-option {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 36px minmax(0, 1fr) 18px;
+  gap: 9px;
+  align-items: center;
+  padding: 9px;
+  border: 1px solid rgba(49, 82, 70, 0.12);
+  border-radius: 7px;
+  text-align: left;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.72);
+  cursor: pointer;
+}
+.friend-option.selected {
+  border-color: rgba(38, 124, 91, 0.28);
+  background: rgba(226, 244, 237, 0.86);
+}
+.friend-option img,
+.friend-avatar-fallback {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.friend-avatar-fallback {
+  display: grid;
+  place-items: center;
+  color: #4b8b72;
+  background: rgba(226, 241, 235, 0.9);
+}
+.friend-option__name {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.friend-option__name strong,
+.friend-option__name small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.friend-option__name small {
+  color: #71817a;
+  font-size: 11px;
+}
+.friend-option__mark {
+  color: #2e8a66;
+}
+.collect-composer {
+  display: flex;
+  flex-direction: column;
+  padding-left: 18px;
+  border-left: 1px solid rgba(49, 82, 70, 0.12);
+}
+.selected-friend {
+  display: flex;
+  min-height: 96px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+}
+.selected-friend span,
+.selected-friend small {
+  color: #71817a;
+  font-size: 12px;
+}
+.selected-friend--empty {
+  align-items: center;
+}
+.selected-friend--empty > span {
+  font-size: 28px;
+}
+.research-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(235px, 1fr));
+  gap: 9px;
+}
+.research-node {
+  display: grid;
+  min-height: 92px;
+  grid-template-columns: 54px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 10px;
+  border: 1px solid rgba(49, 82, 70, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.66);
+  box-shadow: 0 6px 16px rgba(38, 68, 57, 0.05);
+}
+.research-node.active {
+  border-color: rgba(38, 124, 91, 0.26);
+  background: rgba(226, 244, 237, 0.86);
+}
+.research-node.done {
+  opacity: 0.68;
+}
+.research-node__content {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+.research-node small,
+.research-node span,
+.research-node em {
+  color: #71817a;
+  font-size: 11px;
+  font-style: normal;
+}
+.research-node strong {
+  overflow: hidden;
+  color: #273d36;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.research-node__cost {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.research-node__cost img {
+  width: 17px;
+  height: 17px;
+  object-fit: contain;
+}
+.research-node__action {
+  display: flex;
+  min-width: 42px;
+  justify-content: flex-end;
+}
+.research-node button {
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 6px;
+  color: white;
+  background: #2e8a66;
+  cursor: pointer;
+}
+.research-node em {
+  white-space: nowrap;
+}
+.rules-panel p {
+  color: #647870;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.rules-panel p + p {
+  margin-top: 8px;
+}
+@media (max-width: 800px) {
+  .weather-page {
+    padding: 14px;
+  }
+  .weather-grid,
+  .operation-grid,
+  .collect-workspace,
+  .weather-items {
+    grid-template-columns: 1fr;
+  }
+  .research-grid,
+  .friend-list {
+    grid-template-columns: 1fr;
+  }
+  .weather-status {
+    min-height: 0;
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 10px 12px;
+    align-items: start;
+    padding: 14px;
+  }
+  .weather-status__icon {
+    width: 42px;
+    height: 42px;
+  }
+  .weather-status__content {
+    padding-top: 1px;
+  }
+  .weather-status__content strong {
+    line-height: 1.35;
+  }
+  .weather-status__content span {
+    margin-top: 3px;
+    line-height: 1.45;
+  }
+  .weather-status__period {
+    grid-column: 1 / -1;
+    padding: 9px 10px;
+    border-radius: 8px;
+    background: rgba(245, 248, 247, 0.78);
+  }
+  .weather-status__badge {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+  .panel {
+    padding: 16px;
+  }
+  .panel header {
+    flex-direction: column;
+    gap: 4px;
+  }
+  .panel header > span {
+    width: 100%;
+    max-width: none;
+    text-align: left;
+  }
+  .weather-item {
+    height: 78px;
+    grid-template-columns: 38px minmax(0, 1fr) auto;
+    grid-template-rows: 1fr;
+    gap: 8px;
+    padding: 7px;
+  }
+  .weather-item img {
+    width: 36px;
+    height: 36px;
+    grid-row: 1;
+  }
+  .weather-item span {
+    min-height: 0;
+    gap: 2px;
+  }
+  .weather-item strong,
+  .weather-item small {
+    min-height: 0;
+    -webkit-line-clamp: 1;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .weather-item em {
+    width: 52px;
+    min-width: 0;
+    max-width: 52px;
+    box-sizing: border-box;
+    justify-self: end;
+    padding: 3px 5px;
+    border-radius: 999px;
+    background: rgba(226, 244, 237, 0.86);
+    overflow: hidden;
+    text-align: center;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .weather-items {
+    grid-auto-rows: 78px;
+  }
+  .weather-item--passive em {
+    background: rgba(226, 220, 250, 0.72);
+  }
+  .task-row {
+    min-height: 58px;
+    gap: 8px;
+  }
+  .task-progress__title {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .task-row__main {
+    gap: 5px;
+  }
+  .task-row__heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .task-row__heading strong,
+  .task-row__heading span {
+    max-width: 100%;
+  }
+  .task-row__main--inventory .task-row__heading {
+    flex-direction: row;
+    align-items: center;
+  }
+  .task-row__main--inventory .task-row__heading strong {
+    flex: 1;
+  }
+  .task-row__heading span.task-stock {
+    width: auto;
+    align-self: center;
+    margin-left: 0;
+    text-align: right !important;
+  }
+  .task-row > .reward-item {
+    width: 48px;
+    height: 48px;
+  }
+  .collect-composer {
+    padding-top: 14px;
+    padding-left: 0;
+    border-top: 1px solid rgba(49, 82, 70, 0.12);
+    border-left: 0;
+  }
 }
 </style>

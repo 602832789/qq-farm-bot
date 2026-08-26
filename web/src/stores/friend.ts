@@ -25,6 +25,7 @@ export interface FriendInteractionItemDto {
   interactionType: string
   protocol: 'item-use'
   selfUsable: boolean
+  targetKind: 'land' | 'farm'
   description: string
   activityId: string
   sellCondition: string
@@ -70,6 +71,7 @@ export interface FriendInteractionBatchDto {
   interactionEffects?: FriendInteractionEffectDto[]
   items: FriendInteractionItemDto[]
   message: string
+  targetKind?: 'land' | 'farm'
 }
 
 export const useFriendStore = defineStore('friend', () => {
@@ -610,6 +612,36 @@ export const useFriendStore = defineStore('friend', () => {
     }
   }
 
+  async function useFarmInteractionItem(accountId: string, friendId: string, itemId: string) {
+    if (!accountId || !friendId || !itemId || interactionUsePending.value)
+      return false
+    interactionUsePending.value = true
+    interactionUseError.value = ''
+    try {
+      const res = await api.post(`/api/friend/${encodeURIComponent(friendId)}/interaction-items/use-farm`, {
+        itemId,
+      }, {
+        headers: { 'x-account-id': accountId },
+        skipErrorToast: true,
+      } as any)
+      if (!res.data?.ok) {
+        interactionUseError.value = String(res.data?.error || '好友农场道具使用失败')
+        return false
+      }
+      const result = res.data.data as FriendInteractionBatchDto
+      if (Array.isArray(result?.items))
+        interactionItems.value = result.items
+      return result
+    }
+    catch (error: any) {
+      interactionUseError.value = String(error?.response?.data?.error || error?.message || '好友农场道具使用失败')
+      return false
+    }
+    finally {
+      interactionUsePending.value = false
+    }
+  }
+
   function resetInteractionState() {
     interactionItemsRequestSequence++
     interactionItems.value = []
@@ -753,6 +785,7 @@ export const useFriendStore = defineStore('friend', () => {
     operate,
     fetchInteractionItems,
     useInteractionItemBatch,
+    useFarmInteractionItem,
     getInteractionUsedLandIds,
     resetInteractionState,
     fetchKnownFriendSettings,
