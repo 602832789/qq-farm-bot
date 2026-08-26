@@ -191,9 +191,11 @@ async function openActivity(activity: ActivityDirectoryItemDto) {
   if (gameplay.module.key === 'stellar')
     activeTab.value = gameplay.entryTab as ActivityTab
   selectedActivity.value = gameplay.module.key
-  await activityStore.loadDetails(accountId(), gameplay.module.key)
-  if ((gameplay.module.key === 'qixi' || gameplay.module.key === 'weather') && currentAccountId.value)
+  const detailsLoaded = await activityStore.loadDetails(accountId(), gameplay.module.key)
+  if (gameplay.module.key === 'qixi' && currentAccountId.value)
     await friendStore.fetchFriends(String(currentAccountId.value))
+  else if (gameplay.module.key === 'weather' && currentAccountId.value && detailsLoaded)
+    await activityStore.scanWeatherFriends(String(currentAccountId.value))
 }
 function goBack() {
   if (selectedActivity.value) {
@@ -234,6 +236,9 @@ function lightWeatherResearch(nodeId: string) {
 }
 function buyWeatherBottle() {
   activityStore.buyWeatherBottle(accountId(), 1)
+}
+function scanWeatherFriends() {
+  activityStore.scanWeatherFriends(accountId())
 }
 function collectWeatherBottle(targetGid: string) {
   activityStore.collectWeatherBottle(accountId(), targetGid)
@@ -513,13 +518,14 @@ onUnmounted(() => {
       <main class="activity-content gameplay-content">
         <WeatherActivityView
           :activity="weather"
-          :friends="friends"
           :pending-research="pendingActions.lightWeatherResearch"
           :pending-buy="pendingActions.buyWeatherBottle"
+          :pending-scan="pendingActions.scanWeatherFriends"
           :pending-collect="pendingActions.collectWeatherBottle"
           :pending-summon="pendingActions.summonWeatherRain"
           @light="lightWeatherResearch"
           @buy="buyWeatherBottle"
+          @scan-friends="scanWeatherFriends"
           @collect="collectWeatherBottle"
           @summon="summonWeatherRain"
         />
