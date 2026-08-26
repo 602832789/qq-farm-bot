@@ -5,6 +5,7 @@ const { loadProto } = require('../src/utils/proto');
 const {
   encodeRainPoemPrankRequest,
   getPrankBottleInventory,
+  isRainPoemPrankAlreadyActiveError,
 } = require('../src/services/rain-poem-prank-service');
 
 test.before(async () => {
@@ -28,4 +29,11 @@ test('frog bottle request matches the successful official ItemService.Use captur
 test('unknown items cannot be sent through the prank placement helper', () => {
   assert.throws(() => encodeRainPoemPrankRequest(1, 5002, 1), /不支持的使坏瓶/);
   assert.throws(() => encodeRainPoemPrankRequest(1, 5005, 0), /缺少背包 UID/);
+});
+
+test('an existing prank event limit is recognized as an active effect', () => {
+  assert.equal(isRainPoemPrankAlreadyActiveError(new Error(
+    'gamepb.itempb.ItemService.Use 错误: code=1033011 该使坏事件同时存在数量已达上限'
+  )), true);
+  assert.equal(isRainPoemPrankAlreadyActiveError(new Error('code=1000021 配置不存在')), false);
 });

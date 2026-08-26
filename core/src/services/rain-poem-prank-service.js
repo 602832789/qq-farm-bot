@@ -21,6 +21,11 @@ const RAIN_POEM_PRANK_SOCIAL_TYPES = new Map([
   [RAIN_POEM_FROG_BOTTLE_ITEM_ID, 3],
   [RAIN_POEM_CLOUD_BOTTLE_ITEM_ID, 4],
 ]);
+const RAIN_POEM_PRANK_ACTIVE_LIMIT_CODE = 1033011;
+
+function isRainPoemPrankAlreadyActiveError(err) {
+  return String(err?.message || '').includes(`code=${RAIN_POEM_PRANK_ACTIVE_LIMIT_CODE}`);
+}
 
 function getPrankBottleInventory(items) {
   const counts = new Map([
@@ -106,29 +111,32 @@ async function runRainPoemPrankPlacement() {
 
   const placed = { frog: 0, cloud: 0 };
   let consecutiveFailures = 0;
+  let activeFriends = 0;
   for (const friend of friends) {
     if (queue.length === 0 || consecutiveFailures >= 3) break;
     let entered = false;
     try {
       const visit = await enterFriendFarm(friend.gid);
       entered = true;
-      const reserved = new Set();
       for (let index = 0; index < queue.length;) {
         const { itemId, itemUid } = queue[index];
-        const landId = getPrankCandidateLandIds(visit?.lands, itemId).find(id => !reserved.has(id));
+        const landId = getPrankCandidateLandIds(visit?.lands, itemId)[0];
         if (!landId) {
           index++;
           continue;
         }
         try {
           await putRainPoemPrankBottle(friend.gid, itemId, itemUid);
-          reserved.add(landId);
           queue.splice(index, 1);
           if (itemId === RAIN_POEM_FROG_BOTTLE_ITEM_ID) placed.frog++;
           else placed.cloud++;
           consecutiveFailures = 0;
-          await randomDelay(500, 1000);
+          break;
         } catch (err) {
+          if (isRainPoemPrankAlreadyActiveError(err)) {
+            activeFriends++;
+            break;
+          }
           consecutiveFailures++;
           logWarn('活动', `给 ${friend.name || `GID:${friend.gid}`} 使用使坏瓶失败: ${err.message}`, {
             module: 'activity', event: '雨落成诗自动使坏', result: 'error',
@@ -153,15 +161,17 @@ async function runRainPoemPrankPlacement() {
       module: 'activity', event: '雨落成诗自动使坏', result: 'ok', count: total,
     });
   }
-  return { placed: total, ...placed, inventory, remaining: queue.length };
+  return { placed: total, ...placed, inventory, remaining: queue.length, activeFriends };
 }
 
 module.exports = {
   RAIN_POEM_FROG_BOTTLE_ITEM_ID,
   RAIN_POEM_CLOUD_BOTTLE_ITEM_ID,
   RAIN_POEM_PRANK_SOCIAL_TYPES,
+  RAIN_POEM_PRANK_ACTIVE_LIMIT_CODE,
   getPrankBottleInventory,
   getPrankCandidateLandIds,
+  isRainPoemPrankAlreadyActiveError,
   encodeRainPoemPrankRequest,
   putRainPoemPrankBottle,
   runRainPoemPrankPlacement,
