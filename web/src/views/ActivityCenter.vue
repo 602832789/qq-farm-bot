@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ActivityTab } from '@/components/activity/BottomNav.vue'
 import type { ActivityDirectoryItemDto, ActivityGameplayKey, ShopGoodsDto } from '@/stores/activity-center'
-import { useNotification } from 'naive-ui'
+import { useNotification } from 'naive-ui/es/notification'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useDateFormat, useIntervalFn, useMediaQuery, useNow } from '@vueuse/core'
-import { NButton, NTooltip } from 'naive-ui'
+import { NButton } from 'naive-ui/es/button'
+import { NTooltip } from 'naive-ui/es/tooltip'
 import { storeToRefs } from 'pinia'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'

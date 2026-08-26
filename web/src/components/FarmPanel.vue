@@ -2,7 +2,7 @@
 import type { FertilizerType } from '@/stores/farm'
 import type { FriendInteractionItemDto, FriendInteractionResultDto } from '@/stores/friend'
 import { useIntervalFn } from '@vueuse/core'
-import { NButton } from 'naive-ui'
+import { NButton } from 'naive-ui/es/button'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'

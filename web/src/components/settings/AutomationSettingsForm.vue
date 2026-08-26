@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { SettingsState } from '@/stores/setting'
-import { NCheckbox, NCheckboxGroup } from 'naive-ui'
+import { NCheckbox, NCheckboxGroup } from 'naive-ui/es/checkbox'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'

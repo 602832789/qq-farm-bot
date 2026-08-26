@@ -137,6 +137,9 @@ cd qq-farm-bot
 corepack enable
 bash ./start.sh
 
+# 拉取代码后如需忽略缓存并完整重建
+bash ./start.sh --rebuild
+
 # 查看日志
 tail -f app_dev.log
 
@@ -144,7 +147,7 @@ tail -f app_dev.log
 bash ./stop.sh
 ```
 
-`start.sh` 会在依赖缺失时执行 `pnpm install --frozen-lockfile`，随后构建 Web 和 Core，并以生产模式后台运行 `node core/client.js`。日志写入 `app_dev.log`，进程号记录在 `app_dev.pid`。`stop.sh` 会校验 PID 对应的工作目录和启动命令，再停止整个服务进程组。
+`start.sh` 会在依赖缺失或依赖清单变化时执行 `pnpm install --frozen-lockfile`，并按文件更新时间分别判断 Web、Core 是否需要重建。源码和依赖均未变化时会直接复用现有产物；`--rebuild` 可强制完整重建。脚本随后以生产模式后台运行 `node core/client.js`，日志写入 `app_dev.log`，进程号记录在 `app_dev.pid`。`stop.sh` 会校验 PID 对应的工作目录和启动命令，再停止整个服务进程组。
 
 前端类型检查已与生产构建拆分，需要单独检查时执行 `pnpm typecheck:web`。
 
@@ -154,6 +157,9 @@ bash ./stop.sh
 git clone https://github.com/liyangpengs/qq-farm-bot.git
 cd qq-farm-bot
 docker compose up -d --build
+
+# 仅重启现有容器，不触发镜像构建
+docker compose restart qq-farm-bot
 
 # 查看状态和日志
 docker compose ps
@@ -175,7 +181,7 @@ TZ=Asia/Shanghai
 
 Docker 数据保存在 `qq-farm-data` 和 `qq-farm-logs` 命名卷中。执行 `docker compose down` 不会删除这些卷；不要使用 `docker compose down -v`，除非确认要删除运行数据。
 
-Compose 使用根目录作为构建上下文，Dockerfile 位于 `core/Dockerfile`。镜像构建阶段固定使用 Node `20.19.6` 和 pnpm `10.30.2`，先构建 Web 前端和 Core 后端，运行阶段只保留生产依赖、编译产物、协议定义、游戏配置和 TSDK WASM。容器内部固定监听 `3007`，根目录 `.env` 中的 `PORT` 只用于宿主机端口映射。
+Compose 使用根目录作为构建上下文，Dockerfile 位于 `core/Dockerfile`。镜像构建阶段固定使用 Node `20.19.6` 和 pnpm `10.30.2`，通过 BuildKit 缓存 pnpm store，并在相互独立的阶段构建 Web、Core 和生产依赖；仅修改一侧源码时可直接复用另一侧缓存。运行阶段只保留生产依赖、编译产物、协议定义、游戏配置和 TSDK WASM。容器内部固定监听 `3007`，根目录 `.env` 中的 `PORT` 只用于宿主机端口映射。
 
 依赖源默认使用 npm 官方源；网络受限时可以在根目录 `.env` 中覆盖构建参数后重新构建：
 
@@ -317,6 +323,8 @@ qq-farm-bot/
 | `pnpm -C core typecheck` | 执行后端 TypeScript 类型检查 |
 | `pnpm typecheck:web` | 执行前端 TypeScript 类型检查（不参与生产启动） |
 | `pnpm build:web` | 构建 Web 面板到 `web/dist/` |
+| `pnpm -C web build:compressed` | 构建 Web 并额外生成预压缩 `.gz` 文件 |
+| `pnpm -C web build:analyze` | 构建 Web 并生成 bundle 分析报告 |
 | `pnpm build:core` | 编译后端 TypeScript |
 | `pnpm build` | 依次构建前端和后端 |
 | `pnpm package:release` | 构建四个平台的独立二进制文件 |
