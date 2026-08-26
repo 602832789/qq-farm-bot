@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const { normalizeRainPoemActivity, normalizeWeatherStatus, getOwnWeatherStatus, isLightningMutantPlant, encodeRainPoemSummonUseRequest, mergeRainPoemTaskUsage } = require('../src/services/activity');
 const { getMutantEffectsByIds } = require('../src/config/gameConfig');
+const { selectFastestLightningRushSeed } = require('../src/services/planting-service');
 const { loadProto, types } = require('../src/utils/proto');
 
 function fixture() {
@@ -52,15 +53,31 @@ test('weather shop purchase state is also read from ActivityInfo', () => {
   assert.equal(activity.shop.available, false);
 });
 
-test('rainstorm status respects weather type and active time', () => {
-  assert.equal(normalizeWeatherStatus({ weather_id: 1, status: 1, start_time: 100, end_time: 200 }, 150).rainstorm, true);
-  assert.equal(normalizeWeatherStatus({ weather_id: 1, status: 1, start_time: 100, end_time: 200 }, 201).rainstorm, false);
-  assert.equal(normalizeWeatherStatus({ weather_id: 2, status: 1 }, 150).rainstorm, false);
-  assert.equal(normalizeWeatherStatus({ weather_id: 1, status: 2, start_time: 100, end_time: 200 }, 150).rainstorm, true);
+test('both weather phases are rainstorms only during their active time', () => {
+  assert.equal(normalizeWeatherStatus({ type: 1, status: 1, start_time: 100, end_time: 200 }, 150).rainstorm, true);
+  assert.equal(normalizeWeatherStatus({ type: 2, status: 1, start_time: 100, end_time: 200 }, 150).rainstorm, true);
+  assert.equal(normalizeWeatherStatus({ type: 1, status: 1, start_time: 100, end_time: 200 }, 201).rainstorm, false);
+  assert.equal(normalizeWeatherStatus({ type: 0, status: 1 }, 150).rainstorm, false);
+  assert.equal(normalizeWeatherStatus({ type: 1, status: 0 }, 150).rainstorm, false);
+  assert.equal(normalizeWeatherStatus({ type: 1, status: 2, start_time: 100, end_time: 200 }, 150).rainstorm, true);
 });
 
 test('weather task exposes daily progress', () => {
   assert.equal(normalizeRainPoemActivity(fixture(), 1787709600).tasks[0].progress, 1);
+});
+
+test('lightning mutant harvest progress controls the daily weather target', () => {
+  const reply = fixture();
+  reply.group.children[3].weather_tasks.tasks.push({
+    id: 3, desc: '每日收集雷电变异作物', target: 10, progress: 9,
+    reward: { id: 1027, count: 10 },
+  });
+  const pending = normalizeRainPoemActivity(reply, 1787709600).lightningHarvest;
+  assert.deepEqual(pending, { progress: 9, target: 10, remaining: 1, complete: false, confirmed: true });
+
+  reply.group.children[3].weather_tasks.tasks[1].progress = 10;
+  const complete = normalizeRainPoemActivity(reply, 1787709600).lightningHarvest;
+  assert.deepEqual(complete, { progress: 10, target: 10, remaining: 0, complete: true, confirmed: true });
 });
 
 test('collection task derives used count from the authoritative remaining count', () => {
@@ -93,6 +110,16 @@ test('farm panel can query the current official weather status', () => {
 test('only mutant config 12 is treated as lightning mutant', () => {
   assert.equal(isLightningMutantPlant({ mutant_config_ids: [12] }), true);
   assert.equal(isLightningMutantPlant({ mutant_config_ids: [2] }), false);
+});
+
+test('lightning rush selects fresh ginger by crop layer instead of item rarity', () => {
+  const selected = selectFastestLightningRushSeed([
+    { seedId: 20199 }, // 石莲花：3 品稀有度，但 4 小时
+    { seedId: 20005 }, // 土豆：3 品，2 小时
+    { seedId: 20066 }, // 鲜姜：3 品，100 分钟
+    { seedId: 20004 }, // 低于 3 品，即使更快也不能参与雷电变异
+  ]);
+  assert.equal(selected.seedId, 20066);
 });
 
 test('lightning mutant is exposed to land detail rendering', () => {

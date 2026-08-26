@@ -43,3 +43,9 @@ test('hidden activity defaults stay disabled', () => {
     assert.equal(automation[key], false, `${key} should default to disabled`);
   }
 });
+
+test('lightning rush disables continuous rainstorm summon mode', () => {
+  const automation = { rain_poem_summon_use: true, rain_poem_lightning_rush: true };
+  _test.enforceRainPoemAutomationExclusivity(automation);
+  assert.deepEqual(automation, { rain_poem_summon_use: false, rain_poem_lightning_rush: true });
+});

@@ -5,7 +5,7 @@
 const farmApi = require('./farm-api');
 const { getCurrentPhase, buildLandMap, getDisplayLandContext, isOccupiedSlaveLand, getLandsDetail } = require('./farm-land-analyzer');
 const { runFertilizerByConfig } = require('./farm-fertilizer');
-const { getAvailableSeeds } = require('./planting-service');
+const { getAvailableSeeds, setRainPoemLightningRushActive } = require('./planting-service');
 const { checkFarm, startFarmCheckLoop, stopFarmCheckLoop, refreshFarmCheckLoop, runFarmOperation } = require('./farming-orchestrator');
 
 module.exports = {
@@ -25,6 +25,7 @@ module.exports = {
 
   // 种子/商店
   getAvailableSeeds,
+  setRainPoemLightningRushActive,
   getShopInfo: farmApi.getShopInfo,
   buyGoods: farmApi.buyGoods,
 
