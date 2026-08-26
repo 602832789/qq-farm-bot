@@ -19,14 +19,13 @@ test('prank bottle inventory keeps frog and cloud bottles separate', () => {
   ]), { frog: 2, cloud: 3 });
 });
 
-test('frog and cloud bottles use the social-item placement protocol', () => {
-  const frog = encodeRainPoemPrankRequest(1212748551, 24, 5005);
-  const cloud = encodeRainPoemPrankRequest(1212748551, 25, 5006);
+test('frog bottle request matches the successful official ItemService.Use capture', () => {
+  const frog = encodeRainPoemPrankRequest(1000036036, 5005, 10586);
 
-  assert.equal(Buffer.from(frog).toString('hex'), '0887a6a4c20412011818aeb0122803');
-  assert.equal(Buffer.from(cloud).toString('hex'), '0887a6a4c20412011918afb0122804');
+  assert.equal(Buffer.from(frog).toString('hex'), '0a08088d27100130da52120808c4adeddc031800');
 });
 
 test('unknown items cannot be sent through the prank placement helper', () => {
-  assert.throws(() => encodeRainPoemPrankRequest(1, 1, 5002), /不支持的使坏瓶/);
+  assert.throws(() => encodeRainPoemPrankRequest(1, 5002, 1), /不支持的使坏瓶/);
+  assert.throws(() => encodeRainPoemPrankRequest(1, 5005, 0), /缺少背包 UID/);
 });
