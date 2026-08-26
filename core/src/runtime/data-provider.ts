@@ -125,6 +125,9 @@ function createDataProvider(options: DataProviderOptions) {
         useFriendInteractionItemBatch: (accountRef: string, gid: unknown, itemId: unknown, landIds: unknown) => (
             callWorkerApi(resolveAccountRefId(accountRef), 'useFriendInteractionItemBatch', gid, itemId, landIds)
         ),
+        useFriendFarmInteractionItem: (accountRef: string, gid: unknown, itemId: unknown) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'useFriendFarmInteractionItem', gid, itemId)
+        ),
         getSelfInteractionItems: (accountRef: string) => (
             callWorkerApi(resolveAccountRefId(accountRef), 'getSelfInteractionItems')
         ),
@@ -163,11 +166,18 @@ function createDataProvider(options: DataProviderOptions) {
             callWorkerApi(resolveAccountRefId(accountRef), 'getPetProtectLogs')
         ),
         getDailyGifts: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getDailyGiftOverview'),
+        getActivityDirectorySnapshot: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getActivityDirectorySnapshot'),
         getActivityCenterSnapshot: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getActivityCenterSnapshot'),
         getCurrentSeasonEvent: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getCurrentSeasonEvent'),
+        getCurrentStellarActivity: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getCurrentStellarActivity'),
         getCurrentStarSandShop: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getCurrentStarSandShop'),
         getCurrentSolarTerms: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getCurrentSolarTerms'),
         getCurrentQixiActivity: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getCurrentQixiActivity'),
+        getCurrentWeatherActivity: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getCurrentWeatherActivity'),
+        buyWeatherBottle: (accountRef: string, count: unknown) => callWorkerApi(resolveAccountRefId(accountRef), 'buyWeatherBottle', count),
+        collectWeatherBottle: (accountRef: string, targetGid: unknown) => callWorkerApi(resolveAccountRefId(accountRef), 'collectWeatherBottle', targetGid),
+        lightWeatherResearch: (accountRef: string, nodeId: unknown) => callWorkerApi(resolveAccountRefId(accountRef), 'lightWeatherResearch', nodeId),
+        summonWeatherRain: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'summonWeatherRain'),
         claimBattlePassRewards: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'claimBattlePassRewards'),
         exchangeStarSandGoods: (accountRef: string, goodsId: unknown, count: unknown) => (
             callWorkerApi(resolveAccountRefId(accountRef), 'exchangeStarSandGoods', goodsId, count)

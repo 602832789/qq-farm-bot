@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package gamepb.weatherpb;
+
+message GetWeatherStatusRequest {}
+
+message WeatherStatus {
+    // Weather kind identifier: 0 = none, 1 = thunderstorm (currently known).
+    int64 weather_id = 1;
+    // Separate protocol classification/status field; do not use as weather kind.
+    int64 weather_type = 2;
+    int64 begin_time = 3;
+    int64 end_time = 4;
+    bool active = 5;
+}
+
+message GetWeatherStatusReply {
+    WeatherStatus status = 1;
+}

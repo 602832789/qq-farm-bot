@@ -4,6 +4,7 @@ import { useIntervalFn } from '@vueuse/core'
 import { NButton, NButtonGroup, NCard, NModal, NPagination, NSpin, NTab, NTabs } from 'naive-ui'
 import { storeToRefs } from 'pinia'
 import { computed, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import api from '@/api'
 import CareerHarvestSteal from '@/components/CareerHarvestSteal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
@@ -16,12 +17,14 @@ import { useActivityCenterStore } from '@/stores/activity-center'
 import { useFriendStore } from '@/stores/friend'
 import { useStatusStore } from '@/stores/status'
 import { useToastStore } from '@/stores/toast'
+import { interactionItemTargetReason } from '@/utils/interaction-item-rules'
 
 const accountStore = useAccountStore()
 const activityStore = useActivityCenterStore()
 const friendStore = useFriendStore()
 const statusStore = useStatusStore()
 const toast = useToastStore()
+const route = useRoute()
 const { currentAccountId, currentAccount } = storeToRefs(accountStore)
 const { status } = storeToRefs(statusStore)
 const {
@@ -272,10 +275,10 @@ function hasConfirmedInteractionEffect(land: any, itemId: unknown = selectedInte
 }
 
 function isInteractionLandCandidate(land: any) {
-  return !!land?.unlocked
-    && !land?.occupiedByMaster
-    && !!String(land?.plantName || '').trim()
-    && !['locked', 'empty', 'dead', 'stealable', 'harvested'].includes(String(land?.status || ''))
+  if (selectedInteractionItem.value?.targetKind === 'farm')
+    return false
+  return !!selectedInteractionItem.value
+    && !interactionItemTargetReason(selectedInteractionItem.value.itemId, land)
 }
 
 function isInteractionLandSelected(friendId: unknown, land: any) {
@@ -298,11 +301,9 @@ function interactionLandSelectionLabel(friendId: unknown, land: any) {
     return '已生效'
   if (usedInteractionIdSet(friendId).has(landId))
     return '本次已用'
-  if (['stealable', 'harvested'].includes(String(land?.status || '')))
-    return '成熟不可放'
-  if (!isInteractionLandCandidate(land))
-    return '不可用'
-  return ''
+  return selectedInteractionItem.value
+    ? interactionItemTargetReason(selectedInteractionItem.value.itemId, land)
+    : ''
 }
 
 function setSelectedInteractionIds(friendId: unknown, ids: string[], itemId: unknown = selectedInteractionItemId.value) {
@@ -428,6 +429,22 @@ async function loadData() {
     backgroundRequests.push(friendStore.fetchKnownFriendSettings(accountId))
   await Promise.allSettled(backgroundRequests)
 }
+
+function requestUseFarmInteractionItem(friend: any) {
+  const accountId = currentAccountId.value
+  const item = selectedInteractionItem.value
+  if (!accountId || !item || item.targetKind !== 'farm' || item.count < 1)
+    return
+  const key = friendKey(friend?.gid)
+  const name = String(friend?.name || `GID ${key}`)
+  confirmAction(`确定在 ${name} 的农场放出 1 个“${item.name}”吗？`, async () => {
+    const result = await friendStore.useFarmInteractionItem(accountId, key, item.itemId)
+    if (!result)
+      throw new Error(interactionUseError.value || `${item.name}使用失败`)
+    toast.success(result.message || `已在${name}的农场使用${item.name}`)
+    return result
+  })
+}
 useIntervalFn(() => {
   clockNow.value = Date.now()
   for (const gid of expandedFriends.value) {
@@ -452,6 +469,11 @@ watch([currentAccountId, () => currentAccount.value?.running, currentAccountConn
 }, { immediate: true })
 
 watch(interactionItems, (items) => {
+  const requestedItemId = String(route.query.interactionItem || '')
+  if (requestedItemId && items.some(item => String(item.itemId) === requestedItemId)) {
+    selectedInteractionItemId.value = requestedItemId
+    return
+  }
   if (!items.some(item => String(item.itemId) === selectedInteractionItemId.value))
     selectedInteractionItemId.value = String(items[0]?.itemId || '')
 }, { immediate: true })
@@ -1160,14 +1182,17 @@ async function handleBatchAddKnownFriendGids() {
                         </div>
                       </div>
                       <div class="flex shrink-0 flex-wrap gap-2 xl:max-w-72 xl:justify-end">
-                        <NButton size="small" secondary :disabled="!selectedInteractionItem || interactionUsePending" @click="selectAllInteractionLands(friend.gid)">
+                          <NButton v-if="selectedInteractionItem?.targetKind !== 'farm'" size="small" secondary :disabled="!selectedInteractionItem || interactionUsePending" @click="selectAllInteractionLands(friend.gid)">
                           全选可用
                         </NButton>
-                        <NButton size="small" secondary :disabled="selectedInteractionIds(friend.gid).length === 0 || interactionUsePending" @click="setSelectedInteractionIds(friend.gid, [])">
+                        <NButton v-if="selectedInteractionItem?.targetKind !== 'farm'" size="small" secondary :disabled="selectedInteractionIds(friend.gid).length === 0 || interactionUsePending" @click="setSelectedInteractionIds(friend.gid, [])">
                           清空
                         </NButton>
-                        <NButton type="warning" size="small" :loading="interactionUsePending" :disabled="!selectedInteractionItem || selectedInteractionIds(friend.gid).length === 0" @click="requestUseInteractionItem(friend)">
+                        <NButton v-if="selectedInteractionItem?.targetKind !== 'farm'" type="warning" size="small" :loading="interactionUsePending" :disabled="!selectedInteractionItem || selectedInteractionIds(friend.gid).length === 0" @click="requestUseInteractionItem(friend)">
                           按顺序使用 {{ selectedInteractionIds(friend.gid).length || '' }} 个
+                        </NButton>
+                        <NButton v-else type="warning" size="small" :loading="interactionUsePending" :disabled="!selectedInteractionItem || selectedInteractionItem.count < 1" @click="requestUseFarmInteractionItem(friend)">
+                          在此农场使用
                         </NButton>
                       </div>
                     </div>
@@ -1186,7 +1211,10 @@ async function handleBatchAddKnownFriendGids() {
                   </div>
                 </div>
 
-                <div v-if="!friendLands[friend.gid] || friendLands[friend.gid]?.length === 0" class="py-4 text-center text-gray-500">
+                <div v-if="selectedInteractionItem?.targetKind === 'farm'" class="py-4 text-center text-gray-500">
+                  当前道具作用于好友农场整体，无需选择地块
+                </div>
+                <div v-else-if="!friendLands[friend.gid] || friendLands[friend.gid]?.length === 0" class="py-4 text-center text-gray-500">
                   该好友当前没有可展示的土地
                 </div>
                 <div v-else class="grid grid-cols-2 gap-2 lg:grid-cols-8 md:grid-cols-5 sm:grid-cols-4">

@@ -122,6 +122,7 @@ export interface DeviceInfo {
 export interface SystemConfig {
   serverUrl: string;
   clientVersion: string;
+  clientVersionUpdatedAt?: number;
   platform: string;
   os: string;
   timeZone: string;

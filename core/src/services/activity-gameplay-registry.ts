@@ -1,6 +1,6 @@
 export {};
 
-type ActivityDetailTarget = 'travel' | 'constellation' | 'shop' | 'solar' | 'qixi';
+type ActivityDetailTarget = 'travel' | 'constellation' | 'shop' | 'solar' | 'qixi' | 'qingmei' | 'weather';
 
 interface ActivityGameplayContext {
     season?: any;
@@ -8,6 +8,8 @@ interface ActivityGameplayContext {
     solarTerms?: any;
     constellation?: any;
     qixi?: any;
+    qingMei?: any;
+    weather?: any;
 }
 
 interface ActivityGameplayAdapter {
@@ -28,7 +30,11 @@ const GAMEPLAY_ADAPTERS: readonly ActivityGameplayAdapter[] = [
         gameplayKey: 'stellar',
         detailTarget: 'travel',
         priority: 10,
-        activityIds: context => [context.season?.pass?.activityId],
+        activityIds: context => [
+            '2026072700',
+            '2026072701',
+            context.season?.pass?.activityId,
+        ],
     },
     {
         gameplayKey: 'stellar',
@@ -58,9 +64,40 @@ const GAMEPLAY_ADAPTERS: readonly ActivityGameplayAdapter[] = [
         detailTarget: 'qixi',
         priority: 50,
         activityIds: context => [
+            '2026081800',
+            '2026081801',
+            '2026081802',
             context.qixi?.groupId,
             context.qixi?.bridgeActivityId,
             context.qixi?.giftActivityId,
+        ],
+    },
+    {
+        gameplayKey: 'qingmei',
+        detailTarget: 'qingmei',
+        priority: 60,
+        activityIds: context => [
+            '2026081200',
+            '2026081201',
+            '2026081202',
+            context.qingMei?.dailyActivityId,
+            context.qingMei?.activityId,
+        ],
+    },
+    {
+        gameplayKey: 'weather',
+        detailTarget: 'weather',
+        priority: 70,
+        activityIds: context => [
+            '2026070300',
+            '2026070301',
+            '2026070303',
+            '2026070304',
+            '2026070305',
+            context.weather?.groupId,
+            context.weather?.catalogActivityId,
+            context.weather?.taskActivityId,
+            context.weather?.researchActivityId,
         ],
     },
 ];

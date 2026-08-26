@@ -76,6 +76,69 @@ message ActivityData {
     QixiBridgeConfig qixi_bridge = 112;
     QixiGiftProgress qixi_gift = 113;
     QingMeiQuote qingmei_quote = 114;
+    WeatherTaskProgress weather_task_progress = 105;
+    WeatherTaskList weather_tasks = 117;
+    WeatherResearchData weather_research = 118;
+}
+
+// 雨落成诗活动。服务端复用了 ActivityData 的通用字段，以下结构保留
+// 新活动抓包中已经确认的字段，未知字段仍由 protobufjs 安全跳过。
+message WeatherTaskProgress {
+    int64 current = 3;
+    int64 target = 4;
+    int64 item_id = 5;
+    bool active = 6;
+    WeatherTaskRewardProgress reward = 8;
+    int64 status = 9;
+}
+
+message WeatherTaskRewardProgress {
+    int64 task_id = 1;
+    ActivityItem item = 3;
+    int64 status = 4;
+    bytes display = 6;
+}
+
+message WeatherTask {
+    int64 task_id = 1;
+    int64 item_id = 2;
+    ActivityItem reward = 3;
+    string name = 4;
+    int64 target = 5;
+}
+
+message WeatherTaskList {
+    repeated WeatherTask tasks = 1;
+}
+
+message WeatherResearchNode {
+    int64 node_id = 1;
+    repeated int64 prerequisite_node_ids = 2 [packed = true];
+    int64 status = 3;
+    bool claimed = 4;
+    bool opened = 5;
+    ActivityItem cost = 6;
+    ActivityItem reward = 7;
+    bool featured = 8;
+    int64 extra = 9;
+}
+
+message WeatherResearchState {
+    repeated WeatherResearchNode nodes = 2;
+}
+
+message WeatherResearchData {
+    WeatherResearchState state = 1;
+}
+
+message WeatherResearchOperateParams {
+    int64 node_id = 1;
+}
+
+message WeatherResearchOperateResult {
+    int64 node_id = 1;
+    corepb.Item reward = 2;
+    repeated int64 unlocked_node_ids = 3 [packed = true];
 }
 
 message ActivityWindow {
@@ -267,6 +330,41 @@ message ActivityOperateReply {
     QingMeiSettlement qingmei_settlement = 115;
     QixiGiftResult qixi_gift_result = 125;
     QixiBridgeRewardResult qixi_bridge_result = 126;
+    ExchangeShopResult weather_exchange_result = 101;
+    WeatherTaskOperateResult weather_task_result = 108;
+    WeatherResearchOperateResult weather_research_result = 140;
+}
+
+message WeatherResearchOperateRequest {
+    int64 activity_id = 1;
+    int64 operate_type = 2;
+    WeatherResearchOperateParams params = 140;
+}
+
+message WeatherTaskOperateParams {
+    int64 target_gid = 3;
+}
+
+message WeatherTaskOperateRequest {
+    int64 activity_id = 1;
+    int64 operate_type = 2;
+    WeatherTaskOperateParams params = 107;
+}
+
+message ExchangeShopResult {
+    corepb.Item item = 1;
+    ActivityItem cost = 2;
+}
+
+message WeatherTaskRewardLink {
+    int64 task_id = 1;
+    ActivityItem item = 2;
+}
+
+message WeatherTaskOperateResult {
+    WeatherTaskRewardLink task_reward = 1;
+    corepb.Item gained = 2;
+    corepb.Item consumed = 3;
 }
 
 message ActiviesChangeNotify {

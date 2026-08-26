@@ -25,6 +25,20 @@ const ACTIVITY_ERROR_MESSAGES: Record<string, string> = {
     INVALID_QIXI_MESSAGE_TEXT_ID: '祝福文案信息无效，请刷新活动后重试',
     QIXI_RESPONSE_INVALID: '鹊桥活动数据已经变化，请刷新页面后重试',
     QIXI_GIFT_FAILED: '鹊羽香囊赠送失败，请刷新后重试',
+    INVALID_WEATHER_BOTTLE_COUNT: '天气瓶购买数量必须是正十进制整数',
+    INVALID_WEATHER_NODE: '研究节点信息无效，请刷新活动后重试',
+    INVALID_WEATHER_TARGET_GID: '好友 GID 必须是正十进制整数',
+    WEATHER_BOTTLE_UNAVAILABLE: '背包中没有可用的雷雨召唤瓶',
+    WEATHER_COLLECTION_BOTTLE_UNAVAILABLE: '背包中没有可用的天气采集瓶',
+    INSUFFICIENT_WEATHER_BADGE: '雷电徽章不足，无法推进研究',
+    WEATHER_STATE_UNAVAILABLE: '当前已有特殊天气，暂时无法召唤降雨',
+    WEATHER_RESPONSE_INVALID: '天气活动数据已经变化，请刷新页面后重试',
+    WEATHER_UNAVAILABLE: '雨落成诗活动暂未开放或已经结束',
+    '1034007': '活动天气瓶已达到限购次数',
+    '1033014': '当前已有特殊天气，暂时无法召唤降雨',
+    '1000019': '雷电徽章不足，无法推进研究',
+    '1034018': '天气采集瓶不足，无法采集',
+    '1034040': '该好友已经采过雨了，去其他好友家看看吧',
 };
 
 function activityErrorResponse(error: any): { code: string; message: string } {
@@ -102,12 +116,15 @@ function mountActivityCenterRoutes(app: Application, ctx: AdminContext): void {
         app.get(path, withAccount((accountId: string) => ctx.provider[providerMethod](accountId)));
     };
 
+    mountGet('/api/activity-center/activities', 'getActivityDirectorySnapshot');
     mountGet('/api/activity-center/snapshot', 'getActivityCenterSnapshot');
     mountGet('/api/activity-center/season', 'getCurrentSeasonEvent');
+    mountGet('/api/activity-center/stellar', 'getCurrentStellarActivity');
     mountGet('/api/activity-center/shop', 'getCurrentStarSandShop');
     mountGet('/api/activity-center/solar-terms', 'getCurrentSolarTerms');
     mountGet('/api/activity-center/qingmei', 'getCurrentQingMeiActivity');
     mountGet('/api/activity-center/qixi', 'getCurrentQixiActivity');
+    mountGet('/api/activity-center/weather', 'getCurrentWeatherActivity');
 
     app.post('/api/activity-center/pass/claim', withAccount((accountId: string) => (
         ctx.provider.claimBattlePassRewards(accountId)
@@ -148,6 +165,19 @@ function mountActivityCenterRoutes(app: Application, ctx: AdminContext): void {
 
     app.post('/api/activity-center/qixi/bridge/claim', withAccount((accountId: string) => (
         ctx.provider.claimQixiBridgeRewards(accountId)
+    )));
+
+    app.post('/api/activity-center/weather/research/light', withAccount((accountId: string, req: Request) => (
+        ctx.provider.lightWeatherResearch(accountId, req.body?.nodeId ?? req.body?.node_id)
+    )));
+    app.post('/api/activity-center/weather/bottle/buy', withAccount((accountId: string, req: Request) => (
+        ctx.provider.buyWeatherBottle(accountId, req.body?.count)
+    )));
+    app.post('/api/activity-center/weather/bottle/collect', withAccount((accountId: string, req: Request) => (
+        ctx.provider.collectWeatherBottle(accountId, req.body?.targetGid ?? req.body?.target_gid)
+    )));
+    app.post('/api/activity-center/weather/rain/summon', withAccount((accountId: string) => (
+        ctx.provider.summonWeatherRain(accountId)
     )));
 
     app.post('/api/activity-center/qixi/gift', withAccount((accountId: string, req: Request) => (

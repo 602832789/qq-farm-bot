@@ -5,6 +5,7 @@ import { useIntervalFn } from '@vueuse/core'
 import { NButton } from 'naive-ui'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import CareerHarvestSteal from '@/components/CareerHarvestSteal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import LandCard from '@/components/LandCard.vue'
@@ -13,12 +14,14 @@ import { useFarmStore } from '@/stores/farm'
 import { useSettingStore } from '@/stores/setting'
 import { useStatusStore } from '@/stores/status'
 import { useToastStore } from '@/stores/toast'
+import { interactionItemTargetReason } from '@/utils/interaction-item-rules'
 
 const farmStore = useFarmStore()
 const accountStore = useAccountStore()
 const settingStore = useSettingStore()
 const statusStore = useStatusStore()
 const toast = useToastStore()
+const route = useRoute()
 const {
   lands,
   summary,
@@ -134,10 +137,8 @@ function hasConfirmedInteractionEffect(land: any, itemId: unknown = selectedInte
 
 // 与好友页保持同一口径：只有仍在生长期的作物才允许提交道具使用。
 function isInteractionLandCandidate(land: any) {
-  return !!land?.unlocked
-    && !land?.occupiedByMaster
-    && !!String(land?.plantName || '').trim()
-    && !['locked', 'empty', 'dead', 'harvestable', 'stealable', 'harvested'].includes(String(land?.status || ''))
+  return !!selectedInteractionItem.value
+    && !interactionItemTargetReason(selectedInteractionItem.value.itemId, land)
 }
 
 function isInteractionLandSelected(land: any) {
@@ -160,11 +161,9 @@ function interactionLandSelectionLabel(land: any) {
     return '已生效'
   if (usedInteractionIdSet().has(landId))
     return '本次已用'
-  if (['harvestable', 'stealable', 'harvested'].includes(String(land?.status || '')))
-    return '成熟不可用'
-  if (!isInteractionLandCandidate(land))
-    return '不可用'
-  return ''
+  return selectedInteractionItem.value
+    ? interactionItemTargetReason(selectedInteractionItem.value.itemId, land)
+    : ''
 }
 
 function setSelectedInteractionIds(ids: string[], itemId: unknown = selectedInteractionItemId.value) {
@@ -348,6 +347,11 @@ watch(interactionItems, (items) => {
   const first = items[0]
   if (!first) {
     selectedInteractionItemId.value = ''
+    return
+  }
+  const requestedItemId = String(route.query.interactionItem || '')
+  if (requestedItemId && items.some(item => String(item.itemId) === requestedItemId)) {
+    selectedInteractionItemId.value = requestedItemId
     return
   }
   if (!items.some(item => String(item.itemId) === selectedInteractionItemId.value))

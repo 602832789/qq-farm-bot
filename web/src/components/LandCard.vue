@@ -236,9 +236,9 @@ function mutantBadgeClass(effect: { icon?: string }) {
   return map[icon] || 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300'
 }
 
-function mutantIconUrl(icon: string) {
-  const name = String(icon || '').trim()
-  return name ? `/game-config/seed_images_named/mutant/${name}.png` : ''
+function mutantIconUrl(id: number) {
+  const numericId = Number(id) || 0
+  return numericId > 0 ? `/game-config/seed_images_named/mutant/${numericId}.png` : ''
 }
 </script>
 
@@ -349,7 +349,7 @@ function mutantIconUrl(icon: string) {
       >
         <img
           v-if="effect.icon"
-          :src="mutantIconUrl(effect.icon)"
+          :src="mutantIconUrl(effect.id)"
           :alt="effect.name"
           class="h-3 w-3 object-contain"
         >

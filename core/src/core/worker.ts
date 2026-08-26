@@ -379,6 +379,12 @@ function applyRuntimeConfig(snapshot: any, syncNow: boolean = false): number {
     if (snapshot && snapshot.systemTimeZone !== undefined) {
         updateRuntimeConfig({ timeZone: snapshot.systemTimeZone });
     }
+    if (!loginReady && snapshot && snapshot.systemServerUrl !== undefined) {
+        updateRuntimeConfig({ serverUrl: String(snapshot.systemServerUrl || '') });
+    }
+    if (!loginReady && snapshot && snapshot.systemClientVersion !== undefined) {
+        updateRuntimeConfig({ clientVersion: String(snapshot.systemClientVersion || '') });
+    }
     applyConfigSnapshot(snapshot || {}, { persist: false, accountId });
     if (rev > appliedConfigRevision) appliedConfigRevision = rev;
 
@@ -468,9 +474,11 @@ async function startBot(config: any): Promise<void> {
     shutdownStarted = false;
     runtimeGeneration += 1;
 
-    const { code, platform, systemTimeZone } = config;
+    const { code, platform, systemTimeZone, systemServerUrl, systemClientVersion } = config;
 
     if (systemTimeZone !== undefined) updateRuntimeConfig({ timeZone: systemTimeZone });
+    if (systemServerUrl !== undefined) updateRuntimeConfig({ serverUrl: String(systemServerUrl || '') });
+    if (systemClientVersion !== undefined) updateRuntimeConfig({ clientVersion: String(systemClientVersion || '') });
     CONFIG.platform = platform || 'qq';
     // 注意：间隔配置由 applyIntervalsToRuntime 统一处理，不要在这里覆盖
 
@@ -737,6 +745,9 @@ async function handleApiCall(msg: any): Promise<void> {
             case 'useFriendInteractionItemBatch':
                 result = await require('../services/friend-interaction-items').useFriendInteractionItemBatch(args[0], args[1], args[2]);
                 break;
+            case 'useFriendFarmInteractionItem':
+                result = await require('../services/friend-interaction-items').useFriendFarmInteractionItem(args[0], args[1]);
+                break;
             case 'getSelfInteractionItems':
                 result = await require('../services/friend-interaction-items').getSelfInteractionItems();
                 break;
@@ -838,11 +849,17 @@ async function handleApiCall(msg: any): Promise<void> {
             case 'getDailyGiftOverview':
                 result = await getDailyGiftOverview();
                 break;
+            case 'getActivityDirectorySnapshot':
+                result = await require('../services/activity-center').getActivityDirectorySnapshot();
+                break;
             case 'getActivityCenterSnapshot':
                 result = await require('../services/activity-center').getActivityCenterSnapshot();
                 break;
             case 'getCurrentSeasonEvent':
                 result = await require('../services/activity-center').getCurrentSeasonEvent();
+                break;
+            case 'getCurrentStellarActivity':
+                result = await require('../services/activity-center').getCurrentStellarActivity();
                 break;
             case 'getCurrentStarSandShop':
                 result = await require('../services/activity-center').getCurrentStarSandShop();
@@ -852,6 +869,21 @@ async function handleApiCall(msg: any): Promise<void> {
                 break;
             case 'getCurrentQixiActivity':
                 result = await require('../services/activity-center').getCurrentQixiActivity();
+                break;
+            case 'getCurrentWeatherActivity':
+                result = await require('../services/activity-center').getCurrentWeatherActivity();
+                break;
+            case 'buyWeatherBottle':
+                result = await require('../services/activity-center').buyWeatherBottle(args[0]);
+                break;
+            case 'collectWeatherBottle':
+                result = await require('../services/activity-center').collectWeatherBottle(args[0]);
+                break;
+            case 'lightWeatherResearch':
+                result = await require('../services/activity-center').lightWeatherResearch(args[0]);
+                break;
+            case 'summonWeatherRain':
+                result = await require('../services/activity-center').summonWeatherRain();
                 break;
             case 'claimBattlePassRewards':
                 result = await require('../services/activity-center').claimBattlePassRewards();
