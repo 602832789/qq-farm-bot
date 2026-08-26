@@ -80,6 +80,49 @@ WASM 更新的完整发现、快照、比较、验证和回退流程见：
 core/docs/tsdk-update-runbook.md
 ```
 
+## 官方配置表与 CDN 图片调查工具
+
+遇到以下情况时，优先使用 `core` 中的 CDN 资源调查工具：
+
+- 活动接口、背包、任务、商店或奖励中出现未知物品 ID、名称或图标。
+- 新活动需要核对 `Plant`、`ItemInfo`、`MutantEffect`、`Goods`、`Task`、
+  `TechTreeLine` 等官方配置表。
+- 已知 `icon`、`icon_res`、`asset_name` 或 Cocos 资源路径，需要定位对应 bundle、UUID 和
+  真实 CDN 图片 URL。
+- 怀疑仓库内物品、植物或效果配置落后于最新版官方客户端，需要与最新远程配置表交叉核对。
+
+常用命令：
+
+```bash
+cd core
+
+# 列出最新版官方客户端可发现的配置表
+npm run inspect:cdn -- --list-tables
+
+# 按配置表和 ID 查询
+npm run inspect:cdn -- --table ItemInfo --id <物品ID>
+
+# 按 name、effect_name 或 title 查询，精确匹配优先
+npm run inspect:cdn -- --name <名称>
+
+# 已知 Cocos 资源路径时直接解析
+npm run inspect:cdn -- --path <Cocos资源路径>
+```
+
+工具默认复用 `activity-update-scanner` 的规则，按 `tsdk/tsdk.wasm` 修改时间选择最新且完整的
+QQ 农场源码目录；也可用 `--source <已解包目录>` 显式指定来源。默认只查询并输出结构化结果和
+CDN URL，只有用户明确要求保存素材时才使用 `--download <文件>`。远程配置缓存写入系统临时
+目录，不得写回或修改 QQ 官方源码和运行资源缓存。
+
+该工具只用于配置和独立图片资源调查，不能替代以下流程：
+
+- 植物阶段图、ASTC、Spine、图集纹理和裁切恢复仍使用
+  `npm run extract:plant-phases -- ...` 及现有专项提取脚本。
+- 活动协议、字段号、命令字和动作语义仍需通过官方生成代码、HAR/WS、proto、Prefab 和服务端
+  响应交叉确认；不能仅凭配置表或图片名称推断协议行为。
+- CDN 查询结果不能直接成为运行时远程依赖。需要在页面或核心逻辑使用的名称、ID、图片和植物
+  数据仍应进入统一配置、补充配置或项目静态资源，并补对应测试。
+
 ## 限时活动适配核心流程
 
 新增或续接限时活动时，先把官方数据来源和协议边界摸清楚，再落代码。优先从最新版
