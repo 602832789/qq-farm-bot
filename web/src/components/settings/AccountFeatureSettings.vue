@@ -31,6 +31,7 @@ const automation = defineModel<any>('automation', { required: true })
 const activeModule = ref<ModuleKey | null>(null)
 const editSnapshot = ref<{ strategy: any, automation: any } | null>(null)
 const qixiFriends = ref<Array<{ gid: number, name: string }>>([])
+const SHOW_STAR_ACTIVITY = false
 const SHOW_QIXI_ACTIVITY = false
 
 const moduleInfo: Record<ModuleKey, { title: string, description: string, icon: string, image: string, tone: string }> = {
@@ -46,7 +47,7 @@ const activeInfo = computed(() => activeModule.value ? moduleInfo[activeModule.v
 const fertilizerName = computed(() => props.fertilizerOptions.find(item => item.value === automation.value.automation.fertilizer)?.label || '未设置')
 const selectedLandNames = computed(() => props.fertilizerLandTypeOptions.filter(item => automation.value.automation.fertilizer_land_types?.includes(item.value)).map(item => item.label))
 const selectedLandTypeCount = computed(() => Array.isArray(automation.value.automation.fertilizer_land_types) ? automation.value.automation.fertilizer_land_types.length : 0)
-const activityKeys = ['star_passport_claim', 'star_solar_claim', 'star_record_claim', 'qixi_dew_use', 'qixi_bridge_build', 'qixi_sachet_gift'] as const
+const activityKeys = [] as const
 const activityEnabledCount = computed(() => activityKeys.filter(key => automation.value.automation[key]).length)
 const starFestivalEnabled = computed(() => ['star_passport_claim', 'star_solar_claim', 'star_record_claim'].some(key => automation.value.automation[key]))
 const qixiActivityEnabled = computed(() => ['qixi_dew_use', 'qixi_bridge_build', 'qixi_sachet_gift'].some(key => automation.value.automation[key]))
@@ -106,7 +107,7 @@ function summaryTags(key: ModuleKey) {
   }
   return [
     automation.value.automation.task ? '自动完成日常任务' : '不做日常',
-    starFestivalEnabled.value && '心许千灯星垂野',
+    SHOW_STAR_ACTIVITY && starFestivalEnabled.value && '心许千灯星垂野',
     SHOW_QIXI_ACTIVITY && qixiActivityEnabled.value && '鹊桥寄情',
     !starFestivalEnabled.value && (!SHOW_QIXI_ACTIVITY || !qixiActivityEnabled.value) && '未开启活动',
   ].filter(Boolean)
@@ -368,7 +369,7 @@ watch(() => props.currentAccountId, loadQixiFriends)
                 </div>
               </section>
 
-              <section class="space-y-3 border border-gray-100 rounded-lg p-4 dark:border-gray-700">
+              <section v-if="SHOW_STAR_ACTIVITY" class="space-y-3 border border-gray-100 rounded-lg p-4 dark:border-gray-700">
                 <div class="flex items-center justify-between gap-3">
                   <div class="text-sm text-gray-700 font-medium dark:text-gray-300">
                     施肥范围

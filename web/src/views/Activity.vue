@@ -89,6 +89,7 @@ const {
 } = storeToRefs(activityStore)
 
 const SHOW_QIXI_ACTIVITY = false
+const SHOW_STAR_ACTIVITY = false
 const activeSection = ref<ActivitySectionKey>('journey')
 const showActivityAnalysis = ref(false)
 const sections = computed<ActivitySection[]>(() => [
@@ -101,10 +102,12 @@ const sections = computed<ActivitySection[]>(() => [
 
 async function refreshAll() {
   if (currentAccountId.value) {
-    await Promise.all([
-      activityStore.fetchHeluActivity(String(currentAccountId.value)),
-      activityStore.fetchQixiActivity(String(currentAccountId.value)),
-    ])
+    const requests = []
+    if (SHOW_STAR_ACTIVITY)
+      requests.push(activityStore.fetchHeluActivity(String(currentAccountId.value)))
+    if (SHOW_QIXI_ACTIVITY)
+      requests.push(activityStore.fetchQixiActivity(String(currentAccountId.value)))
+    await Promise.all(requests)
   }
 }
 
@@ -177,7 +180,7 @@ onMounted(refreshAll)
 
 <template>
   <section class="space-y-4">
-    <header class="relative min-h-40 overflow-hidden rounded-lg bg-[#071b43] shadow-sm">
+    <header v-if="SHOW_STAR_ACTIVITY" class="relative min-h-40 overflow-hidden rounded-lg bg-[#071b43] shadow-sm">
       <img
         src="/activity/star-festival/star-sky.png"
         alt=""
@@ -232,7 +235,15 @@ onMounted(refreshAll)
       </div>
     </header>
 
-    <div v-if="!currentAccountId" class="rounded-lg bg-white p-10 text-center text-sm text-gray-500 shadow dark:bg-gray-800">
+    <div v-if="!SHOW_STAR_ACTIVITY" class="rounded-lg bg-white p-10 text-center text-sm text-gray-500 shadow dark:bg-gray-800">
+      <div class="i-carbon-events mx-auto mb-3 text-4xl text-gray-300" />
+      <p>当前暂无进行中的活动。</p>
+      <BaseButton v-if="userStore.isAdmin" class="mt-4" variant="secondary" @click="showActivityAnalysis = true">
+        <span class="i-carbon-analytics mr-1.5" />
+        活动分析
+      </BaseButton>
+    </div>
+    <div v-else-if="!currentAccountId" class="rounded-lg bg-white p-10 text-center text-sm text-gray-500 shadow dark:bg-gray-800">
       {{ L.needAccount }}
     </div>
     <template v-else>

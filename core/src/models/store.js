@@ -237,6 +237,25 @@ const DEFAULT_AUTOMATION = {
     golden_bug_clear: true
 };
 
+// 已从前端隐藏的限时活动。即使旧配置或客户端提交 true，也必须在配置边界
+// 统一关闭，避免活动入口隐藏后后台任务继续执行。
+const HIDDEN_ACTIVITY_AUTOMATION_KEYS = new Set([
+    'star_passport_claim',
+    'star_solar_claim',
+    'star_record_claim',
+    'qingmei_seed_claim',
+    'qingmei_wine_brew',
+    'qixi_dew_use',
+    'qixi_bridge_build',
+    'qixi_sachet_gift'
+]);
+
+function disableHiddenActivityAutomation(automation) {
+    if (!automation || typeof automation !== 'object') return automation;
+    for (const key of HIDDEN_ACTIVITY_AUTOMATION_KEYS) automation[key] = false;
+    return automation;
+}
+
 /** 默认间隔配置（秒） */
 const DEFAULT_INTERVALS = {
     farm: 2,
@@ -615,6 +634,7 @@ function normalizeAccountConfig(raw, fallbackConfig = accountFallbackConfig) {
             }
         }
     }
+    disableHiddenActivityAutomation(cfg.automation);
 
     // 自动刷新 Code
     if (input.autoCodeRefresh && typeof input.autoCodeRefresh === 'object') {
@@ -1054,7 +1074,7 @@ function getAutomation(accountId) {
     const auto = { ...getAccountConfigSnapshot(accountId).automation };
     auto.fertilizer_land_types = normalizeFertilizerLandTypes(auto.fertilizer_land_types);
     auto.qixi_friend_priority = normalizeKnownFriendGids(auto.qixi_friend_priority, []);
-    return auto;
+    return disableHiddenActivityAutomation(auto);
 }
 
 function getConfigSnapshot(accountId) {
@@ -1109,6 +1129,7 @@ function applyConfigSnapshot(patch = {}, opts = {}) {
             }
         }
     }
+    disableHiddenActivityAutomation(cfg.automation);
 
     if (patch.autoCodeRefresh && typeof patch.autoCodeRefresh === 'object') {
         cfg.autoCodeRefresh = {
@@ -1925,4 +1946,9 @@ module.exports = {
     DEFAULT_ANTI_RESALE_CONFIG
 };
 
-module.exports._test = { ...(module.exports._test || {}), normalizeCapitalMode };
+module.exports._test = {
+    ...(module.exports._test || {}),
+    normalizeCapitalMode,
+    disableHiddenActivityAutomation,
+    HIDDEN_ACTIVITY_AUTOMATION_KEYS
+};
