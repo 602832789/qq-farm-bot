@@ -255,6 +255,19 @@ message AdvanceWeatherResearchRequest {
     WeatherResearchOperateParams weather_research_operate = 140;
 }
 
+// 雨落成诗：在好友雷雨现场使用天气采集瓶。
+// 实机协议为 activity_id=2026070303、operate_type=9，好友 GID 位于
+// field 107 的 field 3；这条链路不经过 ItemService.Use。
+message WeatherCollectOperateParams {
+    int64 host_gid = 3;
+}
+
+message CollectWeatherRequest {
+    int64 activity_id = 1;
+    int64 operate_type = 2;
+    WeatherCollectOperateParams weather_collect_operate = 107;
+}
+
 message OperateConstellationRequest {
     message Empty {}
 

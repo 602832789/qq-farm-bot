@@ -31,8 +31,13 @@ const ACTIVITY_ERROR_MESSAGES: Record<string, string> = {
     INVALID_WEATHER_FRIEND_GID: '好友信息无效，请刷新活动后重新选择',
     WEATHER_COLLECTOR_UNAVAILABLE: '背包中没有可用的天气采集瓶',
     WEATHER_FRIEND_NOT_THUNDERSTORM: '该好友农场当前不是雷雨天气',
+    WEATHER_ALREADY_COLLECTED: '今天已经采过这位好友的雨，请换一位好友',
     WEATHER_SUMMON_UNAVAILABLE: '背包中没有可用的雷雨召唤瓶',
     WEATHER_ALREADY_ACTIVE: '自己的农场当前已有特殊天气',
+    WEATHER_FROG_UNAVAILABLE: '背包中没有可用的青蛙使坏瓶',
+    WEATHER_CLOUD_UNAVAILABLE: '背包中没有可用的乌云使坏瓶',
+    INVALID_WEATHER_LAND_ID: '地块信息无效，请刷新好友天气后重试',
+    WEATHER_CLOUD_TARGET_UNAVAILABLE: '好友当前没有可使用乌云使坏瓶的作物',
     WEATHER_ACCOUNT_UNAVAILABLE: '当前账号尚未就绪，请稍后重试',
     INVALID_WEATHER_RESEARCH_NODE: '气象研究节点信息无效，请刷新后重试',
     WEATHER_RESEARCH_UNAVAILABLE: '气象研究数据暂不可用，请刷新后重试',
@@ -173,12 +178,24 @@ function mountActivityCenterRoutes(app: Application, ctx: AdminContext): void {
         ctx.provider.exchangeWeatherCollectorBottle(accountId)
     )));
 
+    app.post('/api/activity-center/weather/friends/scan', withAccount((accountId: string) => (
+        ctx.provider.scanWeatherFriends(accountId)
+    )));
+
     app.post('/api/activity-center/weather/collect', withAccount((accountId: string, req: Request) => (
         ctx.provider.useWeatherCollectorBottle(accountId, req.body?.friendGid)
     )));
 
     app.post('/api/activity-center/weather/summon', withAccount((accountId: string) => (
         ctx.provider.useWeatherSummonBottle(accountId)
+    )));
+
+    app.post('/api/activity-center/weather/mischief/frog', withAccount((accountId: string, req: Request) => (
+        ctx.provider.useWeatherFrogBottle(accountId, req.body?.friendGid)
+    )));
+
+    app.post('/api/activity-center/weather/mischief/cloud', withAccount((accountId: string, req: Request) => (
+        ctx.provider.useWeatherCloudBottle(accountId, req.body?.friendGid, req.body?.landId)
     )));
 
     app.post('/api/activity-center/weather/research/:nodeId/advance', withAccount((accountId: string, req: Request, res: Response) => {

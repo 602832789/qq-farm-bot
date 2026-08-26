@@ -10,6 +10,9 @@ message WeatherStatus {
     int64 end_time = 4;
     int64 source = 5;
     int64 field_8 = 8;
+    // 好友现场天气附带的活动标记。实机已见晴天=1、雷雨已采=4；
+    // 不能再沿用旧实现把 field_8 当作该标记。
+    int64 field_9 = 9;
 }
 
 message GetWeatherStatusRequest {}

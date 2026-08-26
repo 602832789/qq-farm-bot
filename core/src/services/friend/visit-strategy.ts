@@ -395,7 +395,8 @@ export function cacheFriendsListFromReply(reply: any): any[] {
                 beginTime: toNum(f.weather.begin_time),
                 endTime: toNum(f.weather.end_time),
                 source: toNum(f.weather.source),
-                friendMarker: toNum(f.weather.field_8),
+                field8: toNum(f.weather.field_8),
+                friendMarker: toNum(f.weather.field_9),
             } : null,
         }))
         .sort((a: any, b: any) => {

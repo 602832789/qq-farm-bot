@@ -1628,7 +1628,10 @@ module.exports = {
     claimQixiBridgeRewards,
     giftQixiSachet,
     exchangeWeatherCollectorBottle: weatherActivityService.exchangeWeatherCollectorBottle,
+    scanWeatherFriends: weatherActivityService.scanWeatherFriends,
     useWeatherCollectorBottle: weatherActivityService.useWeatherCollectorBottle,
     useWeatherSummonBottle: weatherActivityService.useWeatherSummonBottle,
+    useWeatherFrogBottle: weatherActivityService.useWeatherFrogBottle,
+    useWeatherCloudBottle: weatherActivityService.useWeatherCloudBottle,
     advanceWeatherResearch: weatherActivityService.advanceWeatherResearch,
 };

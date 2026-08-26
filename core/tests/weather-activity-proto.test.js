@@ -10,6 +10,7 @@ async function loadRoot() {
         path.join(__dirname, '../src/proto/itempb.proto'),
         path.join(__dirname, '../src/proto/weatherpb.proto'),
         path.join(__dirname, '../src/proto/friendpb.proto'),
+        path.join(__dirname, '../src/proto/visitpb.proto'),
     ], { keepCase: true });
     return root;
 }
@@ -29,31 +30,73 @@ test('weather research request reproduces the capture-verified field 140 selecto
 test('weather bottle use target preserves the host and explicit zero use config', async () => {
     const root = await loadRoot();
     const Request = root.lookupType('gamepb.itempb.UseRequest');
-    const decoded = Request.decode(Request.encode(Request.create({
+    const body = Buffer.from(Request.encode(Request.create({
         item: { id: 5002, count: 1, uid: 77 },
         target: { host_gid: 123456, use_config_id: 0 },
     })).finish());
+    const decoded = Request.decode(body);
 
     assert.equal(Number(decoded.item.id), 5002);
     assert.equal(Number(decoded.target.host_gid), 123456);
     assert.equal(Number(decoded.target.use_config_id), 0);
+    assert.deepEqual(Array.from(body.slice(-2)), [0x18, 0x00]);
 });
 
-test('friend summaries decode the weather status from field 20', async () => {
+test('frog and cloud bottle requests match the successful captures', async () => {
     const root = await loadRoot();
-    const Friend = root.lookupType('gamepb.friendpb.GameFriend');
-    const decoded = Friend.decode(Friend.encode(Friend.create({
-        gid: 123456,
+    const Request = root.lookupType('gamepb.itempb.UseRequest');
+    const frogBody = Buffer.from(Request.encode(Request.create({
+        item: { id: 5005, count: 1, uid: 13859 },
+        target: { host_gid: '1001851355', use_config_id: 0 },
+    })).finish());
+    const cloudBody = Buffer.from(Request.encode(Request.create({
+        item: { id: 5006, count: 1, uid: 13865 },
+        target: { host_gid: '1027729951', land_ids: [11] },
+    })).finish());
+
+    assert.equal(frogBody.toString('hex'), '0a08088d27100130a36c120808db93dcdd031800');
+    assert.equal(cloudBody.toString('hex'), '0a08088e27100130a96c1209089fd487ea0312010b');
+});
+
+test('weather collection request reproduces operate_type 9 and field 107.field 3', async () => {
+    const root = await loadRoot();
+    const Request = root.lookupType('gamepb.activitypb.CollectWeatherRequest');
+    const body = Buffer.from(Request.encode(Request.create({
+        activity_id: '2026070303',
+        operate_type: 9,
+        weather_collect_operate: { host_gid: '1027729951' },
+    })).finish());
+
+    assert.equal(body.toString('hex'), '089fc28dc6071009da0606189fd487ea03');
+});
+
+test('visit reply decodes field 13 weather and field 9 friend marker', async () => {
+    const root = await loadRoot();
+    const Reply = root.lookupType('gamepb.visitpb.EnterReply');
+    const decoded = Reply.decode(Reply.encode(Reply.create({
         weather: {
             weather_type: 1,
             status: 2,
             begin_time: 1787723547,
             end_time: 1787730747,
             source: 1,
+            field_9: 4,
         },
     })).finish());
 
     assert.equal(Number(decoded.weather.weather_type), 1);
     assert.equal(Number(decoded.weather.status), 2);
+    assert.equal(Number(decoded.weather.field_9), 4);
     assert.equal(Number(decoded.weather.end_time) - Number(decoded.weather.begin_time), 7200);
+});
+
+test('frog bottle reply decodes field 6 experience rewards', async () => {
+    const root = await loadRoot();
+    const Reply = root.lookupType('gamepb.itempb.UseReply');
+    const decoded = Reply.decode(Buffer.from('0a08088d27100130a36c320a088d27120508cd08101e', 'hex'));
+
+    assert.equal(Number(decoded.used_items[0].id), 5005);
+    assert.equal(Number(decoded.social_reward.item_id), 5005);
+    assert.equal(Number(decoded.social_reward.items[0].id), 1101);
+    assert.equal(Number(decoded.social_reward.items[0].count), 30);
 });

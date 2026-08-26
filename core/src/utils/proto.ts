@@ -243,6 +243,8 @@ async function loadProto(): Promise<void> {
     types.ExchangeShopRequest = root.lookupType('gamepb.activitypb.ExchangeShopRequest');
     types.WeatherResearchOperateParams = root.lookupType('gamepb.activitypb.WeatherResearchOperateParams');
     types.AdvanceWeatherResearchRequest = root.lookupType('gamepb.activitypb.AdvanceWeatherResearchRequest');
+    types.WeatherCollectOperateParams = root.lookupType('gamepb.activitypb.WeatherCollectOperateParams');
+    types.CollectWeatherRequest = root.lookupType('gamepb.activitypb.CollectWeatherRequest');
     types.OperateConstellationRequest = root.lookupType('gamepb.activitypb.OperateConstellationRequest');
     types.ClaimQingMeiDailySeedRequest = root.lookupType('gamepb.activitypb.ClaimQingMeiDailySeedRequest');
     types.StartQingMeiBrewRequest = root.lookupType('gamepb.activitypb.StartQingMeiBrewRequest');

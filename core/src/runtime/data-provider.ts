@@ -189,11 +189,20 @@ function createDataProvider(options: DataProviderOptions) {
         exchangeWeatherCollectorBottle: (accountRef: string) => (
             callWorkerApi(resolveAccountRefId(accountRef), 'exchangeWeatherCollectorBottle')
         ),
+        scanWeatherFriends: (accountRef: string) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'scanWeatherFriends')
+        ),
         useWeatherCollectorBottle: (accountRef: string, friendGid: unknown) => (
             callWorkerApi(resolveAccountRefId(accountRef), 'useWeatherCollectorBottle', friendGid)
         ),
         useWeatherSummonBottle: (accountRef: string) => (
             callWorkerApi(resolveAccountRefId(accountRef), 'useWeatherSummonBottle')
+        ),
+        useWeatherFrogBottle: (accountRef: string, friendGid: unknown) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'useWeatherFrogBottle', friendGid)
+        ),
+        useWeatherCloudBottle: (accountRef: string, friendGid: unknown, landId: unknown) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'useWeatherCloudBottle', friendGid, landId)
         ),
         advanceWeatherResearch: (accountRef: string, nodeId: unknown) => (
             callWorkerApi(resolveAccountRefId(accountRef), 'advanceWeatherResearch', nodeId)

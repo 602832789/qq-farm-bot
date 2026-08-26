@@ -25,6 +25,7 @@ const selected = new Set([
     'gamepb.userpb.UserService.Login',
     'gamepb.userpb.UserService.Heartbeat',
     'gamepb.friendpb.FriendService.SyncAll',
+    'gamepb.friendpb.FriendService.GetGameFriends',
     'gamepb.bulletinboardpb.BulletinBoardService.GetBulletinList',
     'gamepb.userpb.UserService.GetUserSettings',
     'gamepb.userpb.UserService.BatchClientReportFlow',
@@ -161,6 +162,8 @@ function knownType(root, service, method, messageType) {
     const request = messageType === 1;
     const names = {
         'gamepb.activitypb.ActivityService.List': request ? 'gamepb.activitypb.ActivityListRequest' : 'gamepb.activitypb.ActivityListReply',
+        'gamepb.friendpb.FriendService.GetGameFriends': request ? 'gamepb.friendpb.GetGameFriendsRequest' : 'gamepb.friendpb.GetGameFriendsReply',
+        'gamepb.friendpb.FriendService.SyncAll': request ? 'gamepb.friendpb.SyncAllRequest' : 'gamepb.friendpb.SyncAllReply',
         'gamepb.activitypb.ActivityService.GetGroup': request ? 'gamepb.activitypb.GetGroupRequest' : 'gamepb.activitypb.GetGroupReply',
         'gamepb.itempb.ItemService.Bag': request ? 'gamepb.itempb.BagRequest' : 'gamepb.itempb.BagReply',
         'gamepb.itempb.ItemService.Use': request ? 'gamepb.itempb.UseRequest' : 'gamepb.itempb.UseReply',

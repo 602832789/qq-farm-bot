@@ -134,6 +134,8 @@ async function openActivity(activity: ActivityDirectoryItemDto) {
   selectedActivity.value = gameplay.module.key
   if (gameplay.module.key === 'qixi' && currentAccountId.value)
     await friendStore.fetchFriends(String(currentAccountId.value))
+  if (gameplay.module.key === 'weather' && currentAccountId.value)
+    await activityStore.scanWeatherFriends(String(currentAccountId.value))
 }
 function goBack() {
   if (selectedActivity.value) {
@@ -170,6 +172,15 @@ function exchangeWeatherCollector() {
 function collectWeather(friendGid: string) {
   activityStore.collectWeather(accountId(), friendGid)
 }
+function scanWeatherFriends() {
+  activityStore.scanWeatherFriends(accountId())
+}
+function useWeatherFrog(friendGid: string) {
+  activityStore.useWeatherFrogBottle(accountId(), friendGid)
+}
+function useWeatherCloud(friendGid: string, landId = '') {
+  activityStore.useWeatherCloudBottle(accountId(), friendGid, landId)
+}
 function summonThunderstorm() {
   activityStore.summonThunderstorm(accountId())
 }
@@ -178,6 +189,7 @@ function advanceWeatherResearch(nodeId: string) {
 }
 async function refreshWeatherActivity() {
   await load(true)
+  await activityStore.scanWeatherFriends(accountId())
 }
 function selectShopGoods(goods: ShopGoodsDto) {
   selectedShopGoods.value = goods
@@ -411,11 +423,17 @@ onUnmounted(() => {
             :activity="weather"
             :now="serverNow"
             :pending-exchange="pendingActions.exchangeWeatherCollector"
+            :pending-scan="pendingActions.scanWeatherFriends"
             :pending-collect="pendingActions.collectWeather"
+            :pending-frog="pendingActions.useWeatherFrog"
+            :pending-cloud="pendingActions.useWeatherCloud"
             :pending-summon="pendingActions.summonThunderstorm"
             :pending-research="pendingActions.advanceWeatherResearch"
             @exchange="exchangeWeatherCollector"
+            @scan-friends="scanWeatherFriends"
             @collect="collectWeather"
+            @frog="useWeatherFrog"
+            @cloud="useWeatherCloud"
             @summon="summonThunderstorm"
             @advance-research="advanceWeatherResearch"
           />
