@@ -314,7 +314,7 @@ export interface WeatherStatusDto {
   source: number
   field8: number
   friendMarker: number
-  collectedToday: boolean
+  collectedThisCycle: boolean
   active: boolean
   isThunderstorm: boolean
   remainingSec: number
@@ -1011,7 +1011,14 @@ function normalizeWeatherStatus(value: unknown): WeatherStatusDto {
     source: finiteNumber(raw.source) || 0,
     field8: finiteNumber(first(raw.field8, raw.field_8)) || 0,
     friendMarker: finiteNumber(first(raw.friendMarker, raw.friend_marker, raw.field9, raw.field_9)) || 0,
-    collectedToday: bool(raw.collectedToday, raw.collected_today),
+    // Keep reading the old key during mixed-version upgrades, but expose the
+    // protocol-correct current-thunderstorm-cycle meaning to the UI.
+    collectedThisCycle: bool(
+      raw.collectedThisCycle,
+      raw.collected_this_cycle,
+      raw.collectedToday,
+      raw.collected_today,
+    ),
     active: bool(raw.active),
     isThunderstorm: bool(raw.isThunderstorm, raw.is_thunderstorm),
     remainingSec: Math.max(0, finiteNumber(first(raw.remainingSec, raw.remaining_sec)) || 0),
@@ -1351,8 +1358,8 @@ const activityErrorMessages: Record<string, string> = {
   INVALID_WEATHER_FRIEND_GID: '好友信息无效，请刷新活动后重新选择',
   WEATHER_COLLECTOR_UNAVAILABLE: '背包中没有可用的天气采集瓶',
   WEATHER_FRIEND_NOT_THUNDERSTORM: '该好友农场当前不是雷雨天气',
-  1034040: '已经采过雨了，去其他好友家看看吧',
-  WEATHER_ALREADY_COLLECTED: '今天已经采过这位好友的雨，请换一位好友',
+  1034040: '当前这轮雷雨已经采过，下轮雷雨可再次采集',
+  WEATHER_ALREADY_COLLECTED: '当前这轮雷雨已经采过，下轮雷雨可再次采集',
   WEATHER_SUMMON_UNAVAILABLE: '背包中没有可用的雷雨召唤瓶',
   WEATHER_ALREADY_ACTIVE: '自己的农场当前已有特殊天气',
   WEATHER_FROG_UNAVAILABLE: '背包中没有可用的青蛙使坏瓶',

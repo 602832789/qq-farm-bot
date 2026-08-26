@@ -216,6 +216,7 @@ async function loadProto(): Promise<void> {
 
     // 服务器推送通知
     types.LandsNotify = root.lookupType('gamepb.plantpb.LandsNotify');
+    types.FarmSocialEventsNotify = root.lookupType('gamepb.plantpb.FarmSocialEventsNotify');
     types.BasicNotify = root.lookupType('gamepb.userpb.BasicNotify');
     types.KickoutNotify = root.lookupType('gatepb.KickoutNotify');
     types.FriendApplicationReceivedNotify = root.lookupType('gamepb.friendpb.FriendApplicationReceivedNotify');

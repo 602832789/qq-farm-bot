@@ -31,7 +31,7 @@ const ACTIVITY_ERROR_MESSAGES: Record<string, string> = {
     INVALID_WEATHER_FRIEND_GID: '好友信息无效，请刷新活动后重新选择',
     WEATHER_COLLECTOR_UNAVAILABLE: '背包中没有可用的天气采集瓶',
     WEATHER_FRIEND_NOT_THUNDERSTORM: '该好友农场当前不是雷雨天气',
-    WEATHER_ALREADY_COLLECTED: '今天已经采过这位好友的雨，请换一位好友',
+    WEATHER_ALREADY_COLLECTED: '当前这轮雷雨已经采过，下轮雷雨可再次采集',
     WEATHER_SUMMON_UNAVAILABLE: '背包中没有可用的雷雨召唤瓶',
     WEATHER_ALREADY_ACTIVE: '自己的农场当前已有特殊天气',
     WEATHER_FROG_UNAVAILABLE: '背包中没有可用的青蛙使坏瓶',

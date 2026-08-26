@@ -12,6 +12,9 @@ const props = withDefaults(defineProps<{
   normalFertilizerDisabled?: boolean
   organicFertilizerDisabled?: boolean
   organicFertilizerLabel?: string
+  showFarmingAction?: boolean
+  farmingPending?: boolean
+  farmingDisabled?: boolean
 }>(), {
   selectable: false,
   selected: false,
@@ -22,11 +25,15 @@ const props = withDefaults(defineProps<{
   normalFertilizerDisabled: false,
   organicFertilizerDisabled: false,
   organicFertilizerLabel: '',
+  showFarmingAction: false,
+  farmingPending: false,
+  farmingDisabled: false,
 })
 
 const emit = defineEmits<{
   select: [land: any]
   fertilize: [land: any, fertilizerType: 'normal' | 'organic']
+  farm: [land: any]
 }>()
 
 const land = computed(() => props.land)
@@ -181,6 +188,12 @@ function requestFertilize(event: Event, fertilizerType: 'normal' | 'organic') {
   emit('fertilize', props.land, fertilizerType)
 }
 
+function requestFarming(event: Event) {
+  event.stopPropagation()
+  if (!props.farmingPending && !props.farmingDisabled)
+    emit('farm', props.land)
+}
+
 const organicRemainingText = computed(() => {
   const left = land.value?.leftInorcFertTimes
   if (left == null || Number.isNaN(Number(left)))
@@ -213,6 +226,8 @@ function interactionBadgeClass(itemId: string) {
     return 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300'
   if (itemId === '301103')
     return 'bg-pink-100 text-pink-800 dark:bg-pink-900/40 dark:text-pink-300'
+  if (itemId === '5006')
+    return 'bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-200'
   return 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200'
 }
 
@@ -431,6 +446,20 @@ function markMutantIconFailed(effect: { icon?: string }) {
       >
         <span class="i-carbon-chemistry" /> {{ organicRemainingText }}
       </span>
+    </div>
+
+    <div v-if="showFarmingAction" class="farming-action-wrap mt-2 w-full" @click.stop>
+      <button
+        type="button"
+        class="farming-action"
+        :disabled="farmingPending || farmingDisabled"
+        title="清理该地块的缺水、杂草、虫害或乌云，并同时处理农场中的青蛙"
+        @click="requestFarming"
+      >
+        <span v-if="farmingPending" class="i-svg-spinners-90-ring-with-bg" />
+        <span v-else class="i-carbon-clean" />
+        务农
+      </button>
     </div>
 
     <div v-if="showFertilizerActions" class="fertilizer-actions mt-2 w-full" @click.stop>
@@ -988,6 +1017,33 @@ function markMutantIconFailed(effect: { icon?: string }) {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 6px;
+}
+
+.farming-action {
+  width: 100%;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid #a9d4b0;
+  border-radius: 8px;
+  color: #245f4b;
+  background: #eaf8ed;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.farming-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+:global(.dark) .farming-action {
+  color: #bbf7d0;
+  border-color: rgba(169, 212, 176, 0.38);
+  background: rgba(20, 80, 50, 0.35);
 }
 
 .fertilizer-action {

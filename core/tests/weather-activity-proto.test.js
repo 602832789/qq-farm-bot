@@ -90,6 +90,47 @@ test('visit reply decodes field 13 weather and field 9 friend marker', async () 
     assert.equal(Number(decoded.weather.end_time) - Number(decoded.weather.begin_time), 7200);
 });
 
+test('field 9 collection state is scoped to the active thunderstorm cycle', () => {
+    const {
+        weatherAvailability,
+        weatherStatusDto,
+    } = require('../dist/services/weather-activity');
+    const now = Math.floor(Date.now() / 1000);
+
+    const collectedCycle = weatherStatusDto({
+        weather_type: 1,
+        status: 2,
+        begin_time: now - 60,
+        end_time: now + 3600,
+        field_9: 4,
+    }, 1001);
+    assert.equal(collectedCycle.collectedThisCycle, true);
+    assert.equal(Object.hasOwn(collectedCycle, 'collectedToday'), false);
+    assert.deepEqual(weatherAvailability(collectedCycle, true), {
+        state: 'collected',
+        reason: '当前这轮雷雨已经采过，下轮雷雨可再次采集',
+    });
+
+    const expiredCycle = weatherStatusDto({
+        weather_type: 1,
+        status: 2,
+        begin_time: now - 7200,
+        end_time: now - 60,
+        field_9: 4,
+    }, 1001);
+    assert.equal(weatherAvailability(expiredCycle, true).state, 'expired');
+
+    const nextCycle = weatherStatusDto({
+        weather_type: 1,
+        status: 2,
+        begin_time: now - 30,
+        end_time: now + 7170,
+        field_9: 0,
+    }, 1001);
+    assert.equal(nextCycle.collectedThisCycle, false);
+    assert.equal(weatherAvailability(nextCycle, true).state, 'available');
+});
+
 test('frog bottle reply decodes field 6 experience rewards', async () => {
     const root = await loadRoot();
     const Reply = root.lookupType('gamepb.itempb.UseReply');

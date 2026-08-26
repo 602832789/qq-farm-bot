@@ -30,7 +30,9 @@ const LIGHTNING_BADGE_ID = 1027;
 const LIGHTNING_MUTANT_CONFIG_ID = 12;
 const WEATHER_ITEM_IDS = [5001, 5002, 5003, 5004, 5005, 5006, 5007, 5008];
 const THUNDERSTORM_TYPE = 1;
-const COLLECTED_FRIEND_MARKER = 4;
+// EnterReply.field 13.field 9 is scoped to the current thunderstorm instance.
+// It is not a per-friend daily collection record and resets for a later storm.
+const COLLECTED_THIS_CYCLE_MARKER = 4;
 const FRIEND_WEATHER_CACHE_TTL_SEC = 90;
 const COLLECT_DAILY_LIMIT = 10;
 const MISCHIEF_DAILY_LIMIT = 100;
@@ -151,7 +153,7 @@ function weatherStatusDto(weather: any, hostGid: any = 0): any {
         friendMarker: toNum(weather?.field_9),
         active,
         isThunderstorm: active && type === THUNDERSTORM_TYPE,
-        collectedToday: toNum(weather?.field_9) === COLLECTED_FRIEND_MARKER,
+        collectedThisCycle: toNum(weather?.field_9) === COLLECTED_THIS_CYCLE_MARKER,
         remainingSec: active && endTime > 0 ? Math.max(0, endTime - now) : 0,
     };
 }
@@ -359,7 +361,9 @@ async function inspectFriendFarmWeather(friend: any, force = false): Promise<any
 
 function weatherAvailability(weather: any, inspected: boolean): { state: string; reason: string } {
     if (!inspected) return { state: 'unknown', reason: '尚未进入好友农场检查现场天气' };
-    if (weather.collectedToday) return { state: 'collected', reason: '今天已经采过这位好友的雨' };
+    if (weather.isThunderstorm && weather.collectedThisCycle) {
+        return { state: 'collected', reason: '当前这轮雷雨已经采过，下轮雷雨可再次采集' };
+    }
     if (weather.isThunderstorm) return { state: 'available', reason: '' };
     if (weather.type === THUNDERSTORM_TYPE && !weather.active) return { state: 'expired', reason: '这场雷雨已经结束' };
     return { state: 'unavailable', reason: '好友农场当前不是雷雨天气' };
@@ -636,6 +640,9 @@ async function useWeatherCollectorBottle(friendGidInput: unknown): Promise<any> 
             if (!weatherBefore.isThunderstorm) {
                 throw businessError('WEATHER_FRIEND_NOT_THUNDERSTORM', '该好友农场当前不是雷雨天气');
             }
+            if (weatherBefore.collectedThisCycle) {
+                throw businessError('WEATHER_ALREADY_COLLECTED', '当前这轮雷雨已经采过，下轮雷雨可再次采集');
+            }
             const body = Buffer.from(types.CollectWeatherRequest.encode(types.CollectWeatherRequest.create({
                 activity_id: WEATHER_BOTTLE_ACTIVITY_ID,
                 operate_type: COLLECT_WEATHER_OPERATE_TYPE,
@@ -651,7 +658,7 @@ async function useWeatherCollectorBottle(friendGidInput: unknown): Promise<any> 
                 reply = types.ActivityOperateReply.decode(replyBody);
             } catch (error: any) {
                 if (error instanceof GatewayError && error.code === 1034040) {
-                    throw businessError('WEATHER_ALREADY_COLLECTED', error.errorMessage || '已经采过雨了，去其他好友家看看吧');
+                    throw businessError('WEATHER_ALREADY_COLLECTED', '当前这轮雷雨已经采过，下轮雷雨可再次采集');
                 }
                 throw error;
             }
@@ -859,4 +866,7 @@ module.exports = {
     useWeatherFrogBottle,
     useWeatherCloudBottle,
     advanceWeatherResearch,
+    // Exported for protocol-state regression tests.
+    weatherStatusDto,
+    weatherAvailability,
 };

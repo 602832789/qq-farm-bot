@@ -814,7 +814,7 @@ async function handleApiCall(msg: any): Promise<void> {
                 break;
             }
             case 'doFarmOp':
-                result = await runFarmOperation(args[0]); // opType
+                result = await runFarmOperation(args[0], args[1]); // opType, optional targetLandId
                 break;
             case 'fertilizeOwnLand':
                 result = await fertilizeOwnLand(args[0], args[1]);

@@ -105,7 +105,7 @@ function friendState(friend: WeatherFriendDto) {
   if (friend.availability === 'available')
     return { label: '可采雨', className: 'available', detail: `雷雨剩余 ${friendRemaining(friend)}` }
   if (friend.availability === 'collected')
-    return { label: '今日已采', className: 'collected', detail: '今天不能再次采集' }
+    return { label: '本轮已采', className: 'collected', detail: '下轮雷雨可再次采集' }
   if (friend.availability === 'expired')
     return { label: '已失效', className: 'expired', detail: '这场雷雨已经结束' }
   if (friend.availability === 'unavailable')
@@ -238,7 +238,7 @@ function rainStyle(index: number): CSSProperties {
           <div>
             <span class="section-kicker">好友现场天气</span>
             <h2>找一场可以采的雨</h2>
-            <p>现场天气以进入好友农场后的实时状态为准；同一好友当天采过后不能再次采集。</p>
+            <p>现场天气以进入好友农场后的实时状态为准；同一轮雷雨采过后不可重复采集，下轮雷雨可再次采集。</p>
           </div>
           <button
             type="button"
@@ -282,7 +282,7 @@ function rainStyle(index: number): CSSProperties {
               <button type="button" class="collect-command" :disabled="collectDisabled(friend)" @click="emit('collect', friend.gid)">
                 <span v-if="pendingCollect" class="i-carbon-circle-dash animate-spin" />
                 <span v-else class="i-carbon-rain-drop" />
-                {{ friend.availability === 'collected' ? '今日已采' : '采雨' }}
+                {{ friend.availability === 'collected' ? '本轮已采' : '采雨' }}
               </button>
               <button type="button" :disabled="frogDisabled(friend)" :title="`青蛙使坏瓶：库存 ${frogBottle.count}，每日上限 ${activity.actions.frogMischief.dailyLimit || 100}`" @click="emit('frog', friend.gid)">
                 <span v-if="pendingFrog" class="i-carbon-circle-dash animate-spin" />

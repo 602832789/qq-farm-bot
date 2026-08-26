@@ -80,8 +80,12 @@ function getPlantMutantConfigIds(plant: any, currentPhase: any = null): string[]
     return [...new Set(values.map(normalizePositiveId).filter(Boolean))];
 }
 
-// 抓包确认：黄金虫和足球由农场主通过自家 Farming 清理，好友帮助务农不能代为清理。
-const OWNER_CLEANABLE_INTERACTION_ITEM_IDS = new Set(['301101', '301102']);
+// 抓包确认：黄金虫、足球和乌云由农场主通过自家 Farming 清理，好友帮助务农不能代为清理。
+// 乌云必须以 interaction_uses / interaction_targets 的实时记录为准；field_40={8,1} 只是清理后仍保留的历史。
+const OWNER_CLEANABLE_INTERACTION_ITEM_IDS = new Set(['301101', '301102', '5006']);
+
+// 5005 青蛙是农场级事件，不绑定某一块土地；清理时通过 FarmingRequest.field 5 发送。
+const OWNER_CLEANABLE_FARM_SOCIAL_EVENT_ITEM_IDS = new Set(['5005']);
 
 const QIXI_DEW_ITEM_ID = '301103';
 const QIXI_MUTANT_CONFIG_ID = '13';
@@ -111,6 +115,35 @@ function getInteractionItemMetadata(itemId: string): { name: string; activityId:
         name: String(item?.name || `道具${itemId}`),
         activityId: toNum(item?.activity_id),
     };
+}
+
+function getCleanableFarmSocialEventItemIds(eventsOrReply: any): number[] {
+    const events: any[] = Array.isArray(eventsOrReply)
+        ? eventsOrReply
+        : (Array.isArray(eventsOrReply?.social_events) ? eventsOrReply.social_events : []);
+    return [...new Set(events
+        .map((event: any) => normalizePositiveId(event?.item_id))
+        .filter((itemId: string) => OWNER_CLEANABLE_FARM_SOCIAL_EVENT_ITEM_IDS.has(itemId))
+        .map((itemId: string) => Number(itemId)))];
+}
+
+function buildFarmSocialEventDetails(eventsOrReply: any): any[] {
+    const events: any[] = Array.isArray(eventsOrReply)
+        ? eventsOrReply
+        : (Array.isArray(eventsOrReply?.social_events) ? eventsOrReply.social_events : []);
+    return events.map((event: any) => {
+        const itemId = normalizePositiveId(event?.item_id);
+        if (!itemId) return null;
+        const metadata = getInteractionItemMetadata(itemId);
+        return {
+            itemId,
+            itemName: metadata.name,
+            activityId: metadata.activityId,
+            visitorGid: normalizePositiveId(event?.visitor_gid),
+            occurredAt: int64String(event?.timestamp),
+            cleanable: OWNER_CLEANABLE_FARM_SOCIAL_EVENT_ITEM_IDS.has(itemId),
+        };
+    }).filter(Boolean);
 }
 
 function hasOwnerCleanableInteraction(plant: any): boolean {
@@ -240,6 +273,7 @@ function buildLandDetail(land: any, options: { friendMode?: boolean; landsMap?: 
         mutantEffects: [],
         isMutated: false,
         interactionEffects: [],
+        needInteractionCleanup: false,
         protocolField40: null,
         leftInorcFertTimes: null,
     };
@@ -322,6 +356,7 @@ function buildLandDetail(land: any, options: { friendMode?: boolean; landsMap?: 
         mutantEffects,
         isMutated: mutantConfigIds.length > 0,
         interactionEffects: getPlantInteractionEffects(plant),
+        needInteractionCleanup: hasOwnerCleanableInteraction(plant),
         protocolField40: protocolField40.length > 0 ? protocolField40 : null,
         leftInorcFertTimes: getLeftInorcFertTimes(plant),
     };
@@ -919,6 +954,8 @@ module.exports = {
     getExtendedStatusInteractionItemId,
     getPlantInteractionEffects,
     hasOwnerCleanableInteraction,
+    getCleanableFarmSocialEventItemIds,
+    buildFarmSocialEventDetails,
     buildLandDetail,
     getOrganicFertilizerTargetsFromLands,
     getFastMatureLands,
