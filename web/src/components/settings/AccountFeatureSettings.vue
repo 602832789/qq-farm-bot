@@ -369,7 +369,7 @@ watch(() => props.currentAccountId, loadQixiFriends)
                 </div>
               </section>
 
-              <section v-if="SHOW_STAR_ACTIVITY" class="space-y-3 border border-gray-100 rounded-lg p-4 dark:border-gray-700">
+              <section class="space-y-3 border border-gray-100 rounded-lg p-4 dark:border-gray-700">
                 <div class="flex items-center justify-between gap-3">
                   <div class="text-sm text-gray-700 font-medium dark:text-gray-300">
                     施肥范围
@@ -492,7 +492,7 @@ watch(() => props.currentAccountId, loadQixiFriends)
                 </div>
               </section>
 
-              <section class="space-y-3 border border-gray-100 rounded-lg p-4 dark:border-gray-700">
+              <section v-if="SHOW_STAR_ACTIVITY" class="space-y-3 border border-gray-100 rounded-lg p-4 dark:border-gray-700">
                 <div>
                   <div class="text-sm text-gray-700 font-medium dark:text-gray-300">
                     心许千灯星垂野
