@@ -33,7 +33,7 @@ RUN --mount=type=cache,id=qq-farm-pnpm-store,target=/pnpm/store,sharing=locked \
 FROM workspace-deps AS web-builder
 
 COPY web ./web
-RUN pnpm build:web
+RUN pnpm -C web build
 
 FROM workspace-deps AS core-builder
 

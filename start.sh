@@ -151,14 +151,14 @@ fi
 
 if [[ "$build_web" -eq 1 ]]; then
     echo "Building Web..."
-    run_pnpm run build:web
+    run_pnpm -C "$SCRIPT_DIR/web" run build
 else
     echo "Web build is up to date; skipping."
 fi
 
 if [[ "$build_core" -eq 1 ]]; then
     echo "Building Core..."
-    run_pnpm run build:core
+    run_pnpm -C "$SCRIPT_DIR/core" run build:ts
 else
     echo "Core build is up to date; skipping."
 fi
