@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
 const props = withDefaults(defineProps<{
   land: any
@@ -30,6 +30,10 @@ const emit = defineEmits<{
 }>()
 
 const land = computed(() => props.land)
+
+// 官方配置里的变异图标没有全部导出 PNG，缺图的用图标字形顶上，避免出现裂图。
+const MUTANT_GLYPH_NAMES = new Set(['lightning', 'butterfly'])
+const failedMutantIcons = ref(new Set<string>())
 
 const mutantEffects = computed(() => {
   const effects = Array.isArray(land.value?.mutantEffects) ? land.value.mutantEffects : []
@@ -232,6 +236,8 @@ function mutantBadgeClass(effect: { icon?: string }) {
     lucky: 'bg-lime-100 text-lime-800 dark:bg-lime-900/40 dark:text-lime-300',
     luxury: 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300',
     shinning: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300',
+    lightning: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
+    butterfly: 'bg-fuchsia-100 text-fuchsia-800 dark:bg-fuchsia-900/40 dark:text-fuchsia-300',
   }
   return map[icon] || 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300'
 }
@@ -239,6 +245,21 @@ function mutantBadgeClass(effect: { icon?: string }) {
 function mutantIconUrl(icon: string) {
   const name = String(icon || '').trim()
   return name ? `/game-config/seed_images_named/mutant/${name}.png` : ''
+}
+
+function mutantIconName(effect: { icon?: string }) {
+  return String(effect?.icon || '').trim().toLowerCase()
+}
+
+function showMutantImage(effect: { icon?: string }) {
+  const name = mutantIconName(effect)
+  return !!name && !MUTANT_GLYPH_NAMES.has(name) && !failedMutantIcons.value.has(name)
+}
+
+function markMutantIconFailed(effect: { icon?: string }) {
+  const name = mutantIconName(effect)
+  if (name)
+    failedMutantIcons.value = new Set(failedMutantIcons.value).add(name)
 }
 </script>
 
@@ -348,11 +369,14 @@ function mutantIconUrl(icon: string) {
         :title="effect.description || effect.name"
       >
         <img
-          v-if="effect.icon"
+          v-if="showMutantImage(effect)"
           :src="mutantIconUrl(effect.icon)"
           :alt="effect.name"
           class="h-3 w-3 object-contain"
+          @error="markMutantIconFailed(effect)"
         >
+        <span v-else-if="mutantIconName(effect) === 'lightning'" class="i-carbon-lightning" />
+        <span v-else-if="mutantIconName(effect) === 'butterfly'" class="i-carbon-bee" />
         <span v-else class="i-carbon-star" />
         {{ effect.name }}
       </span>
