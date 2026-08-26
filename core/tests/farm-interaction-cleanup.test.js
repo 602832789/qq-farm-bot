@@ -93,6 +93,23 @@ test('qixi mutation uses official effect_name while keeping drought independent'
     assert.equal(detail.interactionEffects[0].activityId, effect.activityId);
 });
 
+test('crystal mutation uses the latest official effect_name mapping', () => {
+    const effect = getMutantEffectById(14);
+    assert.equal(effect.name, '晶辉');
+    assert.equal(effect.icon, 'crystal');
+    assert.equal(effect.description, '紫晶土地上随机出现');
+
+    const detail = buildLandDetail(growingLand(14, 0, {
+        mutant_config_ids: [14],
+        extended_mutations: [
+            { timestamp: 1787730000, mutant_config_id: 14 },
+        ],
+    }));
+
+    assert.deepEqual(detail.mutantConfigIds, ['14']);
+    assert.deepEqual(detail.mutantEffects.map(item => item.name), ['晶辉']);
+});
+
 test('field 40 history does not restore cleared golden beetles or footballs', () => {
     const clearedGoldenHistoryLand = growingLand(15, 0, {
         field_40: [
