@@ -113,6 +113,47 @@ test('crystal mutation uses the latest official effect_name mapping', () => {
     assert.deepEqual(detail.mutantEffects.map(item => item.name), ['晶辉']);
 });
 
+test('purple crystal resonance follows the server land exp buff', () => {
+    const purpleCrystalLand = {
+        ...growingLand(14, 0, { mutant_config_ids: [12] }),
+        level: 5,
+        buff: {
+            plant_yield_bonus: 3000,
+            planting_time_reduction: 1500,
+            plant_exp_bonus: 2500,
+        },
+    };
+    const detail = buildLandDetail(purpleCrystalLand);
+
+    assert.deepEqual(detail.landBuff, {
+        plantYieldBonus: 3000,
+        plantingTimeReduction: 1500,
+        plantExpBonus: 2500,
+    });
+    assert.equal(detail.purpleCrystalResonanceExpBonus, 2500);
+
+    const adjustedByServer = buildLandDetail({
+        ...purpleCrystalLand,
+        buff: { ...purpleCrystalLand.buff, plant_exp_bonus: 1800 },
+    });
+    assert.equal(adjustedByServer.purpleCrystalResonanceExpBonus, 1800);
+
+    const disabledByServer = buildLandDetail({
+        ...purpleCrystalLand,
+        buff: { ...purpleCrystalLand.buff, plant_exp_bonus: 0 },
+    });
+    assert.equal(disabledByServer.purpleCrystalResonanceExpBonus, 0);
+
+    const noMutation = buildLandDetail({
+        ...purpleCrystalLand,
+        plant: { ...purpleCrystalLand.plant, mutant_config_ids: [] },
+    });
+    assert.equal(noMutation.purpleCrystalResonanceExpBonus, 0);
+
+    const goldenLand = buildLandDetail({ ...purpleCrystalLand, level: 4 });
+    assert.equal(goldenLand.purpleCrystalResonanceExpBonus, 0);
+});
+
 test('field 40 history does not restore cleared golden beetles or footballs', () => {
     const clearedGoldenHistoryLand = growingLand(15, 0, {
         field_40: [

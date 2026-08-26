@@ -67,9 +67,8 @@ const mutantEffects = computed(() => {
     .filter((effect: { name: string }) => !!effect.name)
 })
 
-const purpleCrystalResonance = computed(() => (
-  Number(land.value?.level) === 5
-  && (mutantEffects.value.length > 0 || !!land.value?.isMutated)
+const purpleCrystalResonancePercent = computed(() => (
+  Math.max(0, Number(land.value?.purpleCrystalResonanceExpBonus) || 0) / 100
 ))
 
 const growProgress = computed(() => {
@@ -381,9 +380,9 @@ function markMutantIconFailed(effect: { id?: number }) {
     <!-- Status Badges (game-style) -->
     <div class="mt-auto flex flex-wrap items-center justify-center gap-1 pt-1">
       <span
-        v-if="purpleCrystalResonance"
+        v-if="purpleCrystalResonancePercent > 0"
         class="badge-purple-crystal inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold"
-        title="紫金土地上的任意变异作物经验 +25%"
+        :title="`紫金土地上的任意变异作物经验 +${purpleCrystalResonancePercent}%`"
       >
         <span class="i-carbon-flash-filled" /> 紫晶共鸣
       </span>

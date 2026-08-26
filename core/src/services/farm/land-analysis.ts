@@ -255,6 +255,11 @@ function buildLandDetail(land: any, options: { friendMode?: boolean; landsMap?: 
     const maxLevel = toNum(land?.max_level);
     const landsLevel = toNum(land?.lands_level);
     const landSize = toNum(land?.land_size);
+    const landBuff = {
+        plantYieldBonus: toNum(land?.buff?.plant_yield_bonus),
+        plantingTimeReduction: toNum(land?.buff?.planting_time_reduction),
+        plantExpBonus: toNum(land?.buff?.plant_exp_bonus),
+    };
     const context = getDisplayLandContext(land, landsMap);
     const base: any = {
         id,
@@ -263,6 +268,7 @@ function buildLandDetail(land: any, options: { friendMode?: boolean; landsMap?: 
         maxLevel,
         landsLevel,
         landSize,
+        landBuff,
         couldUnlock: !!land?.could_unlock,
         couldUpgrade: !!land?.could_upgrade,
         occupiedByMaster: !!context.occupiedByMaster,
@@ -273,6 +279,7 @@ function buildLandDetail(land: any, options: { friendMode?: boolean; landsMap?: 
         mutantConfigIds: [],
         mutantEffects: [],
         isMutated: false,
+        purpleCrystalResonanceExpBonus: 0,
         interactionEffects: [],
         needInteractionCleanup: false,
         protocolField40: null,
@@ -313,6 +320,11 @@ function buildLandDetail(land: any, options: { friendMode?: boolean; landsMap?: 
     const plantId = toNum(plant.id);
     const mutantConfigIds = getPlantMutantConfigIds(plant, currentPhase);
     const mutantEffects = getMutantEffectsByIds(mutantConfigIds);
+    // 协议没有独立的“紫晶共鸣”布尔值：紫金土地由 level 标识，
+    // 是否存在加成及具体比例必须以服务端 LandInfo.buff.plant_exp_bonus 为准。
+    const purpleCrystalResonanceExpBonus = level === 5 && mutantConfigIds.length > 0
+        ? Math.max(0, landBuff.plantExpBonus)
+        : 0;
     const displayPlantId = getMutantDisplayPlantId(plantId, mutantConfigIds);
     const plantName = getPlantName(displayPlantId) || getPlantName(plantId) || plant.name || '未知';
     const plantCfg = getPlantById(plantId);
@@ -357,6 +369,7 @@ function buildLandDetail(land: any, options: { friendMode?: boolean; landsMap?: 
         mutantConfigIds,
         mutantEffects,
         isMutated: mutantConfigIds.length > 0,
+        purpleCrystalResonanceExpBonus,
         interactionEffects: getPlantInteractionEffects(plant),
         needInteractionCleanup: hasOwnerCleanableInteraction(plant),
         protocolField40: protocolField40.length > 0 ? protocolField40 : null,
