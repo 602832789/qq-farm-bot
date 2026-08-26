@@ -221,6 +221,10 @@ const DEFAULT_AUTOMATION = {
     qixi_bridge_build: false,
     qixi_sachet_gift: false,
     qixi_friend_priority: [],
+    rain_poem_bottle_buy: false,
+    rain_poem_weather_collect: false,
+    rain_poem_summon_use: false,
+    rain_poem_research_unlock: false,
     fertilizer_gift: false,
     fertilizer_buy_organic: false,
     fertilizer_buy_normal: false,
@@ -250,9 +254,37 @@ const HIDDEN_ACTIVITY_AUTOMATION_KEYS = new Set([
     'qixi_sachet_gift'
 ]);
 
-function disableHiddenActivityAutomation(automation) {
+const TIMED_ACTIVITY_AUTOMATION_GROUPS = [
+    {
+        startTime: 1787709600,
+        endTime: 1788883199,
+        keys: [
+            'rain_poem_bottle_buy',
+            'rain_poem_weather_collect',
+            'rain_poem_summon_use',
+            'rain_poem_research_unlock'
+        ]
+    }
+];
+
+function isActivityWindowActive(group, nowSeconds = Math.floor(Date.now() / 1000)) {
+    const startTime = Number(group && group.startTime) || 0;
+    const endTime = Number(group && group.endTime) || 0;
+    return (!startTime || nowSeconds >= startTime) && (!endTime || nowSeconds <= endTime);
+}
+
+function getInactiveActivityAutomationKeys(nowSeconds = Math.floor(Date.now() / 1000)) {
+    const keys = new Set(HIDDEN_ACTIVITY_AUTOMATION_KEYS);
+    for (const group of TIMED_ACTIVITY_AUTOMATION_GROUPS) {
+        if (isActivityWindowActive(group, nowSeconds)) continue;
+        for (const key of group.keys || []) keys.add(key);
+    }
+    return keys;
+}
+
+function disableHiddenActivityAutomation(automation, nowSeconds = Math.floor(Date.now() / 1000)) {
     if (!automation || typeof automation !== 'object') return automation;
-    for (const key of HIDDEN_ACTIVITY_AUTOMATION_KEYS) automation[key] = false;
+    for (const key of getInactiveActivityAutomationKeys(nowSeconds)) automation[key] = false;
     return automation;
 }
 
@@ -1950,5 +1982,7 @@ module.exports._test = {
     ...(module.exports._test || {}),
     normalizeCapitalMode,
     disableHiddenActivityAutomation,
-    HIDDEN_ACTIVITY_AUTOMATION_KEYS
+    HIDDEN_ACTIVITY_AUTOMATION_KEYS,
+    RAIN_POEM_AUTOMATION_KEYS: TIMED_ACTIVITY_AUTOMATION_GROUPS[0].keys,
+    getInactiveActivityAutomationKeys
 };

@@ -32,6 +32,7 @@ async function loadProto() {
         getResourcePath('proto', 'shoppb.proto'),
         getResourcePath('proto', 'friendpb.proto'),
         getResourcePath('proto', 'visitpb.proto'),
+        getResourcePath('proto', 'weatherpb.proto'),
         getResourcePath('proto', 'notifypb.proto'),
         getResourcePath('proto', 'taskpb.proto'),
         getResourcePath('proto', 'itempb.proto'),
@@ -176,6 +177,10 @@ async function loadProto() {
     types.ActivityListReply = root.lookupType('gamepb.activitypb.ListReply');
     types.ActivityStarRecordInfo = root.lookupType('gamepb.activitypb.StarRecordInfo');
     types.ActivityStarRecordClaimResult = root.lookupType('gamepb.activitypb.StarRecordClaimResult');
+
+    // 天气
+    types.GetWeatherStatusRequest = root.lookupType('gamepb.weatherpb.GetWeatherStatusRequest');
+    types.GetWeatherStatusReply = root.lookupType('gamepb.weatherpb.GetWeatherStatusReply');
 
     // 好友
     types.GetAllFriendsRequest = root.lookupType('gamepb.friendpb.GetAllRequest');
