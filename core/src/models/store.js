@@ -226,7 +226,6 @@ const DEFAULT_AUTOMATION = {
     rain_poem_summon_use: false,
     rain_poem_prank_use: false,
     rain_poem_research_unlock: false,
-    rain_poem_lightning_rush: false,
     fertilizer_gift: false,
     fertilizer_buy_organic: false,
     fertilizer_buy_normal: false,
@@ -265,8 +264,7 @@ const TIMED_ACTIVITY_AUTOMATION_GROUPS = [
             'rain_poem_weather_collect',
             'rain_poem_summon_use',
             'rain_poem_prank_use',
-            'rain_poem_research_unlock',
-            'rain_poem_lightning_rush'
+            'rain_poem_research_unlock'
         ]
     }
 ];
@@ -289,13 +287,6 @@ function getInactiveActivityAutomationKeys(nowSeconds = Math.floor(Date.now() / 
 function disableHiddenActivityAutomation(automation, nowSeconds = Math.floor(Date.now() / 1000)) {
     if (!automation || typeof automation !== 'object') return automation;
     for (const key of getInactiveActivityAutomationKeys(nowSeconds)) automation[key] = false;
-    return automation;
-}
-
-function enforceRainPoemAutomationExclusivity(automation) {
-    if (automation?.rain_poem_lightning_rush === true) {
-        automation.rain_poem_summon_use = false;
-    }
     return automation;
 }
 
@@ -678,8 +669,6 @@ function normalizeAccountConfig(raw, fallbackConfig = accountFallbackConfig) {
         }
     }
     disableHiddenActivityAutomation(cfg.automation);
-    // 快速刷取会自行按每日目标控制召唤瓶，不能与持续召唤模式同时运行。
-    enforceRainPoemAutomationExclusivity(cfg.automation);
 
     // 自动刷新 Code
     if (input.autoCodeRefresh && typeof input.autoCodeRefresh === 'object') {
@@ -1175,7 +1164,6 @@ function applyConfigSnapshot(patch = {}, opts = {}) {
         }
     }
     disableHiddenActivityAutomation(cfg.automation);
-    enforceRainPoemAutomationExclusivity(cfg.automation);
 
     if (patch.autoCodeRefresh && typeof patch.autoCodeRefresh === 'object') {
         cfg.autoCodeRefresh = {
@@ -1998,6 +1986,5 @@ module.exports._test = {
     disableHiddenActivityAutomation,
     HIDDEN_ACTIVITY_AUTOMATION_KEYS,
     RAIN_POEM_AUTOMATION_KEYS: TIMED_ACTIVITY_AUTOMATION_GROUPS[0].keys,
-    getInactiveActivityAutomationKeys,
-    enforceRainPoemAutomationExclusivity
+    getInactiveActivityAutomationKeys
 };

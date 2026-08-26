@@ -3,7 +3,6 @@ const assert = require('node:assert/strict');
 
 const { normalizeRainPoemActivity, normalizeWeatherStatus, getOwnWeatherStatus, isLightningMutantPlant, encodeRainPoemSummonUseRequest, mergeRainPoemTaskUsage } = require('../src/services/activity');
 const { getMutantEffectsByIds } = require('../src/config/gameConfig');
-const { selectFastestLightningRushSeed } = require('../src/services/planting-service');
 const { loadProto, types } = require('../src/utils/proto');
 
 function fixture() {
@@ -110,16 +109,6 @@ test('farm panel can query the current official weather status', () => {
 test('only mutant config 12 is treated as lightning mutant', () => {
   assert.equal(isLightningMutantPlant({ mutant_config_ids: [12] }), true);
   assert.equal(isLightningMutantPlant({ mutant_config_ids: [2] }), false);
-});
-
-test('lightning rush selects fresh ginger by crop layer instead of item rarity', () => {
-  const selected = selectFastestLightningRushSeed([
-    { seedId: 20199 }, // 石莲花：3 品稀有度，但 4 小时
-    { seedId: 20005 }, // 土豆：3 品，2 小时
-    { seedId: 20066 }, // 鲜姜：3 品，100 分钟
-    { seedId: 20004 }, // 低于 3 品，即使更快也不能参与雷电变异
-  ]);
-  assert.equal(selected.seedId, 20066);
 });
 
 test('lightning mutant is exposed to land detail rendering', () => {

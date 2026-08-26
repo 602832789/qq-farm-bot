@@ -35,7 +35,6 @@ const defaultAutomation = {
   rain_poem_summon_use: false,
   rain_poem_prank_use: false,
   rain_poem_research_unlock: false,
-  rain_poem_lightning_rush: false,
   golden_bug_clear: true,
   fertilizer_gift: false,
   fertilizer_buy_organic: false,

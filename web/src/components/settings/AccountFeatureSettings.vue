@@ -53,7 +53,7 @@ const selectedLandNames = computed(() => props.fertilizerLandTypeOptions.filter(
 const selectedLandTypeCount = computed(() => Array.isArray(automation.value.automation.fertilizer_land_types) ? automation.value.automation.fertilizer_land_types.length : 0)
 const activityKeys = computed(() => [
   ...(showRainPoemActivity.value
-    ? ['rain_poem_bottle_buy', 'rain_poem_weather_collect', 'rain_poem_summon_use', 'rain_poem_prank_use', 'rain_poem_research_unlock', 'rain_poem_lightning_rush']
+    ? ['rain_poem_bottle_buy', 'rain_poem_weather_collect', 'rain_poem_summon_use', 'rain_poem_prank_use', 'rain_poem_research_unlock']
     : []),
 ])
 const activityEnabledCount = computed(() => activityKeys.value.filter(key => automation.value.automation[key]).length)
@@ -242,14 +242,6 @@ onUnmounted(() => {
   if (nowTimer) window.clearInterval(nowTimer)
 })
 watch(() => props.currentAccountId, loadQixiFriends)
-watch(() => automation.value.automation.rain_poem_lightning_rush, (enabled) => {
-  if (enabled)
-    automation.value.automation.rain_poem_summon_use = false
-})
-watch(() => automation.value.automation.rain_poem_summon_use, (enabled) => {
-  if (enabled)
-    automation.value.automation.rain_poem_lightning_rush = false
-})
 </script>
 
 <template>
@@ -589,12 +581,6 @@ watch(() => automation.value.automation.rain_poem_summon_use, (enabled) => {
                   <BaseSwitch v-model="automation.automation.rain_poem_summon_use" label="使用雷雨召唤瓶" />
                   <BaseSwitch v-model="automation.automation.rain_poem_prank_use" label="使用青蛙与乌云使坏瓶" />
                   <BaseSwitch v-model="automation.automation.rain_poem_research_unlock" label="解锁气象研究" />
-                </div>
-                <div class="border-t border-gray-100 pt-3 dark:border-gray-700">
-                  <BaseSwitch v-model="automation.automation.rain_poem_lightning_rush" label="快速刷取雷电变异作物" />
-                  <p class="mt-2 text-xs text-gray-500 leading-5 dark:text-gray-400">
-                    每日未达到 10 个时，按需使用雷雨召唤瓶，并在雷雨可覆盖成熟时间时优先种植鲜姜；完成后自动恢复原种植策略。开启后会关闭“使用雷雨召唤瓶”。
-                  </p>
                 </div>
               </section>
             </div>

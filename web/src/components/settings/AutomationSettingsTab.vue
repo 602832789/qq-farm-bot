@@ -34,7 +34,6 @@ interface AutomationSettings {
     rain_poem_summon_use: boolean
     rain_poem_prank_use: boolean
     rain_poem_research_unlock: boolean
-    rain_poem_lightning_rush: boolean
     golden_bug_clear: boolean
     fertilizer_gift: boolean
     fertilizer_buy_organic: boolean
@@ -136,14 +135,6 @@ onUnmounted(() => {
   if (nowTimer) window.clearInterval(nowTimer)
 })
 watch(() => props.currentAccountId, loadQixiFriends)
-watch(() => settings.value.automation.rain_poem_lightning_rush, (enabled) => {
-  if (enabled)
-    settings.value.automation.rain_poem_summon_use = false
-})
-watch(() => settings.value.automation.rain_poem_summon_use, (enabled) => {
-  if (enabled)
-    settings.value.automation.rain_poem_lightning_rush = false
-})
 </script>
 
 <template>
@@ -284,12 +275,6 @@ watch(() => settings.value.automation.rain_poem_summon_use, (enabled) => {
           </div>
           <div v-if="showRainPoemActivity" class="border border-gray-200 rounded-lg bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
             <BaseSwitch v-model="settings.automation.rain_poem_research_unlock" label="自动解锁气象研究" />
-          </div>
-          <div v-if="showRainPoemActivity" class="border border-cyan-200 rounded-lg bg-cyan-50/60 px-4 py-3 sm:col-span-2 dark:border-cyan-900 dark:bg-cyan-950/20">
-            <BaseSwitch v-model="settings.automation.rain_poem_lightning_rush" label="快速刷取雷电变异作物" />
-            <p class="mt-2 text-xs text-gray-500 leading-5 dark:text-gray-400">
-              每日未达到 10 个时，按需使用雷雨召唤瓶，并在雷雨可覆盖成熟时间时优先种植鲜姜；完成后自动恢复原种植策略。开启后会关闭“自动使用雷雨召唤瓶”。
-            </p>
           </div>
         </div>
         <div v-if="SHOW_QIXI_ACTIVITY && settings.automation.qixi_sachet_gift" class="mt-3 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">

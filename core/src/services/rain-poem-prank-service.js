@@ -15,9 +15,9 @@ const { getBag, getBagItems } = require('./warehouse');
 
 const RAIN_POEM_FROG_BOTTLE_ITEM_ID = 5005;
 const RAIN_POEM_CLOUD_BOTTLE_ITEM_ID = 5006;
-const RAIN_POEM_PRANK_SOCIAL_TYPES = new Map([
-  [RAIN_POEM_FROG_BOTTLE_ITEM_ID, 3],
-  [RAIN_POEM_CLOUD_BOTTLE_ITEM_ID, 4],
+const RAIN_POEM_PRANK_CONFIGS = new Map([
+  [RAIN_POEM_FROG_BOTTLE_ITEM_ID, { socialItemId: 301102, socialType: 3 }],
+  [RAIN_POEM_CLOUD_BOTTLE_ITEM_ID, { socialItemId: 301103, socialType: 4 }],
 ]);
 
 function getPrankBottleInventory(items) {
@@ -36,8 +36,8 @@ function getPrankBottleInventory(items) {
 }
 
 function getPrankCandidateLandIds(lands, itemId) {
-  const socialType = RAIN_POEM_PRANK_SOCIAL_TYPES.get(toNum(itemId));
-  if (!socialType) return [];
+  const config = RAIN_POEM_PRANK_CONFIGS.get(toNum(itemId));
+  if (!config) return [];
   const result = [];
   for (const land of Array.isArray(lands) ? lands : []) {
     const landId = toNum(land?.id);
@@ -46,7 +46,7 @@ function getPrankCandidateLandIds(lands, itemId) {
     const phase = getCurrentPhase(plant.phases, false, '', plant.id)?.phase;
     if (!phase || phase === PlantPhase.MATURE || phase === PlantPhase.DEAD) continue;
     const alreadyApplied = (plant.social_items || []).some(item => (
-      toNum(item?.item_id) === toNum(itemId) || toNum(item?.type) === socialType
+      toNum(item?.item_id) === config.socialItemId || toNum(item?.type) === config.socialType
     ));
     if (!alreadyApplied) result.push(landId);
   }
@@ -54,13 +54,13 @@ function getPrankCandidateLandIds(lands, itemId) {
 }
 
 function encodeRainPoemPrankRequest(gid, landId, itemId) {
-  const socialType = RAIN_POEM_PRANK_SOCIAL_TYPES.get(toNum(itemId));
-  if (!socialType) throw new Error(`不支持的使坏瓶: ${itemId}`);
+  const config = RAIN_POEM_PRANK_CONFIGS.get(toNum(itemId));
+  if (!config) throw new Error(`不支持的使坏瓶: ${itemId}`);
   return types.PutSocialItemRequest.encode(types.PutSocialItemRequest.create({
     host_gid: toLong(gid),
     land_ids: [toLong(landId)],
-    item_id: toLong(itemId),
-    social_type: toLong(socialType),
+    item_id: toLong(config.socialItemId),
+    social_type: toLong(config.socialType),
   })).finish();
 }
 
@@ -148,7 +148,7 @@ async function runRainPoemPrankPlacement() {
 module.exports = {
   RAIN_POEM_FROG_BOTTLE_ITEM_ID,
   RAIN_POEM_CLOUD_BOTTLE_ITEM_ID,
-  RAIN_POEM_PRANK_SOCIAL_TYPES,
+  RAIN_POEM_PRANK_CONFIGS,
   getPrankBottleInventory,
   getPrankCandidateLandIds,
   encodeRainPoemPrankRequest,

@@ -23,8 +23,7 @@ const {
     runFertilizerByConfig,
     ORGANIC_FERTILIZER_ID,
     fertilize,
-    removePlant,
-    setRainPoemLightningRushActive
+    removePlant
 } = require('../services/farm');
 const {
     checkFriends,
@@ -301,12 +300,11 @@ async function runStarActivityAutoClaims() {
     const useRainPoemSummonEnabled = automation.rain_poem_summon_use === true;
     const useRainPoemPrankEnabled = automation.rain_poem_prank_use === true;
     const unlockRainPoemResearchEnabled = automation.rain_poem_research_unlock === true;
-    const rainPoemLightningRushEnabled = automation.rain_poem_lightning_rush === true;
     const qixiFriendPriority = Array.isArray(automation.qixi_friend_priority)
         ? automation.qixi_friend_priority.map(Number).filter(gid => gid > 0) : [];
     if (!claimPassport && !claimSolarTerms && !claimRecords && !claimQingmeiSeedsEnabled && !brewQingmeiWineEnabled
         && !useQixiDewEnabled && !buildQixiBridgeEnabled && !giftQixiSachetEnabled
-        && !buyRainPoemBottleEnabled && !collectRainPoemWeatherEnabled && !useRainPoemSummonEnabled && !useRainPoemPrankEnabled && !rainPoemLightningRushEnabled
+        && !buyRainPoemBottleEnabled && !collectRainPoemWeatherEnabled && !useRainPoemSummonEnabled && !useRainPoemPrankEnabled
         && !unlockRainPoemResearchEnabled) return;
 
     starActivityClaimRunning = true;
@@ -481,7 +479,7 @@ async function runStarActivityAutoClaims() {
             }
         }
 
-        if (buyRainPoemBottleEnabled || collectRainPoemWeatherEnabled || useRainPoemSummonEnabled || useRainPoemPrankEnabled || unlockRainPoemResearchEnabled || rainPoemLightningRushEnabled) {
+        if (buyRainPoemBottleEnabled || collectRainPoemWeatherEnabled || useRainPoemSummonEnabled || useRainPoemPrankEnabled || unlockRainPoemResearchEnabled) {
             const {
                 getRainPoemActivity,
                 buyRainPoemCollectionBottle,
@@ -489,25 +487,14 @@ async function runStarActivityAutoClaims() {
                 useRainPoemSummonBottle,
                 unlockRainPoemResearch
             } = require('../services/activity');
-            setRainPoemLightningRushActive(false);
             let rainPoem = await getRainPoemActivity();
-            if (rainPoem?.active === false) {
-                setRainPoemLightningRushActive(false);
-                return;
-            }
+            if (rainPoem?.active === false) return;
             const lightningHarvestComplete = rainPoem?.lightningHarvest?.complete === true;
-            const lightningHarvestPending = rainPoem?.lightningHarvest?.confirmed === true && !lightningHarvestComplete;
-            const weatherRemainingSeconds = Number(rainPoem?.weather?.endTime || 0) - Math.floor(Date.now() / 1000);
-            // 鲜姜需 6000 秒成熟；额外保留 10 分钟处理种植请求和调度偏差。
-            setRainPoemLightningRushActive(rainPoemLightningRushEnabled
-                && lightningHarvestPending
-                && rainPoem?.weather?.rainstorm === true
-                && weatherRemainingSeconds >= 6600);
 
             // 雷电变异作物每日目标未完成时，按服务端天气结束时间精准续接。
             // 5 分钟活动轮询仍作为断线、重启或定时器丢失后的兜底。
             workerScheduler.clear('rain_poem_weather_renew');
-            if ((useRainPoemSummonEnabled || (rainPoemLightningRushEnabled && lightningHarvestPending)) && rainPoem?.weather?.rainstorm && Number(rainPoem?.weather?.endTime || 0) > 0) {
+            if (useRainPoemSummonEnabled && !lightningHarvestComplete && rainPoem?.weather?.rainstorm && Number(rainPoem?.weather?.endTime || 0) > 0) {
                 const renewDelayMs = Math.max(1000, (Number(rainPoem.weather.endTime) - Math.floor(Date.now() / 1000) + 2) * 1000);
                 workerScheduler.setTimeoutTask('rain_poem_weather_renew', renewDelayMs, () => {
                     runStarActivityAutoClaims().catch(() => null);
@@ -546,18 +533,14 @@ async function runStarActivityAutoClaims() {
                 }
             }
 
-            if ((useRainPoemSummonEnabled || (rainPoemLightningRushEnabled && lightningHarvestPending))
+            if (useRainPoemSummonEnabled
+                && !lightningHarvestComplete
                 && !rainPoem?.weather?.rainstorm
                 && Number(rainPoem?.items?.summonBottles || 0) > 0
                 && Number(rainPoem?.summon?.usedToday || 0) < Number(rainPoem?.summon?.dailyUseLimit || 50)) {
                 try {
                     const result = await useRainPoemSummonBottle();
                     rainPoem = result.activity || rainPoem;
-                    const renewedRemainingSeconds = Number(rainPoem?.weather?.endTime || 0) - Math.floor(Date.now() / 1000);
-                    setRainPoemLightningRushActive(rainPoemLightningRushEnabled
-                        && rainPoem?.lightningHarvest?.complete !== true
-                        && rainPoem?.weather?.rainstorm === true
-                        && renewedRemainingSeconds >= 6600);
                     const noUseMessage = result?.reason === 'daily_limit'
                         ? '自动使用雷雨召唤瓶：今日使用次数已达上限'
                         : '自动使用雷雨召唤瓶：当前已是雷雨天气';
@@ -626,7 +609,6 @@ function stopStarActivityClaimTimer() {
     workerScheduler.clear('star_activity_claim_interval');
     workerScheduler.clear('rain_poem_weather_renew');
     workerScheduler.clear('rain_poem_after_harvest');
-    setRainPoemLightningRushActive(false);
     starActivityClaimRunning = false;
 }
 
@@ -929,10 +911,7 @@ function applyRuntimeConfig(config, syncStatusAfter = false) {
                 !prevAuto?.rain_poem_prank_use && newAuto?.rain_poem_prank_use
             ) || (
                 !prevAuto?.rain_poem_research_unlock && newAuto?.rain_poem_research_unlock
-            ) || (
-                !prevAuto?.rain_poem_lightning_rush && newAuto?.rain_poem_lightning_rush
             );
-            if (!newAuto?.rain_poem_lightning_rush) setRainPoemLightningRushActive(false);
             if (starClaimBecameEnabled) {
                 workerScheduler.setTimeoutTask('star_activity_claim_after_save', 2000, () => {
                     runStarActivityAutoClaims().catch(() => null);
@@ -1114,7 +1093,7 @@ async function startBot(config) {
         // 收获后自动出售
         if (onFarmHarvested) networkEvents.off('farmHarvested', onFarmHarvested);
         onFarmHarvested = async () => {
-            if (getAutomation().rain_poem_summon_use === true || getAutomation().rain_poem_lightning_rush === true) {
+            if (getAutomation().rain_poem_summon_use === true) {
                 workerScheduler.setTimeoutTask('rain_poem_after_harvest', 2000, () => {
                     runStarActivityAutoClaims().catch(() => null);
                 });

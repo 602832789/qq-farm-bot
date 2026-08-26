@@ -2,7 +2,7 @@ const { sendMsgAsync, getUserState, getWsErrorState } = require('../utils/networ
 const { types } = require('../utils/proto');
 const { toNum, toLong, toTimeSec, getServerTimeSec, log, logWarn, sleep } = require('../utils/utils');
 const { compareBagSeedGameOrder } = require('../utils/bag-seed-order');
-const { getPlantNameBySeedId, getPlantGrowTime, formatGrowTime, getAllSeeds, getPlantBySeedId, getPlantById, getFruitLayerBySeedId } = require('../config/gameConfig');
+const { getPlantNameBySeedId, getPlantGrowTime, formatGrowTime, getAllSeeds, getPlantBySeedId, getPlantById } = require('../config/gameConfig');
 const {
   getPlantingStrategy,
   syncBagSeedPriority,
@@ -25,31 +25,6 @@ const TWO_BY_TWO_RETRY_DELAY_MS = 30_000;
 // 同一批种下的普通作物会因请求间隔产生少量成熟时间偏差。
 // 这类偏差不应让 2x2 预留区向后排漂移；一分钟内视为同时清空。
 const TWO_BY_TWO_CLEAR_TIME_TOLERANCE_SEC = 60;
-const RAIN_POEM_RUSH_STRATEGY = 'rain_poem_lightning_rush';
-let rainPoemLightningRushActive = false;
-
-function setRainPoemLightningRushActive(active) {
-  rainPoemLightningRushActive = active === true;
-  if (rainPoemLightningRushActive) {
-    reserved2x2GroupKeys = [];
-    last2x2WaitingSignature = '';
-  }
-}
-
-function isRainPoemLightningRushActive() {
-  return rainPoemLightningRushActive;
-}
-
-function getSeedGrowTime(seedId) {
-  const plant = getPlantBySeedId(toNum(seedId));
-  return plant ? getPlantGrowTime(toNum(plant.id)) : 0;
-}
-
-function selectFastestLightningRushSeed(candidates) {
-  return (Array.isArray(candidates) ? candidates : [])
-    .filter(candidate => getFruitLayerBySeedId(candidate.seedId) >= 3 && getSeedGrowTime(candidate.seedId) > 0)
-    .sort((left, right) => getSeedGrowTime(left.seedId) - getSeedGrowTime(right.seedId))[0] || null;
-}
 
 // ─── 种植策略标签 ───
 
@@ -59,8 +34,7 @@ const PLANTING_STRATEGY_LABELS = {
   max_fert_exp: '最大普通肥经验/时',
   max_profit: '最大净利润/时',
   max_fert_profit: '最大普通肥净利润/时',
-  bag_priority: '背包种子优先',
-  [RAIN_POEM_RUSH_STRATEGY]: '雨落成诗雷电变异冲刺'
+  bag_priority: '背包种子优先'
 };
 
 function getPlantingStrategyLabel(strategy) {
@@ -698,12 +672,6 @@ async function findBestSeed(overrideStrategy, accountId = getCurrentAccountId())
   }
 
   const strategy = overrideStrategy || getPlantingStrategy(accountId);
-  if (strategy === RAIN_POEM_RUSH_STRATEGY) {
-    const fastest = selectFastestLightningRushSeed(candidates);
-    if (fastest) return fastest;
-    logWarn('活动', '雷电变异冲刺未找到可购买的三品及以上单格作物');
-    return null;
-  }
   const rankingStrategies = {
     max_exp: 'exp',
     max_fert_exp: 'fert',
@@ -787,11 +755,6 @@ async function findBestSeedFromLocal(overrideStrategy, accountId = getCurrentAcc
   }
 
   const strategy = overrideStrategy || getPlantingStrategy(accountId);
-  if (strategy === RAIN_POEM_RUSH_STRATEGY) {
-    return selectFastestLightningRushSeed(
-      availableSeeds.filter(seed => seed.requiredLevel <= userState.level)
-    );
-  }
 
   const rankingStrategies = {
     max_exp: 'exp',
@@ -911,16 +874,6 @@ async function autoPlantEmptyLands(deadLandIds, emptyLandIds, lands = []) {
 
   allEmptyLands = expandRemoved2x2Lands(allEmptyLands, deadLandIds, lands);
   const strategy = String(getPlantingStrategy(accountId) || '').trim();
-  if (rainPoemLightningRushActive && allEmptyLands.length > 0) {
-    const rushResult = await plantFromShop(allEmptyLands, userState, RAIN_POEM_RUSH_STRATEGY, accountId);
-    result.plantedLands.push(...(rushResult.plantedLands || []));
-    result.plantedCount += Number(rushResult.plantedCount || 0);
-    result.occupiedCount += Number(rushResult.occupiedCount || 0);
-    if (rushResult.plantedLands && rushResult.plantedLands.length > 0) {
-      await runFertilizerByConfig(rushResult.plantedLands);
-    }
-    return result;
-  }
   const size2Result = await plantPrioritized2x2Crops(allEmptyLands, lands, accountId);
   const reservedLandSet = new Set(size2Result.reservedLandIds || []);
   const normalEmptyLands = allEmptyLands.filter(id => !reservedLandSet.has(Number(id)));
@@ -1005,7 +958,7 @@ async function plantFromShop(landIds, userState, overrideStrategy, accountId = g
   if (!bestSeed) return result;
 
   const plantName = getPlantNameBySeedId(bestSeed.seedId);
-  const growTime = getSeedGrowTime(bestSeed.seedId);
+  const growTime = getPlantGrowTime(bestSeed.seedId);
   const growTimeStr = growTime > 0 ? ` 生长${formatGrowTime(growTime)}` : '';
   const plantSize = getPlantSizeBySeedId(bestSeed.seedId);
   const footprint = plantSize * plantSize;
@@ -1138,9 +1091,5 @@ module.exports = {
   findBestSeed,
   getAvailableSeeds,
   autoPlantEmptyLands,
-  plantFromShop,
-  RAIN_POEM_RUSH_STRATEGY,
-  setRainPoemLightningRushActive,
-  isRainPoemLightningRushActive,
-  selectFastestLightningRushSeed
+  plantFromShop
 };
