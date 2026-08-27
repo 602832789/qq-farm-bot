@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { NButton, NTab, NTabs, NTimePicker } from 'naive-ui'
+import { NButton } from 'naive-ui/es/button'
+import { NTab, NTabs } from 'naive-ui/es/tabs'
+import { NTimePicker } from 'naive-ui/es/time-picker'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'

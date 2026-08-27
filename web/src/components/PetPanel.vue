@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import type { DogFoodInfo, PetInfo } from '@/stores/pet'
 import { useStorage } from '@vueuse/core'
-import { NButton, NInputNumber, NModal, NTag } from 'naive-ui'
+import { NButton } from 'naive-ui/es/button'
+import { NInputNumber } from 'naive-ui/es/input-number'
+import { NModal } from 'naive-ui/es/modal'
+import { NTag } from 'naive-ui/es/tag'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useAccountStore } from '@/stores/account'

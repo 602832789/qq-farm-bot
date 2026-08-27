@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { NCard, NModal } from 'naive-ui'
+import { NCard } from 'naive-ui/es/card'
+import { NModal } from 'naive-ui/es/modal'
 import { ref, watch } from 'vue'
 import api from '@/api'
 import BaseButton from '@/components/ui/BaseButton.vue'

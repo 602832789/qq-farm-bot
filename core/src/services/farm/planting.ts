@@ -17,6 +17,7 @@ const { getAllLands, buyGoods, removePlant, fertilizeOne } = require('./api');
 const {
     ALL_FERTILIZER_LAND_TYPES,
     buildLandDetail,
+    buildFarmSocialEventDetails,
     analyzeLands,
     buildLandMap,
     summarizeLandDetails,
@@ -552,11 +553,13 @@ async function getAvailableSeeds(): Promise<any[]> {
     });
 }
 
-async function getLandsDetail(): Promise<{ lands: any[]; summary: any; career: any }> {
+async function getLandsDetail(): Promise<{ lands: any[]; summary: any; socialEvents: any[]; career: any }> {
     let lands: any[] = [];
     let summary: any = {};
+    let socialEvents: any[] = [];
     try {
         const landsReply = await getAllLands();
+        socialEvents = buildFarmSocialEventDetails(landsReply);
         if (landsReply.lands) {
             const nowSec: number = getServerTimeSec();
             const landsMap = buildLandMap(landsReply.lands);
@@ -570,11 +573,13 @@ async function getLandsDetail(): Promise<{ lands: any[]; summary: any; career: a
     } catch {
         lands = [];
         summary = {};
+        socialEvents = [];
     }
 
     return {
         lands,
         summary,
+        socialEvents,
         career: await getCareerInfoOrNull(getUserState().gid),
     };
 }

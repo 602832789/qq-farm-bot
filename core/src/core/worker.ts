@@ -825,7 +825,7 @@ async function handleApiCall(msg: any): Promise<void> {
                 break;
             }
             case 'doFarmOp':
-                result = await runFarmOperation(args[0]); // opType
+                result = await runFarmOperation(args[0], args[1]); // opType, optional targetLandId
                 break;
             case 'fertilizeOwnLand':
                 result = await fertilizeOwnLand(args[0], args[1]);
@@ -917,6 +917,27 @@ async function handleApiCall(msg: any): Promise<void> {
                 break;
             case 'giftQixiSachet':
                 result = await require('../services/activity-center').giftQixiSachet(args[0], args[1]);
+                break;
+            case 'exchangeWeatherCollectorBottle':
+                result = await require('../services/activity-center').exchangeWeatherCollectorBottle();
+                break;
+            case 'scanWeatherFriends':
+                result = await require('../services/activity-center').scanWeatherFriends();
+                break;
+            case 'useWeatherCollectorBottle':
+                result = await require('../services/activity-center').useWeatherCollectorBottle(args[0]);
+                break;
+            case 'useWeatherSummonBottle':
+                result = await require('../services/activity-center').useWeatherSummonBottle();
+                break;
+            case 'useWeatherFrogBottle':
+                result = await require('../services/activity-center').useWeatherFrogBottle(args[0]);
+                break;
+            case 'useWeatherCloudBottle':
+                result = await require('../services/activity-center').useWeatherCloudBottle(args[0], args[1]);
+                break;
+            case 'advanceWeatherResearch':
+                result = await require('../services/activity-center').advanceWeatherResearch(args[0]);
                 break;
             case 'getMallCatalog':
                 result = await require('../services/commerce').getMallCatalog(args[0], args[1]);

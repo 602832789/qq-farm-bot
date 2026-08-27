@@ -533,9 +533,9 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
         if (!id) return res.status(400).json({ ok: false });
 
         try {
-            const { opType } = req.body; // 'harvest', 'clear', 'plant', 'all'
-            await ctx.provider.doFarmOp(id, opType);
-            res.json({ ok: true });
+            const { opType, landId } = req.body; // 'harvest', 'clear', 'plant', 'all'; landId 用于单点务农
+            const data = await ctx.provider.doFarmOp(id, opType, landId);
+            res.json({ ok: true, data });
         } catch (e: any) {
             handleApiError(res, e);
         }

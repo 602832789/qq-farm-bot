@@ -472,7 +472,9 @@ function createWorkerManager(options: WorkerManagerOptions) {
             const id = worker.reqId++;
             worker.requests.set(id, { resolve, reject });
 
-            managerScheduler.setTimeoutTask(`api_timeout_${accountId}_${id}`, 10000, () => {
+            // 好友现场天气必须逐个 Enter/Leave，不能和普通单次 RPC 共用 10 秒上限。
+            const timeoutMs = method === 'scanWeatherFriends' ? 120000 : 10000;
+            managerScheduler.setTimeoutTask(`api_timeout_${accountId}_${id}`, timeoutMs, () => {
                 if (worker.requests.has(id)) {
                     worker.requests.delete(id);
                     reject(new Error('API Timeout'));

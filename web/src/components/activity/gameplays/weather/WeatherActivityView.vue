@@ -1,65 +1,102 @@
 <script setup lang="ts">
-import type { WeatherActivityDto } from '@/stores/activity-center'
-import { computed, ref } from 'vue'
-import RewardItem from '@/components/activity/RewardItem.vue'
+import type { WeatherActivityDto, WeatherFriendDto } from '@/stores/activity-center'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-
-interface FriendOption {
-  gid?: string | number
-  name?: string
-  remark?: string
-  avatarUrl?: string
-  avatar_url?: string
-  level?: string | number
-}
+import RewardItem from '@/components/activity/RewardItem.vue'
 
 const props = defineProps<{
   activity: WeatherActivityDto | null
-  friends: FriendOption[]
   pendingResearch: boolean
   pendingBuy: boolean
+  pendingScan: boolean
   pendingCollect: boolean
   pendingSummon: boolean
 }>()
-const router = useRouter()
-
 const emit = defineEmits<{
   light: [nodeId: string]
   buy: []
+  scanFriends: []
   collect: [targetGid: string]
   summon: []
 }>()
 
+const router = useRouter()
+
 const friendSearch = ref('')
 const selectedFriendGid = ref('')
 const failedAvatars = ref(new Set<string>())
+const friendAvailabilityRank: Record<WeatherFriendDto['availability'], number> = {
+  available: 0,
+  collected: 1,
+  expired: 2,
+  unavailable: 3,
+  unknown: 5,
+}
 
 const filteredFriends = computed(() => {
   const keyword = friendSearch.value.trim().toLowerCase()
-  const source = props.friends.filter(friend => Number(friend.gid) > 0)
+  const source = [...(props.activity?.friends || [])]
+    .filter(friend => Number(friend.gid) > 0)
+    .sort((left, right) => {
+      const leftRank = left.scanError ? 4 : friendAvailabilityRank[left.availability]
+      const rightRank = right.scanError ? 4 : friendAvailabilityRank[right.availability]
+      return leftRank - rightRank
+    })
   if (!keyword)
     return source.slice(0, 60)
   return source.filter((friend) => {
-    const name = String(friend.remark || friend.name || '').toLowerCase()
+    const name = friend.name.toLowerCase()
     return name.includes(keyword) || String(friend.gid || '').includes(keyword)
   }).slice(0, 60)
 })
 
-const selectedFriend = computed(() => props.friends.find(friend => String(friend.gid || '') === selectedFriendGid.value) || null)
+const selectedFriend = computed(() => props.activity?.friends.find(friend => friend.gid === selectedFriendGid.value) || null)
 const catalogGoods = computed(() => props.activity?.catalog?.[0] || null)
 const collectionBottleUnavailable = computed(() => !!props.activity?.inventory.known && Number(props.activity.inventory.collectionBottle.count || 0) <= 0)
 const rainBottleUnavailable = computed(() => !!props.activity?.inventory.known && Number(props.activity.inventory.rainBottle.count || 0) <= 0)
-const collectDisabled = computed(() => !selectedFriend.value || props.pendingCollect || collectionBottleUnavailable.value)
+const collectDisabled = computed(() => !selectedFriend.value?.canCollect || props.pendingCollect || collectionBottleUnavailable.value)
 const currentWeather = computed(() => props.activity?.weather || null)
-const weatherActive = computed(() => !!currentWeather.value && !['', '0'].includes(currentWeather.value.id))
+const weatherActive = computed(() => !!currentWeather.value?.active)
+const currentWeatherTypeLabel = computed(() => currentWeather.value?.typeName || (currentWeather.value?.id === '1' ? '雷雨' : `未知天气（类型 ${currentWeather.value?.id || '--'}）`))
+const currentWeatherStatusLabel = computed(() => currentWeather.value?.statusName || (currentWeather.value?.type === '2' ? '生效中' : `未知状态（${currentWeather.value?.type || '--'}）`))
 const summonDisabled = computed(() => props.pendingSummon || weatherActive.value || rainBottleUnavailable.value)
+const inspectedCount = computed(() => props.activity?.friends.filter(friend => friend.inspected).length || 0)
+const friendStats = computed(() => {
+  const stats = { available: 0, collected: 0, unavailable: 0, expired: 0, unknown: 0, error: 0 }
+  for (const friend of props.activity?.friends || []) {
+    if (friend.scanError)
+      stats.error += 1
+    else
+      stats[friend.availability] += 1
+  }
+  return stats
+})
+const scanAction = computed(() => props.activity?.actions.scanFriendWeather || null)
+const scanDisabled = computed(() => props.pendingScan || !scanAction.value?.enabled)
+const scanButtonLabel = computed(() => {
+  if (props.pendingScan)
+    return `正在检查 ${props.activity?.friends.length || 0} 位好友`
+  return inspectedCount.value > 0 ? '重新扫描现场天气' : '扫描现场天气'
+})
+const selectedFriendState = computed(() => selectedFriend.value ? friendState(selectedFriend.value) : null)
+const collectButtonLabel = computed(() => {
+  if (props.pendingCollect)
+    return '采集中…'
+  if (collectionBottleUnavailable.value)
+    return '天气采集瓶不足'
+  if (!selectedFriend.value)
+    return '请选择好友'
+  if (!selectedFriend.value.canCollect)
+    return '当前好友不可采雨'
+  return '采集这场雷雨'
+})
 const weatherTaskNames: Record<string, string> = {
-  '5001': '使用天气采集瓶',
-  '5002': '使用雷雨召唤瓶',
-  '5003': '收获闪电变异作物',
-  '5004': '使用雷雨引雷瓶',
-  '5005': '使用青蛙使坏瓶',
-  '5006': '使用乌云使坏瓶',
+  5001: '使用天气采集瓶',
+  5002: '使用雷雨召唤瓶',
+  5003: '收获闪电变异作物',
+  5004: '使用雷雨引雷瓶',
+  5005: '使用青蛙使坏瓶',
+  5006: '使用乌云使坏瓶',
 }
 
 function taskName(task: { id: string, itemId: string, name: string }) {
@@ -123,20 +160,36 @@ function formatWeatherTime(value: number | null) {
   }).format(new Date(timestamp))
 }
 
-function friendName(friend: FriendOption) {
-  return String(friend.remark || friend.name || `好友 ${friend.gid || ''}`)
+function friendState(friend: WeatherFriendDto) {
+  if (friend.scanError)
+    return { label: '检查失败', className: 'error', detail: friend.scanError }
+  if (friend.availability === 'available') {
+    const endTime = formatWeatherTime(friend.weather.endTime)
+    return { label: '可采雨', className: 'available', detail: endTime ? `雷雨持续至 ${endTime}` : '当前雷雨可采集' }
+  }
+  if (friend.availability === 'collected')
+    return { label: '本轮已采', className: 'collected', detail: '下轮雷雨可再次采集' }
+  if (friend.availability === 'expired')
+    return { label: '已失效', className: 'expired', detail: '这场雷雨已经结束' }
+  if (friend.availability === 'unavailable')
+    return { label: '晴天', className: 'clear', detail: '当前不是雷雨天气' }
+  return { label: '待检查', className: 'unknown', detail: '扫描后确认现场天气' }
 }
 
-function friendAvatar(friend: FriendOption) {
-  return String(friend.avatarUrl || friend.avatar_url || '')
+function friendName(friend: WeatherFriendDto) {
+  return friend.name || `好友 ${friend.gid}`
 }
 
-function chooseFriend(friend: FriendOption) {
-  selectedFriendGid.value = String(friend.gid || '')
+function friendAvatar(friend: WeatherFriendDto) {
+  return friend.avatarUrl
 }
 
-function markAvatarFailed(friend: FriendOption) {
-  failedAvatars.value = new Set(failedAvatars.value).add(String(friend.gid || ''))
+function chooseFriend(friend: WeatherFriendDto) {
+  selectedFriendGid.value = friend.gid
+}
+
+function markAvatarFailed(friend: WeatherFriendDto) {
+  failedAvatars.value = new Set(failedAvatars.value).add(friend.gid)
 }
 
 function submitCollect() {
@@ -147,6 +200,17 @@ function submitCollect() {
 function openInteractionItem(path: string, itemId: string) {
   void router.push({ path, query: { interactionItem: itemId } })
 }
+
+watch(() => props.activity?.friends, (friends = []) => {
+  const current = friends.find(friend => friend.gid === selectedFriendGid.value)
+  if (current?.canCollect)
+    return
+  const available = friends.find(friend => friend.canCollect)
+  if (available)
+    selectedFriendGid.value = available.gid
+  else if (!current)
+    selectedFriendGid.value = ''
+}, { immediate: true })
 </script>
 
 <template>
@@ -155,9 +219,9 @@ function openInteractionItem(path: string, itemId: string) {
       <span class="weather-status__icon" :class="weatherActive ? 'i-carbon-thunderstorm' : 'i-carbon-sun'" />
       <div class="weather-status__content">
         <small>当前农场天气</small>
-        <strong>{{ weatherActive ? '特殊天气进行中' : (currentWeather ? '当前无特殊天气' : '天气状态暂未读取') }}</strong>
+        <strong>{{ weatherActive ? `${currentWeatherTypeLabel} · ${currentWeatherStatusLabel}` : (currentWeather ? '当前无特殊天气' : '天气状态暂未读取') }}</strong>
         <span v-if="weatherActive && currentWeather">
-          {{ currentWeather.typeName || `未知天气（ID ${currentWeather.id || '--'}）` }}<template v-if="currentWeather.id"> · 天气 ID {{ currentWeather.id }}</template><template v-if="currentWeather.type"> · 协议类型 {{ currentWeather.type }}</template>
+          天气类型 {{ currentWeather.id || '--' }} · 状态码 {{ currentWeather.type || '--' }}
         </span>
       </div>
       <div v-if="weatherActive && currentWeather" class="weather-status__period">
@@ -166,7 +230,7 @@ function openInteractionItem(path: string, itemId: string) {
         <strong v-else>进行中</strong>
         <span v-if="currentWeather.beginTime">开始于 {{ formatWeatherTime(currentWeather.beginTime) }}</span>
       </div>
-      <span class="weather-status__badge">{{ weatherActive ? '生效中' : '空闲' }}</span>
+      <span class="weather-status__badge">{{ weatherActive ? currentWeatherStatusLabel : '空闲' }}</span>
     </section>
 
     <section v-if="activity" class="panel collect-panel">
@@ -176,12 +240,33 @@ function openInteractionItem(path: string, itemId: string) {
       </header>
       <div class="collect-workspace">
         <div class="friend-picker">
-          <label class="search-field">
-            <span class="i-carbon-search" />
-            <input v-model="friendSearch" type="search" placeholder="搜索好友名称或 GID">
-          </label>
+          <div class="friend-toolbar">
+            <label class="search-field">
+              <span class="i-carbon-search" />
+              <input v-model="friendSearch" type="search" placeholder="搜索好友名称或 GID">
+            </label>
+            <button
+              type="button"
+              class="scan-button"
+              :disabled="scanDisabled"
+              :title="scanAction?.reason || '逐个进入好友农场读取现场天气'"
+              @click="emit('scanFriends')"
+            >
+              <span v-if="pendingScan" class="i-carbon-circle-dash animate-spin" />
+              <span v-else class="i-carbon-radar" />
+              {{ scanButtonLabel }}
+            </button>
+          </div>
+          <div class="friend-summary" role="status">
+            <span class="available"><i />可采雨 {{ friendStats.available }}</span>
+            <span class="collected"><i />本轮已采 {{ friendStats.collected }}</span>
+            <span class="clear"><i />晴天 {{ friendStats.unavailable }}</span>
+            <span class="expired"><i />已失效 {{ friendStats.expired }}</span>
+            <span class="unknown"><i />待检查 {{ friendStats.unknown }}</span>
+            <span class="error"><i />检查失败 {{ friendStats.error }}</span>
+          </div>
           <div v-if="filteredFriends.length === 0" class="operation-empty">
-            暂无可采集的好友
+            {{ friendSearch ? '没有匹配的好友' : (pendingScan ? '正在读取好友现场天气…' : '暂无好友天气数据') }}
           </div>
           <div v-else class="friend-list">
             <button
@@ -189,13 +274,17 @@ function openInteractionItem(path: string, itemId: string) {
               :key="String(friend.gid)"
               type="button"
               class="friend-option"
-              :class="{ selected: selectedFriendGid === String(friend.gid) }"
+              :class="[{ selected: selectedFriendGid === friend.gid }, `friend-option--${friendState(friend).className}`]"
+              :aria-pressed="selectedFriendGid === friend.gid"
               @click="chooseFriend(friend)"
             >
-              <img v-if="friendAvatar(friend) && !failedAvatars.has(String(friend.gid))" :src="friendAvatar(friend)" alt="" @error="markAvatarFailed(friend)">
+              <img v-if="friendAvatar(friend) && !failedAvatars.has(friend.gid)" :src="friendAvatar(friend)" alt="" @error="markAvatarFailed(friend)">
               <span v-else class="friend-avatar-fallback i-carbon-user-avatar" />
-              <span class="friend-option__name"><strong>{{ friendName(friend) }}</strong><small>GID {{ friend.gid }}</small></span>
-              <span class="friend-option__mark" :class="selectedFriendGid === String(friend.gid) ? 'i-carbon-checkmark-filled' : 'i-carbon-chevron-right'" />
+              <span class="friend-option__name">
+                <strong>{{ friendName(friend) }}</strong>
+                <small>Lv.{{ friend.level || '--' }} · GID {{ friend.gid }}</small>
+              </span>
+              <span class="friend-option__state" :class="friendState(friend).className"><i />{{ friendState(friend).label }}</span>
             </button>
           </div>
         </div>
@@ -205,16 +294,21 @@ function openInteractionItem(path: string, itemId: string) {
             <span>{{ activity.inventory.collectionBottle.name || '天气采集瓶' }}</span>
             <strong>{{ activity.inventory.known ? activity.inventory.collectionBottle.count : '--' }}</strong>
           </div>
-          <div v-if="selectedFriend" class="selected-friend">
-            <span>采集对象</span><strong>{{ friendName(selectedFriend) }}</strong><small>GID {{ selectedFriend.gid }}</small>
+          <div v-if="selectedFriend && selectedFriendState" class="selected-friend">
+            <div class="selected-friend__heading">
+              <span>采集对象</span>
+              <em :class="selectedFriendState.className"><i />{{ selectedFriendState.label }}</em>
+            </div>
+            <strong>{{ friendName(selectedFriend) }}</strong>
+            <small>{{ selectedFriendState.detail }}</small>
           </div>
           <div v-else class="selected-friend selected-friend--empty">
             <span class="i-carbon-user-follow" /><strong>选择一位好友</strong>
           </div>
           <button type="button" class="operation-button" :disabled="collectDisabled" @click="submitCollect">
             <span v-if="pendingCollect" class="i-carbon-circle-dash animate-spin" />
-            <span v-else class="i-carbon-sun" />
-            {{ pendingCollect ? '采集中…' : (collectionBottleUnavailable ? '天气采集瓶不足' : '采集天气瓶') }}
+            <span v-else class="i-carbon-rain-drop" />
+            {{ collectButtonLabel }}
           </button>
         </div>
       </div>
@@ -230,11 +324,15 @@ function openInteractionItem(path: string, itemId: string) {
               <span v-if="isInventoryTask(task.itemId)" class="task-stock">持有 {{ inventoryTaskCount(task.itemId) }}</span>
               <span v-else :class="{ completed: taskCompleted(task) }">{{ taskStatus(task) }} · {{ taskCurrent(task) }} / {{ taskTarget(task) }}</span>
             </div>
-            <div v-if="!isInventoryTask(task.itemId)" class="task-meter"><i :class="{ completed: taskCompleted(task) }" :style="{ width: `${taskPercent(task)}%` }" /></div>
+            <div v-if="!isInventoryTask(task.itemId)" class="task-meter">
+              <i :class="{ completed: taskCompleted(task) }" :style="{ width: `${taskPercent(task)}%` }" />
+            </div>
           </div>
           <RewardItem v-if="task.reward.id !== '0'" :name="task.reward.name || task.reward.id" :count="task.reward.count" :image="task.reward.image" :rarity="task.reward.rarity" compact />
         </div>
-        <div v-if="!activity.tasks.length" class="task-empty">暂无活动任务数据</div>
+        <div v-if="!activity.tasks.length" class="task-empty">
+          暂无活动任务数据
+        </div>
       </div>
     </section>
 
@@ -340,7 +438,6 @@ function openInteractionItem(path: string, itemId: string) {
         </article>
       </div>
     </section>
-
   </div>
 </template>
 
@@ -712,6 +809,7 @@ function openInteractionItem(path: string, itemId: string) {
   cursor: pointer;
 }
 .operation-button:disabled,
+.scan-button:disabled,
 .research-node button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
@@ -720,6 +818,11 @@ function openInteractionItem(path: string, itemId: string) {
   display: grid;
   grid-template-columns: minmax(0, 1.6fr) minmax(210px, 0.4fr);
   gap: 18px;
+}
+.friend-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
 }
 .search-field {
   display: flex;
@@ -738,9 +841,78 @@ function openInteractionItem(path: string, itemId: string) {
   color: inherit;
   background: transparent;
 }
+.scan-button {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 12px;
+  border: 1px solid rgba(46, 138, 102, 0.24);
+  border-radius: 7px;
+  color: #276e54;
+  background: rgba(238, 248, 243, 0.92);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.friend-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 10px;
+  padding: 9px 11px;
+  border: 1px solid rgba(49, 82, 70, 0.1);
+  border-radius: 7px;
+  color: #667a71;
+  background: rgba(245, 250, 247, 0.76);
+  font-size: 11px;
+}
+.friend-summary span,
+.friend-option__state,
+.selected-friend__heading em {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.friend-summary i,
+.friend-option__state i,
+.selected-friend__heading em i {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #9aa7a2;
+}
+.friend-summary .available i,
+.friend-option__state.available i,
+.selected-friend__heading em.available i {
+  background: #2e8a66;
+}
+.friend-summary .collected i,
+.friend-option__state.collected i,
+.selected-friend__heading em.collected i {
+  background: #c08a2f;
+}
+.friend-summary .clear i,
+.friend-option__state.clear i,
+.selected-friend__heading em.clear i {
+  background: #7d9aab;
+}
+.friend-summary .expired i,
+.friend-option__state.expired i,
+.selected-friend__heading em.expired i {
+  background: #8b9691;
+}
+.friend-summary .error i,
+.friend-option__state.error i,
+.selected-friend__heading em.error i {
+  background: #bd6268;
+}
 .friend-list {
   display: grid;
-  max-height: 250px;
+  max-height: 286px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   overflow: auto;
@@ -749,7 +921,7 @@ function openInteractionItem(path: string, itemId: string) {
 .friend-option {
   display: grid;
   min-width: 0;
-  grid-template-columns: 36px minmax(0, 1fr) 18px;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
   gap: 9px;
   align-items: center;
   padding: 9px;
@@ -763,6 +935,13 @@ function openInteractionItem(path: string, itemId: string) {
 .friend-option.selected {
   border-color: rgba(38, 124, 91, 0.28);
   background: rgba(226, 244, 237, 0.86);
+}
+.friend-option--available {
+  border-color: rgba(46, 138, 102, 0.24);
+  box-shadow: inset 3px 0 #2e8a66;
+}
+.friend-option--error {
+  border-color: rgba(189, 98, 104, 0.22);
 }
 .friend-option img,
 .friend-avatar-fallback {
@@ -792,8 +971,26 @@ function openInteractionItem(path: string, itemId: string) {
   color: #71817a;
   font-size: 11px;
 }
-.friend-option__mark {
-  color: #2e8a66;
+.friend-option__state {
+  padding: 4px 6px;
+  border-radius: 5px;
+  color: #64766e;
+  background: rgba(237, 241, 239, 0.92);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.friend-option__state.available {
+  color: #256348;
+  background: rgba(222, 241, 231, 0.94);
+}
+.friend-option__state.collected {
+  color: #805b1d;
+  background: rgba(248, 235, 210, 0.94);
+}
+.friend-option__state.error {
+  color: #9f484f;
+  background: rgba(250, 231, 233, 0.94);
 }
 .collect-composer {
   display: flex;
@@ -812,6 +1009,22 @@ function openInteractionItem(path: string, itemId: string) {
 .selected-friend small {
   color: #71817a;
   font-size: 12px;
+}
+.selected-friend__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.selected-friend__heading em {
+  color: #64766e;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+}
+.selected-friend > small {
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 .selected-friend--empty {
   align-items: center;
@@ -909,6 +1122,12 @@ function openInteractionItem(path: string, itemId: string) {
   .research-grid,
   .friend-list {
     grid-template-columns: 1fr;
+  }
+  .friend-toolbar {
+    grid-template-columns: 1fr;
+  }
+  .scan-button {
+    width: 100%;
   }
   .weather-status {
     min-height: 0;

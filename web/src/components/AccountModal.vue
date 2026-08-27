@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { NCard, NModal, NRadio, NRadioGroup, NTab, NTabs } from 'naive-ui'
+import { NCard } from 'naive-ui/es/card'
+import { NModal } from 'naive-ui/es/modal'
+import { NRadio, NRadioGroup } from 'naive-ui/es/radio'
+import { NTab, NTabs } from 'naive-ui/es/tabs'
 import { onBeforeUnmount, reactive, ref, watch } from 'vue'
 import api from '@/api'
 import BaseButton from '@/components/ui/BaseButton.vue'

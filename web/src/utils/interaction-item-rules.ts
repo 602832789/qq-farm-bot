@@ -2,7 +2,6 @@ function hasItemEffect(land: any, itemId: string): boolean {
   return (Array.isArray(land?.interactionEffects) ? land.interactionEffects : [])
     .some((effect: any) => String(effect?.itemId || '') === itemId)
 }
-
 export function interactionItemTargetReason(itemIdInput: unknown, land: any): string {
   const itemId = String(itemIdInput || '')
   if (!land?.unlocked || land?.occupiedByMaster || !String(land?.plantName || '').trim())
@@ -29,4 +28,3 @@ export function interactionItemTargetReason(itemIdInput: unknown, land: any): st
 
   return ''
 }
-

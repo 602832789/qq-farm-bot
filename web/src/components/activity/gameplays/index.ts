@@ -27,7 +27,7 @@ function inferGameplayKey(activity: ActivityDirectoryItemDto): ActivityGameplayK
   const activityIds = new Set(activity.activityIds.map(id => id.trim()))
   if (['2026072700', '2026072701'].some(id => activityIds.has(id)))
     return 'stellar'
-  if (['2026070300', '2026070301', '2026070303', '2026070304', '2026070305'].some(id => activityIds.has(id)))
+  if (['2026070300', '2026070301', '2026070302', '2026070303', '2026070304', '2026070305'].some(id => activityIds.has(id)))
     return 'weather'
   if (['2026081800', '2026081801', '2026081802'].some(id => activityIds.has(id)))
     return 'qixi'

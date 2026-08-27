@@ -500,6 +500,30 @@ function handleNotify(msg: any): void {
             return;
         }
 
+        // 青蛙等农场级社交事件变化。与乌云不同，它不附着在 LandInfo 上。
+        if (type.includes('FarmSocialEventsNotify')) {
+            try {
+                const notify = types.FarmSocialEventsNotify.decode(eventBody);
+                const hostGid = toNum(notify.host_gid);
+                if (hostGid === userState.gid || hostGid === 0) {
+                    networkEvents.emit('farmSocialEventsChanged', notify.social_events || []);
+                }
+            } catch {}
+            return;
+        }
+
+        // 特殊天气变化。通知携带天气所属农场 GID；空 weather 表示天气结束。
+        if (type.includes('WeatherChangeNotify')) {
+            try {
+                const notify = types.WeatherChangeNotify.decode(eventBody);
+                networkEvents.emit('weatherChanged', {
+                    hostGid: toNum(notify.host_gid),
+                    weather: notify.weather || null,
+                });
+            } catch {}
+            return;
+        }
+
         // 护主犬“同气连枝”主人侧待拾取礼包数量。
         if (type.includes('PendingGiftCountNotify')) {
             try {

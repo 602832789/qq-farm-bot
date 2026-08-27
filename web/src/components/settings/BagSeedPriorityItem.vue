@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { NButton, NCheckbox, NCheckboxGroup } from 'naive-ui'
+import { NButton } from 'naive-ui/es/button'
+import { NCheckbox, NCheckboxGroup } from 'naive-ui/es/checkbox'
 import { computed, ref, watch } from 'vue'
 
 export interface BagSeedPriorityItemSeed {

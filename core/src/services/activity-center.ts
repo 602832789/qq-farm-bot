@@ -14,6 +14,7 @@ const { getActivityWindows, getSellConditionContext } = require('./activity-wind
 const { buildActivityGameplayBindings, resolveActivityGameplays } = require('./activity-gameplay-registry');
 const { reportActivityShare } = require('./share');
 const { weatherIdName, isWeatherActive } = require('./weather-status');
+const weatherActivityService = require('./weather-activity');
 const { getSystemDateKey } = require('../utils/utils');
 const {
     mergeConstellationStates,
@@ -1373,7 +1374,7 @@ async function buildActivityCenterSnapshot(shopOverride: any = null) {
     const activityListResult = await settleRequest(getActivityWindows);
     const qixiResult = await settleRequest(getCurrentQixiActivity);
     const qingMeiResult = await settleRequest(getCurrentQingMeiActivity);
-    const weatherResult = await settleRequest(getCurrentWeatherActivity);
+    const weatherResult = await settleRequest(weatherActivityService.getCurrentWeatherActivity);
     const rawSeason = settledValue(seasonResult);
     const season = rawSeason ? normalizeSeason(rawSeason) : null;
     const solarTerms = solarResult.status === 'fulfilled' ? normalizeSolarTerms(solarResult.value) : null;
@@ -1407,7 +1408,7 @@ async function buildActivityCenterSnapshot(shopOverride: any = null) {
         qixiBridge: qixi?.actions?.bridge || { enabled: false, available: false, availabilityKnown: false },
         qixiGift: qixi?.actions?.gift || { enabled: false, available: false, availabilityKnown: false },
         qixiDew: qixi?.actions?.dew || { enabled: false, available: false, availabilityKnown: false },
-        weatherResearch: weather?.actions?.research || { enabled: false, available: false, availabilityKnown: false },
+        weatherResearch: weather?.actions?.advanceResearch || weather?.actions?.research || { enabled: false, available: false, availabilityKnown: false },
     };
     const activityWindows = settledValue(activityListResult) || [];
     return {
@@ -1993,11 +1994,18 @@ module.exports = {
     getCurrentStarSandShop,
     getCurrentSolarTerms,
     getCurrentQixiActivity,
-    getCurrentWeatherActivity,
-    buyWeatherBottle,
-    collectWeatherBottle,
-    lightWeatherResearch,
-    summonWeatherRain,
+    getCurrentWeatherActivity: weatherActivityService.getCurrentWeatherActivity,
+    buyWeatherBottle: weatherActivityService.exchangeWeatherCollectorBottle,
+    collectWeatherBottle: weatherActivityService.useWeatherCollectorBottle,
+    lightWeatherResearch: weatherActivityService.advanceWeatherResearch,
+    summonWeatherRain: weatherActivityService.useWeatherSummonBottle,
+    exchangeWeatherCollectorBottle: weatherActivityService.exchangeWeatherCollectorBottle,
+    scanWeatherFriends: weatherActivityService.scanWeatherFriends,
+    useWeatherCollectorBottle: weatherActivityService.useWeatherCollectorBottle,
+    useWeatherSummonBottle: weatherActivityService.useWeatherSummonBottle,
+    useWeatherFrogBottle: weatherActivityService.useWeatherFrogBottle,
+    useWeatherCloudBottle: weatherActivityService.useWeatherCloudBottle,
+    advanceWeatherResearch: weatherActivityService.advanceWeatherResearch,
     claimBattlePassRewards,
     exchangeStarSandGoods,
     lightConstellation,

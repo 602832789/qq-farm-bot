@@ -193,6 +193,27 @@ function createDataProvider(options: DataProviderOptions) {
         giftQixiSachet: (accountRef: string, friendGid: unknown, messageTextId: unknown = 15) => (
             callWorkerApi(resolveAccountRefId(accountRef), 'giftQixiSachet', friendGid, messageTextId)
         ),
+        exchangeWeatherCollectorBottle: (accountRef: string) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'exchangeWeatherCollectorBottle')
+        ),
+        scanWeatherFriends: (accountRef: string) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'scanWeatherFriends')
+        ),
+        useWeatherCollectorBottle: (accountRef: string, friendGid: unknown) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'useWeatherCollectorBottle', friendGid)
+        ),
+        useWeatherSummonBottle: (accountRef: string) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'useWeatherSummonBottle')
+        ),
+        useWeatherFrogBottle: (accountRef: string, friendGid: unknown) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'useWeatherFrogBottle', friendGid)
+        ),
+        useWeatherCloudBottle: (accountRef: string, friendGid: unknown, landId: unknown) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'useWeatherCloudBottle', friendGid, landId)
+        ),
+        advanceWeatherResearch: (accountRef: string, nodeId: unknown) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'advanceWeatherResearch', nodeId)
+        ),
         getMallCatalog: (accountRef: string, slotType: unknown, subSlotType: unknown) => (
             callWorkerApi(resolveAccountRefId(accountRef), 'getMallCatalog', slotType, subSlotType)
         ),
@@ -216,7 +237,9 @@ function createDataProvider(options: DataProviderOptions) {
             return { automation: store.getAutomation(accountId), configRevision: rev };
         },
 
-        doFarmOp: (accountRef: string, opType: string) => callWorkerApi(resolveAccountRefId(accountRef), 'doFarmOp', opType),
+        doFarmOp: (accountRef: string, opType: string, targetLandId: unknown = null) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'doFarmOp', opType, targetLandId)
+        ),
         fertilizeOwnLand: (accountRef: string, landId: unknown, fertilizerType: unknown) => (
             callWorkerApi(resolveAccountRefId(accountRef), 'fertilizeOwnLand', landId, fertilizerType)
         ),

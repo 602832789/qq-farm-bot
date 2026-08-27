@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:compressed": "vite build --mode compressed",
+    "build:analyze": "vite build --mode analyze",
     "typecheck": "vue-tsc -b",
     "lint": "eslint \"src/**/*.{ts,vue}\" --fix",
     "preview": "vite preview"

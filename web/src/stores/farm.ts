@@ -46,6 +46,7 @@ export const useFarmStore = defineStore('farm', () => {
   const lands = ref<Land[]>([])
   const seeds = ref<any[]>([])
   const summary = ref<any>({})
+  const socialEvents = ref<any[]>([])
   const career = ref<CareerHarvestSteal | null>(null)
   const loading = ref(false)
   const loaded = ref(false)
@@ -153,10 +154,12 @@ export const useFarmStore = defineStore('farm', () => {
       if (data && data.ok) {
         lands.value = applyLandOverlay(data.data.lands || [])
         summary.value = data.data.summary || {}
+        socialEvents.value = Array.isArray(data.data.socialEvents) ? data.data.socialEvents : []
         career.value = data.data.career || null
         return true
       }
       career.value = null
+      socialEvents.value = []
       error.value = String(data?.error || '无法读取土地数据')
       return false
     }
@@ -164,6 +167,7 @@ export const useFarmStore = defineStore('farm', () => {
       if (sequence !== landRequestSequence)
         return false
       career.value = null
+      socialEvents.value = []
       error.value = String(cause?.response?.data?.error || cause?.message || '无法读取土地数据，请稍后重试')
       return false
     }
@@ -179,6 +183,7 @@ export const useFarmStore = defineStore('farm', () => {
     landRequestSequence++
     lands.value = []
     summary.value = {}
+    socialEvents.value = []
     career.value = null
     loading.value = false
     loaded.value = false
@@ -332,19 +337,21 @@ export const useFarmStore = defineStore('farm', () => {
     }
   }
 
-  async function operate(accountId: string, opType: string) {
+  async function operate(accountId: string, opType: string, landId: number | null = null) {
     if (!accountId)
-      return
-    await api.post('/api/farm/operate', { opType }, {
+      return false
+    const res = await api.post('/api/farm/operate', { opType, landId }, {
       headers: { 'x-account-id': accountId },
     })
     landOverlay = null
     await fetchLands(accountId)
+    return res.data?.data || { hadWork: false, actions: [] }
   }
 
   return {
     lands,
     summary,
+    socialEvents,
     career,
     seeds,
     loading,
