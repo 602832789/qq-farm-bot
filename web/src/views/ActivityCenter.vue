@@ -23,7 +23,7 @@ const accountStore = useAccountStore()
 const activityStore = useActivityCenterStore()
 const friendStore = useFriendStore()
 const { currentAccountId } = storeToRefs(accountStore)
-const { activities, season, shop, solarTerms, constellation, qixi, qingMei, weather, actions, tabBadges, loading, error, actionError, notice, loadedAccountId, serverClockOffset, pendingActions, weatherFriendsLoading, weatherScanProgress } = storeToRefs(activityStore)
+const { activities, season, shop, solarTerms, constellation, qixi, qingMei, weather, actions, tabBadges, loading, error, actionError, notice, loadedAccountId, serverClockOffset, pendingActions, weatherFriendsLoading, weatherFriendInspectingGid } = storeToRefs(activityStore)
 const { friends, loading: friendsLoading } = storeToRefs(friendStore)
 const activeTab = ref<ActivityTab>('travel')
 const selectedActivity = ref<ActivityGameplayKey | null>(null)
@@ -196,9 +196,7 @@ async function openActivity(activity: ActivityDirectoryItemDto) {
     await friendStore.fetchFriends(String(currentAccountId.value))
   }
   else if (gameplay.module.key === 'weather' && currentAccountId.value && detailsLoaded) {
-    const weatherAccountId = String(currentAccountId.value)
-    if (await activityStore.loadWeatherFriends(weatherAccountId))
-      void activityStore.scanWeatherFriends(weatherAccountId)
+    void activityStore.loadWeatherFriends(String(currentAccountId.value))
   }
 }
 function goBack() {
@@ -241,14 +239,8 @@ function lightWeatherResearch(nodeId: string) {
 function buyWeatherBottle() {
   activityStore.buyWeatherBottle(accountId(), 1)
 }
-async function scanWeatherFriends() {
-  const weatherAccountId = accountId()
-  if (!weatherAccountId)
-    return
-  // 先拉一次好友列表，把服务端缓存已经过期的行重新置为待检查。
-  if (!await activityStore.loadWeatherFriends(weatherAccountId))
-    return
-  await activityStore.scanWeatherFriends(weatherAccountId, true)
+function inspectWeatherFriend(friendGid: string) {
+  void activityStore.inspectWeatherFriend(accountId(), friendGid)
 }
 function collectWeatherBottle(targetGid: string) {
   activityStore.collectWeatherBottle(accountId(), targetGid)
@@ -533,14 +525,13 @@ onUnmounted(() => {
           :activity="weather"
           :pending-research="pendingActions.lightWeatherResearch"
           :pending-buy="pendingActions.buyWeatherBottle"
-          :pending-scan="pendingActions.scanWeatherFriends"
           :pending-collect="pendingActions.collectWeatherBottle"
           :pending-summon="pendingActions.summonWeatherRain"
-          :scan-progress="weatherScanProgress"
+          :inspecting-gid="weatherFriendInspectingGid"
           :loading-friends="weatherFriendsLoading"
           @light="lightWeatherResearch"
           @buy="buyWeatherBottle"
-          @scan-friends="scanWeatherFriends"
+          @inspect="inspectWeatherFriend"
           @collect="collectWeatherBottle"
           @summon="summonWeatherRain"
         />

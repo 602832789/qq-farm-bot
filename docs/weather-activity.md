@@ -211,25 +211,25 @@ field 140.node_id = 研究节点 ID
 
 ## Web 与自动化行为
 
-活动信息、好友列表、好友天气拆成三个互不耦合的接口，避免打开页面时一次性把网关请求队列打满：
+活动信息、好友列表、好友现场天气拆成三个互不耦合的接口，避免打开页面时一次性把网关请求队列打满：
 
-1. `GET /api/activity-center/weather` 只返回活动快照（商店、气象研究、任务、背包、自己的天气），不再附带好友列表和好友天气。
-2. `GET /api/activity-center/weather/friends` 只返回好友列表本身，不进入任何农场；只有仍命中 10 分钟天气缓存的好友才带天气，其余一律是“待检查”。
-3. `POST /api/activity-center/weather/friends/scan` 专门按好友 ID 批量读取现场天气，单次最多 5 位好友，后端按官方顺序逐个 `Enter` → 读取 `field 13` → `Leave`，不再返回活动快照。缓存仍然有效的好友直接用缓存返回，不会重复进农场。
+1. `GET /api/activity-center/weather` 只返回活动快照（商店、气象研究、任务、背包、自己的天气），不附带好友列表和好友天气。
+2. `GET /api/activity-center/weather/friends` 只返回好友基础信息（`gid` / `name` / `avatarUrl` / `level`），不进入任何农场，也不带天气、可采状态和看家宠物。
+3. `POST /api/activity-center/weather/friends/scan` 按好友 ID 读取现场天气：`Enter` → 读取 `field 13` → `Leave`，命中缓存的好友直接用缓存返回、不重复进农场。单次仍然最多 5 位好友（`FRIEND_WEATHER_SCAN_BATCH_LIMIT`），面板现在每次只传 1 位。
 
-前端拿到好友列表后自行按每 5 个一批循环调用扫描接口，逐批就地更新对应行；扫描进行中冻结列表顺序避免行来回跳动，整轮结束后再按“可采雨 → 本轮已采 → 已失效 → 晴天 → 检查失败 → 待检查”重新排序。页面明确显示“可采雨、本轮已采、已失效、晴天、待检查、检查失败”。
+面板不再自动整轮扫描好友天气，也不再显示“可采雨 / 本轮已采 / 已失效 / 晴天 / 待检查”的汇总指标和手动扫描按钮。好友列表只是一份可搜索的基础名单，**点击某位好友时**才用他的 GID 调一次扫描接口：该行显示读取动画，右侧采集卡片显示这位好友的状态（可采雨、本轮已采、已失效、晴天、读取失败）并据此决定采集按钮的 disabled 与文案。同一时刻只允许一位好友在读取中（`pendingActions.scanWeatherFriends`）。
 
-节流是这条链路的关键，因为 `Enter`/`Leave` 走低优先级，网关只给低优先级留 1 个并发槽位，整轮扫描期间会一直占着它：
+这样每次打开面板的协议开销就是一次好友列表，之后完全由用户点击驱动，`Enter`/`Leave` 的低优先级槽位不会被整轮扫描长时间占住：
 
-- 后端同一批内每两次进农场之间等 `FRIEND_WEATHER_SCAN_GAP_MS = 300` 毫秒，单批 5 位好友 10 个 RPC 约 2 秒。
-- 前端两批之间再等 `WEATHER_SCAN_BATCH_GAP_MS = 1000` 毫秒，算上批次间隔整体约 3 RPC/s，58 位好友整轮 40 秒左右。
-- 好友天气缓存 `FRIEND_WEATHER_CACHE_TTL_SEC = 600`（10 分钟）。扫描一律不强制刷新：前端只把“待检查”的好友放进批次，后端再按缓存二次过滤，所以反复打开面板或手点“重新扫描”都不会重复进农场。
+- 后端同一批内每两次进农场之间仍然等 `FRIEND_WEATHER_SCAN_GAP_MS = 300` 毫秒；单人扫描只有一次进出，等待不会触发。
+- 好友天气缓存 `FRIEND_WEATHER_CACHE_TTL_SEC = 600`（10 分钟）。扫描一律不强制刷新，缓存有效期内重复点同一位好友不会真的进农场。
+- 同一位好友的并发扫描会被合并成同一对 `Enter`/`Leave`（`friendWeatherInspections`）。
 
-缓存放到 10 分钟后，行上的状态可能比现场旧。采集瓶不依赖缓存：`useWeatherCollectorBottle` 自己进农场、用 `Enter` 回包的实时天气做前置校验，过期时报 `WEATHER_FRIEND_NOT_THUNDERSTORM` 或 `WEATHER_ALREADY_COLLECTED`，同时刷新该好友缓存并通过返回体的 `friend` 字段纠正列表。
+缓存放到 10 分钟后，卡片上的状态可能比现场旧。采集瓶不依赖缓存：`useWeatherCollectorBottle` 自己进农场、用 `Enter` 回包的实时天气做前置校验，过期时报 `WEATHER_FRIEND_NOT_THUNDERSTORM` 或 `WEATHER_ALREADY_COLLECTED`，同时刷新该好友缓存并通过返回体的 `friend` 字段纠正列表。
 
-好友任务优先于天气扫描。自动好友巡检（`core/src/services/friend/scheduler.ts` 的 `isCheckingFriends`，对外暴露为 `isFriendCheckRunning()`）同样要进出好友农场，所以扫描在进入每一位好友之前先给它让路：最多等 `FRIEND_TASK_WAIT_MAX_MS = 10000` 毫秒（每 `FRIEND_TASK_POLL_MS = 250` 毫秒轮询一次），等不到空闲就把本批剩下的好友放进返回体的 `deferredGids`。前端隔 `WEATHER_SCAN_BUSY_RETRY_MS = 5000` 毫秒补扫这些好友，整轮最多 `WEATHER_SCAN_MAX_PASSES = 3` 轮，仍然扫不完就提示稍后再检查，进度条在整轮期间保持运行。整批好友都被让路时前端立刻结束当轮、不再逐批硬碰，剩下的好友一起留给下一轮。命中缓存的好友不参与让路判断，因为它根本不进农场。门控是单向的：扫描让位好友任务，好友任务不会等扫描；面板上手动点单个好友的操作（`doFriendOperation`）以及采集/青蛙/乌云写操作都不在门控范围内。
+好友任务优先于天气扫描。自动好友巡检（`core/src/services/friend/scheduler.ts` 的 `isCheckingFriends`，对外暴露为 `isFriendCheckRunning()`）同样要进出好友农场，所以扫描在进入好友之前先给它让路：最多等 `FRIEND_TASK_WAIT_MAX_MS = 10000` 毫秒（每 `FRIEND_TASK_POLL_MS = 250` 毫秒轮询一次），等不到空闲就把这位好友放进返回体的 `deferredGids`。此时回包里没有好友数据，面板保持原状态并提示“好友任务正在执行，请稍后再点这位好友”，由用户决定什么时候再点。门控是单向的：扫描让位好友任务，好友任务不会等扫描；采集/青蛙/乌云等写操作也不在门控范围内。
 
-好友看家宠物顺路一起返回。`EnterReply.brief_dog_info.dog_id`（`visitpb.proto` 的 field 3）每次进农场都会带回来，之前被天气扫描丢掉了；现在它写进好友天气缓存，并以 `pet: { id, name, image }` 出现在好友 DTO 上，名称与图标用本地物品配置查（`getItemById` / `getItemImageById`），没有宠物时是 `null`，零额外 RPC。狗粮剩余与宠物等级需要额外发 `GetDogInfo{host_gid}`（每位好友一次），会把扫描的 RPC 量翻倍，因此故意不取。
+好友看家宠物不再由天气面板返回。宠物信息改成按天缓存并在好友页面展示，细节见 [好友宠物缓存与每日同步](friend-pet-cache.md)。
 
 已接入的读接口：
 

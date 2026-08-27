@@ -8,13 +8,6 @@ export type ActivityVariant = 'blue' | 'violet' | 'gold' | 'green'
 export type ActivityRecord = Record<string, unknown>
 
 export const WEATHER_SCAN_BATCH_SIZE = 5
-// 后端已经把每个好友的 Enter/Leave 隔开 300ms，批次之间再留一拍，
-// 避免整轮扫描长时间占满网关的低优先级槽位。
-export const WEATHER_SCAN_BATCH_GAP_MS = 1000
-// 后端会把好友任务执行期间没来得及扫的好友放回 deferredGids，
-// 前端隔一段时间再试，最多跑完这么多轮。
-export const WEATHER_SCAN_BUSY_RETRY_MS = 5000
-export const WEATHER_SCAN_MAX_PASSES = 3
 
 export interface ActivityDirectoryItemDto {
   id: string
@@ -263,12 +256,6 @@ export interface WeatherStatusDto {
   durationSec: number
 }
 
-export interface WeatherFriendPetDto {
-  id: string
-  name: string
-  image: string
-}
-
 export interface WeatherFriendDto {
   gid: string
   name: string
@@ -281,7 +268,6 @@ export interface WeatherFriendDto {
   availabilityReason: string
   canCollect: boolean
   eligibleCloudLandIds: string[]
-  pet: WeatherFriendPetDto | null
   weather: WeatherStatusDto
 }
 
@@ -328,12 +314,6 @@ export interface WeatherActivityDto {
   tasks: Array<{ id: string, itemId: string, name: string, target: string, reward: ActivityItemDto, current: string, active: boolean }>
   research: WeatherResearchNodeDto[]
   actions: { research: ActivityActionDto, scanFriendWeather: WeatherCommandDto }
-}
-
-export interface WeatherScanProgress {
-  running: boolean
-  total: number
-  done: number
 }
 
 export interface QixiBridgeStageDto {
@@ -1078,14 +1058,6 @@ function normalizeWeatherStatus(value: unknown): WeatherStatusDto {
   }
 }
 
-function normalizeWeatherFriendPet(value: unknown): WeatherFriendPetDto | null {
-  const raw = record(value)
-  const id = text(raw.id, raw.dogId, raw.dog_id)
-  if (!id || Number(id) <= 0)
-    return null
-  return { id, name: text(raw.name) || `宠物 ${id}`, image: text(raw.image, raw.icon) }
-}
-
 function normalizeWeatherFriend(value: unknown): WeatherFriendDto {
   const raw = record(value)
   const availabilityValue = text(raw.availability).toLowerCase()
@@ -1105,7 +1077,6 @@ function normalizeWeatherFriend(value: unknown): WeatherFriendDto {
     availabilityReason: text(raw.availabilityReason, raw.availability_reason),
     canCollect: bool(raw.canCollect, raw.can_collect),
     eligibleCloudLandIds: Array.isArray(cloudLandIds) ? cloudLandIds.map(entry => text(entry)).filter(Boolean) : [],
-    pet: normalizeWeatherFriendPet(raw.pet),
     weather: normalizeWeatherStatus(raw.weather),
   }
 }
@@ -1546,20 +1517,6 @@ function errorMessage(error: unknown, fallback = '活动数据加载失败') {
   return rawMessage || fallback
 }
 
-function errorCodeOf(error: unknown) {
-  const candidate = error as { response?: { data?: { errorCode?: unknown, error_code?: unknown } }, code?: unknown }
-  return String(candidate.response?.data?.errorCode || candidate.response?.data?.error_code || candidate.code || '')
-}
-
-const weatherScanFatalCodes = [
-  'ACCOUNT_OFFLINE',
-  'GAME_OFFLINE',
-  'WEATHER_UNAVAILABLE',
-  'WEATHER_ACTIVITY_UNAVAILABLE',
-  'WEATHER_SCAN_BATCH_TOO_LARGE',
-  'INVALID_WEATHER_FRIEND_GID',
-]
-
 function responsePayload(value: unknown): unknown {
   const response = record(value)
   if (response.ok === false) {
@@ -1600,7 +1557,7 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
 
   const weatherFriends = ref<WeatherFriendDto[]>([])
   const weatherFriendsLoading = ref(false)
-  const weatherScanProgress = ref<WeatherScanProgress>({ running: false, total: 0, done: 0 })
+  const weatherFriendInspectingGid = ref('')
 
   const season = computed(() => snapshot.value.season)
   const activities = computed(() => snapshot.value.activities)
@@ -1626,7 +1583,7 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
   function clearWeatherFriends() {
     weatherFriends.value = []
     weatherFriendsLoading.value = false
-    weatherScanProgress.value = { running: false, total: 0, done: 0 }
+    weatherFriendInspectingGid.value = ''
   }
 
   function reset() {
@@ -1925,99 +1882,49 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     }
   }
 
-  async function scanWeatherFriends(accountId: string, announceIdle = false) {
+  /**
+   * 点击好友时读取这位好友的现场天气：只发一次单人扫描请求，后端命中 10 分钟缓存时不会进农场。
+   * 后端给好友任务让路时回包里没有这位好友，此时保持原状态并提示稍后再点。
+   */
+  async function inspectWeatherFriend(accountId: string, friendGid: string) {
     const requestedAccountId = String(accountId || '').trim()
-    if (!requestedAccountId || weatherScanProgress.value.running || pendingActions.value.scanWeatherFriends)
+    const gid = String(friendGid || '').trim()
+    if (!requestedAccountId || !gid || Number(gid) <= 0)
       return false
-    // 只扫没有有效缓存的好友；已经读到天气的行不重复进农场。
-    const targets = weatherFriends.value
-      .filter(friend => Number(friend.gid) > 0 && !friend.inspected)
-      .map(friend => friend.gid)
-    if (targets.length === 0) {
-      if (announceIdle && weatherFriends.value.length > 0)
-        notice.value = '好友现场天气都在缓存有效期内，无需重复检查'
+    if (pendingActions.value.scanWeatherFriends)
       return false
-    }
     const version = requestVersion.value
-    const batchSize = Math.max(1, snapshot.value.weather?.actions.scanFriendWeather.batchSize || WEATHER_SCAN_BATCH_SIZE)
     pendingActions.value.scanWeatherFriends = true
-    weatherScanProgress.value = { running: true, total: targets.length, done: 0 }
+    weatherFriendInspectingGid.value = gid
     actionError.value = ''
-    const resolved = new Set<string>()
-    let queue = targets.slice()
-    let completed = true
-    let failures = 0
-    let requests = 0
+    notice.value = ''
     try {
-      // 好友任务优先：后端让路时会回传 deferredGids，这里隔一段时间再跑下一轮。
-      for (let pass = 0; pass < WEATHER_SCAN_MAX_PASSES && queue.length > 0 && completed; pass += 1) {
-        const deferred: string[] = []
-        for (let index = 0; index < queue.length; index += batchSize) {
-          if (!isCurrent(version, requestedAccountId)) {
-            completed = false
-            break
-          }
-          const batch = queue.slice(index, index + batchSize)
-          if (requests > 0)
-            await new Promise(resolve => setTimeout(resolve, WEATHER_SCAN_BATCH_GAP_MS))
-          requests += 1
-          try {
-            const response = await api.post('/api/activity-center/weather/friends/scan', { friendGids: batch }, {
-              headers: { 'x-account-id': requestedAccountId },
-              skipErrorToast: true,
-              timeout: 120000,
-            } as any)
-            const result = record(responsePayload(response.data))
-            if (!isCurrent(version, requestedAccountId)) {
-              completed = false
-              break
-            }
-            const updates = records(result.friends).map(normalizeWeatherFriend)
-            mergeWeatherFriends(updates)
-            for (const friend of updates)
-              resolved.add(friend.gid)
-            const busyRaw = first(result.deferredGids, result.deferred_gids)
-            const busyGids = Array.isArray(busyRaw)
-              ? busyRaw.map(entry => text(entry)).filter(gid => gid && !resolved.has(gid))
-              : []
-            deferred.push(...busyGids)
-            failures = 0
-            if (busyGids.length >= batch.length) {
-              // 整批都让路了，好友任务还在跑，本轮不再硬碰，剩下的留给下一轮。
-              for (const gid of queue.slice(index + batchSize)) {
-                if (!resolved.has(gid))
-                  deferred.push(gid)
-              }
-              break
-            }
-          }
-          catch (scanError) {
-            completed = false
-            failures += 1
-            if (!isCurrent(version, requestedAccountId))
-              break
-            actionError.value = errorMessage(scanError, '好友天气检查失败')
-            if (failures >= 3 || weatherScanFatalCodes.includes(errorCodeOf(scanError)))
-              break
-          }
-          finally {
-            weatherScanProgress.value = { ...weatherScanProgress.value, done: Math.min(targets.length, resolved.size) }
-          }
-        }
-        queue = deferred
-        if (completed && queue.length > 0)
-          await new Promise(resolve => setTimeout(resolve, WEATHER_SCAN_BUSY_RETRY_MS))
+      const response = await api.post('/api/activity-center/weather/friends/scan', { friendGids: [gid] }, {
+        headers: { 'x-account-id': requestedAccountId },
+        skipErrorToast: true,
+        timeout: 60000,
+      } as any)
+      const result = record(responsePayload(response.data))
+      if (!isCurrent(version, requestedAccountId))
+        return false
+      const updates = records(result.friends).map(normalizeWeatherFriend)
+      mergeWeatherFriends(updates)
+      if (updates.length === 0) {
+        notice.value = '好友任务正在执行，请稍后再点这位好友'
+        return false
       }
-      if (completed && queue.length > 0) {
-        completed = false
-        notice.value = `好友任务正在执行，还有 ${queue.length} 位好友的现场天气稍后再检查`
-      }
+      return true
+    }
+    catch (inspectError) {
+      if (isCurrent(version, requestedAccountId))
+        actionError.value = errorMessage(inspectError, '好友现场天气读取失败')
+      return false
     }
     finally {
-      weatherScanProgress.value = { ...weatherScanProgress.value, running: false }
+      if (weatherFriendInspectingGid.value === gid)
+        weatherFriendInspectingGid.value = ''
       pendingActions.value.scanWeatherFriends = false
     }
-    return completed
   }
 
   function collectWeatherBottle(accountId: string, targetGid: string) {
@@ -2049,7 +1956,7 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     weather,
     weatherFriends,
     weatherFriendsLoading,
-    weatherScanProgress,
+    weatherFriendInspectingGid,
     actions,
     tabBadges,
     loading,
@@ -2076,7 +1983,7 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     settleQingMeiBrew,
     lightWeatherResearch,
     buyWeatherBottle,
-    scanWeatherFriends,
+    inspectWeatherFriend,
     collectWeatherBottle,
     summonWeatherRain,
     clearActionMessages,

@@ -352,7 +352,6 @@ function friendInspectionFromEnterReply(gid: string, reply: any): any {
         gid,
         basic: reply?.basic || null,
         rawWeather: reply?.weather || null,
-        dog: reply?.brief_dog_info ?? reply?.briefDogInfo ?? null,
         lands: Array.isArray(reply?.lands) ? reply.lands : [],
         inspectedAt: getServerTimeSec(),
         error: '',
@@ -396,7 +395,6 @@ async function performFriendFarmWeatherInspection(gid: string, cached: any): Pro
             gid,
             basic: null,
             rawWeather: null,
-            dog: null,
             lands: [],
             inspectedAt: getServerTimeSec(),
             error: String(error?.message || error || '现场天气检查失败'),
@@ -418,18 +416,6 @@ function weatherAvailability(weather: any, inspected: boolean): { state: string;
     return { state: 'unavailable', reason: '好友农场当前不是雷雨天气' };
 }
 
-function friendPetDto(dogInfo: any): any {
-    const id = int64String(dogInfo?.dog_id ?? dogInfo?.dogId);
-    if (id === '0') return null;
-    const numericId = Number(id) || 0;
-    const metadata = numericId > 0 ? getItemById(numericId) : null;
-    return {
-        id,
-        name: String(metadata?.name || `宠物 ${id}`),
-        image: numericId > 0 ? getItemImageById(numericId) || '' : '',
-    };
-}
-
 function friendWeatherDto(friend: any, inspection: any): any {
     const gid = friendGid(friend);
     const scanError = String(inspection?.error || '');
@@ -449,7 +435,6 @@ function friendWeatherDto(friend: any, inspection: any): any {
         availabilityReason: availability.reason,
         canCollect: !scanError && availability.state === 'available',
         eligibleCloudLandIds: scanError ? [] : cloudEligibleLandIds(inspection?.lands),
-        pet: friendPetDto(inspection?.dog),
         weather,
     };
 }
@@ -568,16 +553,24 @@ function getCurrentWeatherActivity(): Promise<any> {
     return request;
 }
 
+function friendBasicDto(friend: any): any {
+    return {
+        gid: friendGid(friend),
+        name: String(friend?.remark || friend?.name || ''),
+        avatarUrl: String(friend?.avatarUrl || friend?.avatar_url || ''),
+        level: toNum(friend?.level),
+    };
+}
+
 async function getWeatherFriends(): Promise<any> {
-    // Friend rows are returned without entering any farm, so every weather state stays
-    // unknown until the panel scans it in batches.
+    // 只返回好友基础信息，不进任何农场：现场天气与可采状态由面板点击好友时按需扫描。
     const friends = await getFriendsList(false, 'normal');
     const selfGid = int64String(getUserState()?.gid);
     const result: any[] = [];
     for (const friend of Array.isArray(friends) ? friends : []) {
         const gid = friendGid(friend);
         if (gid === '0' || gid === selfGid) continue;
-        result.push(friendWeatherDto(friend, freshFriendWeather(gid)));
+        result.push(friendBasicDto(friend));
     }
     return result;
 }
@@ -953,5 +946,4 @@ module.exports = {
     // Exported for protocol-state regression tests.
     weatherStatusDto,
     weatherAvailability,
-    friendPetDto,
 };

@@ -156,15 +156,3 @@ test('friend weather scan keeps the five-friend batch contract', () => {
         { code: 'WEATHER_SCAN_BATCH_TOO_LARGE' },
     );
 });
-test('friend scan reads the guard dog straight out of the enter reply', () => {
-    const { friendPetDto } = require('../dist/services/weather-activity');
-
-    assert.equal(friendPetDto(null), null);
-    assert.equal(friendPetDto({ dog_id: 0 }), null);
-    assert.deepEqual(friendPetDto({ dog_id: 90021 }), {
-        id: '90021',
-        name: '护主犬',
-        image: '/game-config/seed_images_named/seed_images/90021.png',
-    });
-    assert.equal(friendPetDto({ dogId: '90001' }).name, '田园犬');
-});

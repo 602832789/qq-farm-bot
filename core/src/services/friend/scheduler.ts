@@ -44,6 +44,12 @@ const {
     cacheFriendsListFromReply,
     clearFriendsListCache,
 } = require('./visit-strategy');
+const { getFriendDogState, flushFriendPetCacheNow } = require('./pet-cache');
+
+// 延迟引用 pet-sync，它反向依赖本模块的 isFriendCheckRunning
+function petSyncRef(): any {
+    return require('./pet-sync');
+}
 
 // ============ 内部状态 ============
 let isCheckingFriends: boolean = false;
@@ -379,25 +385,34 @@ export async function checkFriends(options: CheckFriendsOptions = {}): Promise<b
                 module: 'friend', event: '开始批量帮助', count: helpFriends.length
             });
 
+            // 经验满 + 护主犬开关开启时，本轮只帮当天缓存已确认为护主犬的好友；
+            // 缓存未确认的好友不再逐个进农场试探，由每日宠物同步补齐。
+            let protectDogFilteredCount: number = 0;
             for (let i: number = 0; i < helpFriends.length; i++) {
                 const friend: any = helpFriends[i];
-                log('好友', `批量帮助第 ${i + 1}/${helpFriends.length} 个好友: ${friend.name}`, { module: 'friend', event: '批量帮助开始', index: i + 1, total: helpFriends.length, friendName: friend.name });
 
                 // 检查是否还能获得帮助经验
-                // const stopWhenExpLimit = !!isAutomationOn('friend_help_exp_limit');
                 const stopWhenExpLimit: boolean = !!isAutomationOn('friend_help_exp_limit') && !ignoreExpLimit;
                 const protectDogBypassEnabled: boolean = !!isAutomationOn('friend_help_protect_dog_ignore_exp_limit');
-                if (stopWhenExpLimit && !canGetHelpExp && !protectDogBypassEnabled) {
-                    log('好友', `批量帮助跳过：${friend.name}，经验已达上限`, {
-                        module: 'friend',
-                        event: '批量帮助跳过',
-                        reason: 'exp_limit',
-                        index: i + 1,
-                        total: helpFriends.length,
-                        friendName: friend.name,
-                    });
-                    break;
+                if (stopWhenExpLimit && !canGetHelpExp) {
+                    if (!protectDogBypassEnabled) {
+                        log('好友', `批量帮助跳过：${friend.name}，经验已达上限`, {
+                            module: 'friend',
+                            event: '批量帮助跳过',
+                            reason: 'exp_limit',
+                            index: i + 1,
+                            total: helpFriends.length,
+                            friendName: friend.name,
+                        });
+                        break;
+                    }
+                    if (getFriendDogState(friend.gid) !== 'protect') {
+                        protectDogFilteredCount += 1;
+                        continue;
+                    }
                 }
+
+                log('好友', `批量帮助第 ${i + 1}/${helpFriends.length} 个好友: ${friend.name}`, { module: 'friend', event: '批量帮助开始', index: i + 1, total: helpFriends.length, friendName: friend.name });
 
                 try {
                     // await visitFriendForHelp(friend, totalActions, state.gid, state.accountId);
@@ -468,6 +483,15 @@ export async function checkFriends(options: CheckFriendsOptions = {}): Promise<b
                     log('好友', `批量帮助第 ${i + 1} 个好友失败: ${friend.name}, 错误: ${e.message}`, { module: 'friend', event: '批量帮助失败', index: i + 1, friendName: friend.name, error: e.message });
                 }
                 await randomDelay(500, 800);
+            }
+            if (protectDogFilteredCount > 0) {
+                log('好友', `经验已达上限，本轮跳过 ${protectDogFilteredCount} 位非护主犬好友（未进农场）`, {
+                    module: 'friend',
+                    event: '批量帮助跳过',
+                    reason: 'protect_dog_cache_filtered',
+                    count: protectDogFilteredCount,
+                    total: helpFriends.length,
+                });
             }
             log('好友', '批量帮助循环结束', { module: 'friend', event: '批量帮助结束' });
         }
@@ -589,11 +613,16 @@ export function startFriendCheckLoop(options: StartOptions = {}): void {
 
     // 启动时检查一次待处理的好友申请
     friendScheduler.setTimeoutTask('friend_check_bootstrap_applications', 3000, () => checkAndAcceptApplications());
+
+    // 好友宠物每日同步（自带启动错峰与定时重试）
+    petSyncRef().startFriendPetSyncTimer();
 }
 
 export function stopFriendCheckLoop(): void {
     friendLoopRunning = false;
     externalSchedulerMode = false;
+    petSyncRef().stopFriendPetSyncTimer();
+    flushFriendPetCacheNow();
     clearAllInvalidKnownFriendGidCooldowns();
     clearFriendsListCache();
     networkEvents.off('friendApplicationReceived', onFriendApplicationReceived);
