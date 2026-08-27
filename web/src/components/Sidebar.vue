@@ -10,7 +10,6 @@ import { useAccountStore } from '@/stores/account'
 import { useAppStore } from '@/stores/app'
 import { useShopStore } from '@/stores/shop'
 import { useStatusStore } from '@/stores/status'
-import { useToastStore } from '@/stores/toast'
 import { useUserStore } from '@/stores/user'
 
 const accountStore = useAccountStore()
@@ -18,7 +17,6 @@ const statusStore = useStatusStore()
 const appStore = useAppStore()
 const userStore = useUserStore()
 const shopStore = useShopStore()
-const toast = useToastStore()
 const route = useRoute()
 const router = useRouter()
 const { currentAccount, currentAccountId } = storeToRefs(accountStore)
@@ -27,9 +25,6 @@ const { mysteryOffer, mysteryOfferAccountId } = storeToRefs(shopStore)
 const { loginPageConfig, sidebarOpen } = storeToRefs(appStore)
 
 const wsErrorNotifiedAt = ref<Record<string, number>>({})
-const hasUnadaptedActivities = ref(false)
-const unadaptedActivityIds = ref<number[]>([])
-const notifiedActivitySignature = ref('')
 
 const systemConnected = ref(true)
 const serverUptimeBase = ref(0)
@@ -67,38 +62,12 @@ async function refreshStatusFallback() {
   }
 }
 
-async function refreshActivityUpdateReminder() {
-  if (!userStore.isAdmin) {
-    hasUnadaptedActivities.value = false
-    return
-  }
-  try {
-    const { data } = await api.get('/api/activity/update/status')
-    const ids = Array.isArray(data?.report?.unknownActivityIds)
-      ? data.report.unknownActivityIds.map(Number).filter((id: number) => id > 0).sort((a: number, b: number) => a - b)
-      : []
-    unadaptedActivityIds.value = ids
-    hasUnadaptedActivities.value = ids.length > 0
-    const signature = ids.join(',')
-    if (signature && signature !== notifiedActivitySignature.value) {
-      notifiedActivitySignature.value = signature
-      const groups = Array.isArray(data?.report?.online?.groups) ? data.report.online.groups : []
-      const titles = [...new Set(groups.map((item: any) => String(item?.title || '').trim()).filter(Boolean))]
-      toast.warning(`发现未适配活动：${titles.join('、') || `${ids.length} 个活动组`}`, 8000)
-    }
-  }
-  catch {
-    // 提醒查询失败不影响侧边栏及其他后台功能。
-  }
-}
-
 onMounted(() => {
   appStore.fetchLoginPageConfig()
   accountStore.fetchAccounts()
   checkConnection()
   // 获取当前用户信息
   userStore.fetchUserInfo()
-  refreshActivityUpdateReminder()
 })
 
 onBeforeUnmount(() => {
@@ -106,7 +75,6 @@ onBeforeUnmount(() => {
 })
 
 useIntervalFn(checkConnection, 30000)
-useIntervalFn(refreshActivityUpdateReminder, 60000)
 useIntervalFn(() => {
   refreshStatusFallback()
   accountStore.fetchAccounts()
@@ -266,11 +234,6 @@ const showThemeDropdown = ref(false)
           class="h-2 w-2 shrink-0 rounded-full bg-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.15)]"
           title="神秘商人已出现"
         />
-        <span
-          v-if="item.path === '/activity' && hasUnadaptedActivities"
-          class="h-2 w-2 shrink-0 rounded-full bg-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.15)]"
-          :title="`发现 ${unadaptedActivityIds.length} 个未适配活动`"
-        />
       </router-link>
     </nav>
 
@@ -298,7 +261,13 @@ const showThemeDropdown = ref(false)
 
       <div class="mt-1 flex items-center justify-between text-[11px] font-mono opacity-45" style="color: var(--theme-text);">
         <span>v{{ version }}</span>
-        <span>xxxscarlxrd404</span>
+        <a
+          href="https://github.com/xxxscarlxrd404/qq-farm-bot"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="transition-opacity hover:opacity-70"
+          title="打开 GitHub 项目主页"
+        >xxxscarlxrd404</a>
       </div>
 
       <!-- 主题选择弹出面板 -->
