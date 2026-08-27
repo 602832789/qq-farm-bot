@@ -697,6 +697,8 @@ export async function doFriendOperation(friendGid: any, opType: string): Promise
 interface VisitResult {
     acted: boolean;
     entered: boolean;
+    status?: 'helped' | 'skipped_exp_limit' | 'protect_dog_bypass' | 'no_action' | 'enter_failed';
+    protectDogBypass?: boolean;
 }
 
 export async function visitFriend(friend: any, totalActions: any, myGid: number, accountId: string): Promise<VisitResult> {
@@ -952,8 +954,9 @@ export async function visitFriendForHelp(friend: any, totalActions: any, myGid: 
     const stopWhenExpLimit: boolean = !!isAutomationOn('friend_help_exp_limit') && !ignoreExpLimit;
     if (!stopWhenExpLimit) schedulerRef().setCanGetHelpExp(true);
     const protectDogBypassEnabled: boolean = !!isAutomationOn('friend_help_protect_dog_ignore_exp_limit');
-    if (stopWhenExpLimit && !schedulerRef().getCanGetHelpExp() && !protectDogBypassEnabled) {
-        return { acted: false, entered: false };
+    const expLimitReachedBeforeVisit: boolean = stopWhenExpLimit && !schedulerRef().getCanGetHelpExp();
+    if (expLimitReachedBeforeVisit && !protectDogBypassEnabled) {
+        return { acted: false, entered: false, status: 'skipped_exp_limit' };
     }
 
     let enterReply: any;
@@ -962,27 +965,33 @@ export async function visitFriendForHelp(friend: any, totalActions: any, myGid: 
     } catch (e: any) {
         const handled: { handled: boolean; kind: string } = handleFriendEnterError(gid, name, e);
         if (handled.handled) {
-            return { acted: false, entered: false };
+            return { acted: false, entered: false, status: 'enter_failed' };
         }
         logWarn('好友', `进入 ${name} 农场失败: ${e.message}`, {
             module: 'friend', event: '进入农场', result: 'error', friendName: name, friendGid: gid
         });
-        return { acted: false, entered: false };
+        return { acted: false, entered: false, status: 'enter_failed' };
     }
 
     const lands: any[] = enterReply.lands || [];
     if (lands.length === 0) {
         await leaveFriendFarm(gid);
-        return;
+        return { acted: false, entered: true, status: 'no_action' };
     }
 
     const status: AnalyzeResult = analyzeFriendLands(lands, myGid, name, {});
     const protectDogBypass: boolean = protectDogBypassEnabled && canBypassHelpExpLimitForProtectDog(enterReply);
+    const expLimitBypassed: boolean = expLimitReachedBeforeVisit && protectDogBypass;
     const effectiveStopWhenExpLimit: boolean = stopWhenExpLimit && !protectDogBypass;
 
     if (effectiveStopWhenExpLimit && !schedulerRef().getCanGetHelpExp()) {
         await leaveFriendFarm(gid);
-        return { acted: false, entered: true };
+        return {
+            acted: false,
+            entered: true,
+            status: 'skipped_exp_limit',
+            protectDogBypass,
+        };
     }
 
     const actions: string[] = [];
@@ -1004,6 +1013,12 @@ export async function visitFriendForHelp(friend: any, totalActions: any, myGid: 
         }
     }
 
+    const acted: boolean = actions.length > 0;
+    const resultStatus: 'helped' | 'skipped_exp_limit' | 'protect_dog_bypass' | 'no_action' =
+        expLimitBypassed
+            ? 'protect_dog_bypass'
+            : (acted ? 'helped' : (allHelpLandIds.length > 0 && effectiveStopWhenExpLimit && !allowByExp ? 'skipped_exp_limit' : 'no_action'));
+
     if (actions.length > 0) {
         log('好友', `${name}: ${actions.join('/')}`, {
             module: 'friend', event: '帮助好友', result: 'ok', friendName: name, friendGid: gid, actions
@@ -1011,7 +1026,7 @@ export async function visitFriendForHelp(friend: any, totalActions: any, myGid: 
     }
 
     await leaveFriendFarm(gid);
-    return { acted: actions.length > 0, entered: true };
+    return { acted, entered: true, status: resultStatus, protectDogBypass: expLimitBypassed };
 }
 
 // ============ 缓存管理 ============

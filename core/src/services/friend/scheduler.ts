@@ -382,14 +382,82 @@ export async function checkFriends(options: CheckFriendsOptions = {}): Promise<b
                 const stopWhenExpLimit: boolean = !!isAutomationOn('friend_help_exp_limit') && !ignoreExpLimit;
                 const protectDogBypassEnabled: boolean = !!isAutomationOn('friend_help_protect_dog_ignore_exp_limit');
                 if (stopWhenExpLimit && !canGetHelpExp && !protectDogBypassEnabled) {
-                    log('好友', `批量帮助中断：经验已达上限`, { module: 'friend', event: '批量帮助中断', reason: 'exp_limit' });
+                    log('好友', `批量帮助跳过：${friend.name}，经验已达上限`, {
+                        module: 'friend',
+                        event: '批量帮助跳过',
+                        reason: 'exp_limit',
+                        index: i + 1,
+                        total: helpFriends.length,
+                        friendName: friend.name,
+                    });
                     break;
                 }
 
                 try {
                     // await visitFriendForHelp(friend, totalActions, state.gid, state.accountId);
-                    await visitFriendForHelp(friend, totalActions, state.gid, state.accountId, ignoreExpLimit);
-                    log('好友', `批量帮助第 ${i + 1} 个好友完成: ${friend.name}`, { module: 'friend', event: '批量帮助完成', index: i + 1, friendName: friend.name });
+                    const result: any = await visitFriendForHelp(friend, totalActions, state.gid, state.accountId, ignoreExpLimit);
+                    const resultStatus: string = String(result?.status || 'no_action');
+                    if (resultStatus === 'skipped_exp_limit') {
+                        log('好友', `批量帮助跳过：${friend.name}，经验已达上限`, {
+                            module: 'friend',
+                            event: '批量帮助跳过',
+                            reason: 'exp_limit',
+                            index: i + 1,
+                            total: helpFriends.length,
+                            friendName: friend.name,
+                        });
+                    } else if (resultStatus === 'protect_dog_bypass') {
+                        log('好友', `批量帮助：${friend.name}，经验已达上限但检测到护主犬，继续帮助`, {
+                            module: 'friend',
+                            event: '批量帮助护主犬绕过经验上限',
+                            reason: 'protect_dog_exp_limit_bypass',
+                            index: i + 1,
+                            total: helpFriends.length,
+                            friendName: friend.name,
+                        });
+                        if (result.acted) {
+                            log('好友', `批量帮助第 ${i + 1} 个好友完成: ${friend.name}`, {
+                                module: 'friend',
+                                event: '批量帮助完成',
+                                index: i + 1,
+                                friendName: friend.name,
+                            });
+                        } else {
+                            log('好友', `批量帮助跳过：${friend.name}，护主犬好友暂无可帮助土地`, {
+                                module: 'friend',
+                                event: '批量帮助跳过',
+                                reason: 'protect_dog_no_action',
+                                index: i + 1,
+                                total: helpFriends.length,
+                                friendName: friend.name,
+                            });
+                        }
+                    } else if (resultStatus === 'helped') {
+                        log('好友', `批量帮助第 ${i + 1} 个好友完成: ${friend.name}`, {
+                            module: 'friend',
+                            event: '批量帮助完成',
+                            index: i + 1,
+                            friendName: friend.name,
+                        });
+                    } else if (resultStatus === 'enter_failed') {
+                        log('好友', `批量帮助失败：进入 ${friend.name} 农场失败`, {
+                            module: 'friend',
+                            event: '批量帮助失败',
+                            index: i + 1,
+                            total: helpFriends.length,
+                            friendName: friend.name,
+                            reason: 'enter_failed',
+                        });
+                    } else {
+                        log('好友', `批量帮助跳过：${friend.name}，没有可帮助土地`, {
+                            module: 'friend',
+                            event: '批量帮助跳过',
+                            reason: 'no_action',
+                            index: i + 1,
+                            total: helpFriends.length,
+                            friendName: friend.name,
+                        });
+                    }
                 } catch (e: any) {
                     log('好友', `批量帮助第 ${i + 1} 个好友失败: ${friend.name}, 错误: ${e.message}`, { module: 'friend', event: '批量帮助失败', index: i + 1, friendName: friend.name, error: e.message });
                 }
