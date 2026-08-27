@@ -211,12 +211,32 @@ field 140.node_id = 研究节点 ID
 
 ## Web 与自动化行为
 
-活动中心使用显式好友扫描：
+活动信息、好友列表、好友天气拆成三个互不耦合的接口，避免打开页面时一次性把网关请求队列打满：
 
-1. 普通活动快照只返回好友目录和已有缓存，避免进入活动中心时批量发出大量 RPC。
-2. 打开“雨落成诗”页面后调用 `/api/activity-center/weather/friends/scan`。
-3. 后端按官方顺序逐个 `Enter`，读取 `field 13`，再 `Leave`。
-4. 页面明确显示“可采雨、本轮已采、已失效、晴天、待检查、检查失败”。
+1. `GET /api/activity-center/weather` 只返回活动快照（商店、气象研究、任务、背包、自己的天气），不再附带好友列表和好友天气。
+2. `GET /api/activity-center/weather/friends` 只返回好友列表本身，不进入任何农场；只有仍命中 10 分钟天气缓存的好友才带天气，其余一律是“待检查”。
+3. `POST /api/activity-center/weather/friends/scan` 专门按好友 ID 批量读取现场天气，单次最多 5 位好友，后端按官方顺序逐个 `Enter` → 读取 `field 13` → `Leave`，不再返回活动快照。缓存仍然有效的好友直接用缓存返回，不会重复进农场。
+
+前端拿到好友列表后自行按每 5 个一批循环调用扫描接口，逐批就地更新对应行；扫描进行中冻结列表顺序避免行来回跳动，整轮结束后再按“可采雨 → 本轮已采 → 已失效 → 晴天 → 检查失败 → 待检查”重新排序。页面明确显示“可采雨、本轮已采、已失效、晴天、待检查、检查失败”。
+
+节流是这条链路的关键，因为 `Enter`/`Leave` 走低优先级，网关只给低优先级留 1 个并发槽位，整轮扫描期间会一直占着它：
+
+- 后端同一批内每两次进农场之间等 `FRIEND_WEATHER_SCAN_GAP_MS = 300` 毫秒，单批 5 位好友 10 个 RPC 约 2 秒。
+- 前端两批之间再等 `WEATHER_SCAN_BATCH_GAP_MS = 1000` 毫秒，算上批次间隔整体约 3 RPC/s，58 位好友整轮 40 秒左右。
+- 好友天气缓存 `FRIEND_WEATHER_CACHE_TTL_SEC = 600`（10 分钟）。扫描一律不强制刷新：前端只把“待检查”的好友放进批次，后端再按缓存二次过滤，所以反复打开面板或手点“重新扫描”都不会重复进农场。
+
+缓存放到 10 分钟后，行上的状态可能比现场旧。采集瓶不依赖缓存：`useWeatherCollectorBottle` 自己进农场、用 `Enter` 回包的实时天气做前置校验，过期时报 `WEATHER_FRIEND_NOT_THUNDERSTORM` 或 `WEATHER_ALREADY_COLLECTED`，同时刷新该好友缓存并通过返回体的 `friend` 字段纠正列表。
+
+好友任务优先于天气扫描。自动好友巡检（`core/src/services/friend/scheduler.ts` 的 `isCheckingFriends`，对外暴露为 `isFriendCheckRunning()`）同样要进出好友农场，所以扫描在进入每一位好友之前先给它让路：最多等 `FRIEND_TASK_WAIT_MAX_MS = 10000` 毫秒（每 `FRIEND_TASK_POLL_MS = 250` 毫秒轮询一次），等不到空闲就把本批剩下的好友放进返回体的 `deferredGids`。前端隔 `WEATHER_SCAN_BUSY_RETRY_MS = 5000` 毫秒补扫这些好友，整轮最多 `WEATHER_SCAN_MAX_PASSES = 3` 轮，仍然扫不完就提示稍后再检查，进度条在整轮期间保持运行。整批好友都被让路时前端立刻结束当轮、不再逐批硬碰，剩下的好友一起留给下一轮。命中缓存的好友不参与让路判断，因为它根本不进农场。门控是单向的：扫描让位好友任务，好友任务不会等扫描；面板上手动点单个好友的操作（`doFriendOperation`）以及采集/青蛙/乌云写操作都不在门控范围内。
+
+好友看家宠物顺路一起返回。`EnterReply.brief_dog_info.dog_id`（`visitpb.proto` 的 field 3）每次进农场都会带回来，之前被天气扫描丢掉了；现在它写进好友天气缓存，并以 `pet: { id, name, image }` 出现在好友 DTO 上，名称与图标用本地物品配置查（`getItemById` / `getItemImageById`），没有宠物时是 `null`，零额外 RPC。狗粮剩余与宠物等级需要额外发 `GetDogInfo{host_gid}`（每位好友一次），会把扫描的 RPC 量翻倍，因此故意不取。
+
+已接入的读接口：
+
+```text
+GET /api/activity-center/weather
+GET /api/activity-center/weather/friends
+```
 
 已接入的写接口：
 
@@ -229,6 +249,8 @@ POST /api/activity-center/weather/mischief/frog
 POST /api/activity-center/weather/mischief/cloud
 POST /api/activity-center/weather/research/:nodeId/advance
 ```
+
+扫描接口的请求体是 `{ "friendGids": ["10001", "10002"] }`（兼容 `friend_gids` / `gids`）；超过 5 个会返回 `WEATHER_SCAN_BATCH_TOO_LARGE`，空列表返回 `INVALID_WEATHER_FRIEND_GID`，成功时只返回本批好友的最新天气。采雨、青蛙、乌云三个写接口额外返回 `friend` 字段，供前端就地更新那一行而不必重新扫描。
 
 天气操作返回天气局部快照。Web Store 会直接归一化并替换当前天气活动，不再把局部快照误判成完整活动中心后额外全量刷新。
 

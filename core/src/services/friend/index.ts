@@ -11,6 +11,7 @@ export {
 export {
     checkFriends,
     getOperationLimits,
+    isFriendCheckRunning,
     isHelpExpLimitReached,
     onFriendApplicationReceived,
     refreshFriendCheckLoop,

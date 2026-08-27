@@ -23,7 +23,7 @@ const accountStore = useAccountStore()
 const activityStore = useActivityCenterStore()
 const friendStore = useFriendStore()
 const { currentAccountId } = storeToRefs(accountStore)
-const { activities, season, shop, solarTerms, constellation, qixi, qingMei, weather, actions, tabBadges, loading, error, actionError, notice, loadedAccountId, serverClockOffset, pendingActions } = storeToRefs(activityStore)
+const { activities, season, shop, solarTerms, constellation, qixi, qingMei, weather, actions, tabBadges, loading, error, actionError, notice, loadedAccountId, serverClockOffset, pendingActions, weatherFriendsLoading, weatherScanProgress } = storeToRefs(activityStore)
 const { friends, loading: friendsLoading } = storeToRefs(friendStore)
 const activeTab = ref<ActivityTab>('travel')
 const selectedActivity = ref<ActivityGameplayKey | null>(null)
@@ -192,10 +192,14 @@ async function openActivity(activity: ActivityDirectoryItemDto) {
     activeTab.value = gameplay.entryTab as ActivityTab
   selectedActivity.value = gameplay.module.key
   const detailsLoaded = await activityStore.loadDetails(accountId(), gameplay.module.key)
-  if (gameplay.module.key === 'qixi' && currentAccountId.value)
+  if (gameplay.module.key === 'qixi' && currentAccountId.value) {
     await friendStore.fetchFriends(String(currentAccountId.value))
-  else if (gameplay.module.key === 'weather' && currentAccountId.value && detailsLoaded)
-    await activityStore.scanWeatherFriends(String(currentAccountId.value))
+  }
+  else if (gameplay.module.key === 'weather' && currentAccountId.value && detailsLoaded) {
+    const weatherAccountId = String(currentAccountId.value)
+    if (await activityStore.loadWeatherFriends(weatherAccountId))
+      void activityStore.scanWeatherFriends(weatherAccountId)
+  }
 }
 function goBack() {
   if (selectedActivity.value) {
@@ -237,8 +241,14 @@ function lightWeatherResearch(nodeId: string) {
 function buyWeatherBottle() {
   activityStore.buyWeatherBottle(accountId(), 1)
 }
-function scanWeatherFriends() {
-  activityStore.scanWeatherFriends(accountId())
+async function scanWeatherFriends() {
+  const weatherAccountId = accountId()
+  if (!weatherAccountId)
+    return
+  // 先拉一次好友列表，把服务端缓存已经过期的行重新置为待检查。
+  if (!await activityStore.loadWeatherFriends(weatherAccountId))
+    return
+  await activityStore.scanWeatherFriends(weatherAccountId, true)
 }
 function collectWeatherBottle(targetGid: string) {
   activityStore.collectWeatherBottle(accountId(), targetGid)
@@ -254,8 +264,11 @@ async function refreshQixiActivity() {
   await activityStore.loadDetails(accountId(), 'qixi')
 }
 async function refreshSelectedActivity() {
-  if (selectedActivity.value)
-    await activityStore.loadDetails(accountId(), selectedActivity.value)
+  if (!selectedActivity.value)
+    return
+  await activityStore.loadDetails(accountId(), selectedActivity.value)
+  if (selectedActivity.value === 'weather')
+    await activityStore.loadWeatherFriends(accountId())
 }
 function selectShopGoods(goods: ShopGoodsDto) {
   selectedShopGoods.value = goods
@@ -523,6 +536,8 @@ onUnmounted(() => {
           :pending-scan="pendingActions.scanWeatherFriends"
           :pending-collect="pendingActions.collectWeatherBottle"
           :pending-summon="pendingActions.summonWeatherRain"
+          :scan-progress="weatherScanProgress"
+          :loading-friends="weatherFriendsLoading"
           @light="lightWeatherResearch"
           @buy="buyWeatherBottle"
           @scan-friends="scanWeatherFriends"

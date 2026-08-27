@@ -7,6 +7,15 @@ export type ActivityGameplayKey = 'stellar' | 'qixi' | 'qingmei' | 'weather'
 export type ActivityVariant = 'blue' | 'violet' | 'gold' | 'green'
 export type ActivityRecord = Record<string, unknown>
 
+export const WEATHER_SCAN_BATCH_SIZE = 5
+// 后端已经把每个好友的 Enter/Leave 隔开 300ms，批次之间再留一拍，
+// 避免整轮扫描长时间占满网关的低优先级槽位。
+export const WEATHER_SCAN_BATCH_GAP_MS = 1000
+// 后端会把好友任务执行期间没来得及扫的好友放回 deferredGids，
+// 前端隔一段时间再试，最多跑完这么多轮。
+export const WEATHER_SCAN_BUSY_RETRY_MS = 5000
+export const WEATHER_SCAN_MAX_PASSES = 3
+
 export interface ActivityDirectoryItemDto {
   id: string
   activityIds: string[]
@@ -254,6 +263,12 @@ export interface WeatherStatusDto {
   durationSec: number
 }
 
+export interface WeatherFriendPetDto {
+  id: string
+  name: string
+  image: string
+}
+
 export interface WeatherFriendDto {
   gid: string
   name: string
@@ -266,12 +281,14 @@ export interface WeatherFriendDto {
   availabilityReason: string
   canCollect: boolean
   eligibleCloudLandIds: string[]
+  pet: WeatherFriendPetDto | null
   weather: WeatherStatusDto
 }
 
 export interface WeatherCommandDto {
   enabled: boolean
   reason: string
+  batchSize: number
   friendCount: number
   nodeId: string
   dailyLimit: number
@@ -306,12 +323,17 @@ export interface WeatherActivityDto {
   // id is WeatherStatus.weather_type (field 1) and type is status (field 2).
   weather: { id: string, type: string, typeName: string | null, statusName: string, beginTime: number | null, endTime: number | null, active: boolean } | null
   friends: WeatherFriendDto[]
-  thunderstormFriends: WeatherFriendDto[]
   catalog: Array<{ id: string, item: ActivityItemDto, cost: ActivityItemDto, status: string, name: string }>
   progress: { taskId: string, current: string, target: string, item: ActivityItemDto, reward: ActivityItemDto, rewardStatus: string, status: string, active: boolean }
   tasks: Array<{ id: string, itemId: string, name: string, target: string, reward: ActivityItemDto, current: string, active: boolean }>
   research: WeatherResearchNodeDto[]
   actions: { research: ActivityActionDto, scanFriendWeather: WeatherCommandDto }
+}
+
+export interface WeatherScanProgress {
+  running: boolean
+  total: number
+  done: number
 }
 
 export interface QixiBridgeStageDto {
@@ -1056,6 +1078,14 @@ function normalizeWeatherStatus(value: unknown): WeatherStatusDto {
   }
 }
 
+function normalizeWeatherFriendPet(value: unknown): WeatherFriendPetDto | null {
+  const raw = record(value)
+  const id = text(raw.id, raw.dogId, raw.dog_id)
+  if (!id || Number(id) <= 0)
+    return null
+  return { id, name: text(raw.name) || `宠物 ${id}`, image: text(raw.image, raw.icon) }
+}
+
 function normalizeWeatherFriend(value: unknown): WeatherFriendDto {
   const raw = record(value)
   const availabilityValue = text(raw.availability).toLowerCase()
@@ -1075,6 +1105,7 @@ function normalizeWeatherFriend(value: unknown): WeatherFriendDto {
     availabilityReason: text(raw.availabilityReason, raw.availability_reason),
     canCollect: bool(raw.canCollect, raw.can_collect),
     eligibleCloudLandIds: Array.isArray(cloudLandIds) ? cloudLandIds.map(entry => text(entry)).filter(Boolean) : [],
+    pet: normalizeWeatherFriendPet(raw.pet),
     weather: normalizeWeatherStatus(raw.weather),
   }
 }
@@ -1084,6 +1115,7 @@ function normalizeWeatherCommand(value: unknown): WeatherCommandDto {
   return {
     enabled: typeof value === 'boolean' ? value : bool(raw.enabled, raw.available),
     reason: text(raw.reason),
+    batchSize: Math.max(1, finiteNumber(first(raw.batchSize, raw.batch_size)) || WEATHER_SCAN_BATCH_SIZE),
     friendCount: finiteNumber(first(raw.friendCount, raw.friend_count)) || 0,
     nodeId: text(raw.nodeId, raw.node_id),
     dailyLimit: finiteNumber(first(raw.dailyLimit, raw.daily_limit)) || 0,
@@ -1189,7 +1221,6 @@ function normalizeWeather(value: unknown): WeatherActivityDto | null {
           }
         : null,
       friends: records(raw.friends).map(normalizeWeatherFriend),
-      thunderstormFriends: records(first(raw.thunderstormFriends, raw.thunderstorm_friends)).map(normalizeWeatherFriend),
       catalog: Object.keys(localShop).length > 0
         ? [{
             id: text(localShop.goodsId, localShop.goods_id),
@@ -1308,7 +1339,6 @@ function normalizeWeather(value: unknown): WeatherActivityDto | null {
         })()
       : null,
     friends: records(raw.friends).map(normalizeWeatherFriend),
-    thunderstormFriends: records(first(raw.thunderstormFriends, raw.thunderstorm_friends)).map(normalizeWeatherFriend),
     catalog: records(raw.catalog).map(entry => ({
       id: text(entry.id),
       item: normalizeItem(entry.item),
@@ -1468,6 +1498,7 @@ const activityErrorMessages: Record<string, string> = {
   WEATHER_SHOP_UNAVAILABLE: '天气采集瓶商店当前不可用',
   WEATHER_SHOP_ALREADY_EXCHANGED: '今日已经兑换过天气采集瓶',
   INVALID_WEATHER_FRIEND_GID: '好友信息无效，请刷新活动后重新选择',
+  WEATHER_SCAN_BATCH_TOO_LARGE: '单批检查的好友数量超出上限，请刷新页面后重试',
   WEATHER_COLLECTOR_UNAVAILABLE: '背包中没有可用的天气采集瓶',
   WEATHER_FRIEND_NOT_THUNDERSTORM: '该好友农场当前不是雷雨天气',
   WEATHER_ALREADY_COLLECTED: '当前这轮雷雨已经采过，下轮雷雨可再次采集',
@@ -1515,6 +1546,20 @@ function errorMessage(error: unknown, fallback = '活动数据加载失败') {
   return rawMessage || fallback
 }
 
+function errorCodeOf(error: unknown) {
+  const candidate = error as { response?: { data?: { errorCode?: unknown, error_code?: unknown } }, code?: unknown }
+  return String(candidate.response?.data?.errorCode || candidate.response?.data?.error_code || candidate.code || '')
+}
+
+const weatherScanFatalCodes = [
+  'ACCOUNT_OFFLINE',
+  'GAME_OFFLINE',
+  'WEATHER_UNAVAILABLE',
+  'WEATHER_ACTIVITY_UNAVAILABLE',
+  'WEATHER_SCAN_BATCH_TOO_LARGE',
+  'INVALID_WEATHER_FRIEND_GID',
+]
+
 function responsePayload(value: unknown): unknown {
   const response = record(value)
   if (response.ok === false) {
@@ -1553,6 +1598,10 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     summonWeatherRain: false,
   })
 
+  const weatherFriends = ref<WeatherFriendDto[]>([])
+  const weatherFriendsLoading = ref(false)
+  const weatherScanProgress = ref<WeatherScanProgress>({ running: false, total: 0, done: 0 })
+
   const season = computed(() => snapshot.value.season)
   const activities = computed(() => snapshot.value.activities)
   const shop = computed(() => snapshot.value.shop)
@@ -1561,6 +1610,10 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
   const constellation = computed(() => snapshot.value.constellation)
   const qixi = computed(() => snapshot.value.qixi)
   const qingMei = computed(() => snapshot.value.qingMei)
+  const weather = computed<WeatherActivityDto | null>(() => {
+    const value = snapshot.value.weather
+    return value ? { ...value, friends: weatherFriends.value } : null
+  })
   const actions = computed(() => snapshot.value.actions)
   const serverNow = computed(() => Date.now() + serverClockOffset.value)
   const tabBadges = computed<Partial<Record<ActivityTabKey, boolean>>>(() => ({
@@ -1569,6 +1622,12 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     solar: actions.value.claimSolar.available,
     weather: !!snapshot.value.weather?.actions.research.available,
   }))
+
+  function clearWeatherFriends() {
+    weatherFriends.value = []
+    weatherFriendsLoading.value = false
+    weatherScanProgress.value = { running: false, total: 0, done: 0 }
+  }
 
   function reset() {
     requestVersion.value += 1
@@ -1579,6 +1638,7 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     notice.value = ''
     loadedAccountId.value = ''
     serverClockOffset.value = 0
+    clearWeatherFriends()
     pendingActions.value = { claimPass: false, lightConstellation: false, claimSolar: false, exchange: false, claimQixiBridge: false, giftQixiSachet: false, claimQingMeiSeed: false, startQingMeiBrew: false, continueQingMeiBrew: false, settleQingMeiBrew: false, lightWeatherResearch: false, buyWeatherBottle: false, scanWeatherFriends: false, collectWeatherBottle: false, summonWeatherRain: false }
   }
 
@@ -1676,6 +1736,7 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
       snapshot.value = normalizeActivitySnapshot({})
       loadedAccountId.value = ''
       serverClockOffset.value = 0
+      clearWeatherFriends()
     }
 
     try {
@@ -1737,6 +1798,14 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
       if (!isCurrent(version, requestedAccountId))
         return false
       const resultRecord = record(result)
+      if (path.startsWith('/weather/')) {
+        const mutationFriend = record(resultRecord.friend)
+        if (Object.keys(mutationFriend).length > 0)
+          mergeWeatherFriends([normalizeWeatherFriend(mutationFriend)])
+        const mutationFriends = records(resultRecord.friends)
+        if (mutationFriends.length > 0)
+          mergeWeatherFriends(mutationFriends.map(normalizeWeatherFriend))
+      }
       const mutationSnapshot = first(resultRecord.snapshot, resultRecord.activityCenter, resultRecord.activity_center)
       if (mutationSnapshot) {
         const mutationRecord = record(mutationSnapshot)
@@ -1748,8 +1817,9 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
           applySnapshot(mutationSnapshot)
         }
       }
-      else
+      else {
         await load(requestedAccountId, true)
+      }
       const rewards = records(resultRecord.rewards).map(normalizeItem).filter(item => item.id || item.name)
       const rewardSummary = rewards.map(item => `${item.name || item.id}${item.count ? ` ×${item.count}` : ''}`).join('、')
       if (!options.silentSuccess)
@@ -1814,8 +1884,140 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     return mutate('buyWeatherBottle', '/weather/bottle/buy', accountId, { count })
   }
 
-  function scanWeatherFriends(accountId: string) {
-    return mutate('scanWeatherFriends', '/weather/friends/scan', accountId, {}, { silentSuccess: true, timeoutMs: 120000 })
+  async function loadWeatherFriends(accountId: string) {
+    const requestedAccountId = String(accountId || '').trim()
+    if (!requestedAccountId)
+      return false
+    const version = requestVersion.value
+    weatherFriendsLoading.value = true
+    try {
+      const response = await api.get('/api/activity-center/weather/friends', {
+        headers: { 'x-account-id': requestedAccountId },
+        skipErrorToast: true,
+      } as any)
+      const payload = responsePayload(response.data)
+      if (!isCurrent(version, requestedAccountId))
+        return false
+      weatherFriends.value = records(Array.isArray(payload) ? payload : record(payload).friends).map(normalizeWeatherFriend)
+      return true
+    }
+    catch (loadError) {
+      if (isCurrent(version, requestedAccountId))
+        actionError.value = errorMessage(loadError, '好友天气列表加载失败')
+      return false
+    }
+    finally {
+      weatherFriendsLoading.value = false
+    }
+  }
+
+  function mergeWeatherFriends(updates: WeatherFriendDto[]) {
+    if (updates.length === 0)
+      return
+    const updateMap = new Map(updates.map(friend => [friend.gid, friend]))
+    const current = weatherFriends.value
+    for (let index = 0; index < current.length; index += 1) {
+      const update = updateMap.get(current[index]!.gid)
+      if (!update)
+        continue
+      current[index] = update
+      updateMap.delete(update.gid)
+    }
+  }
+
+  async function scanWeatherFriends(accountId: string, announceIdle = false) {
+    const requestedAccountId = String(accountId || '').trim()
+    if (!requestedAccountId || weatherScanProgress.value.running || pendingActions.value.scanWeatherFriends)
+      return false
+    // 只扫没有有效缓存的好友；已经读到天气的行不重复进农场。
+    const targets = weatherFriends.value
+      .filter(friend => Number(friend.gid) > 0 && !friend.inspected)
+      .map(friend => friend.gid)
+    if (targets.length === 0) {
+      if (announceIdle && weatherFriends.value.length > 0)
+        notice.value = '好友现场天气都在缓存有效期内，无需重复检查'
+      return false
+    }
+    const version = requestVersion.value
+    const batchSize = Math.max(1, snapshot.value.weather?.actions.scanFriendWeather.batchSize || WEATHER_SCAN_BATCH_SIZE)
+    pendingActions.value.scanWeatherFriends = true
+    weatherScanProgress.value = { running: true, total: targets.length, done: 0 }
+    actionError.value = ''
+    const resolved = new Set<string>()
+    let queue = targets.slice()
+    let completed = true
+    let failures = 0
+    let requests = 0
+    try {
+      // 好友任务优先：后端让路时会回传 deferredGids，这里隔一段时间再跑下一轮。
+      for (let pass = 0; pass < WEATHER_SCAN_MAX_PASSES && queue.length > 0 && completed; pass += 1) {
+        const deferred: string[] = []
+        for (let index = 0; index < queue.length; index += batchSize) {
+          if (!isCurrent(version, requestedAccountId)) {
+            completed = false
+            break
+          }
+          const batch = queue.slice(index, index + batchSize)
+          if (requests > 0)
+            await new Promise(resolve => setTimeout(resolve, WEATHER_SCAN_BATCH_GAP_MS))
+          requests += 1
+          try {
+            const response = await api.post('/api/activity-center/weather/friends/scan', { friendGids: batch }, {
+              headers: { 'x-account-id': requestedAccountId },
+              skipErrorToast: true,
+              timeout: 120000,
+            } as any)
+            const result = record(responsePayload(response.data))
+            if (!isCurrent(version, requestedAccountId)) {
+              completed = false
+              break
+            }
+            const updates = records(result.friends).map(normalizeWeatherFriend)
+            mergeWeatherFriends(updates)
+            for (const friend of updates)
+              resolved.add(friend.gid)
+            const busyRaw = first(result.deferredGids, result.deferred_gids)
+            const busyGids = Array.isArray(busyRaw)
+              ? busyRaw.map(entry => text(entry)).filter(gid => gid && !resolved.has(gid))
+              : []
+            deferred.push(...busyGids)
+            failures = 0
+            if (busyGids.length >= batch.length) {
+              // 整批都让路了，好友任务还在跑，本轮不再硬碰，剩下的留给下一轮。
+              for (const gid of queue.slice(index + batchSize)) {
+                if (!resolved.has(gid))
+                  deferred.push(gid)
+              }
+              break
+            }
+          }
+          catch (scanError) {
+            completed = false
+            failures += 1
+            if (!isCurrent(version, requestedAccountId))
+              break
+            actionError.value = errorMessage(scanError, '好友天气检查失败')
+            if (failures >= 3 || weatherScanFatalCodes.includes(errorCodeOf(scanError)))
+              break
+          }
+          finally {
+            weatherScanProgress.value = { ...weatherScanProgress.value, done: Math.min(targets.length, resolved.size) }
+          }
+        }
+        queue = deferred
+        if (completed && queue.length > 0)
+          await new Promise(resolve => setTimeout(resolve, WEATHER_SCAN_BUSY_RETRY_MS))
+      }
+      if (completed && queue.length > 0) {
+        completed = false
+        notice.value = `好友任务正在执行，还有 ${queue.length} 位好友的现场天气稍后再检查`
+      }
+    }
+    finally {
+      weatherScanProgress.value = { ...weatherScanProgress.value, running: false }
+      pendingActions.value.scanWeatherFriends = false
+    }
+    return completed
   }
 
   function collectWeatherBottle(accountId: string, targetGid: string) {
@@ -1844,7 +2046,10 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     constellation,
     qixi,
     qingMei,
-    weather: computed(() => snapshot.value.weather),
+    weather,
+    weatherFriends,
+    weatherFriendsLoading,
+    weatherScanProgress,
     actions,
     tabBadges,
     loading,
@@ -1858,6 +2063,7 @@ export const useActivityCenterStore = defineStore('activity-center', () => {
     lazyLoad,
     refresh,
     loadDetails,
+    loadWeatherFriends,
     claimPass,
     lightConstellation,
     claimSolarTerm,

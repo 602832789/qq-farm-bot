@@ -141,3 +141,30 @@ test('frog bottle reply decodes field 6 experience rewards', async () => {
     assert.equal(Number(decoded.social_reward.items[0].id), 1101);
     assert.equal(Number(decoded.social_reward.items[0].count), 30);
 });
+
+test('friend weather scan keeps the five-friend batch contract', () => {
+    const {
+        FRIEND_WEATHER_SCAN_BATCH_LIMIT,
+        scanWeatherFriends,
+    } = require('../dist/services/weather-activity');
+
+    assert.equal(FRIEND_WEATHER_SCAN_BATCH_LIMIT, 5);
+    assert.throws(() => scanWeatherFriends([]), { code: 'INVALID_WEATHER_FRIEND_GID' });
+    assert.throws(() => scanWeatherFriends(['0']), { code: 'INVALID_WEATHER_FRIEND_GID' });
+    assert.throws(
+        () => scanWeatherFriends(['11', '12', '13', '14', '15', '16']),
+        { code: 'WEATHER_SCAN_BATCH_TOO_LARGE' },
+    );
+});
+test('friend scan reads the guard dog straight out of the enter reply', () => {
+    const { friendPetDto } = require('../dist/services/weather-activity');
+
+    assert.equal(friendPetDto(null), null);
+    assert.equal(friendPetDto({ dog_id: 0 }), null);
+    assert.deepEqual(friendPetDto({ dog_id: 90021 }), {
+        id: '90021',
+        name: '护主犬',
+        image: '/game-config/seed_images_named/seed_images/90021.png',
+    });
+    assert.equal(friendPetDto({ dogId: '90001' }).name, '田园犬');
+});

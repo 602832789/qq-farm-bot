@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { WeatherActivityDto, WeatherFriendDto } from '@/stores/activity-center'
+import type { WeatherActivityDto, WeatherFriendDto, WeatherScanProgress } from '@/stores/activity-center'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import RewardItem from '@/components/activity/RewardItem.vue'
@@ -11,6 +11,8 @@ const props = defineProps<{
   pendingScan: boolean
   pendingCollect: boolean
   pendingSummon: boolean
+  scanProgress: WeatherScanProgress
+  loadingFriends: boolean
 }>()
 const emit = defineEmits<{
   light: [nodeId: string]
@@ -25,6 +27,7 @@ const router = useRouter()
 const friendSearch = ref('')
 const selectedFriendGid = ref('')
 const failedAvatars = ref(new Set<string>())
+const frozenFriendOrder = ref<string[]>([])
 const friendAvailabilityRank: Record<WeatherFriendDto['availability'], number> = {
   available: 0,
   collected: 1,
@@ -33,24 +36,39 @@ const friendAvailabilityRank: Record<WeatherFriendDto['availability'], number> =
   unknown: 5,
 }
 
+const friendList = computed(() => (props.activity?.friends || []).filter(friend => Number(friend.gid) > 0))
+const scanning = computed(() => props.scanProgress.running || props.pendingScan)
+
+// 扫描期间冻结当前顺序，避免每批结果回来时行位置跳动；扫描结束后按可采集优先重新排序。
+const orderedFriends = computed(() => {
+  const source = friendList.value.map((friend, index) => ({ friend, index }))
+  const frozenOrder = frozenFriendOrder.value
+  if (frozenOrder.length > 0) {
+    const frozenRank = new Map(frozenOrder.map((gid, position) => [gid, position]))
+    return source
+      .sort((left, right) => {
+        const leftRank = frozenRank.get(left.friend.gid) ?? (frozenOrder.length + left.index)
+        const rightRank = frozenRank.get(right.friend.gid) ?? (frozenOrder.length + right.index)
+        return leftRank - rightRank
+      })
+      .map(entry => entry.friend)
+  }
+  return source
+    .sort((left, right) => (friendRank(left.friend) - friendRank(right.friend)) || (left.index - right.index))
+    .map(entry => entry.friend)
+})
+
 const filteredFriends = computed(() => {
   const keyword = friendSearch.value.trim().toLowerCase()
-  const source = [...(props.activity?.friends || [])]
-    .filter(friend => Number(friend.gid) > 0)
-    .sort((left, right) => {
-      const leftRank = left.scanError ? 4 : friendAvailabilityRank[left.availability]
-      const rightRank = right.scanError ? 4 : friendAvailabilityRank[right.availability]
-      return leftRank - rightRank
-    })
   if (!keyword)
-    return source.slice(0, 60)
-  return source.filter((friend) => {
+    return orderedFriends.value.slice(0, 60)
+  return orderedFriends.value.filter((friend) => {
     const name = friend.name.toLowerCase()
     return name.includes(keyword) || String(friend.gid || '').includes(keyword)
   }).slice(0, 60)
 })
 
-const selectedFriend = computed(() => props.activity?.friends.find(friend => friend.gid === selectedFriendGid.value) || null)
+const selectedFriend = computed(() => friendList.value.find(friend => friend.gid === selectedFriendGid.value) || null)
 const catalogGoods = computed(() => props.activity?.catalog?.[0] || null)
 const collectionBottleUnavailable = computed(() => !!props.activity?.inventory.known && Number(props.activity.inventory.collectionBottle.count || 0) <= 0)
 const rainBottleUnavailable = computed(() => !!props.activity?.inventory.known && Number(props.activity.inventory.rainBottle.count || 0) <= 0)
@@ -60,10 +78,11 @@ const weatherActive = computed(() => !!currentWeather.value?.active)
 const currentWeatherTypeLabel = computed(() => currentWeather.value?.typeName || (currentWeather.value?.id === '1' ? '雷雨' : `未知天气（类型 ${currentWeather.value?.id || '--'}）`))
 const currentWeatherStatusLabel = computed(() => currentWeather.value?.statusName || (currentWeather.value?.type === '2' ? '生效中' : `未知状态（${currentWeather.value?.type || '--'}）`))
 const summonDisabled = computed(() => props.pendingSummon || weatherActive.value || rainBottleUnavailable.value)
-const inspectedCount = computed(() => props.activity?.friends.filter(friend => friend.inspected).length || 0)
+const inspectedCount = computed(() => friendList.value.filter(friend => friend.inspected).length)
+const pendingFriendCount = computed(() => friendList.value.filter(friend => !friend.inspected).length)
 const friendStats = computed(() => {
   const stats = { available: 0, collected: 0, unavailable: 0, expired: 0, unknown: 0, error: 0 }
-  for (const friend of props.activity?.friends || []) {
+  for (const friend of friendList.value) {
     if (friend.scanError)
       stats.error += 1
     else
@@ -72,11 +91,19 @@ const friendStats = computed(() => {
   return stats
 })
 const scanAction = computed(() => props.activity?.actions.scanFriendWeather || null)
-const scanDisabled = computed(() => props.pendingScan || !scanAction.value?.enabled)
+const scanDisabled = computed(() => scanning.value || props.loadingFriends || friendList.value.length === 0 || !scanAction.value?.enabled)
 const scanButtonLabel = computed(() => {
-  if (props.pendingScan)
-    return `正在检查 ${props.activity?.friends.length || 0} 位好友`
-  return inspectedCount.value > 0 ? '重新扫描现场天气' : '扫描现场天气'
+  if (scanning.value) {
+    const total = props.scanProgress.total || friendList.value.length
+    return total > 0 ? `检查中 ${props.scanProgress.done}/${total}` : '检查中…'
+  }
+  if (props.loadingFriends)
+    return '好友列表加载中…'
+  if (friendList.value.length === 0)
+    return '暂无可检查的好友'
+  if (pendingFriendCount.value === 0)
+    return '天气均已缓存'
+  return inspectedCount.value > 0 ? `检查剩余 ${pendingFriendCount.value} 位好友` : '扫描现场天气'
 })
 const selectedFriendState = computed(() => selectedFriend.value ? friendState(selectedFriend.value) : null)
 const collectButtonLabel = computed(() => {
@@ -160,6 +187,10 @@ function formatWeatherTime(value: number | null) {
   }).format(new Date(timestamp))
 }
 
+function friendRank(friend: WeatherFriendDto) {
+  return friend.scanError ? 4 : friendAvailabilityRank[friend.availability]
+}
+
 function friendState(friend: WeatherFriendDto) {
   if (friend.scanError)
     return { label: '检查失败', className: 'error', detail: friend.scanError }
@@ -201,7 +232,7 @@ function openInteractionItem(path: string, itemId: string) {
   void router.push({ path, query: { interactionItem: itemId } })
 }
 
-watch(() => props.activity?.friends, (friends = []) => {
+watch(friendList, (friends) => {
   const current = friends.find(friend => friend.gid === selectedFriendGid.value)
   if (current?.canCollect)
     return
@@ -211,6 +242,10 @@ watch(() => props.activity?.friends, (friends = []) => {
   else if (!current)
     selectedFriendGid.value = ''
 }, { immediate: true })
+
+watch(scanning, (running) => {
+  frozenFriendOrder.value = running ? orderedFriends.value.map(friend => friend.gid) : []
+})
 </script>
 
 <template>
@@ -252,7 +287,7 @@ watch(() => props.activity?.friends, (friends = []) => {
               :title="scanAction?.reason || '逐个进入好友农场读取现场天气'"
               @click="emit('scanFriends')"
             >
-              <span v-if="pendingScan" class="i-carbon-circle-dash animate-spin" />
+              <span v-if="scanning" class="i-carbon-circle-dash animate-spin" />
               <span v-else class="i-carbon-radar" />
               {{ scanButtonLabel }}
             </button>
@@ -266,7 +301,7 @@ watch(() => props.activity?.friends, (friends = []) => {
             <span class="error"><i />检查失败 {{ friendStats.error }}</span>
           </div>
           <div v-if="filteredFriends.length === 0" class="operation-empty">
-            {{ friendSearch ? '没有匹配的好友' : (pendingScan ? '正在读取好友现场天气…' : '暂无好友天气数据') }}
+            {{ friendSearch ? '没有匹配的好友' : (loadingFriends ? '正在加载好友列表…' : (scanning ? '正在读取好友现场天气…' : '好友列表待加载，稍后会自动逐批检查现场天气')) }}
           </div>
           <div v-else class="friend-list">
             <button
@@ -284,7 +319,13 @@ watch(() => props.activity?.friends, (friends = []) => {
                 <strong>{{ friendName(friend) }}</strong>
                 <small>Lv.{{ friend.level || '--' }} · GID {{ friend.gid }}</small>
               </span>
-              <span class="friend-option__state" :class="friendState(friend).className"><i />{{ friendState(friend).label }}</span>
+              <span class="friend-option__meta">
+                <span class="friend-option__state" :class="friendState(friend).className"><i />{{ friendState(friend).label }}</span>
+                <span v-if="friend.pet" class="friend-option__pet" :title="`看家宠物：${friend.pet.name}`">
+                  <img v-if="friend.pet.image" :src="friend.pet.image" alt="">
+                  {{ friend.pet.name }}
+                </span>
+              </span>
             </button>
           </div>
         </div>
@@ -991,6 +1032,34 @@ watch(() => props.activity?.friends, (friends = []) => {
 .friend-option__state.error {
   color: #9f484f;
   background: rgba(250, 231, 233, 0.94);
+}
+.friend-option__meta {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-end;
+}
+.friend-option__pet {
+  display: inline-flex;
+  max-width: 82px;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 5px;
+  border-radius: 5px;
+  overflow: hidden;
+  color: #5c6f66;
+  background: rgba(237, 241, 239, 0.92);
+  font-size: 10px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.friend-option__pet img {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  object-fit: contain;
 }
 .collect-composer {
   display: flex;

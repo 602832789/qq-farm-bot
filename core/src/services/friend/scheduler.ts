@@ -265,6 +265,12 @@ interface CheckFriendsOptions {
     ignoreExpLimit?: boolean;
 }
 
+// 好友巡查与面板的好友天气扫描共用“进入好友农场”这一游戏状态，
+// 扫描靠这个标志让位，保证好友任务优先执行。
+export function isFriendCheckRunning(): boolean {
+    return isCheckingFriends;
+}
+
 export async function checkFriends(options: CheckFriendsOptions = {}): Promise<boolean> {
     const state: any = getUserState();
     if (!isAutomationOn('friend')) return false;
