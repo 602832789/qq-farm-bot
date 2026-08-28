@@ -78,6 +78,18 @@ Gateway 是一条 WebSocket 长连接，所有业务共用它。这份文档说�
 - `waitForGatewayIdle(maxWaitMs)`（`utils/network.ts`）——发请求之前先观察网关，等不到空闲就整轮让路。只观察不排队，等待期间一点压力都不加。判定口径在 `utils/low-priority-gate.ts` 的 `isGatewayIdleForLowPriority()`：队列里有非 `background` 请求、有业务请求在飞、已经有 `background` 在飞、心跳漏过一次、或有在途请求卡了 5 秒以上，都算「不空闲」。
 - 队列等待上限——`background` 请求在队列里最多等 `LOW_PRIORITY_QUEUE_WAIT_MS = 8000`，之后抛 `GatewayBusyError`（`isGatewayYieldError()` 能识别），让调用方把剩下的活留给下一轮，而不是一路熬到请求超时刷一屏日志。
 
+## 定时任务的健康度退避
+
+服务端静默时的形态是：请求全部 `stage=pending` 挂十几秒、心跳开始漏拍，最后 3/3 心跳失败掉线。这种时候客户端再按 3~5s / 12~15s 的固定间隔发定时任务，只会把 pending 拉满、把心跳一起挤到超时。
+
+所以 `runFarmTick()` / `runFriendTick()`（`core/src/core/worker.ts`）在入口检查 `isGatewayHealthyForBusiness()`：
+
+- 判据只有两条——`heartbeatMisses > 0`，或有在途请求超过 `GATEWAY_STALL_PENDING_MS = 5000` 没回包。比后台闸门宽松得多，队列里有活、有业务请求在飞都不算不健康，定时任务本来就该和前台操作正常竞争槽位。
+- 不健康就跳过本轮，并把 `nextFarmRunAt` / `nextFriendRunAt` 指数退避：首次 30 秒，之后翻倍封顶 60 秒（`nextBusinessBackoffMs()`）。farm 和 friend 各自记账，互不影响。
+- 网关一恢复退避立即清零，回到正常间隔。日志只在进入退避（`网关无回包，农场定时任务退避 30s (...)`）和恢复（`网关已恢复，...回到正常间隔`）时各打一次，不刷屏。
+
+退避期间连接上只剩心跳和 ACE 上报——它们有独立保留槽位，能安静地把连接救回来。
+
 ## 压力日志
 
 `Gateway 请求压力: ...` 只在队列里有**非 `background`** 请求时才打（`utils/request-pressure.ts`）。队列里只剩后台补数据是正常运行，不算拥塞。
@@ -95,7 +107,8 @@ Gateway 是一条 WebSocket 长连接，所有业务共用它。这份文档说�
 - `core/src/utils/request-priority.ts` — 班次、容量、调度选择（纯函数）
 - `core/src/utils/request-context.ts` — 环境班次（`AsyncLocalStorage`）
 - `core/src/utils/network.ts` — 排队、发送、`getGatewayLoad()`、`waitForGatewayIdle()`
-- `core/src/utils/low-priority-gate.ts` — 后台任务的空闲判定与让路错误分类
+- `core/src/utils/low-priority-gate.ts` — 后台任务的空闲判定、定时任务的健康度退避、让路错误分类
 - `core/src/utils/request-pressure.ts` — 压力日志节流
 - `core/tests/request-priority.test.js` — 分层与容量的契约测试
+- `core/tests/low-priority-gate.test.js` — 让路闸门与定时任务退避的契约测试
 - `core/tests/low-priority-gate.test.js` — 空闲判定与让路错误分类

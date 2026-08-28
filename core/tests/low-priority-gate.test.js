@@ -3,9 +3,13 @@ const test = require('node:test');
 
 const {
     GATEWAY_STALL_PENDING_MS,
+    BUSINESS_BACKOFF_MIN_MS,
+    BUSINESS_BACKOFF_MAX_MS,
     LOW_PRIORITY_QUEUE_WAIT_MS,
     LOW_PRIORITY_IDLE_WAIT_MAX_MS,
     isGatewayIdleForLowPriority,
+    isGatewayHealthyForBusiness,
+    nextBusinessBackoffMs,
     isGatewayYieldError,
 } = require('../dist/utils/low-priority-gate');
 
@@ -45,6 +49,26 @@ test('让路错误识别：让路、队列已满、连接断开都算「该整�
     assert.equal(isGatewayYieldError(new Error('VisitService.Enter 错误: code=1001 好友不存在')), false);
     assert.equal(isGatewayYieldError(new Error('请求超时: Enter (stage=pending)')), false);
     assert.equal(isGatewayYieldError(null), false);
+});
+
+test('定时任务健康度闸门：只在网关不回包时关闸，正常排队不受影响', () => {
+    // 前台操作和自己农场的请求在飞、队列里有活，都属于正常竞争，定时任务照常跑
+    assert.ok(isGatewayHealthyForBusiness({ blockingQueued: 3, businessPending: 3, oldestPendingAgeMs: 1200 }));
+    assert.ok(isGatewayHealthyForBusiness({ backgroundPending: 1, oldestPendingAgeMs: 0 }));
+
+    // 心跳漏拍 / 在途请求卡死，说明服务端静默，本轮必须让路给心跳和 ACE
+    assert.equal(isGatewayHealthyForBusiness({ heartbeatMisses: 1 }), false);
+    assert.equal(isGatewayHealthyForBusiness({ oldestPendingAgeMs: GATEWAY_STALL_PENDING_MS }), false);
+    assert.equal(isGatewayHealthyForBusiness({ oldestPendingAgeMs: 18136 }), false);
+    assert.equal(isGatewayHealthyForBusiness(null), false);
+});
+
+test('定时任务退避：首次 30 秒，翻倍封顶 60 秒', () => {
+    assert.equal(nextBusinessBackoffMs(0), BUSINESS_BACKOFF_MIN_MS);
+    assert.equal(nextBusinessBackoffMs(), BUSINESS_BACKOFF_MIN_MS);
+    assert.equal(nextBusinessBackoffMs(BUSINESS_BACKOFF_MIN_MS), BUSINESS_BACKOFF_MAX_MS);
+    assert.equal(nextBusinessBackoffMs(BUSINESS_BACKOFF_MAX_MS), BUSINESS_BACKOFF_MAX_MS);
+    assert.ok(BUSINESS_BACKOFF_MIN_MS <= BUSINESS_BACKOFF_MAX_MS);
 });
 
 test('让路参数是有限正数，避免后台任务无限等待', () => {
