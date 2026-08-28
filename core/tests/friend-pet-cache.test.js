@@ -20,7 +20,7 @@ const {
     flushFriendPetCacheNow,
     resetFriendPetCacheMemory,
 } = require('../dist/services/friend/pet-cache');
-const { collectPendingFriends } = require('../dist/services/friend/pet-sync');
+const { collectPendingFriends, FRIEND_PET_SYNC_TUNING } = require('../dist/services/friend/pet-sync');
 const { buildFriendPetView } = require('../dist/services/friend/visit-strategy');
 const { getDataFile } = require('../dist/config/runtime-paths');
 const { getSystemDateKey } = require('../dist/utils/utils');
@@ -111,6 +111,19 @@ test('每日同步只选当天未确认、非黑名单、非失效的好友', ()
 
     const pending = collectPendingFriends(friends, 6005, new Set([6003]), new Set([6004]));
     assert.deepEqual(pending, [{ gid: 6001, name: '待确认' }]);
+});
+
+test('每日同步的突发量被压在服务端限制之下', () => {
+    const tuning = FRIEND_PET_SYNC_TUNING;
+    // 一轮探太多位会触发服务端静默（生产上 60~75 位就掉线），配额必须留足余量
+    assert.ok(tuning.SYNC_MAX_PER_ROUND > 0 && tuning.SYNC_MAX_PER_ROUND <= 15);
+    // 批内间隔不能回到几百毫秒的密集节奏
+    assert.ok(tuning.SYNC_GAP_MS >= 1000);
+    // Enter + Leave 摊到定时检查周期上的平均速率
+    const rpcPerSecond = (tuning.SYNC_MAX_PER_ROUND * 2) / (tuning.SYNC_CHECK_INTERVAL_MS / 1000);
+    assert.ok(rpcPerSecond <= 0.2, `平均 ${rpcPerSecond} RPC/s 偏高`);
+    // 撞上网关静默之后的冷却要比常规检查周期更长
+    assert.ok(tuning.SYNC_BUSY_COOLDOWN_MS >= tuning.SYNC_CHECK_INTERVAL_MS);
 });
 
 test('好友列表的宠物 DTO 区分护主犬、其他狗、无狗与未确认', () => {

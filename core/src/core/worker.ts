@@ -27,6 +27,7 @@ const { sellAllFruits, getBag, getBagItems, openFertilizerGiftPacksSilently } = 
 const { checkAndClaimDogSkillGifts } = require('../services/dog-skill-gifts');
 const { connect, cleanup, getWs, getUserState, networkEvents } = require('../utils/network');
 const { loadProto } = require('../utils/proto');
+const { runWithRequestClass } = require('../utils/request-context');
 const { setLogHook, log, logWarn, toNum, getSystemDateKey, formatSystemDateTime24 } = require('../utils/utils');
 
 // Extend CONFIG with the unified friend-task interval used by this worker.
@@ -207,10 +208,13 @@ async function runFarmTick(auto: any): Promise<void> {
         CONFIG.farmCheckIntervalMax || CONFIG.farmCheckInterval || 2000
     );
     try {
-        if (auto.farm) await checkFarm();
-        if (auto.task) await checkAndClaimTasks();
-        if (auto.email) await checkAndClaimEmails();
-        if (auto.fertilizer_gift) await openFertilizerGiftPacksSilently();
+        // 自己农场的定时任务统一挂在 farm 班次：优先级高于好友任务，低于用户前台操作。
+        await runWithRequestClass('farm', async () => {
+            if (auto.farm) await checkFarm();
+            if (auto.task) await checkAndClaimTasks();
+            if (auto.email) await checkAndClaimEmails();
+            if (auto.fertilizer_gift) await openFertilizerGiftPacksSilently();
+        });
     } catch {
         // ignore
     } finally {
@@ -235,7 +239,8 @@ async function runFriendTick(auto: any): Promise<void> {
     friendTaskRunning = true;
     try {
         // checkFriends 内部保留各自开关、经验上限、黑名单和每日捣乱次数判断。
-        await checkFriends();
+        // 好友农场任务排在自己农场之后，前台操作永远优先于它。
+        await runWithRequestClass('friend', () => checkFriends());
     } catch (e: any) {
         log('系统', `好友统一任务执行失败: ${e.message}`, { module: 'system', event: '好友统一任务', result: 'error' });
     } finally {
@@ -298,43 +303,53 @@ function stopMysteryShopTimer(): void {
     workerScheduler.clear('mystery_shop_after_save');
 }
 
-function clearStartupStaggerTasks(): void {
-    for (const name of [
-        'startup_start_farm',
-        'startup_start_friend',
-        'startup_daily_routines',
-        'startup_mystery_shop',
-    ]) {
-        workerScheduler.clear(name);
-    }
-}
 
-function scheduleStartupStaggeredTasks(): void {
-    clearStartupStaggerTasks();
+/**
+ * 登录完成后的启动序列。
+ *
+ * 以前这里是四个错峰定时器（2s / 8s / 45s / 60s），结果每日礼包和任务要等到登录一分钟后
+ * 才领，而且那时农场和好友循环已经在跑，几件事叠在一起反而把连接打满。
+ * 现在改成登录动作一结束就**串行**跑完：串行意味着同一时刻只有一个业务请求在飞，
+ * 既领得及时，也不会和心跳抢连接。
+ */
+async function runStartupSequence(canContinue: () => boolean = () => loginReady): Promise<void> {
+    if (!loginReady || !canContinue()) return;
 
-    // 先让连接和登录初始化稳定下来，再启动农场主流程。
-    workerScheduler.setTimeoutTask('startup_start_farm', 2000, () => {
-        if (!loginReady) return;
+    // 这个序列跑在登录初始化的 await 链上（心跳和 ACE 此时已经启动），
+    // 抛出去会被 network.ts 当成「登录初始化失败」直接掐掉连接，所以整段自己兜住异常。
+    try {
+        // 先把主循环挂起来。两个循环都有自己的间隔节流，挂上不等于立刻发请求。
         startFarmCheckLoop({ externalScheduler: true });
-        startUnifiedScheduler();
-    });
-
-    // 好友申请监听和好友巡田晚于农场启动，避免登录瞬间同时拉好友链路。
-    workerScheduler.setTimeoutTask('startup_start_friend', 8000, () => {
-        if (!loginReady) return;
         startFriendCheckLoop({ externalScheduler: true });
-    });
+        startUnifiedScheduler();
 
-    // 好友统一任务包含偷菜、帮助和放虫放草；这里仅启动统一调度，不单独启动子任务。
-    // 每日礼包/任务不参与登录启动关键路径。
-    workerScheduler.setTimeoutTask('startup_daily_routines', 45000, () => {
-        if (loginReady) startDailyRoutineTimer(true);
-    });
+        // 登录期要领的东西按 farm 班次串行跑完：邮件 / 每日分享 / 月卡 / 免费礼包 / VIP → 任务 → 神秘商店。
+        await runWithRequestClass('farm', async () => {
+            if (!loginReady || !canContinue()) return;
+            await runDailyRoutines(true);
 
-    // 神秘商店属于低频后台能力，最后启动。
-    workerScheduler.setTimeoutTask('startup_mystery_shop', 60000, () => {
-        if (loginReady) startMysteryShopTimer();
-    });
+            if (!loginReady || !canContinue()) return;
+            try {
+                await checkAndClaimTasks();
+            } catch (e: any) {
+                log('系统', `登录后领取任务失败: ${e.message}`, { module: 'system', event: '启动序列', result: 'error' });
+            }
+
+            if (!loginReady || !canContinue()) return;
+            try {
+                await runMysteryShopTick();
+            } catch {
+                // 神秘商店失败不影响启动
+            }
+        });
+
+        if (!loginReady || !canContinue()) return;
+        // 串行部分跑完才挂上后续的周期性定时器，避免刚领完又立刻重复领一遍。
+        startDailyRoutineTimer(false);
+        startMysteryShopTimer({ runInitial: false });
+    } catch (e: any) {
+        log('系统', `登录启动序列执行失败: ${e.message}`, { module: 'system', event: '启动序列', result: 'error' });
+    }
 }
 
 function runMysteryShopTick(): Promise<void> {
@@ -351,7 +366,7 @@ function runMysteryShopTick(): Promise<void> {
     });
 }
 
-function startMysteryShopTimer(): void {
+function startMysteryShopTimer(options: { runInitial?: boolean } = {}): void {
     const {
         isMysteryShopWatchEnabled,
         AUTO_BUY_CHECK_INTERVAL_MS,
@@ -359,9 +374,12 @@ function startMysteryShopTimer(): void {
     } = require('../services/mystery-shop-auto');
     stopMysteryShopTimer();
     if (!loginReady || !isMysteryShopWatchEnabled(getAutomation())) return;
-    workerScheduler.setTimeoutTask('mystery_shop_initial', AUTO_BUY_INITIAL_DELAY_MS, () => {
-        runMysteryShopTick().catch(() => null);
-    });
+    // 启动序列已经串行跑过一次首查时不再重复排首查。
+    if (options.runInitial !== false) {
+        workerScheduler.setTimeoutTask('mystery_shop_initial', AUTO_BUY_INITIAL_DELAY_MS, () => {
+            runMysteryShopTick().catch(() => null);
+        });
+    }
     workerScheduler.setIntervalTask('mystery_shop_interval', AUTO_BUY_CHECK_INTERVAL_MS, () => {
         runMysteryShopTick().catch(() => null);
     });
@@ -611,10 +629,9 @@ async function startBot(config: any): Promise<void> {
         }
 
         if (!canContinueLogin()) return;
-        scheduleStartupStaggeredTasks();
-
-        // 立即发送一次状态
+        // 立即发送一次状态，再串行跑启动序列（不阻塞状态上报）
         syncStatus();
+        await runStartupSequence(canContinueLogin);
     };
 
     connect(code, onLoginSuccess);
