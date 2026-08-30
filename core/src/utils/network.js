@@ -351,6 +351,17 @@ function handleNotify(msg) {
         const type = event.message_type || '';
         const eventBody = event.body;
 
+        // 钻石由支付系统维护，不会出现在 ItemService.Bag 的普通物品列表中。
+        // 登录及打开商城时服务端都会下发该余额通知。
+        if (type.includes('RechargeInfoNotify')) {
+            try {
+                const notify = types.RechargeInfoNotify.decode(eventBody);
+                const diamond = toNum(notify?.recharge_info?.diamond);
+                if (diamond >= 0) userState.diamond = diamond;
+            } catch { }
+            return;
+        }
+
         // 被踢下线
         if (type.includes('Kickout')) {
             log('推送', `被踢下线! ${type}`);
@@ -892,4 +903,5 @@ module.exports = {
     extractServerClientVersion,
     applyServerVersionInfo,
     networkEvents,
+    handleMessage,
 };
