@@ -68,12 +68,28 @@ function getFriendDogInfoCacheFile(accountId) {
     return path.join(ensureFriendDogInfoDir(), `${safeName  }.json`);
 }
 
+function getLocalDateKey(timestamp = Date.now()) {
+    const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) return '';
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function normalizeFriendDogInfoCache(data, now = Date.now()) {
+    if (!data || typeof data.dogInfo !== 'object' || data.dogInfo === null) return null;
+    const cacheDate = String(data.cacheDate || getLocalDateKey(data.updatedAt));
+    if (!cacheDate || cacheDate !== getLocalDateKey(now)) return null;
+    return data.dogInfo;
+}
+
 function readFriendDogInfoCache(accountId) {
     try {
         const filePath = getFriendDogInfoCacheFile(accountId);
         if (fs.existsSync(filePath)) {
             const data = readJsonFile(filePath);
-            if (data && typeof data.dogInfo === 'object') return data.dogInfo;
+            return normalizeFriendDogInfoCache(data);
         }
     } catch { }
     return null;
@@ -82,8 +98,33 @@ function readFriendDogInfoCache(accountId) {
 function writeFriendDogInfoCache(accountId, dogInfo) {
     try {
         const filePath = getFriendDogInfoCacheFile(accountId);
-        writeJsonFileAtomic(filePath, { dogInfo: dogInfo || {}, updatedAt: Date.now() });
+        const updatedAt = Date.now();
+        writeJsonFileAtomic(filePath, {
+            dogInfo: dogInfo || {},
+            cacheDate: getLocalDateKey(updatedAt),
+            updatedAt,
+        });
     } catch { }
+}
+
+function updateFriendDogInfoCache(accountId, gid, dogInfo) {
+    const numericGid = Number(gid) || 0;
+    if (!accountId || !numericGid) return false;
+    const cache = readFriendDogInfoCache(accountId) || {};
+    const dogId = Number(dogInfo && dogInfo.dogId) || 0;
+    if (dogId === 90021) {
+        const current = cache[numericGid];
+        if (current && Number(current.dogId) === dogId && current.dogName === (dogInfo.dogName || '护主犬')) {
+            return false;
+        }
+        cache[numericGid] = { dogId, dogName: dogInfo.dogName || '护主犬' };
+    } else if (Object.hasOwn(cache, numericGid)) {
+        delete cache[numericGid];
+    } else {
+        return false;
+    }
+    writeFriendDogInfoCache(accountId, cache);
+    return true;
 }
 
 // ==================== 好友列表缓存 ====================
@@ -1971,6 +2012,7 @@ module.exports = {
     deleteUserDeviceProtocol,
     readFriendDogInfoCache,
     writeFriendDogInfoCache,
+    updateFriendDogInfoCache,
     readFriendListCache,
     writeFriendListCache,
     getFriendListCacheFile,
@@ -1986,5 +2028,7 @@ module.exports._test = {
     disableHiddenActivityAutomation,
     HIDDEN_ACTIVITY_AUTOMATION_KEYS,
     RAIN_POEM_AUTOMATION_KEYS: TIMED_ACTIVITY_AUTOMATION_GROUPS[0].keys,
-    getInactiveActivityAutomationKeys
+    getInactiveActivityAutomationKeys,
+    getLocalDateKey,
+    normalizeFriendDogInfoCache
 };

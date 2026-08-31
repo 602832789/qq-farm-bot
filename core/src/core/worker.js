@@ -95,8 +95,11 @@ const {
     stopNetwork,
     getWs,
     getUserState,
+    getGatewayHealth,
     networkEvents
 } = require('../utils/network');
+const { nextBusinessBackoffMs } = require('../utils/gateway-health');
+const { runWithRequestPriority } = require('../utils/request-priority');
 const { loadProto } = require('../utils/proto');
 const { setLogHook, log, toNum } = require('../utils/utils');
 const { resourcePolicy, createResourceMonitor } = require('../runtime/resource-policy');
@@ -706,8 +709,42 @@ function resetUnifiedSchedule() {
 
 // ==================== 农场 Tick ====================
 
+const businessBackoff = {
+    farm: { delayMs: 0, reason: '' },
+    friend: { delayMs: 0, reason: '' },
+};
+
+function getBusinessDeferMs(kind) {
+    const state = businessBackoff[kind];
+    const health = getGatewayHealth();
+    if (health.healthy) {
+        if (state.delayMs > 0) {
+            log('系统', `${kind === 'farm' ? '农场' : '好友'}任务网关已恢复`, {
+                module: 'network', event: '业务网关恢复', kind,
+            });
+        }
+        state.delayMs = 0;
+        state.reason = '';
+        return 0;
+    }
+    state.delayMs = nextBusinessBackoffMs(state.delayMs);
+    if (state.reason !== health.reason) {
+        log('系统', `${kind === 'farm' ? '农场' : '好友'}任务因网关不健康退避 ${Math.round(state.delayMs / 1000)} 秒`, {
+            module: 'network', event: '业务网关退避', kind, reason: health.reason,
+            pending: health.pending,
+        });
+    }
+    state.reason = health.reason;
+    return state.delayMs;
+}
+
 async function runFarmTick(autoConfig) {
     if (farmTaskRunning || friendSyncPaused) return;
+    const deferMs = getBusinessDeferMs('farm');
+    if (deferMs > 0) {
+        nextFarmRunAt = Date.now() + deferMs;
+        return;
+    }
     farmTaskRunning = true;
 
     const nextDelay = randomIntervalMs(
@@ -716,10 +753,12 @@ async function runFarmTick(autoConfig) {
     );
 
     try {
-        if (autoConfig.farm) await checkFarm();
-        if (autoConfig.task) await checkAndClaimTasks();
-        if (autoConfig.email) await checkAndClaimEmails();
-        if (autoConfig.fertilizer_gift) await openFertilizerGiftPacksSilently();
+        await runWithRequestPriority('farm', async () => {
+            if (autoConfig.farm) await checkFarm();
+            if (autoConfig.task) await checkAndClaimTasks();
+            if (autoConfig.email) await checkAndClaimEmails();
+            if (autoConfig.fertilizer_gift) await openFertilizerGiftPacksSilently();
+        });
     } catch { } finally {
         nextFarmRunAt = Date.now() + nextDelay;
         farmTaskRunning = false;
@@ -734,6 +773,11 @@ let nextHelpRunAt = 0;
 async function runHelpTick(autoConfig) {
     if (helpTaskRunning || friendSyncPaused) return;
     if (!autoConfig.friend_help && !autoConfig.friend_golden_bug) return;
+    const deferMs = getBusinessDeferMs('friend');
+    if (deferMs > 0) {
+        nextHelpRunAt = Date.now() + deferMs;
+        return;
+    }
     helpTaskRunning = true;
 
     const nextDelay = randomIntervalMs(
@@ -742,8 +786,10 @@ async function runHelpTick(autoConfig) {
     );
 
     try {
-        if (autoConfig.friend_help) await checkFriends({ onlyHelp: true });
-        if (autoConfig.friend_golden_bug) await runGoldenBugPlacement();
+        await runWithRequestPriority('friend', async () => {
+            if (autoConfig.friend_help) await checkFriends({ onlyHelp: true });
+            if (autoConfig.friend_golden_bug) await runGoldenBugPlacement();
+        });
     } catch (err) {
         if (!isTransientNetworkError(err)) {
             log('系统', `帮助巡查执行失败: ${  err.message}`, {
@@ -766,6 +812,11 @@ let nextStealRunAt = 0;
 async function runStealTick(autoConfig) {
     if (stealTaskRunning || friendSyncPaused) return;
     if (!autoConfig.friend_steal) return;
+    const deferMs = getBusinessDeferMs('friend');
+    if (deferMs > 0) {
+        nextStealRunAt = Date.now() + deferMs;
+        return;
+    }
     stealTaskRunning = true;
 
     const nextDelay = randomIntervalMs(
@@ -774,7 +825,7 @@ async function runStealTick(autoConfig) {
     );
 
     try {
-        await checkFriends({ onlySteal: true });
+        await runWithRequestPriority('friend', () => checkFriends({ onlySteal: true }));
     } catch (err) {
         if (!isTransientNetworkError(err)) {
             log('系统', `偷菜巡查执行失败: ${  err.message}`, {

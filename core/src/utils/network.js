@@ -15,6 +15,8 @@ const { types } = require('./proto');
 const { toLong, toNum, syncServerTime, log, logWarn } = require('./utils');
 const cryptoWasm = require('./crypto-wasm');
 const { createGatewayToken } = require('./gateway-token');
+const { evaluateGatewayHealth, getOldestPendingAgeMs } = require('./gateway-health');
+const { createRequestGate, getRequestPriority } = require('./request-priority');
 const { TsdkRuntime } = require('./tsdk-runtime');
 
 const CLIENT_VERSION_RE = /^\d+(?:\.\d+){2,4}_\d{8}$/;
@@ -65,6 +67,8 @@ let ws = null;
 let clientSeq = 1;
 let serverSeq = 0;
 const pendingCallbacks = new Map();
+const pendingStartedAt = new Map();
+const requestGate = createRequestGate({ maxActive: 8, maxQueued: 100 });
 let wsErrorState = { code: 0, at: 0, message: '' };
 const networkScheduler = createScheduler('network');
 let tsdkRuntime = null;
@@ -134,6 +138,7 @@ function stopSecurityRuntime(reason = '停止') {
 function rejectAllPendingRequests(reason = '请求被中断') {
     const entries = Array.from(pendingCallbacks.entries());
     pendingCallbacks.clear();
+    pendingStartedAt.clear();
     for (const [, callback] of entries) {
         try {
             callback(new Error(reason));
@@ -238,13 +243,17 @@ async function sendMsg(serviceName, methodName, bodyBytes, callback) {
     const seq = clientSeq;
     clientSeq += 1;
     const encoded = await encodeMsg(serviceName, methodName, bodyBytes, seq);
-    if (callback) pendingCallbacks.set(seq, callback);
+    if (callback) {
+        pendingCallbacks.set(seq, callback);
+        pendingStartedAt.set(seq, Date.now());
+    }
     // ws.send(encoded);
     try {
         ws.send(encoded);
     } catch (err) {
         if (callback) {
             pendingCallbacks.delete(seq);
+            pendingStartedAt.delete(seq);
             callback(err);
         }
         return false;
@@ -253,8 +262,11 @@ async function sendMsg(serviceName, methodName, bodyBytes, callback) {
 }
 
 /** Promise 版发送 */
-function sendMsgAsync(serviceName, methodName, bodyBytes, timeout = 20000) {
-    return new Promise((resolve, reject) => {
+async function sendMsgAsync(serviceName, methodName, bodyBytes, timeout = 20000, options = {}) {
+    const priority = getRequestPriority(options.priority);
+    const release = await requestGate.acquire(priority);
+    try {
+      return await new Promise((resolve, reject) => {
         if (!ws || ws.readyState !== WebSocket.OPEN) {
             reject(new Error(`连接未打开: ${methodName}`));
             return;
@@ -273,6 +285,7 @@ function sendMsgAsync(serviceName, methodName, bodyBytes, timeout = 20000) {
             if (settled) return;
             settled = true;
             pendingCallbacks.delete(seq);
+            pendingStartedAt.delete(seq);
             const pending = pendingCallbacks.size;
             reject(new Error(`请求超时: ${methodName} (seq=${seq}, pending=${pending})`));
         });
@@ -292,10 +305,14 @@ function sendMsgAsync(serviceName, methodName, bodyBytes, timeout = 20000) {
             if (settled) return;
             networkScheduler.clear(timeoutKey);
             pendingCallbacks.delete(seq);
+            pendingStartedAt.delete(seq);
             settled = true;
             reject(error);
         });
-    });
+      });
+    } finally {
+      release();
+    }
 }
 
 // ============ 消息处理 ============
@@ -327,6 +344,7 @@ function handleMessage(data) {
             const cb = pendingCallbacks.get(clientSeqVal);
             if (cb) {
                 pendingCallbacks.delete(clientSeqVal);
+                pendingStartedAt.delete(clientSeqVal);
                 if (errorCode !== 0) {
                     cb(new Error(`${meta.service_name}.${meta.method_name} 错误: code=${errorCode} ${meta.error_message || ''}`));
                 } else {
@@ -669,6 +687,22 @@ let heartbeatMissCount = 0;
 const HEARTBEAT_TIMEOUT = 30000;
 const MAX_HEARTBEAT_MISS = 3;
 
+function getGatewayHealth() {
+    const now = Date.now();
+    const result = evaluateGatewayHealth({
+        connected: isConnected(),
+        heartbeatAgeMs: now - lastHeartbeatResponse,
+        oldestPendingAgeMs: getOldestPendingAgeMs(pendingStartedAt.values(), now),
+        heartbeatLimitMs: HEARTBEAT_TIMEOUT,
+        pendingLimitMs: 5000,
+    });
+    return {
+        ...result,
+        pending: pendingCallbacks.size,
+        queue: requestGate.snapshot(),
+    };
+}
+
 function startHeartbeat() {
     networkScheduler.clear('heartbeat_interval');
     lastHeartbeatResponse = Date.now();
@@ -699,7 +733,7 @@ function startHeartbeat() {
             gid: toLong(userState.gid),
             client_version: CONFIG.clientVersion,
         })).finish();
-        sendMsgAsync('gamepb.userpb.UserService', 'Heartbeat', body).then(({ body: replyBody }) => {
+        sendMsgAsync('gamepb.userpb.UserService', 'Heartbeat', body, 20000, { priority: 'critical' }).then(({ body: replyBody }) => {
             lastHeartbeatResponse = Date.now();
             heartbeatMissCount = 0;
             try {
@@ -897,6 +931,7 @@ module.exports = {
     sendMsg, sendMsgAsync,
     getUserState,
     getWsErrorState,
+    getGatewayHealth,
     getAceStatus,
     buildLoginDeviceInfo,
     buildWebSocketHeaders,

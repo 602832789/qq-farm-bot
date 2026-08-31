@@ -6,6 +6,7 @@ const {
   applyConfigSnapshot,
   getFriendBlacklist,
   removeFriendFromCache,
+  updateFriendDogInfoCache,
 } = require('../models/store');
 const { sendMsgAsync } = require('../utils/network');
 const { types } = require('../utils/proto');
@@ -714,6 +715,11 @@ async function enterFriendFarm(gid) {
   if (dogInfo) {
     reply.__briefDogInfo = dogInfo;
   }
+  const accountId = process.env.FARM_ACCOUNT_ID || '';
+  updateFriendDogInfoCache(accountId, gid, {
+    dogId: toNum(dogInfo && dogInfo.dogId),
+    dogName: getDogName(dogInfo && dogInfo.dogId),
+  });
 
   return reply;
 }

@@ -35,6 +35,7 @@ const {
   visitFriendForSteal,
   visitFriendForHelp,
 } = require('./friend-visit');
+const { buildFriendVisitPlan } = require('./friend-visit-plan');
 const { sellAllFruits } = require('./warehouse');
 const {
   getFriendsList,
@@ -84,15 +85,22 @@ async function bootstrapFriendDogInfoCacheIfNeeded() {
   const dogInfoCache = readFriendDogInfoCache(accountId);
   if (dogInfoCache && Object.keys(dogInfoCache).length > 0) return;
 
-  dogInfoBootstrapAttempted = true;
   try {
     log('好友', '护主犬缓存为空，上号稳定后自动获取一次好友狗信息', {
       module: 'friend',
       event: '自动获取好友狗信息',
       source: 'friend_loop_bootstrap',
     });
-    await fetchFriendsDogInfo();
+    const result = await fetchFriendsDogInfo();
+    if (result && result.complete) {
+      dogInfoBootstrapAttempted = true;
+    } else {
+      dogInfoBootstrapAttempted = false;
+      dogInfoBootstrapReadyAt = Date.now() + Math.max(60000, Number(result && result.retryMs) || 60000);
+    }
   } catch (err) {
+    dogInfoBootstrapAttempted = false;
+    dogInfoBootstrapReadyAt = Date.now() + (30 * 60 * 1000);
     logWarn('好友', `自动获取好友狗信息失败: ${err.message}`);
   }
 }
@@ -336,8 +344,25 @@ async function checkFriends(options = {}) {
     // ---- Execute ----
     const tally = { steal: 0, water: 0, weed: 0, bug: 0, putBug: 0, putWeed: 0 };
 
-    // Steal
-    if (stealTargets.length > 0 && doSteal) {
+    const combinedVisitPlan = doSteal && doHelp && !helpExpReached
+      ? buildFriendVisitPlan({ stealTargets, helpTargets })
+      : [];
+
+    // A combined visit lets visitFriend perform all enabled operations while the
+    // friend farm is open, so a friend present in both lists is entered once.
+    if (combinedVisitPlan.length > 0) {
+      for (const target of combinedVisitPlan) {
+        try {
+          await visitFriend(target, tally, userState.gid, userState.accountId);
+        } catch {
+          // Skip individual failures
+        }
+        await randomDelay(500, 1200);
+      }
+    }
+
+    // Steal-only runs retain their narrower behaviour.
+    if (combinedVisitPlan.length === 0 && stealTargets.length > 0 && doSteal) {
       for (const target of stealTargets) {
         if (!canOperate(0x2714)) break; // 10004 = steal
         try {
@@ -359,7 +384,7 @@ async function checkFriends(options = {}) {
     }
 
     // Help
-    if (helpTargets.length > 0 && doHelp) {
+    if (combinedVisitPlan.length === 0 && helpTargets.length > 0 && doHelp) {
       for (const target of helpTargets) {
         try {
           await visitFriendForHelp(
