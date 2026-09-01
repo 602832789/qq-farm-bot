@@ -267,6 +267,10 @@ const DEFAULT_AUTOMATION = {
     rain_poem_summon_use: false,
     rain_poem_prank_use: false,
     rain_poem_research_unlock: false,
+    charity_flower_share_claim: false,
+    charity_flower_donate: false,
+    charity_flower_reward_claim: false,
+    charity_flower_public_fund_claim: false,
     fertilizer_gift: false,
     fertilizer_buy_organic: false,
     fertilizer_buy_normal: false,
@@ -296,17 +300,30 @@ const HIDDEN_ACTIVITY_AUTOMATION_KEYS = new Set([
     'qixi_sachet_gift'
 ]);
 
+const CHARITY_FLOWER_AUTOMATION_KEYS = [
+    'charity_flower_share_claim',
+    'charity_flower_donate',
+    'charity_flower_reward_claim',
+    'charity_flower_public_fund_claim'
+];
+const RAIN_POEM_AUTOMATION_KEYS = [
+    'rain_poem_bottle_buy',
+    'rain_poem_weather_collect',
+    'rain_poem_summon_use',
+    'rain_poem_prank_use',
+    'rain_poem_research_unlock'
+];
+
 const TIMED_ACTIVITY_AUTOMATION_GROUPS = [
+    {
+        startTime: 1788192000,
+        endTime: 1788969599,
+        keys: CHARITY_FLOWER_AUTOMATION_KEYS
+    },
     {
         startTime: 1787709600,
         endTime: 1788883199,
-        keys: [
-            'rain_poem_bottle_buy',
-            'rain_poem_weather_collect',
-            'rain_poem_summon_use',
-            'rain_poem_prank_use',
-            'rain_poem_research_unlock'
-        ]
+        keys: RAIN_POEM_AUTOMATION_KEYS
     }
 ];
 
@@ -2027,7 +2044,8 @@ module.exports._test = {
     normalizeCapitalMode,
     disableHiddenActivityAutomation,
     HIDDEN_ACTIVITY_AUTOMATION_KEYS,
-    RAIN_POEM_AUTOMATION_KEYS: TIMED_ACTIVITY_AUTOMATION_GROUPS[0].keys,
+    RAIN_POEM_AUTOMATION_KEYS,
+    CHARITY_FLOWER_AUTOMATION_KEYS,
     getInactiveActivityAutomationKeys,
     getLocalDateKey,
     normalizeFriendDogInfoCache

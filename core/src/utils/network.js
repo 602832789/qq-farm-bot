@@ -75,24 +75,63 @@ let tsdkRuntime = null;
 let aceService = null;
 let initialGamePackInfo = '';
 
+const DEFAULT_DEVICE_FINGERPRINT = Object.freeze({
+    os: 'iOS',
+    sysSoftware: 'iOS 26.2.1',
+    deviceBrand: 'Apple',
+    deviceModel: 'iPhone18,3',
+    deviceId: 'iPhone X<iPhone18,3>',
+    memory: '7672',
+});
+
+function resolveDeviceFingerprint(deviceProtocol) {
+    const custom = deviceProtocol && deviceProtocol.enabled ? deviceProtocol : null;
+    if (!custom) return { ...DEFAULT_DEVICE_FINGERPRINT, userAgent: '' };
+
+    const userAgent = String(custom.userAgent || '').trim();
+    const isAndroid = /android/i.test(userAgent);
+    const isApple = /iphone|ipad|ios/i.test(userAgent)
+        || /apple/i.test(String(custom.deviceBrand || ''));
+    if (isAndroid && isApple) {
+        throw new Error('设备协议矛盾：Android UA 不能与 Apple/iOS 设备信息混用');
+    }
+
+    const deviceBrand = String(custom.deviceBrand || '').trim();
+    const deviceModel = String(custom.deviceModel || '').trim();
+    const deviceId = String(custom.deviceId || custom.deviceMac || custom.imei || '').trim();
+    if (!deviceBrand || !deviceModel || !deviceId) {
+        throw new Error('设备协议不完整：启用自定义设备时必须设置品牌、型号和稳定设备ID');
+    }
+
+    const osName = isAndroid ? 'Android' : 'iOS';
+    return {
+        os: osName,
+        sysSoftware: osName,
+        deviceBrand,
+        deviceModel,
+        deviceId,
+        memory: DEFAULT_DEVICE_FINGERPRINT.memory,
+        userAgent,
+    };
+}
+
 function logAce(level, message) {
     if (level === 'warn' || level === 'error') logWarn('ACE', message);
     else log('ACE', message);
 }
 
 function createTsdkRuntime(deviceProtocol) {
-    const customDevice = deviceProtocol && deviceProtocol.enabled ? deviceProtocol : null;
+    const device = resolveDeviceFingerprint(deviceProtocol);
     return new TsdkRuntime({
         accountId: process.env.FARM_ACCOUNT_ID,
         gameId: CONFIG.tsdkGameId,
         appKey: CONFIG.tsdkAppKey,
         deviceInfo: {
-            deviceModel: customDevice && customDevice.deviceModel,
-            deviceBrand: customDevice && customDevice.deviceBrand,
-            deviceId: customDevice && customDevice.deviceId,
-            deviceMac: customDevice && customDevice.deviceMac,
-            imei: customDevice && customDevice.imei,
-            platform: CONFIG.os,
+            deviceModel: device.deviceModel,
+            deviceBrand: device.deviceBrand,
+            deviceId: device.deviceId,
+            platform: device.os,
+            system: device.sysSoftware,
         },
         logger: logAce,
     });
@@ -404,6 +443,12 @@ function handleNotify(msg) {
                     // 如果是自己的农场，触发事件
                     if (hostGid === userState.gid || hostGid === 0) {
                         networkEvents.emit('landsChanged', lands);
+                    } else {
+                        networkEvents.emit('friendLandsObserved', {
+                            gid: hostGid,
+                            lands,
+                            source: 'lands_notify',
+                        });
                     }
                 }
             } catch { }
@@ -579,29 +624,14 @@ function handleNotify(msg) {
 
 // ============ 登录 ============
 function buildLoginDeviceInfo(deviceProtocol) {
-    const customDevice = deviceProtocol && deviceProtocol.enabled ? deviceProtocol : null;
-    if (!customDevice) {
-        return {
-            client_version: CONFIG.clientVersion,
-            sys_software: 'iOS 26.2.1',
-            network: 'wifi',
-            memory: '7672',
-            device_id: 'iPhone X<iPhone18,3>',
-        };
-    }
-
-    const brand = String(customDevice.deviceBrand || '').trim();
-    const model = String(customDevice.deviceModel || '').trim();
-    const deviceId = String(customDevice.deviceId || '').trim();
-    const imei = String(customDevice.imei || '').trim();
-    const mac = String(customDevice.deviceMac || '').trim();
+    const device = resolveDeviceFingerprint(deviceProtocol);
     return {
         client_version: CONFIG.clientVersion,
-        sys_software: /android/i.test(customDevice.userAgent || '') ? 'Android' : CONFIG.os,
-        sys_hardware: [brand, model].filter(Boolean).join(' '),
+        sys_software: device.sysSoftware,
+        sys_hardware: `${device.deviceBrand} ${device.deviceModel}`,
         network: 'wifi',
-        memory: '7672',
-        device_id: deviceId || mac || imei || [brand, model].filter(Boolean).join(' '),
+        memory: device.memory,
+        device_id: device.deviceId,
     };
 }
 
@@ -761,9 +791,7 @@ function buildWebSocketHeaders(deviceProtocol) {
         'Origin': 'https://gate-obt.nqf.qq.com',
         'Referer': `https://appservice.qq.com/1112386029/${resourceVersion}/page-frame.html`,
     };
-    const userAgent = deviceProtocol && deviceProtocol.enabled
-        ? String(deviceProtocol.userAgent || '').trim()
-        : '';
+    const userAgent = resolveDeviceFingerprint(deviceProtocol).userAgent;
     if (userAgent) headers['User-Agent'] = userAgent;
     return headers;
 }
@@ -813,9 +841,6 @@ function connect(code, onLoginSuccess) {
     networkStopped = false;
     savedLoginCallback = onLoginSuccess;
     if (code) savedCode = code;
-    const url = `${CONFIG.serverUrl}?platform=${CONFIG.platform}&os=${CONFIG.os}&ver=${CONFIG.clientVersion}&code=${savedCode}&openID=`;
-    closeCurrentWs({ terminate: true });
-
     // 获取设备协议配置
     let deviceProtocol = null;
     try {
@@ -829,6 +854,17 @@ function connect(code, onLoginSuccess) {
             isWarn: true,
         });
     }
+
+    let deviceFingerprint;
+    try {
+        deviceFingerprint = resolveDeviceFingerprint(deviceProtocol);
+    } catch (error) {
+        logWarn('系统', `设备协议校验失败，已中止连接：${error.message}`);
+        networkEvents.emit('security_error', { message: error.message });
+        return;
+    }
+    const url = `${CONFIG.serverUrl}?platform=${CONFIG.platform}&os=${deviceFingerprint.os}&ver=${CONFIG.clientVersion}&code=${savedCode}&openID=`;
+    closeCurrentWs({ terminate: true });
 
     // 输出自定义设备信息日志
     if (deviceProtocol && deviceProtocol.enabled) {
@@ -935,6 +971,7 @@ module.exports = {
     getAceStatus,
     buildLoginDeviceInfo,
     buildWebSocketHeaders,
+    resolveDeviceFingerprint,
     extractServerClientVersion,
     applyServerVersionInfo,
     networkEvents,

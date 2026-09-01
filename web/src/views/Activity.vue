@@ -7,10 +7,11 @@ import HeluPassportPanel from '@/components/activity/HeluPassportPanel.vue'
 import HeluSolarTermsPanel from '@/components/activity/HeluSolarTermsPanel.vue'
 import QixiActivityPanel from '@/components/activity/QixiActivityPanel.vue'
 import RainPoemActivityPanel from '@/components/activity/RainPoemActivityPanel.vue'
+import CharityFlowerActivityPanel from '@/components/activity/CharityFlowerActivityPanel.vue'
 import StarRecordPanel from '@/components/activity/StarRecordPanel.vue'
 import api from '@/api'
 import BaseButton from '@/components/ui/BaseButton.vue'
-import { isWithinActivityWindowMs, RAIN_POEM_ACTIVITY_WINDOW } from '@/constants/activity-windows'
+import { CHARITY_FLOWER_ACTIVITY_WINDOW, isWithinActivityWindowMs, RAIN_POEM_ACTIVITY_WINDOW } from '@/constants/activity-windows'
 import { useAccountStore } from '@/stores/account'
 import { useActivityStore } from '@/stores/activity'
 import { useToastStore } from '@/stores/toast'
@@ -90,6 +91,8 @@ const {
   qixiDewLoading,
   rainPoemActivity,
   rainPoemLoading,
+  charityFlowerActivity,
+  charityFlowerLoading,
 } = storeToRefs(activityStore)
 
 const SHOW_QIXI_ACTIVITY = false
@@ -97,6 +100,7 @@ const SHOW_STAR_ACTIVITY = false
 const nowMs = ref(Date.now())
 let nowTimer: ReturnType<typeof window.setInterval> | null = null
 const rainPoemActivityActive = computed(() => isWithinActivityWindowMs(RAIN_POEM_ACTIVITY_WINDOW, nowMs.value))
+const charityFlowerActivityActive = computed(() => isWithinActivityWindowMs(CHARITY_FLOWER_ACTIVITY_WINDOW, nowMs.value))
 const selectedActivity = ref<string | null>(null)
 const activityStatusFilter = ref<'all' | 'active' | 'upcoming' | 'ended'>('all')
 const activeSection = ref<ActivitySectionKey>('journey')
@@ -130,16 +134,16 @@ const ACTIVITY_CLIENT_PREVIEWS: Array<{ ids: number[], title: string, preview: A
     ids: [2026090900, 2026090901],
     title: '公益小红花',
     preview: {
-      source: '最新版官方客户端 delayRes 配置与 Prefab',
+      source: '最新版官方客户端生成协议、delayRes 配置与 Prefab',
       entryId: 2026090901,
-      entryUid: 'RedFlowerActivity',
+      entryUid: 'CharityRedFlower',
       modules: [
         { title: '个人与活动进度', description: '客户端已预置个人进度、活动总进度及进度条界面。' },
         { title: '小红花与阶段礼物', description: '已发现小红花展示、阶段条目和礼物界面，共有 5 个静态阶段素材。' },
         { title: '好友互动', description: '已发现赠送、分享、好友助力及授权相关界面。' },
         { title: '装扮线索', description: '客户端包含“穿戴”状态素材，但奖励内容和取得条件尚未下发。' },
       ],
-      pending: ['任务与进度阈值', '奖励名称和数量', '每日次数与消耗', '服务端操作协议'],
+      pending: [],
     },
   },
 ]
@@ -188,7 +192,7 @@ const activityCards = computed(() => {
     activityIds: [2026070300],
   }]
   return source.map((group) => {
-    const adaptedKey = group.activityIds.includes(2026070300) ? 'rain-poem' as const : null
+    const adaptedKey = group.activityIds.includes(2026070300) ? 'rain-poem' as const : group.activityIds.includes(2026090900) ? 'charity-flower' as const : null
     const window = { startMs: group.startTime * 1000, endMs: group.endTime * 1000 }
     const hue = Math.abs(group.id * 37) % 360
     return {
@@ -197,15 +201,15 @@ const activityCards = computed(() => {
       adaptedKey,
       title: group.title || `活动 ${group.id}`,
       description: adaptedKey
-        ? '查看天气、每日进度与气象研究'
+        ? adaptedKey === 'charity-flower' ? '查看爱心、公益进度与奖励状态' : '查看天气、每日进度与气象研究'
         : ACTIVITY_CLIENT_PREVIEWS.some(item => item.title === group.title || item.ids.some(id => group.activityIds.includes(id)))
           ? '已读取客户端静态预览，动态规则待服务端开放'
           : '暂未适配详情',
-      image: group.imageUrl || (adaptedKey ? '/activity/rain-poem/day-rain-bg.jpg' : ''),
+      image: group.imageUrl || (adaptedKey === 'rain-poem' ? '/activity/rain-poem/day-rain-bg.jpg' : ''),
       window,
       updatedMs: window.startMs,
       status: activityWindowStatus(window),
-      pending: group.activityIds.some(id => unknownActivityIds.value.has(id)),
+      pending: !adaptedKey && group.activityIds.some(id => unknownActivityIds.value.has(id)),
       backgroundStyle: {
         background: `radial-gradient(circle at 84% 18%, hsl(${(hue + 42) % 360} 82% 68% / 0.38), transparent 34%), radial-gradient(circle at 12% 92%, hsl(${(hue + 310) % 360} 75% 58% / 0.26), transparent 38%), linear-gradient(135deg, hsl(${hue} 52% 38%), hsl(${(hue + 32) % 360} 58% 18%))`,
       },
@@ -338,6 +342,8 @@ async function refreshAll() {
       requests.push(activityStore.fetchQixiActivity(String(currentAccountId.value)))
     if (rainPoemActivityActive.value)
       requests.push(activityStore.fetchRainPoemActivity(String(currentAccountId.value)))
+    if (charityFlowerActivityActive.value)
+      requests.push(activityStore.fetchCharityFlowerActivity(String(currentAccountId.value)))
     await Promise.all(requests)
   }
 }
@@ -584,6 +590,11 @@ onUnmounted(() => {
       <div v-else-if="rainPoemActivityActive && !currentAccountId" class="rounded-lg bg-white p-10 text-center text-sm text-gray-500 shadow dark:bg-gray-800">
         {{ L.needAccount }}
       </div>
+    </div>
+    <div v-else-if="selectedActivityCard?.adaptedKey === 'charity-flower' && selectedActivityCard.status === 'active'" class="space-y-3">
+      <button class="inline-flex items-center gap-1.5 text-sm text-gray-500 transition hover:text-gray-900 dark:hover:text-white" @click="selectedActivity = null"><span class="i-carbon-arrow-left" />返回活动列表</button>
+      <CharityFlowerActivityPanel v-if="charityFlowerActivityActive && currentAccountId" :activity="charityFlowerActivity" :loading="charityFlowerLoading" @refresh="refreshAll" />
+      <div v-else-if="charityFlowerActivityActive && !currentAccountId" class="rounded-lg bg-white p-10 text-center text-sm text-gray-500 shadow dark:bg-gray-800">{{ L.needAccount }}</div>
     </div>
     <div v-else-if="selectedActivityCard" class="space-y-3">
       <button class="inline-flex items-center gap-1.5 text-sm text-gray-500 transition hover:text-gray-900 dark:hover:text-white" @click="selectedActivity = null">

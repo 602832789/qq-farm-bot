@@ -44,6 +44,15 @@ const RAIN_POEM_START_TIME = 1787709600;
 const RAIN_POEM_END_TIME = 1788883199;
 const LIGHTNING_MUTANT_TYPE = 12;
 const RAIN_POEM_SUMMON_DAILY_LIMIT = 50;
+const CHARITY_FLOWER_ACTIVITY_UID = 'CharityRedFlower';
+const CHARITY_FLOWER_GROUP_ACTIVITY_ID = 2026090900;
+const CHARITY_FLOWER_ACTIVITY_ID = 2026090901;
+const CHARITY_FLOWER_START_TIME = 1788192000;
+const CHARITY_FLOWER_END_TIME = 1788969599;
+const CHARITY_FLOWER_CLAIM_SHARE_CMD = 35;
+const CHARITY_FLOWER_DONATE_ALL_CMD = 36;
+const CHARITY_FLOWER_CLAIM_REWARD_CMD = 37;
+const CHARITY_FLOWER_CLAIM_XHH_CMD = 38;
 const RAIN_POEM_ITEM_NAMES = new Map([
   [1027, '雷电徽章'], [5001, '天气采集瓶'], [5002, '雷雨召唤瓶'],
   [5005, '青蛙使坏瓶'], [5006, '乌云使坏瓶'],
@@ -373,6 +382,14 @@ async function operateActivity(activityId, cmd, options = {}) {
       node_id: Math.max(0, toNum(options.techTreeSubmitNode.nodeId)),
     };
   }
+  if (options?.charityFlowerClaimShare) payload.charity_flower_claim_share = {};
+  if (options?.charityFlowerDonateAll) payload.charity_flower_donate_all = {};
+  if (options?.charityFlowerClaimReward && typeof options.charityFlowerClaimReward === 'object') {
+    payload.charity_flower_claim_reward = {
+      need_personal_score: Math.max(0, toNum(options.charityFlowerClaimReward.needPersonalScore)),
+    };
+  }
+  if (options?.charityFlowerClaimXhh) payload.charity_flower_claim_xhh = {};
 
   const request = types.ActivityOperateRequest.encode(
     types.ActivityOperateRequest.create(payload)
@@ -391,6 +408,10 @@ async function operateActivity(activityId, cmd, options = {}) {
     qingmeiWineSell: payload.qingmei_wine_sell,
     qixiGift: payload.qixi_gift,
     techTreeSubmitNode: payload.tech_tree_submit_node,
+    charityFlowerAction: payload.charity_flower_claim_share ? 'claim_share'
+      : payload.charity_flower_donate_all ? 'donate_all'
+        : payload.charity_flower_claim_reward ? 'claim_reward'
+          : payload.charity_flower_claim_xhh ? 'claim_xhh' : '',
     // 用于和官方抓包的明文 protobuf 对照；请求中不含登录凭据。
     requestBytes: request.length,
     requestHex: Buffer.from(request).toString('hex'),
@@ -842,6 +863,107 @@ function normalizeCoreItem(item) {
     itemName: info?.name || (itemId ? `物品#${itemId}` : ''),
     image: getItemImageById(itemId) || '',
   };
+}
+
+function isCharityFlowerActive(nowSeconds = Math.floor(Date.now() / 1000)) {
+  return nowSeconds >= CHARITY_FLOWER_START_TIME && nowSeconds <= CHARITY_FLOWER_END_TIME;
+}
+
+function normalizeCharityFlowerActivity(node, nowSeconds = Math.floor(Date.now() / 1000)) {
+  const body = node?.charity_flower || {};
+  const activity = node?.activity || {};
+  const personalScore = toNum(body.personal_score);
+  const globalScore = toNum(body.global_score);
+  return {
+    uid: CHARITY_FLOWER_ACTIVITY_UID,
+    title: String(activity.title || '公益小红花'),
+    activityId: toNum(activity.id) || CHARITY_FLOWER_ACTIVITY_ID,
+    startTime: toNum(activity.start_time) || CHARITY_FLOWER_START_TIME,
+    endTime: toNum(activity.end_time) || CHARITY_FLOWER_END_TIME,
+    active: isCharityFlowerActive(nowSeconds),
+    love: {
+      itemId: toNum(body.love_item_id),
+      count: toNum(body.love_count),
+      personalScore,
+      canDonate: !!body.can_donate,
+    },
+    global: {
+      score: globalScore,
+      target: toNum(body.max_global_score),
+      amountYuan: globalScore / 100,
+      targetYuan: toNum(body.max_global_score) / 100,
+      reached: globalScore >= toNum(body.max_global_score) && toNum(body.max_global_score) > 0,
+    },
+    share: {
+      status: toNum(body.share_status),
+      claimable: toNum(body.share_status) === 2,
+      claimed: toNum(body.share_status) === 3,
+      rewards: (body.share_reward || []).map(normalizeCoreItem),
+    },
+    personalRewards: (body.personal_rewards || []).map(item => ({
+      needScore: toNum(item.need_personal_score),
+      reached: !!item.reached || personalScore >= toNum(item.need_personal_score),
+      claimed: !!item.claimed,
+      rewards: (item.reward || []).map(normalizeCoreItem),
+    })),
+    finalReward: {
+      threshold: toNum(body.final_pack_threshold),
+      settlementTime: toNum(body.settlement_time),
+      settled: !!body.settled,
+      eligible: !!body.final_reward_eligible,
+      rewards: (body.final_reward || []).map(normalizeCoreItem),
+    },
+    publicFund: {
+      status: toNum(body.xhh_status),
+      claimable: toNum(body.xhh_status) === 2,
+      claimed: toNum(body.xhh_status) === 3,
+      complianceAgreed: !!body.compliance_agreed,
+      rewards: (body.xhh_reward || []).map(normalizeCoreItem),
+      successCount: (body.xhh_success_orders || []).length,
+    },
+  };
+}
+
+async function getCharityFlowerActivity() {
+  const reply = await listActivityGroups();
+  const node = findActivityNodeById(reply?.groups, CHARITY_FLOWER_ACTIVITY_ID);
+  if (!node) throw new Error('公益小红花活动数据未下发');
+  return normalizeCharityFlowerActivity(node);
+}
+
+function assertCharityFlowerActive(action) {
+  if (!isCharityFlowerActive()) throw new Error(`${action}失败: 公益小红花活动未开始或已结束`);
+}
+
+async function claimCharityFlowerShareReward() {
+  assertCharityFlowerActive('领取分享奖励');
+  const reply = await operateActivityReply(CHARITY_FLOWER_ACTIVITY_ID, CHARITY_FLOWER_CLAIM_SHARE_CMD, { charityFlowerClaimShare: true });
+  return { ok: true, awards: (reply?.charity_flower_claim_share?.awards || []).map(normalizeCoreItem) };
+}
+
+async function donateCharityFlowerLove() {
+  assertCharityFlowerActive('送出爱心');
+  const reply = await operateActivityReply(CHARITY_FLOWER_ACTIVITY_ID, CHARITY_FLOWER_DONATE_ALL_CMD, { charityFlowerDonateAll: true });
+  const result = reply?.charity_flower_donate_all || {};
+  return { ok: true, consumedLoveCount: toNum(result.consumed_love_count), scoreAdded: toNum(result.score_added) };
+}
+
+async function claimCharityFlowerReward(needPersonalScore) {
+  assertCharityFlowerActive('领取爱心档位奖励');
+  const threshold = Math.max(1, toNum(needPersonalScore));
+  const reply = await operateActivityReply(CHARITY_FLOWER_ACTIVITY_ID, CHARITY_FLOWER_CLAIM_REWARD_CMD, {
+    charityFlowerClaimReward: { needPersonalScore: threshold },
+  });
+  return { ok: true, needScore: threshold, awards: (reply?.charity_flower_claim_reward?.awards || []).map(normalizeCoreItem) };
+}
+
+async function claimCharityFlowerPublicFund() {
+  assertCharityFlowerActive('送出公益金');
+  const before = await getCharityFlowerActivity();
+  if (!before.publicFund.complianceAgreed) throw new Error('送出公益金失败: 尚未同意腾讯公益平台协议');
+  if (!before.publicFund.claimable) return { ok: true, claimed: false, reason: 'not_claimable' };
+  const reply = await operateActivityReply(CHARITY_FLOWER_ACTIVITY_ID, CHARITY_FLOWER_CLAIM_XHH_CMD, { charityFlowerClaimXhh: true });
+  return { ok: true, claimed: true, awards: (reply?.charity_flower_claim_xhh?.awards || []).map(normalizeCoreItem) };
 }
 
 function normalizeQingmeiPreviewResult(result) {
@@ -2833,6 +2955,8 @@ module.exports = {
   QINGMEI_ACTIVITY_UID,
   QIXI_ACTIVITY_UID,
   RAIN_POEM_ACTIVITY_UID,
+  CHARITY_FLOWER_ACTIVITY_UID,
+  CHARITY_FLOWER_GROUP_ACTIVITY_ID,
   NANGUA_SHOP_ACTIVITY_ID,
   NANGUA_RANDOM_SHOP_ACTIVITY_ID,
   HELU_ACTIVITY_ID,
@@ -2856,6 +2980,7 @@ module.exports = {
   RAIN_POEM_COLLECTION_ACTIVITY_ID,
   RAIN_POEM_RESEARCH_ACTIVITY_ID,
   RAIN_POEM_TASK_ACTIVITY_ID,
+  CHARITY_FLOWER_ACTIVITY_ID,
   HELU_SUB_ACTIVITY_KEYS,
   NANGUA_SHOP_BUY_CMD,
   NANGUA_SHOP_REFRESH_CMD,
@@ -2891,6 +3016,13 @@ module.exports = {
   getOwnWeatherStatus,
   encodeRainPoemSummonUseRequest,
   isLightningMutantPlant,
+  getCharityFlowerActivity,
+  normalizeCharityFlowerActivity,
+  isCharityFlowerActive,
+  claimCharityFlowerShareReward,
+  donateCharityFlowerLove,
+  claimCharityFlowerReward,
+  claimCharityFlowerPublicFund,
   getSeasonPassport,
   claimSeasonPassportRewards,
   getSolarTermsInfo,

@@ -24,6 +24,10 @@ export interface AutomationConfig {
   rain_poem_summon_use?: boolean
   rain_poem_prank_use?: boolean
   rain_poem_research_unlock?: boolean
+  charity_flower_share_claim?: boolean
+  charity_flower_donate?: boolean
+  charity_flower_reward_claim?: boolean
+  charity_flower_public_fund_claim?: boolean
   sell?: boolean
   fertilizer_gift?: boolean
   fertilizer_buy_organic?: boolean

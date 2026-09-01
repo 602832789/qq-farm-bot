@@ -27,6 +27,7 @@ const {
 } = require('../services/farm');
 const {
     checkFriends,
+    runScheduledStealCheck,
     startFriendCheckLoop,
     stopFriendCheckLoop,
     refreshFriendCheckLoop,
@@ -78,6 +79,7 @@ const {
     statusData
 } = require('../services/status');
 const {
+    initTaskSystem,
     cleanupTaskSystem,
     checkAndClaimTasks,
     getTaskClaimDailyState,
@@ -246,10 +248,13 @@ function getLocalDateKey() {
 
 // ==================== 每日任务 ====================
 
-async function runDailyRoutines(force = false) {
+async function runDailyRoutines(force = false, options = {}) {
     if (!loginReady || friendSyncPaused) return;
     try {
+        const automation = getAutomation() || {};
         await checkAndClaimEmails(force);
+        if (automation.task && !options.skipTask) await checkAndClaimTasks();
+        if (automation.fertilizer_gift) await openFertilizerGiftPacksSilently();
         await performDailyShare(force);
         await performDailyMonthCardGift(force);
         await buyFreeGifts(force);
@@ -270,7 +275,7 @@ function stopDailyRoutineTimer() {
 function startDailyRoutineTimer() {
     stopDailyRoutineTimer();
     lastDailyRunDate = getLocalDateKey();
-    runDailyRoutines(true).catch(() => null);
+    runDailyRoutines(true, { skipTask: true }).catch(() => null);
 
     // 每 60 秒检查一次日期是否变化
     workerScheduler.setIntervalTask('daily_routine_interval', 60000, () => {
@@ -303,12 +308,17 @@ async function runStarActivityAutoClaims() {
     const useRainPoemSummonEnabled = automation.rain_poem_summon_use === true;
     const useRainPoemPrankEnabled = automation.rain_poem_prank_use === true;
     const unlockRainPoemResearchEnabled = automation.rain_poem_research_unlock === true;
+    const claimCharityShareEnabled = automation.charity_flower_share_claim === true;
+    const donateCharityLoveEnabled = automation.charity_flower_donate === true;
+    const claimCharityRewardsEnabled = automation.charity_flower_reward_claim === true;
+    const claimCharityPublicFundEnabled = automation.charity_flower_public_fund_claim === true;
     const qixiFriendPriority = Array.isArray(automation.qixi_friend_priority)
         ? automation.qixi_friend_priority.map(Number).filter(gid => gid > 0) : [];
     if (!claimPassport && !claimSolarTerms && !claimRecords && !claimQingmeiSeedsEnabled && !brewQingmeiWineEnabled
         && !useQixiDewEnabled && !buildQixiBridgeEnabled && !giftQixiSachetEnabled
         && !buyRainPoemBottleEnabled && !collectRainPoemWeatherEnabled && !useRainPoemSummonEnabled && !useRainPoemPrankEnabled
-        && !unlockRainPoemResearchEnabled) return;
+        && !unlockRainPoemResearchEnabled && !claimCharityShareEnabled && !donateCharityLoveEnabled
+        && !claimCharityRewardsEnabled && !claimCharityPublicFundEnabled) return;
 
     starActivityClaimRunning = true;
     try {
@@ -479,6 +489,37 @@ async function runStarActivityAutoClaims() {
                     }
                 }
                 log('活动', `自动赠送鹊羽香囊完成：${sent} 个`, { module: 'activity', event: '香囊自动赠送', result: sent ? 'success' : 'none', count: sent });
+            }
+        }
+
+        if (claimCharityShareEnabled || donateCharityLoveEnabled || claimCharityRewardsEnabled || claimCharityPublicFundEnabled) {
+            const {
+                getCharityFlowerActivity,
+                claimCharityFlowerShareReward,
+                donateCharityFlowerLove,
+                claimCharityFlowerReward,
+                claimCharityFlowerPublicFund
+            } = require('../services/activity');
+            let charity = await getCharityFlowerActivity();
+            if (charity?.active !== false) {
+                if (claimCharityShareEnabled && charity?.share?.claimable) {
+                    await claimCharityFlowerShareReward();
+                    charity = await getCharityFlowerActivity();
+                }
+                if (donateCharityLoveEnabled && charity?.love?.canDonate && Number(charity?.love?.count || 0) > 0) {
+                    await donateCharityFlowerLove();
+                    charity = await getCharityFlowerActivity();
+                }
+                if (claimCharityRewardsEnabled) {
+                    for (const tier of charity?.personalRewards || []) {
+                        if (!tier.reached || tier.claimed) continue;
+                        await claimCharityFlowerReward(tier.needScore);
+                    }
+                    charity = await getCharityFlowerActivity();
+                }
+                if (claimCharityPublicFundEnabled && charity?.publicFund?.claimable && charity?.publicFund?.complianceAgreed) {
+                    await claimCharityFlowerPublicFund();
+                }
             }
         }
 
@@ -755,9 +796,6 @@ async function runFarmTick(autoConfig) {
     try {
         await runWithRequestPriority('farm', async () => {
             if (autoConfig.farm) await checkFarm();
-            if (autoConfig.task) await checkAndClaimTasks();
-            if (autoConfig.email) await checkAndClaimEmails();
-            if (autoConfig.fertilizer_gift) await openFertilizerGiftPacksSilently();
         });
     } catch { } finally {
         nextFarmRunAt = Date.now() + nextDelay;
@@ -784,6 +822,7 @@ async function runHelpTick(autoConfig) {
         CONFIG.helpCheckIntervalMin || 30000,
         CONFIG.helpCheckIntervalMax || 35000
     );
+    const lowFrequencyDelay = Math.max(10 * 60 * 1000, nextDelay);
 
     try {
         await runWithRequestPriority('friend', async () => {
@@ -799,7 +838,7 @@ async function runHelpTick(autoConfig) {
             });
         }
     } finally {
-        nextHelpRunAt = Date.now() + nextDelay;
+        nextHelpRunAt = Date.now() + lowFrequencyDelay;
         helpTaskRunning = false;
     }
 }
@@ -811,7 +850,10 @@ let nextStealRunAt = 0;
 
 async function runStealTick(autoConfig) {
     if (stealTaskRunning || friendSyncPaused) return;
-    if (!autoConfig.friend_steal) return;
+    if (!autoConfig.friend_steal) {
+        nextStealRunAt = Date.now() + (15 * 60 * 1000);
+        return;
+    }
     const deferMs = getBusinessDeferMs('friend');
     if (deferMs > 0) {
         nextStealRunAt = Date.now() + deferMs;
@@ -819,13 +861,10 @@ async function runStealTick(autoConfig) {
     }
     stealTaskRunning = true;
 
-    const nextDelay = randomIntervalMs(
-        CONFIG.stealCheckIntervalMin || 25000,
-        CONFIG.stealCheckIntervalMax || 30000
-    );
+    let nextDelay = 15 * 60 * 1000;
 
     try {
-        await runWithRequestPriority('friend', () => checkFriends({ onlySteal: true }));
+        nextDelay = await runWithRequestPriority('friend', () => runScheduledStealCheck());
     } catch (err) {
         if (!isTransientNetworkError(err)) {
             log('系统', `偷菜巡查执行失败: ${  err.message}`, {
@@ -835,7 +874,7 @@ async function runStealTick(autoConfig) {
             });
         }
     } finally {
-        nextStealRunAt = Date.now() + nextDelay;
+        nextStealRunAt = Date.now() + Math.max(1000, Number(nextDelay) || 15 * 60 * 1000);
         stealTaskRunning = false;
     }
 }
@@ -1230,6 +1269,7 @@ async function startBot(config) {
         }
 
         // 启动每日定时器
+        initTaskSystem();
         startDailyRoutineTimer();
         startStarActivityClaimTimer();
         startMysteryShopAutoBuyTimer();
@@ -1586,6 +1626,11 @@ async function handleApiCall(msg) {
             case 'unlockRainPoemResearch': {
                 const { unlockRainPoemResearch } = require('../services/activity');
                 result = await unlockRainPoemResearch();
+                break;
+            }
+            case 'getCharityFlowerActivity': {
+                const { getCharityFlowerActivity } = require('../services/activity');
+                result = await getCharityFlowerActivity();
                 break;
             }
             case 'exchangeHeluShopItem': {

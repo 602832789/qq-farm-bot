@@ -7,7 +7,7 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 import BaseSwitch from '@/components/ui/BaseSwitch.vue'
-import { isWithinActivityWindowMs, RAIN_POEM_ACTIVITY_WINDOW } from '@/constants/activity-windows'
+import { CHARITY_FLOWER_ACTIVITY_WINDOW, isWithinActivityWindowMs, RAIN_POEM_ACTIVITY_WINDOW } from '@/constants/activity-windows'
 
 type ModuleKey = 'planting' | 'fertilizer' | 'friends' | 'steal' | 'merchant' | 'activity'
 
@@ -37,6 +37,7 @@ const SHOW_QIXI_ACTIVITY = false
 const nowMs = ref(Date.now())
 let nowTimer: ReturnType<typeof window.setInterval> | null = null
 const showRainPoemActivity = computed(() => isWithinActivityWindowMs(RAIN_POEM_ACTIVITY_WINDOW, nowMs.value))
+const showCharityFlowerActivity = computed(() => isWithinActivityWindowMs(CHARITY_FLOWER_ACTIVITY_WINDOW, nowMs.value))
 
 const moduleInfo: Record<ModuleKey, { title: string, description: string, icon: string, image: string, tone: string }> = {
   planting: { title: '种植与收获', description: '选种、收获、出售和巡田节奏', icon: 'i-carbon-sprout', image: '/game-config/module_icons/planting.png', tone: 'emerald' },
@@ -54,6 +55,9 @@ const selectedLandTypeCount = computed(() => Array.isArray(automation.value.auto
 const activityKeys = computed(() => [
   ...(showRainPoemActivity.value
     ? ['rain_poem_bottle_buy', 'rain_poem_weather_collect', 'rain_poem_summon_use', 'rain_poem_prank_use', 'rain_poem_research_unlock']
+    : []),
+  ...(showCharityFlowerActivity.value
+    ? ['charity_flower_share_claim', 'charity_flower_donate', 'charity_flower_reward_claim', 'charity_flower_public_fund_claim']
     : []),
 ])
 const activityEnabledCount = computed(() => activityKeys.value.filter(key => automation.value.automation[key]).length)
@@ -119,6 +123,7 @@ function summaryTags(key: ModuleKey) {
     SHOW_STAR_ACTIVITY && starFestivalEnabled.value && '心许千灯星垂野',
     SHOW_QIXI_ACTIVITY && qixiActivityEnabled.value && '鹊桥寄情',
     showRainPoemActivity.value && rainPoemActivityEnabled.value && '雨落成诗',
+    showCharityFlowerActivity.value && '公益小红花',
     !starFestivalEnabled.value && (!SHOW_QIXI_ACTIVITY || !qixiActivityEnabled.value) && !rainPoemActivityEnabled.value && '未开启活动',
   ].filter(Boolean)
 }
@@ -582,6 +587,20 @@ watch(() => props.currentAccountId, loadQixiFriends)
                   <BaseSwitch v-model="automation.automation.rain_poem_prank_use" label="使用青蛙与乌云使坏瓶" />
                   <BaseSwitch v-model="automation.automation.rain_poem_research_unlock" label="解锁气象研究" />
                 </div>
+              </section>
+
+              <section v-if="showCharityFlowerActivity" class="space-y-3 border border-rose-100 rounded-lg p-4 dark:border-rose-900/40">
+                <div>
+                  <div class="text-sm text-gray-700 font-medium dark:text-gray-300">公益小红花</div>
+                  <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">分享奖励、爱心捐赠、档位奖励与公益金</div>
+                </div>
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <BaseSwitch v-model="automation.automation.charity_flower_share_claim" label="领取每日分享奖励" />
+                  <BaseSwitch v-model="automation.automation.charity_flower_donate" label="送出全部爱心" />
+                  <BaseSwitch v-model="automation.automation.charity_flower_reward_claim" label="领取爱心档位奖励" />
+                  <BaseSwitch v-model="automation.automation.charity_flower_public_fund_claim" label="领取并送出 1 元公益金" />
+                </div>
+                <p class="text-xs text-amber-600 dark:text-amber-400">该开关会执行真实的 1 元公益助力，每个角色活动期仅一次；仅在官方状态可领取且账号已同意腾讯公益平台协议时执行。</p>
               </section>
             </div>
           </div>

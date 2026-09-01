@@ -181,6 +181,16 @@ export interface RainPoemActivityData {
   research: { currentStage: number, stages: Array<{ id: number, status: number, available: boolean, completed: boolean, claimed: boolean, cost: QixiItem, reward: QixiItem }> }
 }
 
+export interface CharityFlowerActivityData {
+  uid: string; title: string; activityId: number; startTime: number; endTime: number; active: boolean
+  love: { itemId: number, count: number, personalScore: number, canDonate: boolean }
+  global: { score: number, target: number, amountYuan: number, targetYuan: number, reached: boolean }
+  share: { status: number, claimable: boolean, claimed: boolean, rewards: QixiItem[] }
+  personalRewards: Array<{ needScore: number, reached: boolean, claimed: boolean, rewards: QixiItem[] }>
+  finalReward: { threshold: number, settlementTime: number, settled: boolean, eligible: boolean, rewards: QixiItem[] }
+  publicFund: { status: number, claimable: boolean, claimed: boolean, complianceAgreed: boolean, rewards: QixiItem[], successCount: number }
+}
+
 export type HeluSubActivityKey = 'giftLotus' | 'shop' | 'journey' | 'notes'
 
 export interface QingmeiActivity {
@@ -291,6 +301,8 @@ export const useActivityStore = defineStore('activity', () => {
   const qixiActivity = ref<QixiActivityData | null>(null)
   const rainPoemActivity = ref<RainPoemActivityData | null>(null)
   const rainPoemLoading = ref(false)
+  const charityFlowerActivity = ref<CharityFlowerActivityData | null>(null)
+  const charityFlowerLoading = ref(false)
   const qixiFriends = ref<QixiFriend[]>([])
   const qixiLoading = ref(false)
   const qixiBuildLoading = ref(false)
@@ -314,6 +326,7 @@ export const useActivityStore = defineStore('activity', () => {
     heluActivity.value = null
     qixiActivity.value = null
     rainPoemActivity.value = null
+    charityFlowerActivity.value = null
     qixiFriends.value = []
     heluLoading.value = false
     drawLoading.value = false
@@ -347,6 +360,16 @@ export const useActivityStore = defineStore('activity', () => {
       return data
     }
     finally { rainPoemLoading.value = false }
+  }
+
+  async function fetchCharityFlowerActivity(accountId: string) {
+    charityFlowerLoading.value = true
+    try {
+      const { data } = await api.get('/api/activity/charity-flower', { headers: { 'x-account-id': accountId } })
+      if (data.ok && isCurrentAccount(String(accountId))) charityFlowerActivity.value = data.activity || null
+      return data
+    }
+    finally { charityFlowerLoading.value = false }
   }
 
   async function buildQixiBridge(accountId: string) {
@@ -559,6 +582,8 @@ export const useActivityStore = defineStore('activity', () => {
     qixiActivity,
     rainPoemActivity,
     rainPoemLoading,
+    charityFlowerActivity,
+    charityFlowerLoading,
     qixiFriends,
     qixiLoading,
     qixiBuildLoading,
@@ -577,6 +602,7 @@ export const useActivityStore = defineStore('activity', () => {
     fetchHeluActivity,
     fetchQixiActivity,
     fetchRainPoemActivity,
+    fetchCharityFlowerActivity,
     buildQixiBridge,
     useQixiDew,
     sendQixiSachet,

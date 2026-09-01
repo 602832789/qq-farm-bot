@@ -234,6 +234,7 @@ function createDataProvider(deps) {
         collectRainPoemWeather: (ref) => callWorkerApi(resolveAccountId(ref), 'collectRainPoemWeather'),
         useRainPoemSummonBottle: (ref) => callWorkerApi(resolveAccountId(ref), 'useRainPoemSummonBottle'),
         unlockRainPoemResearch: (ref) => callWorkerApi(resolveAccountId(ref), 'unlockRainPoemResearch'),
+        getCharityFlowerActivity: (ref) => callWorkerApi(resolveAccountId(ref), 'getCharityFlowerActivity'),
         exchangeHeluShopItem: (ref, slotId, count) => callWorkerApi(resolveAccountId(ref), 'exchangeHeluShopItem', slotId, count),
         drawHeluGiftLotus: (ref, options) => callWorkerApi(resolveAccountId(ref), 'drawHeluGiftLotus', options || {}),
         claimSeasonPassportRewards: (ref) => callWorkerApi(resolveAccountId(ref), 'claimSeasonPassportRewards'),
