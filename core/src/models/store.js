@@ -448,6 +448,7 @@ function syncBagSeedPriority(accountId, bagSeeds, options = {}) {
             requiredLevel: Number(seed && seed.requiredLevel) || 0,
             rarity: Number(seed && seed.rarity) || 0,
             plantExp: Number(seed && seed.plantExp) || 0,
+            plantingPriority: Number(seed && seed.plantingPriority) || 0,
             plantSize: Number(seed && seed.plantSize) || 1,
         }))
         .filter(seed => seed.seedId > 0 && seed.count > 0 && seed.plantSize === 1)

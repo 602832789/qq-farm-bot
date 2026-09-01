@@ -114,6 +114,7 @@ function loadConfigs() {
                     seasons: Number(entry.seasons) || 1,
                     grow_phases: entry.grow_phases || '',
                     exp: Number(entry.exp) || 0,
+                    planting_priority: Math.max(0, Number(entry.planting_priority) || 0),
                 };
                 plantMap.set(plant.id, plant);
                 seedToPlant.set(plant.seed_id, plant);
