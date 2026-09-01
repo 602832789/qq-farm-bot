@@ -167,6 +167,7 @@ function createDataProvider(deps) {
 
         // ========== Farm API ==========
         getLands: (ref) => callWorkerApi(resolveAccountId(ref), 'getLands'),
+        getDiamondBalance: (ref) => callWorkerApi(resolveAccountId(ref), 'getDiamondBalance'),
         getSeeds: (ref) => callWorkerApi(resolveAccountId(ref), 'getSeeds'),
         getBag,
         getBagSeeds: (ref) => callWorkerApi(resolveAccountId(ref), 'getBagSeeds'),

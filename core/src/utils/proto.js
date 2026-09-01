@@ -67,6 +67,8 @@ async function loadProto() {
     types.AntiDataReply = root.lookupType('gamepb.acepb.AntiDataReply');
     types.CareerInfoGetRequest = root.lookupType('gamepb.careerpb.CareerInfoGetRequest');
     types.CareerInfoGetReply = root.lookupType('gamepb.careerpb.CareerInfoGetReply');
+    types.GetRechargeInfoRequest = root.lookupType('gamepb.paypb.GetRechargeInfoRequest');
+    types.GetRechargeInfoReply = root.lookupType('gamepb.paypb.GetRechargeInfoReply');
 
     // 农场
     types.AllLandsRequest = root.lookupType('gamepb.plantpb.AllLandsRequest');

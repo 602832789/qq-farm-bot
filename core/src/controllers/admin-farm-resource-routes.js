@@ -53,6 +53,15 @@ function registerAdminFarmResourceRoutes({
 
     try {
       const status = withLevelProgress(provider.getStatus(accountId));
+      if (status?.connection?.connected) {
+        try {
+          const diamond = await provider.getDiamondBalance(accountId);
+          if (status.status) status.status.diamond = Math.max(0, Number(diamond) || 0);
+        }
+        catch {
+          // 钻石是补充余额；查询失败不影响状态页其他数据。
+        }
+      }
       res.json({ ok: true, data: status });
     }
     catch (error) {
