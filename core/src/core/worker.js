@@ -1211,19 +1211,26 @@ async function startBot(config) {
         };
         networkEvents.on('dogSkillGiftPending', onDogSkillGiftPending);
 
-        // 获取背包点券数
+        // 单次背包请求同步点券和金豆豆，避免登录阶段重复并发查询。
         try {
             const bag = await getBag();
             const items = getBagItems(bag);
             let couponCount = 0;
+            let goldBeanCount = 0;
             for (const item of items || []) {
-                if (toNum(item && item.id) === 1002) {
-                    couponCount = toNum(item.count);
-                    break;
-                }
+                const itemId = toNum(item && item.id);
+                if (itemId === 1002) couponCount = toNum(item.count);
+                else if (itemId === 1005) goldBeanCount = toNum(item.count);
             }
             const state = getUserState();
             state.coupon = Math.max(0, couponCount);
+            state.goldBean = Math.max(0, goldBeanCount);
+        } catch { }
+
+        // 支付服务会更新网关序列状态，等启动背包请求完成后再查询。
+        try {
+            const diamond = await require('../services/pay').getDiamondBalance();
+            getUserState().diamond = Math.max(0, Number(diamond) || 0);
         } catch { }
 
         // 初始化统计数据

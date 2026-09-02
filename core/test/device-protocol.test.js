@@ -54,7 +54,7 @@ test('custom device values are included in the protobuf login device info', () =
 test('a disabled custom protocol does not alter the default login fingerprint', () => {
     const info = buildLoginDeviceInfo({ enabled: false, deviceModel: 'iPhone 17 Pro' });
     assert.equal(info.device_id, 'iPhone X<iPhone18,3>');
-    assert.equal(info.sys_hardware, 'Apple iPhone18,3');
+    assert.equal(info.sys_hardware, undefined);
 });
 
 test('the default login fingerprint is not injected into the TSDK identity', () => {

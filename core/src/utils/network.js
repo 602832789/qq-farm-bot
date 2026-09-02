@@ -41,15 +41,6 @@ function applyServerVersionInfo(versionInfo) {
     return true;
 }
 
-// 延迟加载 warehouse 模块避免循环依赖
-let warehouseModule = null;
-function getWarehouseModule() {
-    if (!warehouseModule) {
-        warehouseModule = require('../services/warehouse');
-    }
-    return warehouseModule;
-}
-
 // 延迟加载 store 模块避免循环依赖
 let storeModule = null;
 function getStoreModule() {
@@ -238,35 +229,6 @@ function logLoginSummary(loginTimeMs) {
     log('系统', `登录摘要\n${lines.join('\n')}`);
 }
 
-// 登录后从背包获取金豆豆数量。钻石由 PayService 单独维护。
-async function fetchGoldBeanFromBag() {
-    try {
-        const warehouse = getWarehouseModule();
-        const bagReply = await warehouse.getBag();
-        const items = warehouse.getBagItems(bagReply);
-        for (const item of (items || [])) {
-            const id = toNum(item && item.id);
-            const count = toNum(item && item.count);
-            if (id === 1005 && count > 0) {
-                userState.goldBean = count;
-            }
-        }
-    // eslint-disable-next-line unused-imports/no-unused-vars
-    } catch (e) {
-        // 忽略获取失败
-    }
-}
-
-async function fetchDiamondBalance() {
-    try {
-        const diamond = await require('../services/pay').getDiamondBalance();
-        userState.diamond = Math.max(0, Number(diamond) || 0);
-        return userState.diamond;
-    } catch {
-        return userState.diamond;
-    }
-}
-
 function hasOwn(obj, key) {
     return !!obj && Object.hasOwn(obj, key);
 }
@@ -430,9 +392,8 @@ function handleNotify(msg) {
         const type = event.message_type || '';
         const eventBody = event.body;
 
-        // 通知不携带余额；收到充值上下文后主动刷新 PayService 余额。
+        // 通知只携带交易上下文，不在网关推送处理中追加支付查询。
         if (type.includes('RechargeInfoNotify')) {
-            fetchDiamondBalance();
             return;
         }
 
@@ -641,7 +602,18 @@ function handleNotify(msg) {
 
 // ============ 登录 ============
 function buildLoginDeviceInfo(deviceProtocol) {
-    const device = resolveDeviceFingerprint(deviceProtocol);
+    const custom = deviceProtocol && deviceProtocol.enabled ? deviceProtocol : null;
+    if (!custom) {
+        return {
+            client_version: CONFIG.clientVersion,
+            sys_software: DEFAULT_DEVICE_FINGERPRINT.sysSoftware,
+            network: 'wifi',
+            memory: DEFAULT_DEVICE_FINGERPRINT.memory,
+            device_id: DEFAULT_DEVICE_FINGERPRINT.deviceId,
+        };
+    }
+
+    const device = resolveDeviceFingerprint(custom);
     return {
         client_version: CONFIG.clientVersion,
         sys_software: device.sysSoftware,
@@ -713,10 +685,6 @@ async function sendLogin(onLoginSuccess, deviceProtocol) {
                     syncServerTime(loginTimeMs);
                 }
                 logLoginSummary(loginTimeMs);
-
-                // 登录后主动获取背包中的金豆豆数量
-                fetchGoldBeanFromBag();
-                fetchDiamondBalance();
 
             }
 
