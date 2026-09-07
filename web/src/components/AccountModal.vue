@@ -4,7 +4,7 @@ import { NModal } from 'naive-ui/es/modal'
 import { NRadio, NRadioGroup } from 'naive-ui/es/radio'
 import { NTab, NTabs } from 'naive-ui/es/tabs'
 import { onBeforeUnmount, reactive, ref, watch } from 'vue'
-import api from '@/api'
+import api, { getApiErrorMessage } from '@/api'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
@@ -57,11 +57,11 @@ async function addAccount(data: any) {
       return true
     }
     else {
-      errorMessage.value = `保存失败: ${res.data.error}`
+      errorMessage.value = `保存失败: ${getApiErrorMessage(res.data, '请求失败')}`
     }
   }
   catch (e: any) {
-    errorMessage.value = `保存失败: ${e.response?.data?.error || e.message}`
+    errorMessage.value = `保存失败: ${getApiErrorMessage(e, '请求失败')}`
   }
   finally {
     loading.value = false
@@ -220,7 +220,7 @@ async function pollWxLoginRequest(taskId: string, flowVersion: number) {
   catch (error: any) {
     if (!isWxFlowActive(taskId, flowVersion) || error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED')
       return
-    wxError.value = error.response?.data?.error || error.message || '登录状态检查失败'
+    wxError.value = getApiErrorMessage(error, '登录状态检查失败')
   }
   finally {
     if (wxPollController === controller)
@@ -282,7 +282,7 @@ async function startWxLogin() {
   catch (error: any) {
     if (flowVersion !== wxFlowVersion)
       return
-    wxError.value = error.response?.data?.error || error.message || '二维码获取失败'
+    wxError.value = getApiErrorMessage(error, '二维码获取失败')
   }
   finally {
     if (flowVersion === wxFlowVersion)

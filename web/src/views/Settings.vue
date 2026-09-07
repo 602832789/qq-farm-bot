@@ -5,7 +5,7 @@ import { NTimePicker } from 'naive-ui/es/time-picker'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import api from '@/api'
+import api, { getApiErrorMessage } from '@/api'
 import AccountModal from '@/components/AccountModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import AutomationSettingsForm from '@/components/settings/AutomationSettingsForm.vue'
@@ -447,10 +447,16 @@ async function fetchBagSeeds(accountId = currentAccountId.value) {
     if (res.data.ok) {
       bagSeeds.value = (res.data.data || []).filter((seed: BagSeedItem) => seed.plantSize >= 1)
     }
+    else {
+      bagSeeds.value = []
+      bagSeedsError.value = getApiErrorMessage(res.data, '加载失败')
+      bagSeedsLoadedAccountId = accountId
+    }
     if (accountId === currentAccountId.value)
       bagSeedsLoadedAccountId = accountId
   }
   catch (e: any) {
+    e.message = getApiErrorMessage(e, '加载失败')
     if (requestRevision === bagSeedsRequestRevision && accountId === currentAccountId.value) {
       bagSeedsError.value = e.message || '加载失败'
       bagSeedsLoadedAccountId = accountId
@@ -1236,11 +1242,11 @@ async function handleTestOffline() {
       showAlert('测试消息发送成功', 'primary')
     }
     else {
-      showAlert(`测试失败: ${data?.error || '未知错误'}`, 'danger')
+      showAlert(`测试失败: ${getApiErrorMessage(data, '未知错误')}`, 'danger')
     }
   }
   catch (e: any) {
-    const msg = e?.response?.data?.error || e?.message || '请求失败'
+    const msg = getApiErrorMessage(e, '请求失败')
     showAlert(`测试失败: ${msg}`, 'danger')
   }
   finally {
@@ -1357,10 +1363,10 @@ async function handleSaveSystemConfig() {
     localSystemConfig.value.clientVersion = localSystemConfig.value.deviceInfo.clientVersion
     localSystemConfig.value.os = localSystemConfig.value.deviceInfo.os
     const { data } = await api.post('/api/settings/system-config', localSystemConfig.value)
-    showAlert(data?.ok ? '系统配置已保存并立即生效' : data?.error || '保存失败', data?.ok ? 'primary' : 'danger')
+    showAlert(data?.ok ? '系统配置已保存并立即生效' : getApiErrorMessage(data, '保存失败'), data?.ok ? 'primary' : 'danger')
   }
   catch (e: any) {
-    showAlert(`保存失败: ${e.message || '未知错误'}`, 'danger')
+    showAlert(`保存失败: ${getApiErrorMessage(e, '未知错误')}`, 'danger')
   }
   finally {
     systemConfigSaving.value = false
@@ -1377,11 +1383,11 @@ async function handleResetSystemConfig() {
       showAlert('系统配置已重置为默认值', 'primary')
     }
     else {
-      showAlert(data?.error || '重置失败', 'danger')
+      showAlert(getApiErrorMessage(data, '重置失败'), 'danger')
     }
   }
   catch (e: any) {
-    showAlert(`重置失败: ${e.message || '未知错误'}`, 'danger')
+    showAlert(`重置失败: ${getApiErrorMessage(e, '未知错误')}`, 'danger')
   }
   finally {
     systemConfigSaving.value = false
