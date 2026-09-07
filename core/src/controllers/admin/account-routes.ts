@@ -417,8 +417,39 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
                     default: getDefaultSystemConfig(),
                     current: getRuntimeConfig(),
                     timeZones: getTimeZoneOptions(),
+                    loginSettings: store.getLoginSettings
+                        ? store.getLoginSettings()
+                        : { wechatQrLogin: true, qqQrLogin: false, napCatEndpoint: '', napCatSignature: '' },
                 },
             });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    });
+
+    app.get('/api/settings/login-config', (_req: Request, res: Response) => {
+        try {
+            const loginSettings = store.getLoginSettings
+                ? store.getLoginSettings()
+                : { wechatQrLogin: true, qqQrLogin: false, napCatEndpoint: '', napCatSignature: '' };
+            res.json({ ok: true, data: loginSettings });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    });
+
+    app.post('/api/settings/login-config', (req: Request, res: Response) => {
+        try {
+            const body = (req.body && typeof req.body === 'object') ? req.body : {};
+            const loginSettings = store.setLoginSettings
+                ? store.setLoginSettings({
+                    wechatQrLogin: body.wechatQrLogin,
+                    qqQrLogin: body.qqQrLogin,
+                    napCatEndpoint: body.napCatEndpoint,
+                    napCatSignature: body.napCatSignature,
+                })
+                : { wechatQrLogin: true, qqQrLogin: false, napCatEndpoint: '', napCatSignature: '' };
+            res.json({ ok: true, data: loginSettings });
         } catch (e: any) {
             handleApiError(res, e);
         }
