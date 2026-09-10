@@ -62,7 +62,6 @@ function createWorkerManager(options: WorkerManagerOptions) {
 
     function createThreadWorker(account: any): any {
         const workerOptions: any = {
-            env: { ...processRef.env, FARM_ACCOUNT_ID: String(account.id || '') },
             workerData: {
                 accountId: String(account.id || ''),
                 channel: 'thread',
@@ -390,14 +389,12 @@ function createWorkerManager(options: WorkerManagerOptions) {
                 }
                 worker.requests.clear();
             }
-            log('系统', `账号 ${worker.name} 连接已断开（${source}，状态码 ${code}），已停止运行并等待 Helper 刷新 Code 或重新扫码`, {
+            log('系统', `账号 ${worker.name} 连接已断开，已停止运行并等待 Helper 刷新 Code 或重新扫码`, {
                 accountId: String(accountId),
                 accountName: worker.name,
                 source,
-                disconnectCode: code,
+                code,
                 phase,
-                reason,
-                diagnostics: msg.diagnostics || null,
             });
             triggerOfflineReminder({
                 accountId,
@@ -410,7 +407,7 @@ function createWorkerManager(options: WorkerManagerOptions) {
                 `账号 ${worker.name} 连接已断开，已停止运行并等待 Helper 刷新 Code 或重新扫码`,
                 accountId,
                 worker.name,
-                { source, disconnectCode: code, reason, phase, connectionId: Number(msg.connectionId) || 0, diagnostics: msg.diagnostics || null },
+                { source, code, reason, phase, connectionId: Number(msg.connectionId) || 0 },
             );
             stopWorker(accountId);
         } else if (msg.type === 'api_response') {

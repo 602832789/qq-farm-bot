@@ -3,7 +3,7 @@ import { useIntervalFn } from '@vueuse/core'
 import { NButton } from 'naive-ui/es/button'
 import { NInputNumber } from 'naive-ui/es/input-number'
 import { storeToRefs } from 'pinia'
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { getApiErrorMessage } from '@/api'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import { useAccountStore } from '@/stores/account'
@@ -555,27 +555,32 @@ function handleBatchActionClick() {
 }
 
 async function loadBag() {
-  const id = currentAccountId.value
-  if (!id || !currentAccount.value?.running)
+  if (!currentAccountId.value)
+    return
+
+  const acc = currentAccount.value
+  if (!acc)
     return
 
   if (!realtimeConnected.value)
-    await statusStore.fetchStatus(id)
+    await statusStore.fetchStatus(currentAccountId.value)
 
-  if (id === currentAccountId.value && currentAccount.value?.running && status.value?.connection?.connected) {
-    await bagStore.fetchBag(id)
-    if (id === currentAccountId.value)
-      imageErrors.value = {}
+  if (acc.running && status.value?.connection?.connected) {
+    await bagStore.fetchBag(currentAccountId.value)
   }
+
+  imageErrors.value = {}
 }
+
+onMounted(() => {
+  loadBag()
+})
 
 watch(currentAccountId, () => {
   batchAction.value = null
   selectedForBatch.value.clear()
+  loadBag()
 })
-
-// 账号列表和连接快照可能晚于面板挂载到达，就绪后自动补加载。
-watch([currentAccountId, () => currentAccount.value?.running, () => !!status.value?.connection?.connected], loadBag, { immediate: true })
 
 watch(selectedCategory, () => {
   batchAction.value = null

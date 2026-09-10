@@ -4,11 +4,6 @@ export {};
  */
 const { parentPort, workerData } = require('node:worker_threads');
 
-// Establish identity before any module can initialize account-scoped state.
-if (parentPort && workerData?.accountId) {
-    process.env.FARM_ACCOUNT_ID = String(workerData.accountId);
-}
-
 const { CONFIG, updateRuntimeConfig } = require('../config/config');
 const { getLevelExpProgress, loadConfigs } = require('../config/gameConfig');
 const { getAutomation, getPreferredSeed, getConfigSnapshot, applyConfigSnapshot } = require('../models/store');
@@ -51,6 +46,10 @@ interface WorkerRuntimeConfig {
 }
 
 const workerConfig = CONFIG as WorkerRuntimeConfig;
+
+if (parentPort && workerData && workerData.accountId && !process.env.FARM_ACCOUNT_ID) {
+    process.env.FARM_ACCOUNT_ID = String(workerData.accountId);
+}
 
 function sendToMaster(payload: Record<string, any>): void {
     if (process.send) {
@@ -743,10 +742,7 @@ function handleTerminalDisconnect(payload: any): void {
     const code = Number(payload?.code) || 0;
     const reason = String(payload?.reason || '连接已断开');
     const phase = String(payload?.phase || 'unknown');
-    log('系统', `连接已断开，不再使用旧 Code 重连 (source=${source}, code=${code}, phase=${phase})`, {
-        module: 'connection', event: 'disconnect', source, disconnectCode: code, reason, phase,
-        diagnostics: payload?.diagnostics || null,
-    });
+    log('系统', `连接已断开，不再使用旧 Code 重连 (source=${source}, code=${code}, phase=${phase})`);
     saveStats();
     quiesceBot(`连接断开: ${source}`);
     sendToMaster({
@@ -756,7 +752,6 @@ function handleTerminalDisconnect(payload: any): void {
         reason,
         phase,
         connectionId: Number(payload?.connectionId) || 0,
-        diagnostics: payload?.diagnostics || null,
         at: Number(payload?.at) || Date.now(),
     });
     setTimeout(exitWorker, 300, 0);

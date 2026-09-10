@@ -11,7 +11,6 @@ try {
 }
 
 const SENSITIVE_KEY_RE = /code|token|password|passwd|auth|ticket|cookie|session/i;
-const DIAGNOSTIC_CODE_KEY_RE = /^(?:disconnect|close|error|http|status|exit)Code$/i;
 
 function redactString(input: any): string {
     let text = String(input || '');
@@ -29,9 +28,7 @@ function sanitizeMeta(value: any, depth = 0): any {
 
     const out: Record<string, any> = {};
     for (const [k, v] of Object.entries(value)) {
-        if (DIAGNOSTIC_CODE_KEY_RE.test(k) && typeof v === 'number' && Number.isSafeInteger(v)) {
-            out[k] = v;
-        } else if (SENSITIVE_KEY_RE.test(String(k))) {
+        if (SENSITIVE_KEY_RE.test(String(k))) {
             out[k] = '[REDACTED]';
         } else {
             out[k] = sanitizeMeta(v, depth + 1);
