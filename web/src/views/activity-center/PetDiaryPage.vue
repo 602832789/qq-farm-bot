@@ -476,7 +476,7 @@ watch(pet, (value) => {
         <h2 id="pet-exchange-title">
           兑换
         </h2><button class="pet-dialog-close" aria-label="关闭兑换窗口" @click="exchangeDialog?.close()">
-          ×
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6" /></svg>
         </button>
       </header>
       <div v-if="exchangeItem" class="pet-dialog-body">
@@ -1779,18 +1779,6 @@ watch(pet, (value) => {
 .pet-record-dialog {
   width: min(620px, calc(100vw - 40px));
 }
-.pet-record-dialog .pet-dialog-close {
-  padding: 0;
-}
-.pet-record-dialog .pet-dialog-close svg {
-  display: block;
-  width: 26px;
-  height: 26px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 3;
-  stroke-linecap: round;
-}
 .pet-exchange-dialog > header {
   position: relative;
   margin: -1px -1px 0;
@@ -1813,16 +1801,22 @@ watch(pet, (value) => {
   place-items: center;
   width: 48px;
   height: 48px;
-  padding: 0 0 6px;
+  padding: 0;
   border: 3px solid #f6c291;
   border-radius: 45%;
   color: #fff7df;
   background: #e39c6b;
   box-shadow: 0 3px 0 #b5754c;
-  font-size: 44px !important;
-  font-weight: 800 !important;
-  line-height: 1;
   cursor: pointer;
+}
+.pet-dialog-close svg {
+  display: block;
+  width: 26px;
+  height: 26px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3;
+  stroke-linecap: round;
 }
 .pet-dialog-body {
   max-height: calc(100dvh - 124px);
