@@ -2230,12 +2230,29 @@ watch(pet, (value) => {
   }
 
   .pet-nav {
-    padding: 6px 8px;
+    padding: 4px 6px;
+  }
+
+  .pet-nav__inner {
+    gap: 4px;
+  }
+
+  .pet-nav__inner > button {
+    height: 44px;
+    min-height: 44px;
+    gap: 2px;
+    border-radius: 10px;
+    font-size: 11px;
   }
 
   .pet-nav__icon {
-    width: 20px;
-    height: 20px;
+    width: 18px;
+    height: 18px;
+  }
+
+  .pet-nav__badge {
+    top: 7px;
+    margin-left: 6px;
   }
 }
 
