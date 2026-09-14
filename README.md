@@ -372,6 +372,7 @@ pnpm -C core exec tsx ../tools/audit-capture-compatibility.js <capture-dir>
 - [雨落成诗活动协议与实现](docs/weather-activity.md)
 - [神秘商人、游戏商城与购买协议](docs/shop-protocols.md)
 - [好友宠物缓存与每日同步](docs/friend-pet-cache.md)
+- [个人页宠物协议](docs/pet-protocols.md)
 
 ## 免责声明
 
