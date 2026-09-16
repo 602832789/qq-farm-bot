@@ -21,7 +21,7 @@ const activeTab = computed(() => props.section)
 const loading = ref(false)
 const imageErrors = ref<Record<string | number, boolean>>({})
 const searchKeyword = ref('')
-const isDesktop = useMediaQuery('(min-width: 640px)')
+const isDesktop = useMediaQuery('(min-width: 768px)')
 const currentPage = ref(1)
 const pageSize = computed(() => isDesktop.value ? 50 : 30)
 
@@ -574,12 +574,12 @@ function formatPrice(price: number, priceId?: number): string {
                 quaternary
                 size="small"
                 type="warning"
-                title="鍔犲叆/绉诲嚭榛戝悕鍗?"
-                aria-label="鍔犲叆鎴栫Щ鍑洪粦鍚嶅崟"
+                title="加入/移出黑名单"
+                aria-label="加入或移出黑名单"
                 @click="handleToggleBlacklist(item.seedId)"
               >
                 <span class="i-carbon-user-x-ray mr-1" />
-                鎿嶄綔
+                黑名单
               </NButton>
             </div>
           </div>
