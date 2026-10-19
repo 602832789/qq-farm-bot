@@ -483,7 +483,7 @@ onUnmounted(() => sequence++)
   overflow: hidden;
   border: 1px solid var(--ui-border-strong);
   border-radius: 8px;
-  background: #fff;
+  background: var(--ui-surface-strong);
   box-shadow: 0 2px 0 var(--ui-border);
 }
 .leaf__month {
@@ -518,14 +518,14 @@ onUnmounted(() => sequence++)
   place-items: center;
   border-radius: 50%;
   color: var(--ui-primary);
-  background: #fff;
+  background: var(--ui-surface-strong);
   font-size: 10px;
 }
 .term--upcoming .leaf__month {
   background: #9aa79e;
 }
 .term--done .leaf__month {
-  background: var(--ui-primary);
+  background: var(--ui-primary-fill);
 }
 .term--expired .leaf__month {
   background: #b6bab5;
@@ -584,7 +584,7 @@ onUnmounted(() => sequence++)
   flex-wrap: wrap;
   gap: 0 18px;
   margin: 8px 0 0;
-  color: #5f6a61;
+  color: var(--ui-muted);
   font-family: var(--serif);
   font-size: 14px;
   line-height: 1.8;
@@ -641,7 +641,7 @@ onUnmounted(() => sequence++)
   margin: 0;
   padding: 8px 10px;
   border-radius: 8px;
-  color: #8a6127;
+  color: var(--ui-warning);
   background: var(--ui-warning-soft);
   font-size: 13px;
   line-height: 1.6;
@@ -738,7 +738,7 @@ onUnmounted(() => sequence++)
 .answer-options label.selected .answer-options__letter {
   border-color: var(--ui-primary);
   color: #fff;
-  background: var(--ui-primary);
+  background: var(--ui-primary-fill);
 }
 .answer-options label:has(input:focus-visible) {
   outline: 2px solid var(--ui-primary);
@@ -804,5 +804,23 @@ onUnmounted(() => sequence++)
   .reward-line :deep(.n-button) {
     min-width: 88px;
   }
+}
+
+/* 深色：印章红与日历页眉降低亮度，淡色背景改为半透明。 */
+.dark .solar {
+  --seal: #d4705e;
+  --seal-soft: rgba(212, 112, 94, 0.14);
+}
+.dark .term--open .leaf__month {
+  background: #b5503f;
+}
+.dark .term--upcoming .leaf__month {
+  background: #4b535c;
+}
+.dark .term--expired .leaf__month {
+  background: #3a4048;
+}
+.dark .term--expired .leaf__day {
+  color: var(--ui-subtle);
 }
 </style>
