@@ -275,12 +275,13 @@ onUnmounted(() => sequence++)
             <label
               v-for="(option, index) in question.options"
               :key="index"
-              :class="{ selected: answer === index, wrong: question.wrongOptions.includes(index) }"
+              :class="{ selected: answer === index, correct: question.answerIndex === index, wrong: question.wrongOptions.includes(index) }"
             >
               <input v-model="answer" type="radio" name="solar-answer" :value="index" :disabled="busy || question.wrongOptions.includes(index)">
               <b class="answer-options__letter">{{ optionParts(option, index).letter }}</b>
-              <span>{{ optionParts(option, index).text }}</span>
-              <small v-if="question.wrongOptions.includes(index)">已答错</small>
+              <span class="answer-options__text">{{ optionParts(option, index).text }}</span>
+              <small v-if="question.answerIndex === index" class="answer-options__correct">正确答案</small>
+              <small v-else-if="question.wrongOptions.includes(index)">已答错</small>
             </label>
           </div>
         </div>
@@ -735,6 +736,13 @@ onUnmounted(() => sequence++)
   border-color: var(--ui-primary);
   background: var(--ui-primary-soft);
 }
+.answer-options label.correct {
+  border-color: color-mix(in srgb, var(--ui-primary) 60%, var(--ui-border-strong));
+}
+.answer-options__text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .answer-options label.selected .answer-options__letter {
   border-color: var(--ui-primary);
   color: #fff;
@@ -752,9 +760,18 @@ onUnmounted(() => sequence++)
   text-decoration: line-through;
 }
 .answer-options label small {
+  flex-shrink: 0;
   margin-left: auto;
   color: var(--ui-danger);
   font-size: 12px;
+}
+.answer-options label .answer-options__correct {
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: color-mix(in srgb, var(--ui-primary) 60%, var(--ui-ink));
+  background: var(--ui-primary-soft);
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 @media (max-width: 600px) {
