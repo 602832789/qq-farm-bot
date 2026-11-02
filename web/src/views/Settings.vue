@@ -9,7 +9,7 @@ import api, { getApiErrorMessage } from '@/api'
 import AccountModal from '@/components/AccountModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import PageTabs from '@/components/PageTabs.vue'
-import AutomationSettingsForm from '@/components/settings/AutomationSettingsForm.vue'
+import FeatureModuleSettings from '@/components/settings/FeatureModuleSettings.vue'
 import BagSeedPriorityItem from '@/components/settings/BagSeedPriorityItem.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
@@ -63,7 +63,7 @@ watch(() => route.query.tab, (value) => {
 const tabs = [
   { key: 'account', label: '账号管理', icon: 'i-carbon-user-profile' },
   { key: 'strategy', label: '策略设置', icon: 'i-carbon-settings-adjust' },
-  { key: 'automation', label: '自动控制', icon: 'i-carbon-settings-adjust' },
+  { key: 'automation', label: '功能模块', icon: 'i-carbon-catalog' },
   { key: 'system', label: '系统设置', icon: 'i-carbon-settings' },
 ] as const
 
@@ -302,6 +302,8 @@ const plantingStrategyOptions = [
   { label: '最大普通肥净利润/时', value: 'max_fert_profit' },
   { label: '背包种子优先', value: 'bag_priority' },
 ]
+
+const plantingStrategyLabel = computed(() => plantingStrategyOptions.find(option => option.value === localStrategySettings.value.plantingStrategy)?.label || '')
 
 const BAG_FALLBACK_STRATEGY_OPTIONS = [
   { label: '最高等级作物', value: 'level' },
@@ -1907,16 +1909,8 @@ async function handleResetSystemConfig() {
           </div>
         </div>
 
-        <!-- 自动控制 -->
+        <!-- 功能模块 -->
         <div v-else-if="activeTab === 'automation'" class="space-y-4">
-          <div class="flex items-center justify-between">
-            <h3 class="text-lg text-gray-900 font-bold dark:text-gray-100">
-              自动控制
-              <span v-if="currentAccountName" class="ml-2 text-sm text-gray-500 font-normal dark:text-gray-400">
-                ({{ currentAccountName }})
-              </span>
-            </h3>
-          </div>
 
           <div v-if="settingsLoading" class="py-4 text-center text-gray-500">
             <span class="i-carbon-circle-dash mx-auto mb-2 inline-block animate-spin text-2xl" />
@@ -1928,13 +1922,19 @@ async function handleResetSystemConfig() {
             <p>{{ currentAccountId ? '账号设置加载失败，请切换账号或刷新页面重试' : '请先选择账号' }}</p>
           </div>
 
-          <AutomationSettingsForm
+          <FeatureModuleSettings
             v-else
             v-model="localAutomationSettings"
             :saving="automationSaving"
+            :account-name="currentAccountName"
             :fertilizer-land-type-options="fertilizerLandTypeOptions"
             :fertilizer-options="fertilizerOptions"
+            :strategy-label="plantingStrategyLabel"
+            :steal-delay-seconds="localStrategySettings.stealDelaySeconds"
+            :friend-min="localStrategySettings.intervals.friendMin"
+            :friend-max="localStrategySettings.intervals.friendMax"
             @save="saveAutomationSettings"
+            @open-strategy="setActiveTab('strategy')"
           />
         </div>
 
