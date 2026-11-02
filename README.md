@@ -1,157 +1,98 @@
 <div align="center">
 
-<img src="web/public/icon.png" width="96" alt="QQ Farm Bot 图标">
+<img src="web/public/icon.png" width="112" alt="QQ Farm Bot 图标">
 
 # QQ Farm Bot
 
-🌱 一位会自己浇水、除草、收菜的 QQ 农场小帮手
+把日常农活交给小帮手，给每一次丰收留点期待。
 
-多账号挂机 · 农场与好友自动化 · 图鉴与藏品 · 活动中心 · Web 控制面板
+多账号管理 · 日常农活 · 作物图鉴 · Web 控制面板
 
-[能做什么](#功能概览) · [快速开始](#快速开始) · [配置说明](#配置说明) · [项目文档](#项目文档) · [来源与合并](#来源与合并) · [免责声明](#免责声明与使用边界)
+![Node.js](https://img.shields.io/badge/Node.js-20.19%2B-3c873a?logo=node.js&logoColor=white)
+![pnpm](https://img.shields.io/badge/pnpm-10.30.2-f69220?logo=pnpm&logoColor=white)
+![Vue](https://img.shields.io/badge/Vue-3-42b883?logo=vue.js&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-Compose-2496ed?logo=docker&logoColor=white)
+
+🌾 [看看功能](#-能做什么) · 🤖 [AI 帮我安装](#-让-ai-帮你安装) · 🚀 [源码部署](#-源码部署) · 🐳 [Docker 部署](#-docker-部署) · 🔑 [账号登录](#-账号登录) · 📖 [使用文档](#-使用文档)
 
 </div>
 
 > [!WARNING]
-> 快乐种田，谨慎使用。本项目仅供学习和研究，自动化操作可能违反游戏服务条款，账号及其他相关风险由使用者自行承担。
-
-> [!TIP]
-> 欢迎 Fork 本项目并提交 PR。项目主要由个人利用业余时间维护，精力有限，功能更新、问题修复和兼容性适配难免有所遗漏；发现问题或有更好的实现方案，欢迎直接参与贡献。
-
-基于 Node.js 的 QQ 农场自动化工具，提供多账号挂机、农场与好友自动化、独立图鉴与藏品、活动中心、商城、数据分析和 Web 控制面板。当前项目版本为 `20261102`，QQ 与微信游戏协议版本均为 `1.16.1.6_20261028`，两端独立维护版本配置和 TSDK/WASM。
+> 本项目仅供学习和研究。自动化操作可能违反游戏服务条款，账号限制、数据丢失等风险由使用者自行承担。请勿用于商业运营、破坏游戏公平性或其他违法违规用途。
 
 > [!IMPORTANT]
-> 首次启动会创建默认管理员 `admin` / `admin`，Web 面板默认端口为 `3007`。对外部署后请立即修改密码，并避免将未加防护的管理端口直接暴露到公网。
+> 首次启动会创建默认管理员 `admin` / `admin`，Web 面板默认端口为 `3007`。登录后请立即修改密码，并避免把未加防护的管理端口直接暴露到公网。
 
-## 项目截图
-|  |  |
-| --- | --- |
-| ![项目截图 1](https://free.picui.cn/free/2026/08/21/6a87f4e28ce59.jpg) | ![项目截图 2](https://free.picui.cn/free/2026/08/21/6a87f4e2e5557.jpg) |
-| ![项目截图 3](https://free.picui.cn/free/2026/08/21/6a87f4e3780bb.jpg) | ![项目截图 4](https://free.picui.cn/free/2026/08/21/6a87f4e398c30.jpg) |
-| ![项目截图 5](https://free.picui.cn/free/2026/08/21/6a87f4e8bbbce.jpg) | ![项目截图 6](https://free.picui.cn/free/2026/08/21/6a87f4e90d06c.jpg) |
-| ![项目截图 7](https://free.picui.cn/free/2026/08/21/6a87f4e95678d.jpg) | ![项目截图 8](https://free.picui.cn/free/2026/08/21/6a87f4e958eae.jpg) |
-| ![项目截图 9](https://free.picui.cn/free/2026/08/21/6a87f4e91bccb.jpg) | ![项目截图 10](https://free.picui.cn/free/2026/08/21/6a87f4e355da8.jpg) |
+这是一个基于 Node.js 的 QQ 农场自动化工具：后端用 TypeScript 编写，直接对接游戏 WebSocket 与 Protobuf 协议；前端是一个 Vue 3 单页控制面板，桌面端固定侧栏、移动端顶部栏加底部导航。账号、策略、日志和数据都在本机运行，不依赖任何第三方托管服务。
 
-## 功能概览
+当前项目版本 `20261102`，QQ 与微信游戏协议版本均为 `1.16.1.6_20261028`，两端独立维护版本配置与 TSDK/WASM。
 
-### 账号与登录
+> [!TIP]
+> 欢迎 Fork 并提交 PR。项目主要由个人利用业余时间维护，功能更新、问题修复和兼容性适配难免有所遗漏；发现问题或有更好的实现方案，欢迎直接参与贡献。
 
-- 游戏账号可无限添加并独立运行，每个账号可单独配置种植、好友、自动化和执行间隔策略
-- 支持抓包 Code 登录、微信扫码登录和 QQ扫码登录
-- 支持账号启停、状态监控、实时日志和离线提醒
-- Web 面板只保留一个超级管理员，不提供注册、普通用户和租户隔离
+## 🌾 能做什么
 
-### 农场自动化
+| 🌱 打理日常农活 | 🌼 认识每株作物 | 🎁 看看任务与活动 |
+| :---: | :---: | :---: |
+| 收获、种植、浇水、除草、除虫、铲除、土地升级 | 作物图鉴与超变图鉴的等级、进度、收藏状态 | 任务、商城、免费礼包与已适配的活动 |
+| 自动施肥、多季补肥、指定土地类型施肥 | 超变属性加成：触发概率与数量一目了然 | 千星游记、观星礼录、星砂商店、节令活动 |
+| 一键务农 / 种植 / 收获 / 铲除 / 全收 | 按游戏配置排序展示，奖励集中在详情弹窗 | 鹊桥寄情、雨落成诗，领取与兑换都能操作 |
+| 多种种植策略、背包种子优先、作物黑名单 | 移动端四列果实布局，进度与弹窗样式统一 | 活动快照串行合并，切号不占满网关队列 |
 
-- 自动收获、种植、浇水、除草、除虫、铲除和土地升级
-- 自动施肥、多季作物补肥、指定土地类型施肥和化肥自动购买
-- 支持一键务农、一键种植、一键收获、一键铲除和一键全收等面板操作
-- 支持多种种植策略、背包种子优先级、作物黑名单和执行间隔配置
-- 汇总任务、免费礼包、分享奖励、会员礼包、月卡礼包和图鉴奖励等每日状态，并按天自动处理支持的领取项
+- 🐵 **照看多座农场**：账号可无限添加、独立运行，每个账号单独配置种植、好友、自动化与执行间隔；支持启停、状态监控、实时日志和离线提醒。
+- 🤝 **串门与帮忙**：自动访问好友、偷菜、帮忙浇水除草除虫、放草放虫，支持好友黑名单、安静时段和互动经验上限；好友巡查合并为单次访问，一位好友只进一次农场就能做完帮忙、偷菜和捣乱。
+- 🐶 **宠物与好友缓存**：进好友农场时顺手记录上场宠物，另有后台分批的每日补齐，不再每轮逐个进农场试探。
+- 🎒 **背包与交易**：查看背包，使用、出售或批量出售物品；浏览商城商品、价格、折扣与限购并执行购买；查看神秘商人活动商品；查询种子、果实、道具与作物收益。
+- ⚙️ **Web 控制面板**：概览、个人、活动、好友、分析、神秘商人、游戏商城和设置八个页面，Socket.IO 实时状态与日志，全局统一暖白液态玻璃界面，常用操作完成响应式适配。
+- 🔔 **下线提醒**：基于 `pushoo` 的实例级事件推送，可配置通知渠道与离线自动清理时间。
 
-### 图鉴
+## 🤖 让 AI 帮你安装
 
-- 在“个人 → 图鉴”中查看作物图鉴和超变图鉴的等级、进度及果实收藏状态
-- 作物图鉴按游戏配置排序展示作物，收藏奖励统一放在详情弹窗中查看
-- 超变图鉴依据 `Illustrated.json` 的 `param` 和 `type` 字段区分黄金果实、活动果实与装扮果实，不依赖果实名或协议奖励分类字段推断
-- 超变属性弹窗顶部汇总当前生效加成，等级列表展示属性名称、触发概率或数量，以及已达成状态或所需进度
-- 移动端图鉴使用四列果实布局，等级进度和弹窗样式与现有面板保持一致
+不想逐项配置？把下面这段话发给能操作本机终端的 AI 助手（Claude Code、Codex、Cursor、WorkBuddy 等都可以），让它先读仓库里的安装说明，再完成安装和验证：
 
-### 好友互动
+```text
+请帮我在当前机器安装 GitHub 项目 602832789/qq-farm-bot。
 
-- 自动访问好友、偷菜、帮忙浇水、除草除虫及放草放虫
-- 支持好友黑名单、安静时段和互动经验上限
-- 支持已知好友 GID 的批量维护、同步参数和互动记录查询
-- 好友巡查合并为单次访问：每位好友只进一次农场，一次做完帮忙（除草/除虫/浇水）、偷菜和捣乱（放草/放虫）
-- 好友上场宠物按天缓存：进好友农场时顺手记录，另有后台分批的每日补齐，“护主犬经验满仍帮忙”不再每轮逐个进农场试探
-- 面板可对指定好友执行单次访问或农场操作
+先克隆仓库，并阅读根目录的 README.md 与 AGENTS.md，按 README 的「源码部署」章节执行：
+1. 检查 Node.js 是否 >= 20.19、pnpm 是否为 10.x，缺失时用 corepack enable 启用；
+2. 执行 pnpm install 安装依赖，再执行 pnpm build:web 构建前端；
+3. 后台常驻启动：Linux/macOS 用 bash ./start.sh，Windows 用 start.bat，
+   或直接 pnpm dev:core；确认 3007 端口已监听、日志无报错；
+4. 告诉我访问地址、进程怎么停、运行数据存在哪个目录；
+5. 提醒我首次登录用 admin / admin，并在面板里改掉默认密码。
 
-### 背包与交易
+注意：不要删除仓库根目录的 .npmrc（node-linker=hoisted），
+否则 core 的 tsc 会因 TS2742 无法推断类型而构建失败。
+```
 
-- 查看背包，使用、出售或批量出售物品
-- 根据游戏配置判断活动区间外、活动结束后和道具过期后的物品可售状态
-- 查看神秘商人活动商品及购买状态
-- 浏览游戏商城商品、价格、折扣和限购信息，并执行购买
-- 查询种子、果实、道具和作物收益数据
+助手会优先复用已安装的依赖和已有构建产物，只重建成缺失或过期的部分；管理员密码修改、微信扫码和账号登录仍然由你在面板里完成。
 
-### 活动中心
+## 🚀 源码部署
 
-- 通过活动列表协议统一展示当前活动和已结束活动；未实现详情页的活动仍会显示，但不可进入玩法页面
-- 千星游记：查看赛季与通行证进度，领取可用奖励
-- 观星礼录：查看星座进度、点亮星座并领取奖励
-- 星砂商店：查看星砂余额和活动商品，执行兑换
-- 节令活动：查看当前节令并领取开放奖励
-- 鹊桥寄情：查看筑桥阶段、领取鹊桥奖励，并向好友赠送鹊羽香囊
-- 雨落成诗：查看雷雨剩余时间和闪电变异配置，兑换或使用天气瓶，并推进气象研究节点
-- 活动快照请求采用串行和重复请求合并，避免登录或切换账号时占满游戏网关请求队列
-- 青梅酿酒活动已下线，前端不再提供入口；相关协议和实现暂时保留用于兼容
-
-### Web 控制面板
-
-- 概览、个人、活动、好友、分析、神秘商人、游戏商城和设置页面
-- Socket.IO 实时状态与日志，全局使用单一暖白液态玻璃界面
-- PC 端使用固定侧栏，移动端使用顶部栏和底部导航，并针对常用操作完成响应式适配
-- 作物收益分析、策略预览、批量维护作物黑名单
-- 设置页统一管理游戏账号、自动化策略、运行环境、管理员密码和下线提醒
-- 基于 `pushoo` 的实例级事件推送，可配置通知渠道和离线自动清理时间
-
-## 技术栈
-
-| 模块 | 技术 |
-| --- | --- |
-| 后端 | Node.js 20、Express 4、Socket.IO 4、TypeScript 5.9 |
-| 前端 | Vue 3.5、Naive UI 2、Vue Router 5、Pinia 3、Vite 7、UnoCSS 66 |
-| 工程 | pnpm 10.30.2、ESLint 9、Docker Compose |
-| 协议 | WebSocket、Protocol Buffers、TSDK WASM |
-
-## 快速开始
-
-### 环境要求
+### 需要什么
 
 | 运行方式 | 要求 |
 | --- | --- |
-| 源码运行 | Node.js 20.19+、pnpm 10+ |
-| Docker | Docker 20+、Docker Compose 2+、Node 20.19.6（镜像内置） |
+| 源码运行 | Node.js 20.19+、Git、pnpm 10（推荐 Node.js 24 LTS 或 22 LTS，本项目锁定 pnpm `10.30.2`） |
+| Docker | Docker 20+、Docker Compose 2+，Node 由镜像内置 |
 | 二进制发布版 | 无需安装 Node.js |
-
-推荐通过 Corepack 启用项目指定版本的 pnpm：
-
-```bash
-corepack enable
-pnpm --version
-```
-
-### 源码运行
-
-Windows、Linux 和 macOS 均可使用以下方式：
 
 ```bash
 git clone https://github.com/602832789/qq-farm-bot.git
 cd qq-farm-bot
+
+corepack enable
+corepack prepare pnpm@10.30.2 --activate
 pnpm install
-pnpm dev
-```
-
-`pnpm dev` 会先构建前端，再启动后端服务。启动后访问：
-
-- 本机：`http://localhost:3007`
-- 局域网：`http://<服务器 IP>:3007`
-
-仓库根目录已附带 `.npmrc`（`node-linker=hoisted`），让 `node_modules` 使用扁平布局。这可以避免 pnpm 符号链接布局下 `tsc` 无法为 Express 推断类型生成可移植命名（TS2742）而中断 `core` 构建，请不要删除该文件。
-
-如需分别启动开发服务：
-
-```bash
-# 终端 1：Vite 前端开发服务
-pnpm dev:web
-
-# 终端 2：后端开发服务
+pnpm build:web
 pnpm dev:core
 ```
 
-只运行 `pnpm dev:core` 并由后端托管页面时，应先执行一次 `pnpm build:web`。
+完成后访问 `http://localhost:3007`，用 `admin` / `admin` 登录。
 
-### Linux 后台脚本
+`pnpm dev:core` 只启动后端，因此需要先构建一次前端；想一步到位也可以用 `pnpm dev`，它会先构建前端再启动后端。
+
+### 一条命令常驻（Linux / macOS）
 
 ```bash
 git clone https://github.com/602832789/qq-farm-bot.git
@@ -159,7 +100,7 @@ cd qq-farm-bot
 corepack enable
 bash ./start.sh
 
-# 拉取代码后如需忽略缓存并完整重建
+# 忽略缓存、完整重建
 bash ./start.sh --rebuild
 
 # 查看日志
@@ -169,11 +110,29 @@ tail -f app_dev.log
 bash ./stop.sh
 ```
 
-`start.sh` 会在依赖缺失或依赖清单变化时执行 `pnpm install --frozen-lockfile`，并按文件更新时间分别判断 Web、Core 是否需要重建。源码和依赖均未变化时会直接复用现有产物；`--rebuild` 可强制完整重建。脚本随后以生产模式后台运行 `node core/client.js`，日志写入 `app_dev.log`，进程号记录在 `app_dev.pid`。`stop.sh` 会校验 PID 对应的工作目录和启动命令，再停止整个服务进程组。
+`start.sh` 会在依赖缺失或依赖清单变化时执行 `pnpm install --frozen-lockfile`，并按文件更新时间分别判断 Web、Core 是否需要重建；源码和依赖都没变时直接复用现有产物。脚本随后以生产模式后台运行 `node core/client.js`，日志写入 `app_dev.log`，进程号记录在 `app_dev.pid`。`stop.sh` 会校验 PID 对应的工作目录和启动命令，再停止整个服务进程组。
+
+Windows 用户可以直接双击 `start.bat`：脚本会自动检查端口占用、安装依赖、构建前端，然后在新窗口启动面板；`stop.bat` 用于停止。
+
+### 开发模式
+
+```bash
+# 终端 1：Vite 前端开发服务
+pnpm dev:web
+
+# 终端 2：后端开发服务
+pnpm dev:core
+```
 
 前端类型检查已与生产构建拆分，需要单独检查时执行 `pnpm typecheck:web`。
 
-### Docker Compose
+### 端口与依赖布局
+
+- Web 面板监听端口由 `ADMIN_PORT` 决定，未设置时默认 `3007`。
+- Vite 开发服务的 `/api`、`/socket.io` 等请求都代理到 `http://localhost:3007`，改端口时两处要一起改。
+- 仓库根目录的 `.npmrc` 设置了 `node-linker=hoisted`，让 `node_modules` 使用扁平布局。pnpm 默认的符号链接布局下，`tsc` 无法为 Express 推断出可移植的类型命名（TS2742），会中断 `core` 构建，请不要删除这个文件。
+
+## 🐳 Docker 部署
 
 ```bash
 git clone https://github.com/602832789/qq-farm-bot.git
@@ -194,57 +153,67 @@ docker compose config
 docker compose down
 ```
 
-默认访问 `http://<服务器 IP>:3007`。修改根目录 `.env` 中的 `PORT` 后，可调整宿主机映射端口：
+默认访问 `http://<服务器 IP>:3007`。容器内部固定监听 `3007`，根目录 `.env` 里的 `PORT` 只控制宿主机映射端口：
 
 ```dotenv
-PORT=3008
+PORT=3007
 TZ=Asia/Shanghai
+NODE_ENV=production
 ```
 
-Docker 数据保存在 `qq-farm-data` 和 `qq-farm-logs` 命名卷中。执行 `docker compose down` 不会删除这些卷；不要使用 `docker compose down -v`，除非确认要删除运行数据。
+Docker 数据保存在 `qq-farm-data` 和 `qq-farm-logs` 两个命名卷中，`docker compose down` 不会删除它们；除非确认要清空运行数据，不要使用 `docker compose down -v`。
 
-Compose 使用根目录作为构建上下文，Dockerfile 位于 `core/Dockerfile`。镜像构建阶段固定使用 Node `20.19.6` 和 pnpm `10.30.2`，通过 BuildKit 缓存 pnpm store，并在相互独立的阶段构建 Web、Core 和生产依赖；仅修改一侧源码时可直接复用另一侧缓存。运行阶段只保留生产依赖、编译产物、协议定义、游戏配置和 TSDK WASM。容器内部固定监听 `3007`，根目录 `.env` 中的 `PORT` 只用于宿主机端口映射。
+Compose 以根目录作为构建上下文，Dockerfile 位于 `core/Dockerfile`。构建阶段固定 Node `20.19.6` 与 pnpm `10.30.2`，通过 BuildKit 缓存 pnpm store，并在相互独立的阶段分别构建 Web、Core 和生产依赖，只改一侧源码时可复用另一侧缓存；运行阶段只保留生产依赖、编译产物、协议定义、游戏配置与 TSDK WASM。健康检查每 30 秒请求一次 `/api/game-version`。
 
-依赖源默认使用 npm 官方源；网络受限时可以在根目录 `.env` 中覆盖构建参数后重新构建：
+依赖默认走 npm 官方源，网络受限时可在根目录 `.env` 覆盖构建参数后重新构建：
 
 ```dotenv
 NPM_REGISTRY=https://registry.npmmirror.com/
 ```
 
-如需显式指定基础镜像或 pnpm 版本，也可以配置 `NODE_IMAGE` 和 `PNPM_VERSION`。修改构建参数或排查旧缓存问题时请执行 `docker compose build --pull --no-cache`，确保重新拉取基础镜像并安装依赖。
+需要显式指定基础镜像或 pnpm 版本时，可以配置 `NODE_IMAGE` 和 `PNPM_VERSION`；改过构建参数或怀疑缓存有问题时执行 `docker compose build --pull --no-cache`。
 
-### 二进制发布版
+如需同时跑 NapCat（QQ 扫码登录依赖），把 `.env.compose.example` 里的配置复制到 `.env` 并取消注释：
 
-可从 [Releases](https://github.com/602832789/qq-farm-bot/releases) 下载对应平台文件，也可以自行构建：
+```dotenv
+COMPOSE_PROFILES=napcat
+NAPCAT_LOGIN_ENABLED=true
+NAPCAT_IMAGE=mlikiowa/napcat-docker:v4.18.19
+```
+
+官方 NapCat 镜像同时提供 amd64 与 arm64，不提供 32 位 x86。用 `./compose.sh` 启动时会自动读取宿主机名称作为设备名，需要覆盖时再设置 `NAPCAT_DEVICE_NAME`。
+
+## 📦 二进制部署
+
+不想装 Node.js 时，可从 [Releases](https://github.com/602832789/qq-farm-bot/releases) 下载对应平台的可执行文件，也可以自行构建：
 
 ```bash
 pnpm install
 pnpm package:release
 ```
 
-Windows x64、Linux x64、macOS Intel 和 macOS Apple Silicon 产物生成在 `core/dist/bin/`。运行后，程序会在可执行文件同级创建 `data/` 目录。
+Windows x64、Linux x64、macOS Intel 和 macOS Apple Silicon 产物生成在 `core/dist/bin/`。程序运行后会在可执行文件同级创建 `data/` 目录，所有运行数据都放在那里。
 
-Linux 和 macOS 首次运行可能需要添加执行权限：
+Linux 和 macOS 首次运行可能需要执行权限：
 
 ```bash
 chmod +x ./qq-farm-bot
 ./qq-farm-bot
 ```
 
-## 首次使用
+## 🔑 账号登录
 
-1. 打开 Web 面板，使用 `admin` / `admin` 登录。
-2. 进入“设置 → 系统设置”修改管理员密码。
-3. 如需使用 QQ 扫码登录，先部署并启动 [qq-miniapp-auth](https://github.com/liyangpengs/qq-miniapp-auth) 服务，再在“设置 → 系统设置 → 登录设置”开启 QQ 扫码登录，并填写 NapCat 接口地址和接口签名。
-4. 在设置页添加游戏账号，可使用有效 Code、微信扫码或 QQ扫码登录。
-5. 为账号配置种植、自动化和好友策略，并按需设置实例级下线提醒。
-6. 启动账号，在概览页确认连接状态、农场数据和实时日志。
+1. 打开 Web 面板，用 `admin` / `admin` 登录。
+2. 进入「设置 → 系统设置」修改管理员密码。
+3. 添加游戏账号：抓包 Code 登录、微信扫码登录、QQ 扫码登录三种方式任选。
+4. 为账号配置种植、自动化和好友策略，按需设置实例级下线提醒。
+5. 启动账号，在概览页确认连接状态、农场数据和实时日志。
 
-Code 具有时效性；登录失败时应先重新获取 Code 或重新扫码。QQ 客户端被挤下线后，官方“重新登录”会签发新的 Code；可启动 QQFarmCodeHelper 的标准获取模式并开启自动同步，再点击官方“重新登录”，Helper 会更新匹配账号的 Code 并重新启动远程账号。协议监听模式只落盘抓包，永远不会自动上传 Code。
+Code 有时效性，登录失败时先重新获取 Code 或重新扫码。QQ 客户端被挤下线后，官方“重新登录”会签发新的 Code；可启动 QQFarmCodeHelper 的标准获取模式并开启自动同步，再点击官方“重新登录”，Helper 会更新匹配账号的 Code 并重新拉起远程账号。协议监听模式只落盘抓包，永远不会自动上传 Code。
 
-QQ 扫码登录依赖外部 [qq-miniapp-auth](https://github.com/liyangpengs/qq-miniapp-auth) 服务。登录设置中的 NapCat 接口地址需填写该服务的可访问地址，NapCat 接口签名需与其 `API_SIGNING_SECRET` 配置一致；两者会保存在本机数据目录中，由后端调用外部服务时读取。QQ 扫码登录默认关闭，开启前必须同时配置接口地址和签名。
+QQ 扫码登录依赖外部的 [qq-miniapp-auth](https://github.com/liyangpengs/qq-miniapp-auth) 服务：在「设置 → 系统设置 → 登录设置」开启后，填写该服务的可访问地址和与之 `API_SIGNING_SECRET` 一致的接口签名，两项都配置好才能开启。凭据保存在本机数据目录，由后端调用外部服务时读取。
 
-## 配置说明
+## ⚙️ 配置说明
 
 ### 环境变量
 
@@ -256,7 +225,7 @@ QQ 扫码登录依赖外部 [qq-miniapp-auth](https://github.com/liyangpengs/qq-
 | `NODE_ENV` | `production` | Docker | Compose 当前固定为生产环境 |
 | `LOG_LEVEL` | `info` | 后端 | 服务端日志级别 |
 
-管理员账号不通过环境变量初始化。首次运行会自动创建 `admin` / `admin`，之后的管理员凭据保存在数据目录的 `admin.json` 中。项目不提供注册或新增管理员功能。
+管理员不通过环境变量初始化：首次运行自动创建 `admin` / `admin`，之后的凭据保存在数据目录的 `admin.json` 中。面板只保留一个超级管理员，不提供注册、普通用户和租户隔离。
 
 ### 种植策略
 
@@ -289,17 +258,17 @@ QQ 扫码登录依赖外部 [qq-miniapp-auth](https://github.com/liyangpengs/qq-
 | 配置 | 字段 | 说明 |
 | --- | --- | --- |
 | `Illustrated.json` | `param` | 与图鉴协议返回的果实 ID 对应 |
-| `Illustrated.json` | `type` | 果实分类，包括普通果实、黄金果实、活动果实和装扮果实 |
+| `Illustrated.json` | `type` | 果实分类：普通果实、黄金果实、活动果实、装扮果实 |
 | `Illustrated.json` | `illustrated_type` | 区分普通图鉴和超变图鉴 |
 | `Illustrated.json` | `sort` | 图鉴中的展示顺序 |
-| `BuffCfg.json` | `source_type` | 超变图鉴只展示 `超变升级`，隐藏 `活动加成` |
+| `BuffCfg.json` | `source_type` | 超变图鉴只展示「超变升级」，隐藏「活动加成」 |
 | `BuffCfg.json` | `source_param` | 触发该属性加成的图鉴等级 |
 | `BuffCfg.json` | `attr_id` | 属性加成名称 |
 | `BuffCfg.json` | `attr_value` | 大于 `10` 时为触发概率，小于 `10` 时为数量 |
 
-概率值按千分值转换为百分比展示，例如 `100` 显示为 `10%`、`500` 显示为 `50%`；数量值直接展示，例如 `2` 显示为 `数量 +2`。当前加成会按属性名称取当前等级已生效的最新配置。
+概率值按千分值换算为百分比展示，例如 `100` 显示 `10%`、`500` 显示 `50%`；数量值直接展示，例如 `2` 显示「数量 +2」。当前加成按属性名称取当前等级已生效的最新配置。
 
-## 数据与备份
+## 💾 数据与备份
 
 | 运行方式 | 数据位置 |
 | --- | --- |
@@ -309,9 +278,9 @@ QQ 扫码登录依赖外部 [qq-miniapp-auth](https://github.com/liyangpengs/qq-
 
 管理员凭据、游戏账号、配置、活动状态和日志都属于运行数据。升级、迁移或重新部署前，建议先停止服务并备份整个数据目录或 Docker 命名卷，而不是只复制单个 JSON 文件。
 
-游戏账号属于当前实例，不带用户归属字段，也没有数量上限。下线提醒同样是实例级配置，对当前实例内的所有游戏账号生效。
+游戏账号属于当前实例，不带用户归属字段，也没有数量上限；下线提醒同样是实例级配置，对实例内所有游戏账号生效。
 
-## 项目结构
+## 🗂 项目结构
 
 ```text
 qq-farm-bot/
@@ -337,7 +306,7 @@ qq-farm-bot/
 └── package.json
 ```
 
-## 开发命令
+## 🛠 开发命令
 
 | 命令 | 说明 |
 | --- | --- |
@@ -345,8 +314,8 @@ qq-farm-bot/
 | `pnpm dev:web` | 启动 Vite 前端开发服务 |
 | `pnpm dev:core` | 使用 `tsx` 启动后端 |
 | `pnpm lint` | 检查并自动修复前后端代码风格 |
-| `pnpm -C core typecheck` | 执行后端 TypeScript 类型检查 |
-| `pnpm typecheck:web` | 执行前端 TypeScript 类型检查（不参与生产启动） |
+| `pnpm -C core typecheck` | 后端 TypeScript 类型检查 |
+| `pnpm typecheck:web` | 前端 TypeScript 类型检查（不参与生产启动） |
 | `pnpm build:web` | 构建 Web 面板到 `web/dist/` |
 | `pnpm -C web build:compressed` | 构建 Web 并额外生成预压缩 `.gz` 文件 |
 | `pnpm -C web build:analyze` | 构建 Web 并生成 bundle 分析报告 |
@@ -370,7 +339,7 @@ clean-for-pack.bat --keep-data
 
 `clean.sh` 会停止当前服务，然后删除项目根目录下除 `.git` 以外的全部文件和目录，包括源码、依赖、构建产物、运行数据以及脚本自身。该操作不可撤销，只应用于准备通过 Git 重新检出工作区的场景。
 
-Windows 的 `clean-for-pack.bat` 会清理依赖、构建产物、覆盖率文件、日志以及 `core/data` 运行数据，适合生成不包含账号和凭据的发布目录。如需保留 `core/data`，必须显式传入 `--keep-data`。
+`clean-for-pack.bat` 会清理依赖、构建产物、覆盖率文件、日志以及 `core/data` 运行数据，适合生成不包含账号和凭据的发布目录；需要保留 `core/data` 时必须显式传入 `--keep-data`。
 
 ### 抓包协议分析
 
@@ -382,7 +351,7 @@ pnpm -C core exec tsx ../tools/decode-latest-protocols.js <capture-dir>
 pnpm -C core exec tsx ../tools/audit-capture-compatibility.js <capture-dir>
 ```
 
-## 项目文档
+## 📖 使用文档
 
 专题说明统一收录在 [`docs/`](docs/README.md)：
 
@@ -399,29 +368,29 @@ pnpm -C core exec tsx ../tools/audit-capture-compatibility.js <capture-dir>
 - [上游同步手册](docs/upstream-sync-runbook.md)
 - [小程序跳转与访问协议](docs/visit-enter-protocol.md)
 
-## 来源与合并
+仓库根目录的 [`AGENTS.md`](AGENTS.md) 记录了仓库约定、QQ 小游戏源码与资源缓存位置，以及 WASM 更新流程，适合交给 AI 助手作为上下文。
 
-本项目由两个上游合并而成，代码实现以较新的功能分支为准，项目门面与许可证来自主干仓库：
+## 🌱 来源与合并
+
+本项目由两个上游合并而成：代码实现以较新的功能分支为准，项目门面与许可证来自主干仓库。
 
 | 角色 | 仓库 | 说明 |
 | --- | --- | --- |
 | 主干 / 门面 | [BuildAtDawn/qq-farm-bot](https://github.com/BuildAtDawn/qq-farm-bot) | 提供 `LICENSE`、文档与启停脚本约定 |
 | 功能 / 内容 | [muyuewang/qq-farm-bot-404](https://github.com/muyuewang/qq-farm-bot-404) | 最新代码实现、协议版本与测试基线 |
 
-两者均源自 [liyangpengs/qq-farm-bot](https://github.com/liyangpengs/qq-farm-bot)。合并规则如下：
+两者均源自 [liyangpengs/qq-farm-bot](https://github.com/liyangpengs/qq-farm-bot)。合并规则：
 
 - 两边同名的 2727 个文件中，内容不一致的 106 个全部采用功能分支版本（TS 模块化 `core/src/controllers/admin/*`、`runtime-engine`、最新 Vue 组件与 store）。
 - 保留主干独有的 4 个增量文件：`LICENSE`、`restart.sh`、`docs/upstream-sync-runbook.md`、`docs/visit-enter-protocol.md`。
 - 不并入主干中被取代的 503 个文件（旧扁平 JS controllers、旧 Vue 组件、针对旧实现的测试用例、前端未引用的静态资源），避免死代码与失败用例进入测试基线。
 - 移除了原功能分支的自动 rebase + force-push 同步流水线，避免其覆盖本仓库历史。
 
-合并后共 560 个提交，保留了双方绝大部分历史（主干 16 个提交 + 功能分支 544 个提交 + 合并与整理提交）。原功能分支中 3 个新增/修改该同步流水线的提交已从历史中剔除（GitHub 对 `.github/workflows/` 的推送需要额外的 `workflow` 权限），文件树不受影响，也不存在任何 GitHub Actions 配置。
+合并后共 560 个提交，保留了双方绝大部分历史（主干 16 个 + 功能分支 544 个 + 合并与整理提交）。原功能分支中 3 个新增或修改该同步流水线的提交已从历史中剔除（GitHub 要求推送 `.github/workflows/` 变更的凭据额外具备 `workflow` 权限），文件树不受影响，仓库中也不存在任何 GitHub Actions 配置。
 
-## 许可证
+## 📄 许可证
 
 本项目沿用主干的 [PolyForm Noncommercial License 1.0.0](LICENSE)。这是“可查看源码的非商业许可证”，**不是** OSI 认可的开源许可证。
-
-### 严格禁止商业化
 
 除许可证明确允许的非商业用途外，未经著作权人另行书面授权，不得将本项目或其修改版用于任何商业目的，包括但不限于：
 
@@ -432,13 +401,13 @@ pnpm -C core exec tsx ../tools/audit-capture-compatibility.js <capture-dir>
 
 不得通过更改项目名称、界面、打包方式、增加代理服务或拆分组件来规避上述限制。自建、学习、研究、测试、个人娱乐以及符合许可证定义的非商业组织用途，不等于获得商业授权。
 
-## 免责声明与使用边界
+## ⚠️ 免责声明
 
 本项目仅供学习、研究、测试和个人非商业用途。使用自动化工具可能违反游戏服务条款或其他规则，也可能导致账号限制、数据丢失、服务中断、法律争议或其他损失。使用者应自行承担全部风险和责任，作者不提供任何明示或默示担保，也不对使用结果负责。
 
 作者未授权任何第三方以本项目名义收费、牟利、承诺账号安全或提供官方支持。通过付费渠道获取的服务或副本，与作者无关；相关纠纷应直接联系收费方。
 
-## 致谢
+## 🙏 致谢
 
 感谢 [liyangpengs/qq-farm-bot](https://github.com/liyangpengs/qq-farm-bot)、[BuildAtDawn/qq-farm-bot](https://github.com/BuildAtDawn/qq-farm-bot)、[muyuewang/qq-farm-bot-404](https://github.com/muyuewang/qq-farm-bot-404) 及所有上游贡献者。
 
