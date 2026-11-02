@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="web/public/icon.png" width="112" alt="QQ Farm Bot 图标">
+<img src="docs/images/readme-hero.png" width="168" alt="QQ Farm Bot 农场插画">
 
 # QQ Farm Bot
 
