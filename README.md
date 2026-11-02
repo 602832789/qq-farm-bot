@@ -1,4 +1,22 @@
-# QQ 农场多账号挂机 + Web 面板
+<div align="center">
+
+<img src="web/public/icon.png" width="96" alt="QQ Farm Bot 图标">
+
+# QQ Farm Bot
+
+🌱 一位会自己浇水、除草、收菜的 QQ 农场小帮手
+
+多账号挂机 · 农场与好友自动化 · 图鉴与藏品 · 活动中心 · Web 控制面板
+
+[能做什么](#功能概览) · [快速开始](#快速开始) · [配置说明](#配置说明) · [项目文档](#项目文档) · [来源与合并](#来源与合并) · [免责声明](#免责声明与使用边界)
+
+</div>
+
+> [!WARNING]
+> 快乐种田，谨慎使用。本项目仅供学习和研究，自动化操作可能违反游戏服务条款，账号及其他相关风险由使用者自行承担。
+
+> [!TIP]
+> 欢迎 Fork 本项目并提交 PR。项目主要由个人利用业余时间维护，精力有限，功能更新、问题修复和兼容性适配难免有所遗漏；发现问题或有更好的实现方案，欢迎直接参与贡献。
 
 基于 Node.js 的 QQ 农场自动化工具，提供多账号挂机、农场与好友自动化、独立图鉴与藏品、活动中心、商城、数据分析和 Web 控制面板。当前项目版本为 `20261102`，QQ 与微信游戏协议版本均为 `1.16.1.6_20261028`，两端独立维护版本配置和 TSDK/WASM。
 
@@ -118,6 +136,8 @@ pnpm dev
 
 - 本机：`http://localhost:3007`
 - 局域网：`http://<服务器 IP>:3007`
+
+仓库根目录已附带 `.npmrc`（`node-linker=hoisted`），让 `node_modules` 使用扁平布局。这可以避免 pnpm 符号链接布局下 `tsc` 无法为 Express 推断类型生成可移植命名（TS2742）而中断 `core` 构建，请不要删除该文件。
 
 如需分别启动开发服务：
 
@@ -375,13 +395,53 @@ pnpm -C core exec tsx ../tools/audit-capture-compatibility.js <capture-dir>
 - [神秘商人、游戏商城与购买协议](docs/shop-protocols.md)
 - [好友宠物缓存与每日同步](docs/friend-pet-cache.md)
 - [个人页宠物协议](docs/pet-protocols.md)
+- [图鉴、变异宝典与藏品](docs/collections-20261101.md)
+- [上游同步手册](docs/upstream-sync-runbook.md)
+- [小程序跳转与访问协议](docs/visit-enter-protocol.md)
 
-## 免责声明
+## 来源与合并
 
-本项目仅供学习与研究用途。使用本工具可能违反游戏服务条款，由此产生的一切后果由使用者自行承担。
+本项目由两个上游合并而成，代码实现以较新的功能分支为准，项目门面与许可证来自主干仓库：
+
+| 角色 | 仓库 | 说明 |
+| --- | --- | --- |
+| 主干 / 门面 | [BuildAtDawn/qq-farm-bot](https://github.com/BuildAtDawn/qq-farm-bot) | 提供 `LICENSE`、文档与启停脚本约定 |
+| 功能 / 内容 | [muyuewang/qq-farm-bot-404](https://github.com/muyuewang/qq-farm-bot-404) | 最新代码实现、协议版本与测试基线 |
+
+两者均源自 [liyangpengs/qq-farm-bot](https://github.com/liyangpengs/qq-farm-bot)。合并规则如下：
+
+- 两边同名的 2727 个文件中，内容不一致的 106 个全部采用功能分支版本（TS 模块化 `core/src/controllers/admin/*`、`runtime-engine`、最新 Vue 组件与 store）。
+- 保留主干独有的 4 个增量文件：`LICENSE`、`restart.sh`、`docs/upstream-sync-runbook.md`、`docs/visit-enter-protocol.md`。
+- 不并入主干中被取代的 503 个文件（旧扁平 JS controllers、旧 Vue 组件、针对旧实现的测试用例、前端未引用的静态资源），避免死代码与失败用例进入测试基线。
+- 移除了原功能分支的自动 rebase + force-push 同步流水线，避免其覆盖本仓库历史。
+
+合并提交保留了双方完整历史（主干 16 个提交 + 功能分支 544 个提交 + 1 个合并提交）。
+
+## 许可证
+
+本项目沿用主干的 [PolyForm Noncommercial License 1.0.0](LICENSE)。这是“可查看源码的非商业许可证”，**不是** OSI 认可的开源许可证。
+
+### 严格禁止商业化
+
+除许可证明确允许的非商业用途外，未经著作权人另行书面授权，不得将本项目或其修改版用于任何商业目的，包括但不限于：
+
+- 付费倒卖、源码售卖、收费下载、收费授权或商业软件集成；
+- 付费代部署、托管、租赁、SaaS、账号托管或按次/按量提供服务；
+- 以本项目为基础进行收费的二次开发、定制、分发、培训或技术支持；
+- 通过会员、订阅、兑换码、授权码、访问卡或其他方式收费或限制访问。
+
+不得通过更改项目名称、界面、打包方式、增加代理服务或拆分组件来规避上述限制。自建、学习、研究、测试、个人娱乐以及符合许可证定义的非商业组织用途，不等于获得商业授权。
+
+## 免责声明与使用边界
+
+本项目仅供学习、研究、测试和个人非商业用途。使用自动化工具可能违反游戏服务条款或其他规则，也可能导致账号限制、数据丢失、服务中断、法律争议或其他损失。使用者应自行承担全部风险和责任，作者不提供任何明示或默示担保，也不对使用结果负责。
+
+作者未授权任何第三方以本项目名义收费、牟利、承诺账号安全或提供官方支持。通过付费渠道获取的服务或副本，与作者无关；相关纠纷应直接联系收费方。
+
+## 致谢
+
+感谢 [liyangpengs/qq-farm-bot](https://github.com/liyangpengs/qq-farm-bot)、[BuildAtDawn/qq-farm-bot](https://github.com/BuildAtDawn/qq-farm-bot)、[muyuewang/qq-farm-bot-404](https://github.com/muyuewang/qq-farm-bot-404) 及所有上游贡献者。
 
 <div align="center">
   <p>如果觉得项目有用，欢迎点一个 Star。</p>
 </div>
-
-- [图鉴、变异宝典与藏品](docs/collections-20261101.md)
