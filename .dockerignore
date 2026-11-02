@@ -19,6 +19,8 @@ coverage
 .nyc_output
 *.tsbuildinfo
 
-# Python bytecode caches
-**/__pycache__
-**/*.py[cod]
+# Local diagnostics and regression sources are not runtime assets
+output/
+protocol-captures/
+docs/performance-analysis/
+**/tests/

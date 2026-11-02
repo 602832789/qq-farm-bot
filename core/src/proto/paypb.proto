@@ -7,20 +7,22 @@ service PayService {
 }
 
 message GetRechargeInfoRequest {
-    string source = 1; // 官方商城使用 "MallUI"。
+    string source = 1; // Observed value: "MallUI".
 }
 
 message RechargeInfo {
-    int64 balance = 1; // 当前钻石余额。
-    int64 field_3 = 3; // 语义未确认。
+    int64 balance = 1;
+    int64 gen_balance = 2;
+    int64 save_sum = 3;
+    int64 direct_sum = 4;
+    repeated int64 first_charge_ids = 5 [packed = true];
 }
 
 message GetRechargeInfoReply {
     repeated RechargeInfo recharge_infos = 1;
 }
 
-// 充值通知只携带交易上下文，不携带余额；余额需主动查询。
 message RechargeInfoNotify {
-    string transaction_id = 1;
+    RechargeInfo info = 1;
     string source = 2;
 }

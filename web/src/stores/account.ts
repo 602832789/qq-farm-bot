@@ -1,45 +1,17 @@
-import type { AccountRuntime } from '@/utils/account-runtime'
 import { useStorage } from '@vueuse/core'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import api from '@/api'
 
-export interface Account extends AccountRuntime {
+export interface Account {
   id: string
   name: string
   nick?: string
   uin?: number
-  qq?: string | number
-  wxid?: string
-  hasWxCredential?: boolean
-  hasWxRefreshCredential?: boolean
-  wxCredentialRefreshedAt?: number
-  wxCredentialLastAttemptAt?: number
-  wxCredentialRefreshError?: string
-  expires_in?: number
-  expires_at?: number
-  refresh_token_observed_at?: number
-  gid?: string | number
-  openId?: string
   avatar?: string
-  avatarUrl?: string
-  username?: string
   platform?: string
   running?: boolean
   // Add other fields as discovered
-}
-
-export interface RefreshWxCodesResult {
-  total: number
-  success: number
-  failed: number
-  skipped: number
-  results: Array<{
-    accountId: string
-    name: string
-    ok: boolean
-    error?: string
-  }>
 }
 
 export interface AccountLog {
@@ -70,43 +42,52 @@ export const useAccountStore = defineStore('account', () => {
   const currentAccountId = useStorage('current_account_id', '')
   const loading = ref(false)
   const logs = ref<AccountLog[]>([])
-
-  function applyAccounts(nextAccounts: Account[]) {
-    accounts.value = nextAccounts
-
-    if (accounts.value.length === 0) {
-      currentAccountId.value = ''
-      return
-    }
-
-    const found = accounts.value.find(a => String(a.id) === currentAccountId.value)
-    if (!found && accounts.value[0]) {
-      currentAccountId.value = String(accounts.value[0].id)
-    }
-  }
+  let accountsRequestSequence = 0
 
   const currentAccount = computed(() =>
     accounts.value.find(a => String(a.id) === currentAccountId.value),
   )
 
   async function fetchAccounts() {
+    const sequence = ++accountsRequestSequence
     loading.value = true
     try {
       // api interceptor adds x-admin-token
       const res = await api.get('/api/accounts')
+      if (sequence !== accountsRequestSequence)
+        return
       if (res.data.ok && res.data.data && res.data.data.accounts) {
-        applyAccounts(Array.isArray(res.data.data.accounts) ? res.data.data.accounts : [])
+        accounts.value = res.data.data.accounts
+
+        // Auto-select first account if none selected or selected not found
+        if (accounts.value.length > 0) {
+          const found = accounts.value.find(a => String(a.id) === currentAccountId.value)
+          if (!found && accounts.value[0]) {
+            currentAccountId.value = String(accounts.value[0].id)
+          }
+        }
+        else {
+          // 如果账号列表为空，清空当前选中的账号ID
+          currentAccountId.value = ''
+        }
       }
       else {
-        console.warn('[account] fetchAccounts returned unexpected payload, keeping previous account state')
+        // 如果返回数据无效，也清空账号列表和选中状态
+        accounts.value = []
+        currentAccountId.value = ''
       }
     }
     catch (e) {
       console.error('获取账号失败', e)
-      // Keep the last usable account selection to avoid blanking the app on transient failures.
+      if (sequence !== accountsRequestSequence)
+        return
+      // 请求失败时也清空状态
+      accounts.value = []
+      currentAccountId.value = ''
     }
     finally {
-      loading.value = false
+      if (sequence === accountsRequestSequence)
+        loading.value = false
     }
   }
 
@@ -118,27 +99,21 @@ export const useAccountStore = defineStore('account', () => {
     selectAccount(acc.id)
   }
 
-  async function startAccount(id: string) {
+  function syncAccountAvatar(id: string, avatar: string) {
     const account = accounts.value.find(item => String(item.id) === String(id))
-    if (account)
-      account.runtimeState = 'logging_in'
-    try {
-      await api.post(`/api/accounts/${id}/start`)
+    if (account && avatar) {
+      account.avatar = avatar
     }
-    finally {
-      await fetchAccounts()
-    }
+  }
+
+  async function startAccount(id: string) {
+    await api.post(`/api/accounts/${id}/start`)
+    await fetchAccounts()
   }
 
   async function stopAccount(id: string) {
     await api.post(`/api/accounts/${id}/stop`)
     await fetchAccounts()
-  }
-
-  async function refreshWxCodes() {
-    const res = await api.post('/api/accounts/refresh-wx-credentials', {}, { timeout: 120000 })
-    await fetchAccounts()
-    return res.data as { ok: boolean, error?: string, data?: RefreshWxCodesResult }
   }
 
   async function deleteAccount(id: string) {
@@ -194,11 +169,11 @@ export const useAccountStore = defineStore('account', () => {
     selectAccount,
     startAccount,
     stopAccount,
-    refreshWxCodes,
     deleteAccount,
     fetchLogs,
     addAccount,
     updateAccount,
     setCurrentAccount,
+    syncAccountAvatar,
   }
 })

@@ -1,113 +1,79 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { NTab } from 'naive-ui/es/tabs'
+import { ref, watch } from 'vue'
 import BagPanel from '@/components/BagPanel.vue'
 import FarmPanel from '@/components/FarmPanel.vue'
-import PersonalAccountOverview from '@/components/PersonalAccountOverview.vue'
+import PageTabs from '@/components/PageTabs.vue'
+import PetPanel from '@/components/PetPanel.vue'
 import TaskPanel from '@/components/TaskPanel.vue'
-import FarmPageHeader from '@/components/ui/FarmPageHeader.vue'
 
-const currentTab = ref<'farm' | 'bag' | 'task'>('farm')
+type PersonalTab = 'farm' | 'pet' | 'bag' | 'task'
+
+const currentTab = ref<PersonalTab>('farm')
+
+const tabPanels: Record<PersonalTab, any> = {
+  farm: FarmPanel,
+  pet: PetPanel,
+  bag: BagPanel,
+  task: TaskPanel,
+}
+
+const visitedTabs = ref<PersonalTab[]>(['farm'])
+
+watch(currentTab, (tab) => {
+  if (!visitedTabs.value.includes(tab))
+    visitedTabs.value.push(tab)
+})
 </script>
 
 <template>
-  <div class="personal-page">
-    <FarmPageHeader title="我的农场" description="照看作物，整理背包，收下每一份成长。" icon="i-carbon-sprout" />
-    <PersonalAccountOverview />
-    <div class="personal-tabs" role="tablist" aria-label="个人板块">
-      <button
-        class="personal-tab" role="tab"
-        :class="{ 'is-active': currentTab === 'farm' }"
-        :aria-selected="currentTab === 'farm'"
-        @click="currentTab = 'farm'"
-      >
-        <div class="flex items-center space-x-2">
-          <div class="i-carbon-sprout text-lg" />
-          <span>我的农场</span>
-        </div>
-      </button>
-      <button
-        class="personal-tab" role="tab"
-        :class="{ 'is-active': currentTab === 'bag' }"
-        :aria-selected="currentTab === 'bag'"
-        @click="currentTab = 'bag'"
-      >
-        <div class="flex items-center space-x-2">
-          <div class="i-carbon-box text-lg" />
-          <span>我的背包</span>
-        </div>
-      </button>
-      <button
-        class="personal-tab" role="tab"
-        :class="{ 'is-active': currentTab === 'task' }"
-        :aria-selected="currentTab === 'task'"
-        @click="currentTab = 'task'"
-      >
-        <div class="flex items-center space-x-2">
-          <div class="i-carbon-task text-lg" />
-          <span>我的任务</span>
-        </div>
-      </button>
-    </div>
+  <div class="page-stack flex flex-col">
+    <PageTabs v-model:value="currentTab" animated>
+      <NTab name="farm">
+        <span class="inline-flex items-center gap-2"><span class="i-carbon-sprout" />我的农场</span>
+      </NTab>
+      <NTab name="pet">
+        <span class="inline-flex items-center gap-2"><span class="i-carbon-dog-walker" />宠物</span>
+      </NTab>
+      <NTab name="bag">
+        <span class="inline-flex items-center gap-2"><span class="i-carbon-box" />我的背包</span>
+      </NTab>
+      <NTab name="task">
+        <span class="inline-flex items-center gap-2"><span class="i-carbon-task" />我的任务</span>
+      </NTab>
+    </PageTabs>
 
-    <div class="personal-content">
-      <Transition
-        mode="out-in"
-        enter-active-class="transition duration-200 ease-out"
-        enter-from-class="transform opacity-0 scale-95"
-        enter-to-class="transform opacity-100 scale-100"
-        leave-active-class="transition duration-150 ease-in"
-        leave-from-class="transform opacity-100 scale-100"
-        leave-to-class="transform opacity-0 scale-95"
-      >
-        <component :is="currentTab === 'farm' ? FarmPanel : currentTab === 'bag' ? BagPanel : TaskPanel" />
-      </Transition>
+    <div class="min-w-0">
+      <div v-for="tab in visitedTabs" v-show="tab === currentTab" :key="tab">
+        <component :is="tabPanels[tab]" />
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.personal-page {
+/* 个人页的面板随页面整体滚动：Tab 吸顶，面板工具栏在桌面端吸在 Tab 下方（.panel-sticky），
+   手机端随内容滚走，列表获得接近整屏的阅读区域。 */
+:deep(.personal-panel) {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 16px;
+}
+
+:deep(.personal-panel__card) {
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 18px;
 }
-.personal-tabs {
-  display: flex;
-  gap: 26px;
-  border-bottom: 1px solid var(--surface-border);
-  overflow-x: auto;
-}
-.personal-tab {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  min-height: 44px;
-  padding: 10px 1px 13px;
-  border-bottom: 3px solid transparent;
-  font-size: 13px;
-  color: var(--muted-text);
-}
-.personal-tab:hover {
-  color: var(--theme-primary);
-}
-.personal-tab.is-active {
-  color: var(--theme-primary);
-  border-bottom-color: var(--theme-primary);
-  font-weight: 650;
-}
-.personal-content {
+
+:deep(.personal-panel__scroll) {
   min-width: 0;
-  padding-bottom: 16px;
 }
-@media (max-width: 639px) {
-  .personal-page {
-    gap: 14px;
-  }
-  .personal-tabs {
-    gap: 20px;
-  }
-  .personal-tab {
-    font-size: 12px;
+
+@media (max-width: 640px) {
+  :deep(.personal-panel) {
+    gap: 12px;
   }
 }
 </style>

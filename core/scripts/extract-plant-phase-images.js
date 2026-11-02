@@ -380,18 +380,6 @@ function extractAtlasRegion(texturePath, region, outputPath) {
   if (result.status !== 0) throw new Error(`Spine 图集拆图失败：${result.stderr || outputPath}`);
 }
 
-function findSpinePhaseRegion(regions, phase, assetName, spineCropName) {
-  const names = phase === 7
-    ? ['kuwei', '07', 'kuwei_tiangong', 'kuwei_tiangong2']
-    // 森野黄金芽的数字区块是成熟动画零件，阶段整图必须优先。
-    : [`${phase}jie`, `pt_sz_${phase}`, `grow_0${phase}`, `grow_${phase - 1}`,
-        `0${phase}`, String(phase), `${assetName}_${phase}`, `${spineCropName}_${phase}`];
-  return names.find(name => regions.has(name))
-    || (phase >= 2 && phase <= 5
-      ? [...regions.keys()].find(name => new RegExp(`^Crop_\\d+_${phase}$`).test(name))
-      : undefined);
-}
-
 function exportCachedSpinePlants(entries, output, manifest, wantedAssets) {
   const plants = filterInvalidPlants([
     ...JSON.parse(fs.readFileSync(path.join(coreRoot, 'src', 'gameConfig', 'Plant.json'), 'utf8')),
@@ -407,9 +395,19 @@ function exportCachedSpinePlants(entries, output, manifest, wantedAssets) {
     if (!wantedAssets.has(assetName) && !wantedAssets.has(`Plant_${plant.id}`)) continue;
     const regions = parseAtlasRegions(spineImport.atlasText);
     const spineCropName = `Crop_${String(plant.all_state_spine || '').split('/').pop().replace(/^\D+/, '')}`;
-    // zhongzi 是背包种子图标，不用于阶段1。
-    for (const phase of [2, 3, 4, 5, 7]) {
-      const regionName = findSpinePhaseRegion(regions, phase, assetName, spineCropName);
+    const phaseRegions = new Map([
+      // Spine 图集里的 zhongzi 是背包种子图标；阶段1没有地上植物贴图。
+      [2, ['grow_02', 'grow_1', '02', '2', `${assetName}_2`, `${spineCropName}_2`]],
+      [3, ['grow_03', 'grow_2', '03', '3', `${assetName}_3`, `${spineCropName}_3`]],
+      [4, ['grow_04', 'grow_3', '04', '4', `${assetName}_4`, `${spineCropName}_4`]],
+      [5, ['grow_05', 'grow_4', '05', '5', `${assetName}_5`, `${spineCropName}_5`]],
+      [7, ['kuwei', '07', 'kuwei_tiangong', 'kuwei_tiangong2']],
+    ]);
+    for (const [phase, regionNames] of phaseRegions) {
+      const regionName = regionNames.find(name => regions.has(name))
+        || (phase >= 2 && phase <= 5
+          ? [...regions.keys()].find(name => new RegExp(`^Crop_\\d+_${phase}$`).test(name))
+          : null);
       const region = regionName && regions.get(regionName);
       if (!region) continue;
       const relative = path.join(assetName, `${phase}.png`);
@@ -536,13 +534,9 @@ function main() {
   console.log(`清单：${manifestPath}`);
 }
 
-module.exports = { parseAtlasRegions, findSpinePhaseRegion, exportCachedSpinePlants };
-
-if (require.main === module) {
-  try {
-    main();
-  } catch (error) {
-    console.error(error && error.stack || error);
-    process.exitCode = 1;
-  }
+try {
+  main();
+} catch (error) {
+  console.error(error && error.stack || error);
+  process.exitCode = 1;
 }

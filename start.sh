@@ -1,79 +1,189 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/scripts/local-service-common.sh"
-BOT_PORT="${ADMIN_PORT:-3007}"
-[[ "$BOT_PORT" =~ ^[0-9]{1,5}$ ]] || fail "ADMIN_PORT 必须是 1–65535 的整数。"
-(( 10#$BOT_PORT >= 1 && 10#$BOT_PORT <= 65535 )) || fail "ADMIN_PORT 必须是 1–65535 的整数。"
-BOT_PORT="$((10#$BOT_PORT))"
-command -v node >/dev/null 2>&1 || fail "请先安装 Node.js 20+。"
-node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 20 ? 0 : 1)' || fail "请升级到 Node.js 20+。"
-lock_service
-read_service_record
 
-if is_service_process; then
-  echo "[INFO] 服务已在运行，PID：$SERVICE_PID"
-  echo "[INFO] 面板：http://localhost:$SERVICE_PORT"
-  exit 0
-fi
-if [[ "$SERVICE_PID" =~ ^[1-9][0-9]*$ ]] && kill -0 "$SERVICE_PID" 2>/dev/null; then
-  fail "进程记录与当前进程不匹配，未操作该进程。请检查 ${PID_FILE}。"
-fi
-rm -f "$PID_FILE"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+PID_FILE="$SCRIPT_DIR/app_dev.pid"
+LOG_FILE="$SCRIPT_DIR/app_dev.log"
+INSTALL_STAMP="$SCRIPT_DIR/node_modules/.qq-farm-install-stamp"
+WEB_OUTPUT="$SCRIPT_DIR/web/dist/index.html"
+CORE_OUTPUT="$SCRIPT_DIR/core/client.js"
+CORE_RUNTIME_OUTPUT="$SCRIPT_DIR/core/dist/runtime/runtime-engine.js"
+FORCE_BUILD=0
 
-node - "$BOT_PORT" <<'NODE' || fail "端口 $BOT_PORT 已被占用，未启动服务。可通过 ADMIN_PORT 指定其他端口。"
-const server = require('node:net').createServer();
-server.on('error', () => process.exit(1));
-server.listen(Number(process.argv[2]), '0.0.0.0', () => server.close());
-NODE
+cd "$SCRIPT_DIR"
 
-cd "$ROOT_DIR"
-if [[ ! -d core/node_modules || ! -d web/node_modules ]]; then
-  echo "[INFO] 正在安装项目依赖..."
-  if command -v corepack >/dev/null 2>&1; then
-    corepack pnpm install -r
-  elif command -v pnpm >/dev/null 2>&1; then
-    pnpm install -r
-  else
-    fail "首次安装依赖需要 pnpm 10 或 Corepack。"
-  fi
-fi
+die() {
+    echo "start.sh: $*" >&2
+    exit 1
+}
 
-echo "[INFO] 正在构建最新前端..."
-npm --prefix "$ROOT_DIR/web" run build
-echo "[INFO] 正在后台启动服务..."
-SERVICE_PID="$(node - "$ENTRY" "$LOG_FILE" "$BOT_PORT" <<'NODE'
-const fs = require('node:fs');
-const path = require('node:path');
-const { spawn } = require('node:child_process');
-const [entry, logFile, port] = process.argv.slice(2);
-const fd = fs.openSync(logFile, 'a', 0o600);
-const child = spawn(process.execPath, [entry], {
-  cwd: path.dirname(entry), detached: true,
-  env: { ...process.env, ADMIN_PORT: port }, stdio: ['ignore', fd, fd],
-});
-fs.closeSync(fd);
-child.on('error', error => { console.error(error.message); process.exitCode = 1; });
-child.on('spawn', () => { console.log(child.pid); child.unref(); });
-NODE
-)"
-SERVICE_STARTED="$(LC_ALL=C ps -p "$SERVICE_PID" -o lstart=)" || fail "服务启动后退出。请查看日志：$LOG_FILE"
-printf '%s\n' "$SERVICE_PID" "$SERVICE_STARTED" "$BOT_PORT" > "$PID_FILE.tmp"
-mv "$PID_FILE.tmp" "$PID_FILE"
+usage() {
+    echo "Usage: bash start.sh [--rebuild]"
+    echo "  --rebuild  Force a full Web and Core rebuild before starting."
+}
 
-for ((attempt=0; attempt<30; attempt++)); do
-  if ! is_service_process; then
-    rm -f "$PID_FILE"
-    fail "服务启动后退出。请查看日志：$LOG_FILE"
-  fi
-  if health_ready; then
-    echo "[OK] 服务已启动，关闭终端后仍会继续运行。"
-    echo "[INFO] 面板：http://localhost:$BOT_PORT"
-    echo "[INFO] 日志：$LOG_FILE"
-    echo "[INFO] 停止：$ROOT_DIR/stop.sh"
-    exit 0
-  fi
-  sleep 0.5
+run_pnpm() {
+    if command -v corepack >/dev/null 2>&1; then
+        corepack pnpm "$@"
+    elif command -v pnpm >/dev/null 2>&1; then
+        pnpm "$@"
+    else
+        die "pnpm or corepack is required."
+    fi
+}
+
+has_newer_input() {
+    local output="$1"
+    shift
+    local input=""
+
+    [[ -e "$output" ]] || return 0
+    for input in "$@"; do
+        [[ -e "$input" ]] || continue
+        if find "$input" -type f -newer "$output" -print -quit 2>/dev/null | grep -q .; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+is_our_process() {
+    local pid="$1"
+    local process_dir=""
+    local command_line=""
+
+    kill -0 "$pid" 2>/dev/null || return 1
+
+    if [[ -e "/proc/$pid/cwd" ]]; then
+        process_dir="$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)"
+        [[ -z "$process_dir" || "$process_dir" == "$SCRIPT_DIR" ]] || return 1
+    fi
+
+    if [[ -r "/proc/$pid/cmdline" ]]; then
+        command_line="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)"
+    fi
+    [[ "$command_line" == *"core/client.js"* || "$command_line" == *"core/dist"* ]]
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --rebuild|--force-build)
+            FORCE_BUILD=1
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            usage >&2
+            die "unknown option: $1"
+            ;;
+    esac
+    shift
 done
-kill -TERM -- "-$SERVICE_PID" 2>/dev/null || true
-# 保留进程记录，若退出未完成，stop.sh 仍能安全处理。
-fail "服务未在等待时间内就绪，已请求停止。请查看日志：$LOG_FILE"
+
+if [[ -f "$PID_FILE" ]]; then
+    existing_pid="$(tr -d '[:space:]' < "$PID_FILE")"
+    if [[ "$existing_pid" =~ ^[0-9]+$ ]] && is_our_process "$existing_pid"; then
+        echo "qq-farm-bot is already running with PID $existing_pid."
+        exit 0
+    fi
+    rm -f -- "$PID_FILE"
+fi
+
+command -v node >/dev/null 2>&1 || die "node is required."
+
+dependency_inputs=(
+    "$SCRIPT_DIR/package.json"
+    "$SCRIPT_DIR/pnpm-lock.yaml"
+    "$SCRIPT_DIR/pnpm-workspace.yaml"
+    "$SCRIPT_DIR/core/package.json"
+    "$SCRIPT_DIR/web/package.json"
+)
+
+if [[ ! -d "$SCRIPT_DIR/core/node_modules" \
+    || ! -d "$SCRIPT_DIR/web/node_modules" \
+    || ! -f "$INSTALL_STAMP" ]] \
+    || has_newer_input "$INSTALL_STAMP" "${dependency_inputs[@]}"; then
+    echo "Installing workspace dependencies..."
+    run_pnpm install --frozen-lockfile
+    touch "$INSTALL_STAMP"
+fi
+
+web_inputs=(
+    "$SCRIPT_DIR/web/src"
+    "$SCRIPT_DIR/web/public"
+    "$SCRIPT_DIR/web/index.html"
+    "$SCRIPT_DIR/web/package.json"
+    "$SCRIPT_DIR/web/tsconfig.json"
+    "$SCRIPT_DIR/web/tsconfig.app.json"
+    "$SCRIPT_DIR/web/tsconfig.node.json"
+    "$SCRIPT_DIR/web/uno.config.ts"
+    "$SCRIPT_DIR/web/vite.config.ts"
+    "$SCRIPT_DIR/core/package.json"
+    "$SCRIPT_DIR/package.json"
+    "$SCRIPT_DIR/pnpm-lock.yaml"
+    "$SCRIPT_DIR/pnpm-workspace.yaml"
+)
+
+core_inputs=(
+    "$SCRIPT_DIR/core/src"
+    "$SCRIPT_DIR/core/client.ts"
+    "$SCRIPT_DIR/core/package.json"
+    "$SCRIPT_DIR/core/tsconfig.json"
+    "$SCRIPT_DIR/core/tsconfig.client.json"
+    "$SCRIPT_DIR/package.json"
+    "$SCRIPT_DIR/pnpm-lock.yaml"
+    "$SCRIPT_DIR/pnpm-workspace.yaml"
+)
+
+build_web=0
+build_core=0
+
+if [[ "$FORCE_BUILD" -eq 1 ]] || has_newer_input "$WEB_OUTPUT" "${web_inputs[@]}"; then
+    build_web=1
+fi
+if [[ "$FORCE_BUILD" -eq 1 \
+    || ! -f "$CORE_RUNTIME_OUTPUT" ]] \
+    || has_newer_input "$CORE_OUTPUT" "${core_inputs[@]}"; then
+    build_core=1
+fi
+
+if [[ "$build_web" -eq 1 ]]; then
+    echo "Building Web..."
+    run_pnpm -C "$SCRIPT_DIR/web" run build
+else
+    echo "Web build is up to date; skipping."
+fi
+
+if [[ "$build_core" -eq 1 ]]; then
+    echo "Building Core..."
+    run_pnpm -C "$SCRIPT_DIR/core" run build:ts
+else
+    echo "Core build is up to date; skipping."
+fi
+
+if [[ ! -f "$CORE_OUTPUT" ]]; then
+    die "Build completed but core/client.js was not generated."
+fi
+
+: > "$LOG_FILE"
+if command -v setsid >/dev/null 2>&1; then
+    nohup setsid node "$SCRIPT_DIR/core/client.js" >> "$LOG_FILE" 2>&1 &
+else
+    nohup node "$SCRIPT_DIR/core/client.js" >> "$LOG_FILE" 2>&1 &
+fi
+
+app_pid="$!"
+printf '%s\n' "$app_pid" > "$PID_FILE"
+
+sleep 1
+if ! is_our_process "$app_pid"; then
+    echo "qq-farm-bot failed to start. Last log output:" >&2
+    tail -n 40 "$LOG_FILE" >&2 || true
+    rm -f -- "$PID_FILE"
+    exit 1
+fi
+
+echo "Started qq-farm-bot with PID $app_pid."
+echo "Logs: $LOG_FILE"

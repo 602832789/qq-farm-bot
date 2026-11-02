@@ -1,39 +1,28 @@
+import { usePreferredDark, useStorage } from '@vueuse/core'
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
-import api from '@/api'
-import { FARM_BRAND } from '@/utils/branding'
-import { readUiPreference, UI_PREFERENCES, writeUiPreference } from '@/utils/ui-preferences'
 
-export interface LoginPageConfig {
-  logoUrl: string
-  title: string
-  loginSubtitle: string
-  registerSubtitle: string
-  purchaseUrl: string
-  qqGroupUrl: string
-}
-
-const defaultLoginPageConfig: LoginPageConfig = {
-  logoUrl: '',
-  title: 'QQ农场智能助手',
-  loginSubtitle: '欢迎回来，开启智慧农耕之旅',
-  registerSubtitle: '创建账号，开启智慧农耕之旅',
-  purchaseUrl: '',
-  qqGroupUrl: '',
-}
+export type ThemeMode = 'system' | 'light' | 'dark'
 
 export const useAppStore = defineStore('app', () => {
   const sidebarOpen = ref(false)
-  const compactDashboard = ref(readUiPreference(UI_PREFERENCES.compactDashboard, false))
-  const loginPageConfig = ref<LoginPageConfig>({ ...defaultLoginPageConfig })
-  const brandTitle = computed(() => {
-    const configured = loginPageConfig.value.title
-    return !configured || configured === 'QQ农场智能助手' ? FARM_BRAND.name : configured
-  })
-  let loginPageConfigPromise: Promise<void> | null = null
+  // 活动详情有自己的标题栏，打开时布局隐藏通用页头并让活动外壳撑满内容区。
+  const activityDetailOpen = ref(false)
+  const sidebarCollapsed = useStorage('sidebar_collapsed', false)
+  // 默认跟随系统；index.html 中的内联脚本在首屏渲染前读取同一个键，避免闪烁。
+  const themeMode = useStorage<ThemeMode>('theme_mode', 'system')
+  const preferredDark = usePreferredDark()
+  const isDark = computed(() => themeMode.value === 'dark' || (themeMode.value === 'system' && preferredDark.value))
 
-  watch(compactDashboard, value => writeUiPreference(UI_PREFERENCES.compactDashboard, value))
-  watch(brandTitle, title => document.title = title, { immediate: true })
+  watch(isDark, (dark) => {
+    const root = document.documentElement
+    root.classList.toggle('dark', dark)
+    root.style.colorScheme = dark ? 'dark' : 'light'
+  }, { immediate: true })
+
+  function setThemeMode(mode: ThemeMode) {
+    themeMode.value = mode
+  }
 
   function toggleSidebar() {
     sidebarOpen.value = !sidebarOpen.value
@@ -47,30 +36,20 @@ export const useAppStore = defineStore('app', () => {
     sidebarOpen.value = true
   }
 
-  async function fetchLoginPageConfig() {
-    if (loginPageConfigPromise)
-      return loginPageConfigPromise
-
-    loginPageConfigPromise = api.get('/api/public/login-links').then((res) => {
-      if (res.data?.ok && res.data.data) {
-        loginPageConfig.value = { ...defaultLoginPageConfig, ...res.data.data }
-      }
-    }).catch(() => {
-      // 保留默认品牌，页面仍可正常使用。
-    }).finally(() => {
-      loginPageConfigPromise = null
-    })
-    return loginPageConfigPromise
+  function toggleSidebarCollapsed() {
+    sidebarCollapsed.value = !sidebarCollapsed.value
   }
 
   return {
+    themeMode,
+    isDark,
+    setThemeMode,
     sidebarOpen,
-    compactDashboard,
-    loginPageConfig,
-    brandTitle,
+    sidebarCollapsed,
+    activityDetailOpen,
     toggleSidebar,
     closeSidebar,
     openSidebar,
-    fetchLoginPageConfig,
+    toggleSidebarCollapsed,
   }
 })

@@ -1,11 +1,41 @@
+import { useStorage } from '@vueuse/core'
+import axios from 'axios'
 import NProgress from 'nprogress'
 import { createRouter, createWebHistory } from 'vue-router'
-import { ensureAdminSession } from '@/utils/admin-auth'
-import { adminNavigationDecision } from '@/utils/auth-redirect'
 import { menuRoutes } from './menu'
 import 'nprogress/nprogress.css'
 
 NProgress.configure({ showSpinner: false })
+
+const adminToken = useStorage('admin_token', '')
+let validatedToken = ''
+let validatingPromise: Promise<boolean> | null = null
+
+async function ensureTokenValid() {
+  const token = String(adminToken.value || '').trim()
+  if (!token)
+    return false
+
+  if (validatedToken && validatedToken === token)
+    return true
+
+  if (validatingPromise)
+    return validatingPromise
+
+  validatingPromise = axios.get('/api/auth/validate', {
+    headers: { 'x-admin-token': token },
+    timeout: 6000,
+  }).then((res) => {
+    const ok = !!(res.data && res.data.ok)
+    if (ok)
+      validatedToken = token
+    return ok
+  }).catch(() => false).finally(() => {
+    validatingPromise = null
+  })
+
+  return validatingPromise
+}
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -17,31 +47,55 @@ const router = createRouter({
         path: route.path,
         name: route.name,
         component: route.component,
+        meta: route.meta,
       })),
     },
-    { path: '/admin', redirect: '/settings?tab=system' },
     {
-      path: '/mutations',
-      name: 'mutations',
-      redirect: to => ({ path: '/analytics', query: { ...to.query, tab: 'mutations' }, hash: to.hash }),
+      path: '/mystery-shop',
+      name: 'mystery-shop',
+      redirect: to => ({ name: 'game-mall', query: { ...to.query, tab: 'mystery' }, hash: to.hash }),
     },
     {
       path: '/login',
-      name: 'code-login',
-      component: () => import('@/views/CodeLogin.vue'),
+      name: 'login',
+      component: () => import('@/views/Login.vue'),
     },
-    { path: '/renewal', redirect: '/' },
-    { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
 })
 
-router.beforeEach(async (to) => {
+router.beforeEach(async (to, _from) => {
   NProgress.start()
-  const authenticated = await ensureAdminSession()
-  return adminNavigationDecision(to, authenticated)
+
+  if (to.name === 'login') {
+    if (!adminToken.value) {
+      validatedToken = ''
+      return true
+    }
+    const valid = await ensureTokenValid()
+    if (valid)
+      return { name: 'dashboard' }
+    adminToken.value = ''
+    validatedToken = ''
+    return true
+  }
+
+  if (!adminToken.value) {
+    validatedToken = ''
+    return { name: 'login' }
+  }
+
+  const valid = await ensureTokenValid()
+  if (!valid) {
+    adminToken.value = ''
+    validatedToken = ''
+    return { name: 'login' }
+  }
+
+  return true
 })
 
-router.afterEach(() => NProgress.done())
-router.onError(() => NProgress.done())
+router.afterEach(() => {
+  NProgress.done()
+})
 
 export default router
