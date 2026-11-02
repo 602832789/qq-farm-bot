@@ -415,7 +415,7 @@ pnpm -C core exec tsx ../tools/audit-capture-compatibility.js <capture-dir>
 - 不并入主干中被取代的 503 个文件（旧扁平 JS controllers、旧 Vue 组件、针对旧实现的测试用例、前端未引用的静态资源），避免死代码与失败用例进入测试基线。
 - 移除了原功能分支的自动 rebase + force-push 同步流水线，避免其覆盖本仓库历史。
 
-合并提交保留了双方完整历史（主干 16 个提交 + 功能分支 544 个提交 + 1 个合并提交）。
+合并后共 560 个提交，保留了双方绝大部分历史（主干 16 个提交 + 功能分支 544 个提交 + 合并与整理提交）。原功能分支中 3 个新增/修改该同步流水线的提交已从历史中剔除（GitHub 对 `.github/workflows/` 的推送需要额外的 `workflow` 权限），文件树不受影响，也不存在任何 GitHub Actions 配置。
 
 ## 许可证
 
