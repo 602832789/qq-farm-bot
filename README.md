@@ -65,7 +65,7 @@
 否则 core 的 tsc 会因 TS2742 无法推断类型而构建失败。
 ```
 
-助手会优先复用已安装的依赖和已有构建产物，只重建成缺失或过期的部分；管理员密码修改、微信扫码和账号登录仍然由你在面板里完成。
+助手会优先复用已安装的依赖和已有的构建产物，只重建缺失或过期的部分；管理员密码修改、微信扫码和账号登录仍然由你在面板里完成。
 
 ## 🚀 源码部署
 
@@ -173,15 +173,14 @@ NPM_REGISTRY=https://registry.npmmirror.com/
 
 需要显式指定基础镜像或 pnpm 版本时，可以配置 `NODE_IMAGE` 和 `PNPM_VERSION`；改过构建参数或怀疑缓存有问题时执行 `docker compose build --pull --no-cache`。
 
-如需同时跑 NapCat（QQ 扫码登录依赖），把 `.env.compose.example` 里的配置复制到 `.env` 并取消注释：
+QQ 扫码登录所需的 NapCat 不包含在 `docker-compose.yml` 里——Compose 默认只启动农场服务本身。仓库的 `napcat/` 目录提供了容器构建上下文：基于 `mlikiowa/napcat-docker` 镜像，并内置 `qq-miniapp-openauth` 插件。需要时在仓库根目录自行构建并运行：
 
-```dotenv
-COMPOSE_PROFILES=napcat
-NAPCAT_LOGIN_ENABLED=true
-NAPCAT_IMAGE=mlikiowa/napcat-docker:v4.18.19
+```bash
+docker build -f napcat/Dockerfile -t qq-farm-napcat .
+docker run -d --name qq-farm-napcat --restart unless-stopped qq-farm-napcat
 ```
 
-官方 NapCat 镜像同时提供 amd64 与 arm64，不提供 32 位 x86。用 `./compose.sh` 启动时会自动读取宿主机名称作为设备名，需要覆盖时再设置 `NAPCAT_DEVICE_NAME`。
+镜像同时提供 amd64 与 arm64，不提供 32 位 x86。启动后把它的可访问地址和接口签名填到面板的登录设置里。
 
 ## 📦 二进制部署
 
