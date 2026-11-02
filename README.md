@@ -126,7 +126,7 @@ pnpm --version
 Windows、Linux 和 macOS 均可使用以下方式：
 
 ```bash
-git clone https://github.com/liyangpengs/qq-farm-bot.git
+git clone https://github.com/602832789/qq-farm-bot.git
 cd qq-farm-bot
 pnpm install
 pnpm dev
@@ -154,7 +154,7 @@ pnpm dev:core
 ### Linux 后台脚本
 
 ```bash
-git clone https://github.com/liyangpengs/qq-farm-bot.git
+git clone https://github.com/602832789/qq-farm-bot.git
 cd qq-farm-bot
 corepack enable
 bash ./start.sh
@@ -176,7 +176,7 @@ bash ./stop.sh
 ### Docker Compose
 
 ```bash
-git clone https://github.com/liyangpengs/qq-farm-bot.git
+git clone https://github.com/602832789/qq-farm-bot.git
 cd qq-farm-bot
 docker compose up -d --build
 
@@ -215,7 +215,7 @@ NPM_REGISTRY=https://registry.npmmirror.com/
 
 ### 二进制发布版
 
-可从 [Releases](https://github.com/liyangpengs/qq-farm-bot/releases) 下载对应平台文件，也可以自行构建：
+可从 [Releases](https://github.com/602832789/qq-farm-bot/releases) 下载对应平台文件，也可以自行构建：
 
 ```bash
 pnpm install
