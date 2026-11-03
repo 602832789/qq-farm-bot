@@ -59,6 +59,9 @@ function createDataProvider(options: DataProviderOptions) {
         return findAccountByRef(getStoredAccountsList(), accountRef);
     }
 
+    /** 正在执行「续期后启动」的账号，防止连点/并发请求重复续期滚动 token。 */
+    const pendingStarts = new Set<string>();
+
     return {
         resolveAccountId: (accountRef: string) => resolveAccountRefId(accountRef),
 
@@ -423,10 +426,39 @@ function createDataProvider(options: DataProviderOptions) {
             return data;
         },
 
-        startAccount: (accountRef: string) => {
+        startAccount: async (accountRef: string) => {
             const accountId = resolveAccountRefId(accountRef);
             const acc = findAccountByAnyRef(accountId || accountRef);
             if (!acc) return false;
+            const id = String(acc.id || accountId || '');
+
+            // 已在运行的账号无需续期，保持原行为。
+            if (workers[id]) return true;
+
+            // 微信账号启动前先用刷新凭证续期 Code（老版 manual_start 逻辑）：
+            // 游戏 Code 是一次性的，账号停止后旧 Code 大概率已失效，
+            // 直接启动会被服务端拒绝而要求重新扫码。
+            // 续期成功用新 Code 启动；失败则退回旧 Code（老版同款兜底）。
+            if (String(acc.platform || '') === 'wx' && String(acc.refreshtoken || '').trim()) {
+                if (pendingStarts.has(id)) return true;
+                pendingStarts.add(id);
+                try {
+                    const { refreshAccountCredential } = require('../services/wx-credential');
+                    const result = await refreshAccountCredential(id);
+                    if (result.ok) {
+                        const latest = findAccountByAnyRef(id);
+                        addAccountLog('auto_code_refresh', `账号 ${result.accountName} 启动前已自动续期 Code`, id, result.accountName, { reason: 'manual_start' });
+                        startWorker(latest || acc);
+                        return true;
+                    }
+                    addAccountLog('auto_code_refresh_failed', `账号 ${result.accountName} 启动前续期 Code 失败: ${result.error}，尝试用现有 Code 启动`, id, result.accountName, { reason: 'manual_start' });
+                } catch (error: any) {
+                    addAccountLog('auto_code_refresh_failed', `账号 ${acc.name} 启动前续期 Code 异常: ${error?.message || error}，尝试用现有 Code 启动`, id, acc.name, { reason: 'manual_start' });
+                } finally {
+                    pendingStarts.delete(id);
+                }
+            }
+
             startWorker(acc);
             return true;
         },

@@ -546,12 +546,12 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
         }
     });
 
-    // API: 启动账号
-    app.post('/api/accounts/:id/start', (req: Request, res: Response) => {
+    // API: 启动账号（微信账号会先自动续期 Code，耗时数秒属正常）
+    app.post('/api/accounts/:id/start', async (req: Request, res: Response) => {
         try {
             const accountId = resolveAccId(ctx, req.params.id);
 
-            const ok = ctx.provider.startAccount(accountId);
+            const ok = await ctx.provider.startAccount(accountId);
             if (!ok) {
                 return res.status(404).json({ ok: false, error: 'Account not found' });
             }
