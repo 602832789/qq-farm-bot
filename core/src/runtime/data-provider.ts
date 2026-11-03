@@ -443,8 +443,8 @@ function createDataProvider(options: DataProviderOptions) {
                 if (pendingStarts.has(id)) return true;
                 pendingStarts.add(id);
                 try {
-                    const { refreshAccountCredential } = require('../services/wx-credential');
-                    const result = await refreshAccountCredential(id);
+                    const { ensureFreshGameCode } = require('../services/wx-credential');
+                    const result = await ensureFreshGameCode(id);
                     if (result.ok) {
                         const latest = findAccountByAnyRef(id);
                         addAccountLog('auto_code_refresh', `账号 ${result.accountName} 启动前已自动续期 Code`, id, result.accountName, { reason: 'manual_start' });

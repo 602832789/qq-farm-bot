@@ -114,9 +114,74 @@ async function refreshAccountCredential(accountId: unknown): Promise<CredentialR
     }
 }
 
+/**
+ * 启动前获取新鲜的游戏 Code（老版 issueFarmCode 策略）。
+ *
+ * 老版换码链路：loginBuffer 是长效凭证，未过期时直接用它换 Code，
+ * 不消耗滚动 token；只有 loginBuffer 缺失/明确过期/被服务端拒绝
+ * （ManualAuth rejected / 服务端未返回 code）且存在 refreshtoken 时，
+ * 才走 refreshtoken 滚动续期后再换。
+ */
+async function ensureFreshGameCode(accountId: unknown): Promise<CredentialRefreshResult> {
+    const account = getAccountById(accountId);
+    const accountName = String((account && (account.name || account.nick)) || accountId || '');
+    if (!account) {
+        return { ok: false, accountId: String(accountId || ''), accountName, error: '账号不存在' };
+    }
+    if (String(account.platform || '') !== 'wx') {
+        return { ok: false, accountId: String(account.id), accountName, error: '仅微信账号支持自动换码' };
+    }
+    const loginBuffer = String(account.loginBuffer || '').trim();
+    const refreshToken = String(account.refreshtoken || '').trim();
+    if (!loginBuffer && !refreshToken) {
+        const error = '账号缺少微信登录凭证，请重新扫码登录';
+        store.addOrUpdateAccount({
+            id: String(account.id),
+            wxCredentialLastAttemptAt: Date.now(),
+            wxCredentialRefreshError: error,
+        });
+        return { ok: false, accountId: String(account.id), accountName, error };
+    }
+
+    const attemptedAt = Date.now();
+    const expiresAt = Number(account.expires_at) || 0;
+    const expired = expiresAt > 0 && expiresAt <= attemptedAt;
+
+    // 1) loginBuffer 可用时直接换 Code（不触发滚动续期）。
+    if (loginBuffer && (!expired || !refreshToken)) {
+        try {
+            const code = await issueCodeFromLoginBuffer(loginBuffer);
+            if (!code) throw new Error('服务端未返回 code');
+            store.addOrUpdateAccount({
+                id: String(account.id),
+                code,
+                wxCredentialLastAttemptAt: attemptedAt,
+                wxCredentialRefreshError: '',
+            });
+            return { ok: true, accountId: String(account.id), accountName, code, expiresAt: expiresAt || undefined };
+        } catch (error: any) {
+            const message = String(error?.message || '换取游戏 Code 失败');
+            // 与老版一致：未过期却被拒（ManualAuth rejected / 服务端未返回 code）
+            // 且可续期 → 落到滚动续期重试；其余错误直接报告。
+            if (!refreshToken || !/ManualAuth rejected|服务端未返回 code/.test(message)) {
+                store.addOrUpdateAccount({
+                    id: String(account.id),
+                    wxCredentialLastAttemptAt: attemptedAt,
+                    wxCredentialRefreshError: message,
+                });
+                return { ok: false, accountId: String(account.id), accountName, error: message, expiresAt: expiresAt || undefined };
+            }
+        }
+    }
+
+    // 2) 滚动续期：refreshtoken → 新 accessToken/loginBuffer → 新 Code。
+    return refreshAccountCredential(accountId);
+}
+
 module.exports = {
     TARGET_APP_ID,
     hasWxCredential,
     issueCodeFromLoginBuffer,
     refreshAccountCredential,
+    ensureFreshGameCode,
 };
