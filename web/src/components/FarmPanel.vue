@@ -48,6 +48,44 @@ const { settings } = storeToRefs(settingStore)
 const { status } = storeToRefs(statusStore)
 const detailLandId = ref<number | null>(null)
 const detailLand = computed(() => lands.value.find(land => land.id === detailLandId.value) || null)
+/** 弹窗内催熟/铲除进行中标记，避免重复提交。 */
+const detailActionPending = ref(false)
+
+/** 弹窗内催熟：老版口径为单地施一次普通肥。 */
+async function handleDetailFertilize() {
+  const target = detailLand.value
+  if (!target || !currentAccountId.value || detailActionPending.value)
+    return
+  detailActionPending.value = true
+  try {
+    const result = await farmStore.fertilizeLand(currentAccountId.value, Number(target.id), 'normal')
+    if (result)
+      toast.success(`土地 #${target.id} 已施用普通化肥`)
+    else
+      toast.error(farmStore.fertilizeError || '催熟失败，请稍后重试')
+  }
+  finally {
+    detailActionPending.value = false
+  }
+}
+
+/** 弹窗内铲除作物。 */
+async function handleDetailRemove() {
+  const target = detailLand.value
+  if (!target || !currentAccountId.value || detailActionPending.value)
+    return
+  detailActionPending.value = true
+  try {
+    await farmStore.removePlant(currentAccountId.value, Number(target.id))
+    toast.success(`土地 #${target.id} 作物已铲除`)
+  }
+  catch (cause: any) {
+    toast.error(cause?.message || '铲除失败，请稍后重试')
+  }
+  finally {
+    detailActionPending.value = false
+  }
+}
 watch(currentAccountId, () => {
   detailLandId.value = null
 })
@@ -898,7 +936,14 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <LandDetailModal :land="detailLand" :player="status?.status" :connected="currentAccountConnected" @close="detailLandId = null" />
+    <LandDetailModal
+      :land="detailLand"
+      :player="status?.status"
+      :connected="currentAccountConnected"
+      @close="detailLandId = null"
+      @fertilize="handleDetailFertilize"
+      @remove="handleDetailRemove"
+    />
 
     <ConfirmModal
       :show="fertilizerConfirmVisible"

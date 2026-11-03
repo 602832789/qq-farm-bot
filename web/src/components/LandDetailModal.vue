@@ -1,10 +1,11 @@
 <script setup lang="ts">
+import { NButton } from 'naive-ui/es/button'
 import { NCard } from 'naive-ui/es/card'
 import { NModal } from 'naive-ui/es/modal'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 const props = defineProps<{ land: any, player: any, connected: boolean }>()
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: [], fertilize: [], remove: [] }>()
 const info = computed(() => props.land?.landInfo)
 
 /* ===== 作物信息（老版地块气泡口径）===== */
@@ -89,6 +90,14 @@ function formatTime(sec: number) {
   const s = wholeSeconds % 60
   return `${h > 0 ? `${h}:` : ''}${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
 }
+
+/** 催熟：仅对未成熟的在种作物可用（老版气泡同口径，施一次普通肥）。 */
+const canFertilize = computed(() =>
+  Number(land.value?.matureInSec) > 0
+  && !['locked', 'empty'].includes(String(land.value?.status || '')))
+
+/** 铲除：有作物的非锁定地块可用。 */
+const canRemove = computed(() => hasCrop.value && !['locked', 'empty'].includes(String(land.value?.status || '')))
 
 /* ===== 土地等级 / 升级条件（原土地详情保留） ===== */
 const metrics = [
@@ -198,6 +207,21 @@ function format(value: unknown) {
           <span v-if="land.needWater" class="rounded-full bg-blue-100 px-2 py-0.5 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">需要浇水</span>
           <span v-if="land.needWeed" class="rounded-full bg-green-100 px-2 py-0.5 text-green-700 dark:bg-green-900/40 dark:text-green-300">需要除草</span>
           <span v-if="land.needBug" class="rounded-full bg-red-100 px-2 py-0.5 text-red-700 dark:bg-red-900/40 dark:text-red-300">需要除虫</span>
+        </div>
+
+        <div class="land-crop-actions">
+          <NButton size="small" type="primary" ghost :disabled="!canFertilize" @click="emit('fertilize')">
+            <template #icon>
+              <span class="i-carbon-growth" />
+            </template>
+            催熟
+          </NButton>
+          <NButton size="small" type="error" ghost :disabled="!canRemove" @click="emit('remove')">
+            <template #icon>
+              <span class="i-carbon-trash-can" />
+            </template>
+            铲除
+          </NButton>
         </div>
       </template>
 
@@ -390,6 +414,12 @@ function format(value: unknown) {
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 12px;
+}
+.land-crop-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
 }
 
 .land-detail-levels {

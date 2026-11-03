@@ -599,6 +599,19 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
         }
     });
 
+    // API: 铲除指定地块上的作物（老版地块气泡「铲除」按钮）。
+    app.post('/api/land/remove', async (req: Request, res: Response) => {
+        const id = getAccId(ctx, req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+
+        try {
+            const data = await ctx.provider.removePlant(id, req.body?.landId);
+            res.json({ ok: true, data });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    });
+
     app.post('/api/farm/fertilize-all', async (req: Request, res: Response) => {
         const id = getAccId(ctx, req);
         if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });

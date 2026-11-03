@@ -407,6 +407,21 @@ export const useFarmStore = defineStore('farm', () => {
     return result
   }
 
+  /** 铲除单块土地上的作物（老版地块气泡「铲除」）：成功后刷新土地列表。 */
+  async function removePlant(accountId: string, landId: number) {
+    if (!accountId || !landId)
+      return false
+    const res = await api.post('/api/land/remove', { landId }, {
+      headers: { 'x-account-id': accountId },
+      skipErrorToast: true,
+    } as any)
+    if (!res.data?.ok)
+      throw new Error(getApiErrorMessage(res.data, '铲除作物失败'))
+    landOverlay = null
+    await fetchLands(accountId)
+    return res.data.data ?? true
+  }
+
   return {
     lands,
     summary,
@@ -433,5 +448,6 @@ export const useFarmStore = defineStore('farm', () => {
     resetInteractionState,
     fertilizeLand,
     fertilizeAll,
+    removePlant,
   }
 })
