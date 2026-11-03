@@ -11,8 +11,10 @@ const {
 const { GatewayTokenProvider, createGatewayToken } = require('../dist/utils/gateway-token');
 const {
     HEARTBEAT_STALE_AFTER_MS,
+    HEARTBEAT_DEAD_SILENCE_MS,
     MAX_HEARTBEAT_MISSES,
     shouldTerminateForHeartbeat,
+    shouldTerminateForSilence,
 } = require('../dist/utils/keepalive-policy');
 const {
     REQUEST_PRESSURE_LOG_INTERVAL_MS,
@@ -137,6 +139,16 @@ test('heartbeat policy tolerates transient stalls but terminates a stale connect
     assert.equal(shouldTerminateForHeartbeat(3, 30000), false);
     assert.equal(shouldTerminateForHeartbeat(3, 30001), true);
     assert.equal(shouldTerminateForHeartbeat(8, 1000), false);
+});
+
+test('extreme inbound silence cuts a dead gateway early instead of waiting for a third miss', () => {
+    assert.equal(HEARTBEAT_DEAD_SILENCE_MS, 60000);
+    // 只有两次 miss、但已经整分钟没有任何入站数据：不必等第三次。
+    assert.equal(shouldTerminateForSilence(2, 60001), true);
+    // 静默没到阈值时仍然放行，避免把慢网关当死连接。
+    assert.equal(shouldTerminateForSilence(2, 60000), false);
+    // 只有一次 miss 即使是长静默也不熔断，防止心跳请求本身排队造成的误判。
+    assert.equal(shouldTerminateForSilence(1, 180000), false);
 });
 
 test('handshake comparison removes only Code and compares every other URL byte', () => {

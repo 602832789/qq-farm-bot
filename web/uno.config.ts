@@ -3,6 +3,22 @@ import { defineConfig, presetAttributify, presetIcons, presetUno } from 'unocss'
 const FONT_WEIGHTS = { light: 300, normal: 400, medium: 500, semibold: 600, bold: 700, extrabold: 800, black: 900 }
 
 export default defineConfig({
+  // 动态拼接的图标类名（例如活动卡片按玩法返回 i-carbon-*）静态扫描不到，
+  // 必须显式列入 safelist，否则构建后这些图标会渲染成空白方块。
+  safelist: [
+    'i-carbon-star',
+    'i-carbon-favorite',
+    'i-carbon-drink-01',
+    'i-carbon-sprout',
+    'i-carbon-rain',
+    'i-carbon-cafe',
+    'i-carbon-idea',
+    'i-carbon-gift',
+    'i-carbon-dog-walker',
+    'i-carbon-calendar',
+    'i-carbon-arrow-right',
+    'i-carbon-locked',
+  ],
   theme: {
     fontFamily: {
       sans: 'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',

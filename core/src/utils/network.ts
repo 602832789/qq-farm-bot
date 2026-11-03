@@ -13,8 +13,9 @@ const { types } = require('./proto');
 const { toLong, toNum, syncServerTime, log, logWarn, sleep } = require('./utils');
 const cryptoWasm = require('./crypto-wasm');
 const { GatewayTokenProvider } = require('./gateway-token');
-const { MAX_HEARTBEAT_MISSES, shouldTerminateForHeartbeat } = require('./keepalive-policy');
+const { MAX_HEARTBEAT_MISSES, shouldTerminateForHeartbeat, shouldTerminateForSilence } = require('./keepalive-policy');
 const { countBlockingQueuedRequests, shouldLogRequestPressure } = require('./request-pressure');
+const { checkRequest: checkRequestBudget, recordSent: recordRequestSent, getGovernorStats } = require('./request-governor');
 const {
     LOW_PRIORITY_IDLE_POLL_MS,
     LOW_PRIORITY_IDLE_WAIT_MAX_MS,
@@ -136,6 +137,9 @@ const MAX_DESCRIBED_PENDING_REQUESTS = 6;
 let nextRequestId = 1;
 let wsErrorState = { code: 0, at: 0, message: '' };
 let lastRequestPressureLogAt = 0;
+/** 预算拦截日志节流：超额时每个调用点都会命中，不节流会把日志刷爆。 */
+const BUDGET_LOG_INTERVAL_MS = 30_000;
+let lastBudgetLogAt = 0;
 const networkScheduler = createScheduler('network');
 const gatewayTokens = new GatewayTokenProvider();
 let lastHeartbeatMono = performance.now();
@@ -204,6 +208,20 @@ function getGatewayLoad(): GatewayLoad {
 
 function isGatewayIdleForBackground(): boolean {
     return isGatewayIdleForLowPriority(getGatewayLoad());
+}
+
+/** 距上一次收到入站数据过去了多久（毫秒）。 */
+function getInboundSilenceMs(): number {
+    return Math.max(0, performance.now() - lastInboundMono);
+}
+
+/**
+ * 网关是否已经「濒死」：在途请求堆着，同时最近一段时间没有任何入站数据。
+ * 这种状态下继续塞可牺牲流量（ACE 上报、后台补数据）只会加速掉线，
+ * 应该让路给心跳。
+ */
+function isGatewayStalling(): boolean {
+    return pendingCallbacks.size >= 3 && getInboundSilenceMs() > 15000;
 }
 
 /**
@@ -418,6 +436,8 @@ async function sendMsg(context: ConnectionContext, serviceName: string, methodNa
         }
         return false;
     }
+    // 只有真正落到 socket 上的请求才计入 60s 预算；排队中被拒的不算。
+    try { recordRequestSent(serviceName, methodName); } catch {}
     return true;
 }
 
@@ -445,6 +465,27 @@ function sendMsgAsync(serviceName: string, methodName: string, bodyBytes: Buffer
         }
         if (context.phase !== 'online') {
             reject(new Error(`账号尚未登录: ${methodName}`));
+            return;
+        }
+
+        // 60s 速率预算：拦掉超额的非保命请求，避免把连接压到服务端静默丢包。
+        // 被拦的请求按「网关闭塞」处理，让上层既有的退避逻辑接管而不是死等超时。
+        const budget = checkRequestBudget(serviceName, methodName);
+        if (!budget.allowed) {
+            const nowMono = performance.now();
+            if (nowMono - lastBudgetLogAt >= BUDGET_LOG_INTERVAL_MS) {
+                lastBudgetLogAt = nowMono;
+                const stats = getGovernorStats();
+                logWarn(
+                    '系统',
+                    `Gateway 请求已超预算，本轮跳过非关键请求: ${methodName} (${budget.reason}, `
+                    + `60s 内已发 ${stats.sentInWindow}/${stats.totalLimit}, 累计丢弃 ${stats.droppedTotal})`,
+                );
+            }
+            reject(new GatewayBusyError(
+                `网关请求超预算，已跳过: ${methodName} (reason=${budget.reason}, `
+                + `retryAfterMs=${Math.round(budget.retryAfterMs)})`,
+            ));
             return;
         }
 
@@ -983,7 +1024,12 @@ async function sendLogin(context: ConnectionContext, onLoginSuccess?: () => void
 }
 
 // ============ 心跳 ============
-const HEARTBEAT_REQUEST_TIMEOUT = 20000;
+/**
+ * 心跳是几十字节的小包。官方客户端回包在秒级，20s 才判失败会白白拖长故障感知：
+ * 一次 tick（25s）+ 20s 超时 = 45s 才记一次 miss，三次就是 95s 才肯下线。
+ * 收到 8s 仍未回包，基本可以认定这条连接已经不收发了。
+ */
+const HEARTBEAT_REQUEST_TIMEOUT = 8000;
 
 function buildHeartbeatBody(gid: number, clientVersion = getClientVersion()): Buffer {
     return Buffer.from(types.HeartbeatRequest.encode(types.HeartbeatRequest.create({
@@ -1034,9 +1080,10 @@ function startHeartbeat(context: ConnectionContext): void {
                 + `heartbeat=${Math.round(heartbeatSilenceMs / 1000)}s, inbound=${Math.round(inboundSilenceMs / 1000)}s, `
                 + `pending=${pendingCallbacks.size}, queued=${requestQueue.length}, active=${describePendingRequests()})`,
             );
-            if (!shouldTerminateForHeartbeat(heartbeatMissCount, inboundSilenceMs)) return;
+            if (!shouldTerminateForHeartbeat(heartbeatMissCount, inboundSilenceMs)
+                && !shouldTerminateForSilence(heartbeatMissCount, inboundSilenceMs)) return;
 
-            log('心跳', '连续心跳超时且连接无入站数据，账号将停止运行...');
+            log('心跳', `连续心跳超时且连接无入站数据，账号将停止运行 (miss=${heartbeatMissCount}, 静默 ${Math.round(inboundSilenceMs / 1000)}s)...`);
             finalizeConnection(context, {
                 source: 'heartbeat_timeout',
                 reason: `${Math.round(inboundSilenceMs / 1000)}s 无入站数据，连续 ${heartbeatMissCount} 次心跳失败`,
@@ -1074,6 +1121,7 @@ function getConnectionDiagnostics(context: ConnectionContext | null) {
         lastInboundAgeMs: Math.max(0, performance.now() - lastInboundMono),
         lastHeartbeatAgeMs: Math.max(0, performance.now() - lastHeartbeatMono),
         heartbeatMissCount,
+        requestBudget: getGovernorStats(),
         pendingRequests: describePendingRequests(),
         queuedRequests: describeQueuedRequests(),
         ace: context?.phase === 'online' ? getAceDiagnostics() : null,
@@ -1217,6 +1265,7 @@ module.exports = {
     buildLoginBody, buildHeartbeatBody,
     sendMsgAsync, sendMsgNoReply,
     getGatewayLoad, isGatewayIdleForBackground, waitForGatewayIdle,
+    getInboundSilenceMs, isGatewayStalling,
     GatewayError, GatewayBusyError,
     getUserState,
     getWsErrorState,

@@ -269,7 +269,11 @@ onUnmounted(() => {
 .farm-scene {
   container-type: inline-size;
   overflow: hidden;
+  /* 旧版场景的最大宽度就是画布原始尺寸：超过 1200 就只是放大贴图，
+     地块与气泡一起被拉大，在宽屏上会顶满整块内容区。 */
   width: 100%;
+  max-width: 1200px;
+  margin-inline: auto;
   border-radius: 16px;
   background: #a8d85d;
   box-shadow: inset 0 0 0 1px rgb(53 101 37 / 18%);
@@ -392,7 +396,8 @@ onUnmounted(() => {
 }
 
 .farm-scene__hint {
-  margin-top: 8px;
+  max-width: 1200px;
+  margin: 8px auto 0;
   color: var(--ui-muted);
   font-size: 12px;
   text-align: center;

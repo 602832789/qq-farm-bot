@@ -15,7 +15,10 @@ export function normalizeApiErrorMessage(raw: unknown): string {
   if (!text)
     return ''
 
-  const codeMatch = text.match(/\bcode=\d+\b\s*(.*)$/)
+  // 取 `code=123` 之后的内容作为可读错误：捕获组连同前导空白一起拿到，
+  // 下面统一 trim。这里刻意不用 `\s*(.*)$`——空白类与 `.*` 可交换字符，
+  // 会引出多项式回溯（regexp/no-super-linear-backtracking）。
+  const codeMatch = text.match(/\bcode=\d+\b([\s\S]*)$/)
   const codeIndex = codeMatch?.index ?? -1
   if (codeMatch?.[1] && codeIndex >= 0 && text.slice(0, codeIndex).includes('.'))
     return codeMatch[1].trim()

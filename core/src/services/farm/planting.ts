@@ -1171,7 +1171,7 @@ async function fertilizeOwnLand(landIdInput: unknown, fertilizerTypeInput: unkno
         if (error?.name === 'GatewayError'
             || typeof error?.errorMessage === 'string'
             || typeof error?.error_message === 'string'
-            || /^(?:[\w-]+\.)+[\w-]+(?:\s+.*?)?\bcode=\d+(?:\s|$)/.test(String(error?.message || '').trim())) {
+            || /^(?:[\w-]+\.)+[\w-]+(?:\s+(?:\S.*?)??)?\bcode=\d+(?:\s|$)/.test(String(error?.message || '').trim())) {
             throw error;
         }
         const message = String(error?.message || '').trim() || `${typeName}使用失败`;

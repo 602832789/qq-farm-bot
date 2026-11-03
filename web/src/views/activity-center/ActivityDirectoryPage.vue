@@ -240,8 +240,7 @@ function activityDisplayName(activity: ActivityDirectoryItemDto) {
   return activity.gameplayKey === 'pet' ? '萌宠日记' : activity.name
 }
 function activityIconSrc(activity: ActivityDirectoryItemDto) {
-  if (activity.gameplayKey === 'pet')
-    return '/activity-assets/pet-diary/S3Open_dog_1.png'
+  // 萌宠日记目录里没有可用的角色图（只有照片墙与兑换物），交给图标兜底。
   if (activity.gameplayKey === 'milk')
     return '/activity-assets/milk-tea/logo.png'
   if (activity.gameplayKey === 'wish' || activity.gameplayKey === 'happy')
@@ -254,36 +253,15 @@ function activityIcon(activity: ActivityDirectoryItemDto) {
   const map: Record<string, string> = {
     stellar: 'i-carbon-star',
     qixi: 'i-carbon-favorite',
-    qingmei: 'i-carbon-drink',
-    charity: 'i-carbon-plant',
-    weather: 'i-carbon-cloud-rain',
+    qingmei: 'i-carbon-drink-01',
+    charity: 'i-carbon-sprout',
+    weather: 'i-carbon-rain',
     milk: 'i-carbon-cafe',
     wish: 'i-carbon-idea',
     happy: 'i-carbon-gift',
     pet: 'i-carbon-dog-walker',
   }
   return map[activity.gameplayKey || ''] || 'i-carbon-calendar'
-}
-/** 无活动主图时按玩法给出渐变底，保持老版卡片的深色海报观感。 */
-function activityBackgroundStyle(activity: ActivityDirectoryItemDto) {
-  const palettes: Record<string, [string, string]> = {
-    stellar: ['#0b2e61', '#071b43'],
-    qixi: ['#7c2d55', '#3b1026'],
-    qingmei: ['#1f5c3d', '#0c2a1b'],
-    charity: ['#8a3b1f', '#3d1a0c'],
-    weather: ['#1c4d63', '#08222d'],
-    milk: ['#8a5a1a', '#3a2408'],
-    wish: ['#5b3a8a', '#241338'],
-    happy: ['#8a4a12', '#3d1f06'],
-    pet: ['#2d5a3a', '#0f2a1a'],
-  }
-  const [from, to] = palettes[activity.gameplayKey || ''] || ['#2f4a3d', '#16241d']
-  return { backgroundImage: `linear-gradient(150deg, ${from}, ${to})` }
-}
-function activityDescription(activity: ActivityDirectoryItemDto) {
-  if (isNewbieActivity(activity))
-    return '新手开园福利：签到、开园特权与引导奖励'
-  return `${activity.gameplayKey ? '已接入玩法' : '按目录读取'} · 编号 ${activity.id}`
 }
 
 const shortDateFormatter = new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit' })
@@ -385,46 +363,34 @@ function openActivity(activity: ActivityDirectoryItemDto) {
           <span v-if="closedCardCount" class="text-xs text-gray-500">{{ closedCardCount }} 项暂未接入玩法</span>
         </header>
 
-        <div v-if="cardActivities.length" class="activity-card-grid">
+        <div v-if="cardActivities.length" class="picker-list">
           <button
             v-for="activity in cardActivities"
             :key="activity.id"
             type="button"
-            class="activity-card group"
-            :class="activityCanOpen(activity) ? 'is-openable' : 'is-locked'"
+            class="activity-entry"
+            :class="[`activity-entry--${activityStatus(activity)}`, { 'activity-entry--supported': activityCanOpen(activity) }]"
             :disabled="!activityCanOpen(activity)"
             @click="openActivity(activity)"
           >
-            <span class="activity-card__art" :style="activityBackgroundStyle(activity)">
-              <span class="activity-card__orb activity-card__orb--lg" />
-              <span class="activity-card__orb activity-card__orb--sm" />
-              <span class="activity-card__glyph" :class="activityIcon(activity)" aria-hidden="true" />
-              <img v-if="activityIconSrc(activity)" :src="activityIconSrc(activity)" alt="" class="activity-card__image">
+            <span class="activity-entry__topline">
+              <span class="activity-entry__icon">
+                <img v-if="activityIconSrc(activity)" :src="activityIconSrc(activity)" alt="" width="22" height="22" style="object-fit: contain">
+                <span v-else :class="activityIcon(activity) || 'i-carbon-calendar'" aria-hidden="true" />
+              </span>
+              <span class="activity-entry__status">{{ activityStatusLabel(activity) }}</span>
             </span>
-            <span class="activity-card__shade" />
-            <span class="activity-card__body">
-              <span class="activity-card__topline">
-                <span class="activity-card__status" :class="`is-${activityStatus(activity)}`">
-                  <span
-                    :class="activityStatus(activity) === 'active' ? activityIcon(activity) : activityStatus(activity) === 'upcoming' ? 'i-carbon-time' : 'i-carbon-checkmark'"
-                    aria-hidden="true"
-                  />
-                  {{ activityStatusLabel(activity) }}
-                </span>
-                <span v-if="!activity.gameplayKey" class="activity-card__pending">待适配</span>
-                <span v-else-if="activityCanOpen(activity)" class="activity-card__arrow i-carbon-arrow-up-right" aria-hidden="true" />
-              </span>
-              <span class="activity-card__bottom">
-                <strong>{{ activityDisplayName(activity) }}</strong>
-                <span class="activity-card__period">{{ formatActivityPeriod(activity) }}</span>
-                <span class="activity-card__desc">
-                  <span :class="activityIcon(activity)" class="shrink-0" aria-hidden="true" />
-                  {{ activityDescription(activity) }}
-                </span>
-              </span>
+            <strong>{{ activityDisplayName(activity) }}</strong>
+            <span class="activity-entry__period">{{ formatActivityPeriod(activity) }}</span>
+            <span class="activity-entry__footer">
+              <small>{{ activity.id }}</small>
+              <span v-if="activityCanOpen(activity)">查看详情 <span class="i-carbon-arrow-right" aria-hidden="true" /></span>
+              <span v-else-if="activityStatus(activity) === 'upcoming'">活动未开始 <span class="i-carbon-locked" aria-hidden="true" /></span>
+              <span v-else>暂未支持详情 <span class="i-carbon-locked" aria-hidden="true" /></span>
             </span>
           </button>
         </div>
+
         <p v-else class="activity-empty">
           当前筛选条件下暂无活动
         </p>
@@ -490,186 +456,172 @@ function openActivity(activity: ActivityDirectoryItemDto) {
   color: var(--ui-ink);
 }
 
-/* 老版活动海报卡：深色渐变底 + 状态胶囊 + 大标题，整卡可点。 */
-.activity-card-grid {
+/* 新版活动卡片：图标 + 状态胶囊 + 名称 + 期间 + 底栏，三列网格。 */
+.picker-list {
+  width: 100%;
   display: grid;
-  gap: 16px;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
 }
 
-@media (min-width: 768px) {
-  .activity-card-grid {
+.activity-entry {
+  position: relative;
+  min-height: 168px;
+  display: flex;
+  overflow: hidden;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 0;
+  padding: 16px;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  color: var(--ui-ink);
+  text-align: left;
+  background: var(--ui-surface);
+  box-shadow: var(--ui-shadow-sm);
+  cursor: pointer;
+  appearance: none;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.activity-entry--supported:hover {
+  border-color: rgba(67, 141, 99, 30%);
+  box-shadow: var(--ui-shadow-md);
+  transform: translateY(-1px);
+}
+
+.activity-entry--upcoming {
+  border-color: rgba(186, 125, 27, 30%);
+}
+
+.activity-entry--ended {
+  border-color: rgba(89, 102, 97, 18%);
+  background: color-mix(in srgb, var(--ui-surface-soft) 70%, transparent);
+}
+
+.activity-entry:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.activity-entry:focus-visible {
+  outline: 2px solid var(--ui-primary);
+  outline-offset: 2px;
+}
+
+.activity-entry__topline,
+.activity-entry__footer {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.activity-entry__topline {
+  margin-bottom: 17px;
+}
+
+.activity-entry__icon {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  color: var(--ui-primary);
+  background: var(--ui-primary-soft);
+}
+
+.activity-entry__icon > span {
+  font-size: 16px;
+}
+
+.activity-entry__icon > img {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+}
+
+.activity-entry__status {
+  padding: 3px 8px;
+  border: 1px solid rgba(67, 141, 99, 18%);
+  border-radius: 999px;
+  color: var(--ui-primary);
+  background: var(--ui-primary-soft);
+  font-size: 10px;
+  font-weight: var(--fw-700);
+}
+
+.activity-entry--upcoming .activity-entry__icon,
+.activity-entry--upcoming .activity-entry__status {
+  color: var(--ui-warning);
+  background: var(--ui-warning-soft);
+}
+
+.activity-entry--ended .activity-entry__icon,
+.activity-entry--ended .activity-entry__status {
+  color: var(--ui-muted);
+  background: var(--ui-bg-soft);
+}
+
+.activity-entry > strong {
+  width: 100%;
+  overflow: hidden;
+  color: var(--ui-ink);
+  font-size: 17px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-entry__period {
+  margin-top: 5px;
+  color: var(--ui-muted);
+  font-size: 11px;
+}
+
+.activity-entry__footer {
+  margin-top: auto;
+  padding-top: 15px;
+  color: var(--ui-muted);
+}
+
+.activity-entry__footer > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: var(--fw-700);
+}
+
+.activity-entry--supported .activity-entry__footer > span {
+  color: var(--ui-primary);
+}
+
+.activity-entry__footer small {
+  color: var(--ui-muted);
+  font-size: 10px;
+}
+
+.activity-entry__footer .i-carbon-arrow-right,
+.activity-entry__footer .i-carbon-locked {
+  font-size: 13px;
+}
+
+@media (max-width: 1100px) and (min-width: 621px) {
+  .picker-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-@media (min-width: 1280px) {
-  .activity-card-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+@media (max-width: 620px) {
+  .picker-list {
+    grid-template-columns: minmax(0, 1fr);
   }
-}
-
-.activity-card {
-  position: relative;
-  min-height: 208px;
-  display: block;
-  overflow: hidden;
-  border: 0;
-  border-radius: 10px;
-  color: #fff;
-  text-align: left;
-  box-shadow: 0 1px 3px rgb(16 34 24 / 12%);
-  transition:
-    transform 180ms ease,
-    box-shadow 180ms ease,
-    filter 180ms ease;
-  appearance: none;
-}
-
-.activity-card.is-openable:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 26px rgb(16 34 24 / 20%);
-}
-
-.activity-card.is-locked {
-  cursor: not-allowed;
-  filter: grayscale(0.75) saturate(0.4);
-}
-
-.activity-card__art {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-}
-
-.activity-card__orb {
-  position: absolute;
-  border: 1px solid rgb(255 255 255 / 15%);
-  border-radius: 999px;
-}
-
-.activity-card__orb--lg {
-  top: -40px;
-  right: -32px;
-  width: 160px;
-  height: 160px;
-}
-
-.activity-card__orb--sm {
-  top: 48px;
-  right: -8px;
-  width: 96px;
-  height: 96px;
-  border-color: rgb(255 255 255 / 10%);
-}
-
-.activity-card__glyph {
-  position: absolute;
-  right: 20px;
-  bottom: 8px;
-  color: rgb(255 255 255 / 8%);
-  font-size: 68px;
-}
-
-.activity-card__image {
-  width: 96px;
-  height: 96px;
-  margin-bottom: 26px;
-  object-fit: contain;
-  filter: drop-shadow(0 6px 14px rgb(0 0 0 / 35%));
-}
-
-.activity-card__shade {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(to top, rgb(7 22 33 / 90%), rgb(16 43 60 / 30%) 55%, transparent);
-}
-
-.activity-card__body {
-  position: relative;
-  min-height: 208px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 18px 20px;
-}
-
-.activity-card__topline {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.activity-card__status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  color: #164e63;
-  background: rgb(207 250 254 / 92%);
-  font-size: 12px;
-  font-weight: 500;
-  -webkit-backdrop-filter: blur(4px);
-  backdrop-filter: blur(4px);
-}
-
-.activity-card__status.is-upcoming,
-.activity-card__status.is-ended {
-  color: #374151;
-  background: rgb(243 244 246 / 88%);
-}
-
-.activity-card__pending {
-  padding: 4px 10px;
-  border-radius: 999px;
-  color: #78350f;
-  background: rgb(254 243 199 / 92%);
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.activity-card__arrow {
-  color: rgb(255 255 255 / 80%);
-  font-size: 20px;
-  transition: transform 160ms ease;
-}
-
-.activity-card.is-openable:hover .activity-card__arrow {
-  transform: translate(2px, -2px);
-}
-
-.activity-card__bottom {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.activity-card__bottom strong {
-  font-size: 22px;
-  font-weight: 600;
-  line-height: 1.3;
-}
-
-.activity-card__period {
-  color: rgb(207 250 254 / 80%);
-  font-size: 13px;
-}
-
-.activity-card__desc {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 10px;
-  color: rgb(255 255 255 / 65%);
-  font-size: 12px;
-}
-
-.activity-card__desc > span:first-child {
-  color: #a5f3fc;
-  font-size: 15px;
 }
 
 .activity-empty {
@@ -980,18 +932,6 @@ function openActivity(activity: ActivityDirectoryItemDto) {
   .standing-chip__desc {
     flex-basis: 100%;
     white-space: normal;
-  }
-
-  .activity-card {
-    min-height: 188px;
-  }
-
-  .activity-card__body {
-    min-height: 188px;
-  }
-
-  .activity-card__bottom strong {
-    font-size: 20px;
   }
 }
 </style>

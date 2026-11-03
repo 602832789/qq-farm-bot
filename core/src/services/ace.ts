@@ -18,12 +18,30 @@ let lastSpeedCheckAt = 0;
 function emptyDiagnostics() {
     return {
         requests: 0, replies: 0, nonemptyReplies: 0, failures: 0,
+        skipped: 0,
         lastRequestAt: 0, lastReplyAt: 0, lastFailureAt: 0, lastFailureStage: '',
         lastProcessAt: 0, lastProcessFailureAt: 0,
         taskFailures: 0, lastTaskFailureAt: 0, lastFailedTask: '',
     };
 }
 let diagnostics = emptyDiagnostics();
+
+/**
+ * 网关濒死时跳过本轮上报。
+ *
+ * ACE 上报是固定 5s 节奏的保命流量，正常情况下必须发；但连接已经
+ * 「在途堆着 + 长时间无入站」时，再塞一个 10s 才超时的大包，只会
+ * 让心跳更拿不到回包，把「可能自愈的短暂拥塞」拖成「心跳超时下线」。
+ * 这里只做临时跳过，不改变上报节奏本身，避免被服务端判成异常客户端。
+ */
+function shouldSkipForStallingGateway(): boolean {
+    try {
+        const network = require('../utils/network');
+        return typeof network.isGatewayStalling === 'function' && !!network.isGatewayStalling();
+    } catch {
+        return false;
+    }
+}
 
 function getAceDiagnostics() {
     return { ...diagnostics, requestRunning };
@@ -44,6 +62,10 @@ function runTsdkTask(task: string, action: () => void): void {
 
 async function sendAntiData(): Promise<void> {
     if (!sendRequest || requestRunning) return;
+    if (shouldSkipForStallingGateway()) {
+        diagnostics.skipped += 1;
+        return;
+    }
     const currentGeneration = generation;
     const sender = sendRequest;
     let stage = 'collect';

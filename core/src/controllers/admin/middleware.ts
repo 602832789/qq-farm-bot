@@ -65,7 +65,7 @@ function isGatewayProtocolError(err: any): boolean {
     return String(err?.name || '') === 'GatewayError'
         || typeof err?.errorMessage === 'string'
         || typeof err?.error_message === 'string'
-        || /^(?:[\w-]+\.)+[\w-]+(?:\s+.*?)?\bcode=\d+(?:\s|$)/.test(message);
+        || /^(?:[\w-]+\.)+[\w-]+(?:\s+(?:\S.*?)??)?\bcode=\d+(?:\s|$)/.test(message);
 }
 
 function getProtocolErrorMessage(err: any): string {
