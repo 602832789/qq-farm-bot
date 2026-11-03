@@ -12,6 +12,7 @@ import { useActivityClock } from './useActivityClock'
 const emit = defineEmits<{
   back: []
   open: [activity: ActivityDirectoryItemDto]
+  openSolar: []
 }>()
 
 const accountStore = useAccountStore()
@@ -365,7 +366,7 @@ function openActivity(activity: ActivityDirectoryItemDto) {
           <span v-if="closedCardCount" class="text-xs text-gray-500">{{ closedCardCount }} 项暂未接入玩法</span>
         </header>
 
-        <div v-if="cardActivities.length" class="picker-list">
+        <div class="picker-list">
           <button
             v-for="activity in cardActivities"
             :key="activity.id"
@@ -391,9 +392,25 @@ function openActivity(activity: ActivityDirectoryItemDto) {
               <span v-else>暂未支持详情 <span class="i-carbon-locked" aria-hidden="true" /></span>
             </span>
           </button>
+
+          <!-- 节令日历：内置常驻功能，不依赖服务器活动目录，始终可打开。 -->
+          <button type="button" class="activity-entry activity-entry--supported" @click="emit('openSolar')">
+            <span class="activity-entry__topline">
+              <span class="activity-entry__icon">
+                <span class="i-carbon-calendar" aria-hidden="true" />
+              </span>
+              <span class="activity-entry__status">常驻</span>
+            </span>
+            <strong>节令日历</strong>
+            <span class="activity-entry__period">二十四节令 · 答题领奖励</span>
+            <span class="activity-entry__footer">
+              <small>长期开放</small>
+              <span>查看详情 <span class="i-carbon-arrow-right" aria-hidden="true" /></span>
+            </span>
+          </button>
         </div>
 
-        <p v-else class="activity-empty">
+        <p v-if="!cardActivities.length" class="activity-empty">
           当前筛选条件下暂无活动
         </p>
 

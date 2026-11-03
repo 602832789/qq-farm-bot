@@ -12,6 +12,7 @@ import { useToastStore } from '@/stores/toast'
 
 const { currentAccountId, currentAccount } = storeToRefs(useAccountStore())
 const connected = computed(() => !!currentAccount.value?.running)
+const emit = defineEmits<{ back: [] }>()
 const toast = useToastStore()
 const data = ref<any>(null)
 const busy = ref(false)
@@ -165,7 +166,14 @@ onUnmounted(() => sequence++)
 <template>
   <div class="solar">
     <header class="page-toolbar">
-      <span class="text-sm text-gray-500">按当前账号读取节令进度</span>
+      <div class="flex items-center gap-2">
+        <NButton aria-label="返回活动中心" @click="emit('back')">
+          <template #icon>
+            <span class="i-carbon-arrow-left" />
+          </template>
+        </NButton>
+        <span class="text-sm text-gray-500">按当前账号读取节令进度</span>
+      </div>
       <NButton :loading="busy" :disabled="!currentAccountId || !connected" @click="request()">
         <template #icon>
           <span class="i-carbon-renew" />

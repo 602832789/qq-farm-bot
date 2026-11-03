@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { ActivityTab } from '@/components/activity/BottomNav.vue'
 import type { ActivityDirectoryItemDto, ActivityGameplayKey } from '@/stores/activity-center'
+type CenterActivity = ActivityGameplayKey | 'solar'
 import { useNotification } from 'naive-ui/es/notification'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
@@ -20,6 +21,7 @@ import QingMeiActivityPage from './activity-center/QingMeiActivityPage.vue'
 import QixiActivityPage from './activity-center/QixiActivityPage.vue'
 import StellarActivityPage from './activity-center/StellarActivityPage.vue'
 import WeatherActivityPage from './activity-center/WeatherActivityPage.vue'
+import SolarCalendarPage from './SolarCalendar.vue'
 
 const router = useRouter()
 const notification = useNotification()
@@ -28,7 +30,7 @@ const activityStore = useActivityCenterStore()
 const friendStore = useFriendStore()
 const { currentAccountId } = storeToRefs(accountStore)
 const { season, shop, solarTerms, constellation, notice, actionError } = storeToRefs(activityStore)
-const selectedActivity = ref<ActivityGameplayKey | null>(null)
+const selectedActivity = ref<CenterActivity | null>(null)
 const selectedInstanceId = ref('')
 const appStore = useAppStore()
 watch(selectedActivity, (value) => {
@@ -59,6 +61,10 @@ async function openActivity(activity: ActivityDirectoryItemDto) {
   else if (gameplay.module.key === 'weather' && currentAccountId.value && detailsLoaded) {
     void activityStore.loadWeatherFriends(String(currentAccountId.value))
   }
+}
+
+function openSolarCalendar() {
+  selectedActivity.value = 'solar'
 }
 
 function goBack() {
@@ -119,7 +125,9 @@ onUnmounted(() => {
     v-if="!selectedActivity"
     @back="goBack"
     @open="openActivity"
+    @open-solar="openSolarCalendar"
   />
+  <SolarCalendarPage v-else-if="selectedActivity === 'solar'" @back="goBack" />
   <MilkTeaPage v-else-if="selectedActivity === 'milk'" @back="goBack" />
   <ShareRewardActivity v-else-if="selectedActivity === 'happy'" :activity-id="selectedInstanceId" @back="goBack" />
   <AutumnActivityPage

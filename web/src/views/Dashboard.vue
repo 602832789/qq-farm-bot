@@ -482,6 +482,23 @@ function formatAssetAmount(value: unknown) {
   return Number.isFinite(amount) ? Math.max(0, Math.trunc(amount)).toLocaleString('zh-CN') : '0'
 }
 
+/** 大额资产紧凑显示：≥1万以万为单位，≥1亿以亿为单位（仅金币/金豆豆使用）。 */
+function formatCompactAsset(value: unknown) {
+  const amount = Number(value)
+  if (!Number.isFinite(amount))
+    return '0'
+  const n = Math.max(0, Math.trunc(amount))
+  const unitValue = (divisor: number) => {
+    const v = n / divisor
+    return Number.isInteger(v) ? String(v) : v.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')
+  }
+  if (n >= 1e8)
+    return `${unitValue(1e8)}亿`
+  if (n >= 1e4)
+    return `${unitValue(1e4)}万`
+  return n.toLocaleString('zh-CN')
+}
+
 async function refreshBag(force = false) {
   if (!currentAccountId.value)
     return
@@ -707,7 +724,7 @@ useIntervalFn(updateCountdowns, 1000)
         <div class="ov-tiles">
           <div class="ov-tile">
             <span class="ov-tile__label"><span class="i-fas-coins text-yellow-500" />金币</span>
-            <strong class="ov-tile__value">{{ formatAssetAmount(status?.status?.gold) }}</strong>
+            <strong class="ov-tile__value">{{ formatCompactAsset(status?.status?.gold) }}</strong>
             <small v-if="(status?.sessionGoldGained || 0) !== 0" class="ov-tile__delta" :class="(status?.sessionGoldGained || 0) > 0 ? 'is-up' : 'is-down'">
               本次 {{ (status?.sessionGoldGained || 0) > 0 ? '+' : '' }}{{ formatPlainNumber(status?.sessionGoldGained) }}
             </small>
@@ -721,7 +738,7 @@ useIntervalFn(updateCountdowns, 1000)
           </div>
           <div class="ov-tile">
             <span class="ov-tile__label"><span class="i-fas-seedling text-amber-500" />金豆豆</span>
-            <strong class="ov-tile__value">{{ formatAssetAmount(status?.status?.goldBean) }}</strong>
+            <strong class="ov-tile__value">{{ formatCompactAsset(status?.status?.goldBean) }}</strong>
           </div>
           <div class="ov-tile">
             <span class="ov-tile__label"><span class="i-fas-gem text-cyan-500" />钻石</span>
