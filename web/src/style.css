@@ -411,8 +411,45 @@ th {
 }
 
 .app-shell {
+  position: relative;
+  isolation: isolate;
   color: var(--ui-ink);
   background: transparent;
+}
+
+/* 老版移植：全局农场背景图（farm-day.webp）+ 浅色渐变遮罩。 */
+:root {
+  --farm-scene: url('/backgrounds/farm-day.webp');
+  --farm-scene-overlay: linear-gradient(180deg, rgb(237 246 232 / 66%), rgb(237 246 232 / 92%));
+}
+
+.dark {
+  --farm-scene-overlay: linear-gradient(180deg, rgb(14 24 18 / 74%), rgb(14 24 18 / 90%));
+}
+
+.app-shell::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    var(--farm-scene-overlay),
+    var(--farm-scene) center / cover;
+}
+
+@media (max-width: 639px) {
+  :root {
+    --farm-scene: url('/backgrounds/farm-day-mobile.webp');
+  }
+}
+
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .app-shell::before {
+    background:
+      linear-gradient(rgb(237 246 232 / 94%), rgb(237 246 232 / 94%)),
+      var(--farm-scene) center / cover;
+  }
 }
 
 .liquid-layout,

@@ -63,9 +63,36 @@ export interface MysteryShopDto {
   }
 }
 
+/** 农场商店商品（老版移植）：种子 / 宠物 / 装扮共用结构。 */
+export interface FarmShopGoodsDto {
+  id: number
+  itemId: number
+  itemCount: number
+  price: number
+  limitCount: number
+  boughtNum: number
+  unlocked: boolean
+  requiredLevel: number
+  name: string
+  image: string
+  desc?: string
+  effectDesc?: string
+  canBuy: boolean
+  isSoldOut: boolean
+  owned?: boolean
+  isGoldenBean?: boolean
+  seedLevel?: number
+  expPerSeason?: number
+  seasons?: number
+  incomePerSeason?: number
+}
+
 export const useCommerceStore = defineStore('commerce', () => {
   const mall = ref<MallCatalogDto | null>(null)
   const mystery = ref<MysteryShopDto | null>(null)
+  const farmShopGoods = ref<FarmShopGoodsDto[]>([])
+  const farmShopLoading = ref(false)
+  const farmShopPurchasing = ref(false)
   const mallLoading = ref(false)
   const mysteryLoading = ref(false)
   const mysteryPurchasing = ref(false)
@@ -89,6 +116,9 @@ export const useCommerceStore = defineStore('commerce', () => {
     requestVersion++
     mall.value = null
     mystery.value = null
+    farmShopGoods.value = []
+    farmShopLoading.value = false
+    farmShopPurchasing.value = false
     mallAccountId = ''
     mysteryAccountId = ''
     mallLoading.value = false
@@ -285,9 +315,73 @@ export const useCommerceStore = defineStore('commerce', () => {
     }
   }
 
+  /** 老版移植：农场商店（种子/宠物/装扮）商品列表。 */
+  async function fetchFarmShop(accountId: string, category: 'seed' | 'pet' | 'decoration') {
+    const id = String(accountId || '').trim()
+    if (!id) {
+      farmShopGoods.value = []
+      return
+    }
+    const version = ++requestVersion
+    if (farmShopLoading.value)
+      farmShopLoading.value = false
+    farmShopLoading.value = true
+    clearMessages()
+    try {
+      const response = await api.get(`/api/shop/${category}`, {
+        headers: { 'x-account-id': id },
+        skipErrorToast: true,
+      } as any)
+      if (!isCurrent(version, id))
+        return
+      if (!response.data?.ok)
+        throw new Error(getApiErrorMessage(response.data, '商品加载失败'))
+      farmShopGoods.value = (response.data.data || []) as FarmShopGoodsDto[]
+    }
+    catch (cause: any) {
+      if (!isCurrent(version, id))
+        return
+      error.value = getApiErrorMessage(cause, '商品加载失败')
+    }
+    finally {
+      if (isCurrent(version, id))
+        farmShopLoading.value = false
+    }
+  }
+
+  /** 老版移植：农场商店购买（goodsId + num + price）。 */
+  async function purchaseFarmGoods(accountId: string, goodsId: number, num: number, price: number) {
+    const id = String(accountId || '').trim()
+    if (!id || farmShopPurchasing.value)
+      return false
+    farmShopPurchasing.value = true
+    clearMessages()
+    try {
+      const response = await api.post('/api/shop/buy', { goodsId, num, price }, {
+        headers: { 'x-account-id': id },
+        skipErrorToast: true,
+      } as any)
+      if (!response.data?.ok)
+        throw new Error(getApiErrorMessage(response.data, '购买失败'))
+      notice.value = '购买成功'
+      return true
+    }
+    catch (cause: any) {
+      if (String(localStorage.getItem('current_account_id') || '') === id)
+        error.value = getApiErrorMessage(cause, '购买失败')
+      return false
+    }
+    finally {
+      farmShopPurchasing.value = false
+    }
+  }
+
   return {
     mall,
     mystery,
+    farmShopGoods,
+    farmShopLoading,
+    farmShopPurchasing,
     mallLoading,
     mysteryLoading,
     mysteryPurchasing,
@@ -300,5 +394,7 @@ export const useCommerceStore = defineStore('commerce', () => {
     purchaseMall,
     fetchMystery,
     purchaseMystery,
+    fetchFarmShop,
+    purchaseFarmGoods,
   }
 })

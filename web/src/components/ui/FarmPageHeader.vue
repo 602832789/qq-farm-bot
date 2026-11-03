@@ -94,8 +94,17 @@ defineProps<{
   padding: 16px 22px;
   border: 1px solid var(--surface-border);
   border-radius: 8px;
-  background: var(--surface-2);
+  /* 老版移植：农场市集背景图（farm-market.webp）。 */
+  background:
+    linear-gradient(90deg, #fffef6f5, #fffef6d9 42%, #fffef624 85%),
+    url('/backgrounds/farm-market.webp') center 55% / cover;
   isolation: isolate;
+}
+
+.dark .farm-page-header--scene {
+  background:
+    linear-gradient(90deg, rgb(20 30 22 / 88%), rgb(20 30 22 / 72%) 42%, rgb(20 30 22 / 20%) 85%),
+    url('/backgrounds/farm-market.webp') center 55% / cover;
 }
 .farm-page-header--scene .farm-page-header-icon {
   display: none;

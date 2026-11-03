@@ -118,6 +118,15 @@ onMounted(fetchGameVersion)
 
 <template>
   <main class="login-container">
+    <!-- 老版移植：农场风景装饰层（天空/太阳/农田/作物） -->
+    <div class="bg-decoration" aria-hidden="true">
+      <div class="sky-gradient" />
+      <div class="sun-decoration" />
+      <div class="ground-pattern" />
+      <div class="plant-decoration plant-left" />
+      <div class="plant-decoration plant-right" />
+    </div>
+
     <section class="login-card">
       <header class="logo-area">
         <BrandMark class="logo-icon" :size="58" />
@@ -211,20 +220,104 @@ onMounted(fetchGameVersion)
   overflow: hidden;
   padding: 28px 18px;
   color: var(--ui-ink);
-  background-color: var(--ui-bg);
-  background-image:
-    linear-gradient(rgba(67, 141, 99, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(67, 141, 99, 0.045) 1px, transparent 1px);
-  background-size: 42px 42px;
+  /* 老版移植：农场风景底色（天空 → 麦田）。 */
+  background: linear-gradient(180deg, #cfe8f9 0%, #edf7f9 48%, #fef9e8 55%, #eff8df 100%);
 }
 
-.login-container::before {
+.dark .login-container {
+  background: linear-gradient(180deg, #16241c 0%, #1b2c22 48%, #22301f 55%, #182016 100%);
+}
+
+.bg-decoration {
   position: absolute;
-  inset: 8% 7%;
-  border: 1px solid rgba(67, 141, 99, 0.08);
-  border-radius: 36px;
-  background: color-mix(in srgb, var(--ui-surface-strong) 22%, transparent);
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.sky-gradient {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 56%;
+  background: linear-gradient(180deg, rgba(187, 222, 251, 0.42) 0%, rgba(255, 249, 230, 0.55) 100%);
+}
+
+.ground-pattern {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 45%;
+  opacity: 0.58;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(129, 199, 132, 0.04) 0,
+      rgba(129, 199, 132, 0.04) 40px,
+      rgba(255, 255, 255, 0.12) 40px,
+      rgba(255, 255, 255, 0.12) 80px
+    ),
+    linear-gradient(180deg, #f1f8e9 0%, #dcedc8 100%);
+}
+
+.sun-decoration {
+  position: absolute;
+  top: 8%;
+  right: 12%;
+  width: 78px;
+  height: 78px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 224, 130, 0.75) 0%, rgba(255, 213, 79, 0.44) 52%, transparent 72%);
+  filter: blur(1px);
+}
+
+.plant-decoration {
+  position: absolute;
+  bottom: 6%;
+  width: 72px;
+  height: 120px;
+  opacity: 0.18;
+}
+
+.plant-decoration::before,
+.plant-decoration::after {
   content: '';
+  position: absolute;
+  border-radius: 999px 999px 999px 0;
+  background: #81c784;
+  transform-origin: bottom center;
+}
+
+.plant-decoration::before {
+  left: 28px;
+  bottom: 42px;
+  width: 28px;
+  height: 48px;
+  transform: rotate(34deg);
+}
+
+.plant-decoration::after {
+  left: 12px;
+  bottom: 46px;
+  width: 30px;
+  height: 44px;
+  transform: rotate(-36deg);
+}
+
+.plant-decoration {
+  background: linear-gradient(86deg, transparent 45%, #81c784 47%, #81c784 53%, transparent 55%) bottom center / 30px
+    76px no-repeat;
+}
+
+.plant-left {
+  left: 9%;
+}
+
+.plant-right {
+  right: 9%;
+  transform: scaleX(-1);
 }
 
 .login-card {

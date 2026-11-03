@@ -146,6 +146,10 @@ function createDataProvider(options: DataProviderOptions) {
         delFriend: (accountRef: string, gid: number) => callWorkerApi(resolveAccountRefId(accountRef), 'delFriend', gid),
         getBag: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getBag'),
         getBagSeeds: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getBagSeeds'),
+        getShopInfo: (accountRef: string, shopId: number) => callWorkerApi(resolveAccountRefId(accountRef), 'getShopInfo', shopId),
+        buyGoods: (accountRef: string, goodsId: number, num: number, price: number) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'buyGoods', goodsId, num, price)
+        ),
         getDiamondBalance: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getDiamondBalance'),
         useItem: (accountRef: string, itemId: number, count: number, uid = 0) => callWorkerApi(resolveAccountRefId(accountRef), 'useItem', itemId, count, uid),
         sellItems: (accountRef: string, items: any[]) => callWorkerApi(resolveAccountRefId(accountRef), 'sellItems', items),

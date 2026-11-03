@@ -1135,6 +1135,19 @@ useIntervalFn(updateCountdowns, 1000)
     var(--ui-shadow-sm);
 }
 
+/* 老版移植：账号英雄卡使用农场全景背景（farm-day.webp）。 */
+.ov-account {
+  background:
+    linear-gradient(90deg, #edf7e6f5, #edf7e6df 42%, #edf7e64d),
+    url('/backgrounds/farm-day.webp') center 58% / cover;
+}
+
+.dark .ov-account {
+  background:
+    linear-gradient(90deg, rgb(18 28 20 / 88%), rgb(18 28 20 / 76%) 42%, rgb(18 28 20 / 34%)),
+    url('/backgrounds/farm-day.webp') center 58% / cover;
+}
+
 .ov-card__title {
   margin: 0;
   color: var(--ui-muted);
