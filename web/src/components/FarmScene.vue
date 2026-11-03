@@ -192,14 +192,46 @@ function bubble(land: any) {
   return { text: String(land?.phaseName || '生长中'), tone: 'growing' }
 }
 
-function needsOf(land: any) {
+const failedMutantIcons = ref(new Set<string>())
+
+function markMutantFailed(key: string) {
+  failedMutantIcons.value = new Set(failedMutantIcons.value).add(key)
+}
+
+/** 气泡里倒计时前只保留变异效果小图标；缺水/草/虫等提示不再占倒计时前位置。 */
+function mutantsOf(land: any) {
   if (isLocked(land) || isEmpty(land) || land?.occupiedByMaster)
     return []
-  return [
-    land?.needWater && { key: 'water', icon: 'i-carbon-rain-drop', label: '缺水' },
-    land?.needWeed && { key: 'weed', icon: 'i-carbon-clean', label: '杂草' },
-    land?.needBug && { key: 'bug', icon: 'i-carbon-debug', label: '虫害' },
-  ].filter(Boolean) as Array<{ key: string, icon: string, label: string }>
+  const effects = Array.isArray(land?.mutantEffects) && land.mutantEffects.length
+    ? land.mutantEffects
+    : (Array.isArray(land?.mutantConfigIds) ? land.mutantConfigIds.map((id: any) => ({ id, name: `变异 #${id}` })) : [])
+  const list: Array<{ key: string, image: string, icon: string, label: string }> = []
+  for (const effect of effects) {
+    const id = Number(effect?.id) || 0
+    const name = String(effect?.name || effect?.effect_name || '').trim()
+    if (!name)
+      continue
+    const collections = id === 18 && Array.isArray(effect.collections) ? effect.collections : []
+    for (const collection of collections) {
+      const key = `m${id}:${collection.seriesId}:${collection.itemId}`
+      list.push({
+        key,
+        image: failedMutantIcons.value.has(key) ? '' : safeImage(String(collection.image || '')),
+        icon: 'i-carbon-trophy',
+        label: `藏品变异 · ${collection.name}`,
+      })
+    }
+    if (collections.length)
+      continue
+    const key = `m${id}${name}`
+    list.push({
+      key,
+      image: id > 0 && id !== 18 && !failedMutantIcons.value.has(key) ? `/game-config/seed_images_named/mutant/${id}.png` : '',
+      icon: id === 18 ? 'i-carbon-trophy' : 'i-carbon-star',
+      label: `变异 · ${name}`,
+    })
+  }
+  return list
 }
 
 function safeImage(url: string) {
@@ -254,7 +286,7 @@ onUnmounted(() => {
       >
         <img v-if="!isLocked(land) && !isEmpty(land) && land.seedImage" class="scene-plot__crop" :src="safeImage(land.seedImage)" :style="cropStyle(land)" alt="" loading="lazy" referrerpolicy="no-referrer">
         <span class="scene-plot__bubble" :class="`is-${bubble(land).tone}`">
-          <span v-for="need in needsOf(land)" :key="need.key" class="scene-plot__need" :class="`is-${need.key}`" :title="need.label"><span :class="need.icon" /></span>
+          <span v-for="item in mutantsOf(land)" :key="item.key" class="scene-plot__mutant" :title="item.label"><img v-if="item.image" :src="item.image" alt="" @error="markMutantFailed(item.key)"><span v-else :class="item.icon" /></span>
           {{ bubble(land).text }}
         </span>
       </button>
@@ -372,27 +404,23 @@ onUnmounted(() => {
   background: rgb(255 255 255 / 80%);
 }
 
-.scene-plot__need {
+.scene-plot__mutant {
   display: inline-grid;
-  width: clamp(9px, 1.1cqw, 13px);
-  height: clamp(9px, 1.1cqw, 13px);
+  flex: none;
+  width: clamp(10px, 1.1cqw, 14px);
+  height: clamp(10px, 1.1cqw, 14px);
   place-items: center;
-  border-radius: 999px;
-  color: #fff;
-  font-size: clamp(7px, 0.8cqw, 10px);
+  color: #c08a12;
+  font-size: clamp(8px, 0.85cqw, 11px);
   line-height: 0;
 }
 
-.scene-plot__need.is-water {
-  background: #4b9fd5;
-}
-
-.scene-plot__need.is-weed {
-  background: #5a9f4e;
-}
-
-.scene-plot__need.is-bug {
-  background: #d9605c;
+.scene-plot__mutant img,
+.scene-plot__mutant > span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .farm-scene__hint {
@@ -415,10 +443,10 @@ onUnmounted(() => {
     display: none;
   }
 
-  .scene-plot__need {
-    width: 8px;
-    height: 8px;
-    font-size: 6px;
+  .scene-plot__mutant {
+    width: 9px;
+    height: 9px;
+    font-size: 7px;
   }
 }
 

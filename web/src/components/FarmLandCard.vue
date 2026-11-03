@@ -165,6 +165,9 @@ const traits = computed(() => {
   return list
 })
 
+/** 倒计时前只保留变异效果小图标：从 traits 里取变异类，普通加成不参与。 */
+const mutantTraits = computed(() => traits.value.filter(item => item.kind === 'mutant'))
+
 // 状态行宽度有限：最多 4 个图标，超出合并为 “+N”。需处理的问题排在最前，永远可见。
 const MAX_TAGS = 4
 const allTags = computed(() => [
@@ -259,7 +262,7 @@ const ariaLabel = computed(() => {
 
     <div class="plot__time">
       <span v-if="stateTag" class="plot__state" :class="`is-${stateTag.kind}`"><span :class="stateTag.icon" aria-hidden="true" />{{ stateTag.text }}</span>
-      <span v-else-if="Number(land.matureInSec) > 0" class="plot__countdown"><span class="i-carbon-time" aria-hidden="true" />{{ formatTime(land.matureInSec) }}</span>
+      <span v-else-if="Number(land.matureInSec) > 0" class="plot__countdown"><span v-for="item in mutantTraits" :key="item.key" class="plot__countdown-mutant" :title="item.title"><img v-if="item.image" :src="item.image" alt="" @error="markMutantFailed(item.key)"><span v-else :class="item.icon" /></span>{{ formatTime(land.matureInSec) }}</span>
       <span v-else class="plot__state is-muted">{{ land.phaseName || '生长中' }}</span>
       <span v-if="seasonText && !isFollower && !isLocked && !isEmpty" class="plot__season">{{ seasonText }}</span>
     </div>
@@ -482,6 +485,26 @@ const ariaLabel = computed(() => {
   font-size: 11px;
   font-weight: var(--fw-700);
   font-variant-numeric: tabular-nums;
+}
+.plot__countdown-mutant {
+  display: inline-flex;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  align-items: center;
+  justify-content: center;
+  color: #c08a12;
+  font-size: 12px;
+  line-height: 0;
+  cursor: help;
+}
+.plot__countdown-mutant img,
+.plot__countdown-mutant > span {
+  display: block;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  object-fit: contain;
 }
 .plot__state {
   display: inline-flex;
@@ -741,6 +764,13 @@ const ariaLabel = computed(() => {
 .plot--compact .plot__countdown {
   gap: 2px;
   font-size: 10px;
+}
+.plot--compact .plot__countdown-mutant,
+.plot--compact .plot__countdown-mutant img,
+.plot--compact .plot__countdown-mutant > span {
+  width: 9px;
+  height: 9px;
+  font-size: 9px;
 }
 .plot--compact .plot__state {
   padding: 0 5px;
