@@ -13,12 +13,15 @@ const props = withDefaults(defineProps<{
   selectionLabel?: string
   /** 非选择模式下点击卡片触发 open（查看土地详情）。 */
   openable?: boolean
+  /** 紧凑视图：缩小间距与作物图，隐藏标签行，一屏放下更多土地。 */
+  compact?: boolean
 }>(), {
   selectable: false,
   selected: false,
   selectionDisabled: false,
   selectionLabel: '',
   openable: false,
+  compact: false,
 })
 
 const emit = defineEmits<{
@@ -218,6 +221,7 @@ const ariaLabel = computed(() => {
         'plot--selectable': selectable,
         'plot--selected': selectable && selected,
         'plot--disabled': selectable && selectionDisabled,
+        'plot--compact': compact,
       },
     ]"
     :role="interactive ? (selectable ? 'checkbox' : 'button') : undefined"
@@ -686,5 +690,94 @@ const ariaLabel = computed(() => {
 }
 .dark .plot--lv6 {
   --soil-tint: #82bddf;
+}
+
+/* 紧凑视图：压缩到原来约七成高，一屏能多放两列，标签只缩小不隐藏 */
+.plot--compact {
+  padding: 5px 6px 6px;
+  border-radius: 10px;
+}
+.plot--compact .plot__top {
+  height: 16px;
+  gap: 3px;
+}
+.plot--compact .plot__no {
+  font-size: 9px;
+}
+.plot--compact .plot__soil {
+  padding: 0 4px;
+  font-size: 9px;
+  line-height: 13px;
+}
+.plot--compact .plot__joint {
+  font-size: 9px;
+}
+.plot--compact .plot__check {
+  width: 16px;
+  height: 16px;
+  font-size: 10px;
+}
+.plot--compact .plot__crop {
+  width: 30px;
+  height: 30px;
+  margin-top: 1px;
+}
+.plot--compact .plot__crop img {
+  max-width: 92%;
+  max-height: 92%;
+}
+.plot--compact .plot__placeholder {
+  font-size: 17px;
+}
+.plot--compact .plot__name {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 14px;
+}
+.plot--compact .plot__time {
+  height: 16px;
+  margin-top: 1px;
+}
+.plot--compact .plot__countdown {
+  gap: 2px;
+  font-size: 10px;
+}
+.plot--compact .plot__state {
+  padding: 0 5px;
+  font-size: 9px;
+  line-height: 14px;
+}
+.plot--compact .plot__bar {
+  height: 3px;
+  margin-top: 3px;
+}
+.plot--compact .plot__tags {
+  height: 15px;
+  gap: 2px;
+  margin-top: 3px;
+}
+.plot--compact .plot__need,
+.plot--compact .plot__trait {
+  width: 14px;
+  height: 14px;
+}
+.plot--compact .plot__need > span,
+.plot--compact .plot__trait > span {
+  width: 9px;
+  height: 9px;
+}
+.plot--compact .plot__trait img {
+  width: 9px;
+  height: 9px;
+}
+.plot--compact .plot__more {
+  height: 14px;
+  padding: 0 4px;
+  font-size: 9px;
+  line-height: 14px;
+}
+.plot--compact .plot__season {
+  margin-left: 2px;
+  font-size: 9px;
 }
 </style>

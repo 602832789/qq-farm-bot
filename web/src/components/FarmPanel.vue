@@ -10,6 +10,7 @@ import { useRoute } from 'vue-router'
 import CareerHarvestSteal from '@/components/CareerHarvestSteal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import LandCard from '@/components/FarmLandCard.vue'
+import FarmScene from '@/components/FarmScene.vue'
 import LandDetailModal from '@/components/LandDetailModal.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
@@ -49,6 +50,47 @@ const detailLandId = ref<number | null>(null)
 const detailLand = computed(() => lands.value.find(land => land.id === detailLandId.value) || null)
 watch(currentAccountId, () => {
   detailLandId.value = null
+})
+
+// ---- 土地展示方案：标准 / 紧凑 / 场景（按账号记住上次选择）----
+type LandView = 'default' | 'compact' | 'scene'
+
+const LAND_VIEW_KEY = 'qq-farm-bot:farm-view'
+const LEGACY_LAND_VIEW_KEY = 'qq-farm-bot-404:farm'
+const landView = ref<LandView>('default')
+const landViewOptions: Array<{ value: LandView, label: string, icon: string, title: string }> = [
+  { value: 'default', label: '标准', icon: 'i-carbon-grid', title: '标准视图：常规卡片，信息最全' },
+  { value: 'compact', label: '紧凑', icon: 'i-carbon-zoom-out', title: '紧凑视图：缩小卡片，一屏放下更多土地' },
+  { value: 'scene', label: '场景', icon: 'i-carbon-image', title: '场景视图：等距农场画面，点击地块看详情' },
+]
+
+function readLandView(accountId: string): LandView {
+  try {
+    const own = localStorage.getItem(`${LAND_VIEW_KEY}:${accountId}`)
+    if (own === 'default' || own === 'compact' || own === 'scene')
+      return own
+    // 旧版把视图偏好和刷新设置存在同一个 JSON 里，这里做一次兼容读取。
+    const legacy = JSON.parse(localStorage.getItem(`${LEGACY_LAND_VIEW_KEY}:${accountId}`) || '{}')
+    return legacy.view === 'compact' || legacy.view === 'scene' ? legacy.view : 'default'
+  }
+  catch {
+    return 'default'
+  }
+}
+
+watch(currentAccountId, (accountId) => {
+  landView.value = accountId ? readLandView(String(accountId)) : 'default'
+}, { immediate: true })
+
+watch(landView, (view) => {
+  if (!currentAccountId.value)
+    return
+  try {
+    localStorage.setItem(`${LAND_VIEW_KEY}:${String(currentAccountId.value)}`, view)
+  }
+  catch {
+    // 偏好存不下不影响看农场
+  }
 })
 
 const currentAccountConnected = computed(() => {
@@ -366,15 +408,24 @@ useResizeObserver(gridEl, ([entry]) => {
 const GRID_GAP = 12
 const CARD_MIN = 128
 const CARD_MAX = 230
+const COMPACT_CARD_MIN = 96
+const COMPACT_CARD_MAX = 168
 const gridColumns = computed(() => {
   const width = gridWidth.value
   const count = (lands.value || []).length
   if (!width || !count)
     return 2
+  // 紧凑视图每格更窄，同宽下能多排一列。
+  const compact = landView.value === 'compact'
+  const cardMin = compact ? COMPACT_CARD_MIN : CARD_MIN
+  const cardMax = compact ? COMPACT_CARD_MAX : CARD_MAX
   const fits = (cols: number) => (width - GRID_GAP * (cols - 1)) / cols
-  const maxCols = Math.max(1, Math.floor((width + GRID_GAP) / (CARD_MIN + GRID_GAP)))
+  const maxCols = Math.max(1, Math.floor((width + GRID_GAP) / (cardMin + GRID_GAP)))
+  // 紧凑视图的目的就是一屏放更多：直接铺满可用列数，不强行凑整除。
+  if (compact)
+    return Math.min(maxCols, count)
   for (let cols = Math.min(maxCols, count); cols >= 2; cols--) {
-    if (count % cols === 0 && fits(cols) <= CARD_MAX)
+    if (count % cols === 0 && fits(cols) <= cardMax)
       return cols
   }
   return maxCols
@@ -620,6 +671,19 @@ onUnmounted(() => {
           <h3 class="flex items-center gap-2 text-lg font-bold">
             <span class="i-carbon-sprout text-green-600" /> 土地详情
           </h3>
+          <div class="land-view-switch" role="group" aria-label="土地展示方案">
+            <button
+              v-for="option in landViewOptions"
+              :key="option.value"
+              type="button"
+              :title="option.title"
+              :aria-label="option.title"
+              :aria-pressed="landView === option.value"
+              @click="landView = option.value"
+            >
+              <span :class="option.icon" aria-hidden="true" /><span>{{ option.label }}</span>
+            </button>
+          </div>
           <div class="farm-mobile-actions">
             <NButton size="small" :type="selecting ? 'default' : 'primary'" :secondary="!selecting" :disabled="selectionBusy || !currentAccountRunning || !loaded || !!error" @click="selecting ? exitSelecting() : enterSelecting()">
               {{ selecting ? '退出选择' : '批量操作' }}
@@ -803,11 +867,23 @@ onUnmounted(() => {
                 好友放置了 {{ cleanableFarmSocialEventNames }}，可一键务农，或选择土地后务农清理。
               </span>
             </div>
-            <div ref="gridEl" class="farm-grid" :class="{ 'is-selecting': selecting }" :style="{ gridTemplateColumns: `repeat(${gridColumns}, minmax(0, 1fr))` }">
+            <FarmScene
+              v-if="landView === 'scene'"
+              :lands="lands"
+              @open="selecting ? toggleLand($event) : detailLandId = $event.id"
+            />
+            <div
+              v-else
+              ref="gridEl"
+              class="farm-grid"
+              :class="{ 'is-selecting': selecting, 'farm-grid--compact': landView === 'compact' }"
+              :style="{ gridTemplateColumns: `repeat(${gridColumns}, minmax(0, 1fr))` }"
+            >
               <LandCard
                 v-for="land in lands"
                 :key="land.id"
                 :land="land"
+                :compact="landView === 'compact'"
                 openable
                 :selectable="selecting"
                 :selected="isLandSelected(land)"
@@ -861,6 +937,62 @@ onUnmounted(() => {
 .farm-grid {
   display: grid;
   gap: 12px;
+}
+
+/* 土地展示方案切换：标准 / 紧凑 / 场景 */
+.land-view-switch {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  background: var(--ui-surface-soft);
+}
+
+.land-view-switch button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--ui-muted);
+  background: transparent;
+  font-size: 12px;
+  font-weight: var(--fw-600);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
+}
+
+.land-view-switch button:hover {
+  color: var(--ui-ink);
+}
+
+.land-view-switch button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ui-primary) 60%, transparent);
+  outline-offset: 1px;
+}
+
+.land-view-switch button[aria-pressed='true'] {
+  color: #fff;
+  background: var(--theme-primary);
+  box-shadow: 0 1px 2px rgba(45, 66, 52, 0.18);
+}
+
+@media (max-width: 639px) {
+  .land-view-switch button {
+    padding: 0 7px;
+  }
+
+  .land-view-switch button > span:last-child {
+    display: none;
+  }
 }
 
 .farm-grid.is-selecting {
