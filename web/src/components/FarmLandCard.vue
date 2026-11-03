@@ -168,6 +168,15 @@ const traits = computed(() => {
 /** 倒计时前只保留变异效果小图标：从 traits 里取变异类，普通加成不参与。 */
 const mutantTraits = computed(() => traits.value.filter(item => item.kind === 'mutant'))
 
+/** 成长阶段小字：仅生长中且有倒计时时显示（无倒计时时由阶段文案兑底，避免重复）。 */
+const phaseText = computed(() => {
+  if (stateTag.value || isFollower.value || isLocked.value || isEmpty.value)
+    return ''
+  if (!(Number(land.value.matureInSec) > 0))
+    return ''
+  return String(land.value.phaseName || '').trim()
+})
+
 // 状态行宽度有限：最多 4 个图标，超出合并为 “+N”。需处理的问题排在最前，永远可见。
 const MAX_TAGS = 4
 const allTags = computed(() => [
@@ -262,8 +271,9 @@ const ariaLabel = computed(() => {
 
     <div class="plot__time">
       <span v-if="stateTag" class="plot__state" :class="`is-${stateTag.kind}`"><span :class="stateTag.icon" aria-hidden="true" />{{ stateTag.text }}</span>
-      <span v-else-if="Number(land.matureInSec) > 0" class="plot__countdown"><span v-for="item in mutantTraits" :key="item.key" class="plot__countdown-mutant" :title="item.title"><img v-if="item.image" :src="item.image" alt="" @error="markMutantFailed(item.key)"><span v-else :class="item.icon" /></span>{{ formatTime(land.matureInSec) }}</span>
+      <span v-else-if="Number(land.matureInSec) > 0" class="plot__countdown"><span class="i-carbon-time" aria-hidden="true" /><span v-for="item in mutantTraits" :key="item.key" class="plot__countdown-mutant" :title="item.title"><img v-if="item.image" :src="item.image" alt="" @error="markMutantFailed(item.key)"><span v-else :class="item.icon" /></span>{{ formatTime(land.matureInSec) }}</span>
       <span v-else class="plot__state is-muted">{{ land.phaseName || '生长中' }}</span>
+      <span v-if="phaseText" class="plot__phase">{{ phaseText }}</span>
       <span v-if="seasonText && !isFollower && !isLocked && !isEmpty" class="plot__season">{{ seasonText }}</span>
     </div>
 
@@ -505,6 +515,15 @@ const ariaLabel = computed(() => {
   width: 12px;
   height: 12px;
   object-fit: contain;
+}
+.plot__phase {
+  overflow: hidden;
+  max-width: 40%;
+  margin-left: 4px;
+  color: var(--ui-subtle);
+  font-size: 10px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .plot__state {
   display: inline-flex;
@@ -770,6 +789,10 @@ const ariaLabel = computed(() => {
 .plot--compact .plot__countdown-mutant > span {
   width: 9px;
   height: 9px;
+  font-size: 9px;
+}
+.plot--compact .plot__phase {
+  margin-left: 2px;
   font-size: 9px;
 }
 .plot--compact .plot__state {

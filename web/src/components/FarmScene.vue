@@ -192,6 +192,16 @@ function bubble(land: any) {
   return { text: String(land?.phaseName || '生长中'), tone: 'growing' }
 }
 
+function needsOf(land: any) {
+  if (isLocked(land) || isEmpty(land) || land?.occupiedByMaster)
+    return []
+  return [
+    land?.needWater && { key: 'water', icon: 'i-carbon-rain-drop', label: '缺水' },
+    land?.needWeed && { key: 'weed', icon: 'i-carbon-clean', label: '杂草' },
+    land?.needBug && { key: 'bug', icon: 'i-carbon-debug', label: '虫害' },
+  ].filter(Boolean) as Array<{ key: string, icon: string, label: string }>
+}
+
 const failedMutantIcons = ref(new Set<string>())
 
 function markMutantFailed(key: string) {
@@ -232,6 +242,15 @@ function mutantsOf(land: any) {
     })
   }
   return list
+}
+
+/** 成长阶段小字：仅生长中且有倒计时时显示，避免与气泡里的阶段文案重复。 */
+function phaseText(land: any) {
+  if (isLocked(land) || isEmpty(land) || land?.occupiedByMaster)
+    return ''
+  if (remainSec(land) <= 0)
+    return ''
+  return String(land?.phaseName || '').trim()
 }
 
 function safeImage(url: string) {
@@ -286,8 +305,10 @@ onUnmounted(() => {
       >
         <img v-if="!isLocked(land) && !isEmpty(land) && land.seedImage" class="scene-plot__crop" :src="safeImage(land.seedImage)" :style="cropStyle(land)" alt="" loading="lazy" referrerpolicy="no-referrer">
         <span class="scene-plot__bubble" :class="`is-${bubble(land).tone}`">
+          <span v-for="need in needsOf(land)" :key="need.key" class="scene-plot__need" :class="`is-${need.key}`" :title="need.label"><span :class="need.icon" /></span>
           <span v-for="item in mutantsOf(land)" :key="item.key" class="scene-plot__mutant" :title="item.label"><img v-if="item.image" :src="item.image" alt="" @error="markMutantFailed(item.key)"><span v-else :class="item.icon" /></span>
           {{ bubble(land).text }}
+          <span v-if="phaseText(land)" class="scene-plot__phase">{{ phaseText(land) }}</span>
         </span>
       </button>
     </div>
@@ -404,6 +425,30 @@ onUnmounted(() => {
   background: rgb(255 255 255 / 80%);
 }
 
+.scene-plot__need {
+  display: inline-grid;
+  flex: none;
+  width: clamp(9px, 1cqw, 12px);
+  height: clamp(9px, 1cqw, 12px);
+  place-items: center;
+  border-radius: 999px;
+  color: #fff;
+  font-size: clamp(7px, 0.75cqw, 10px);
+  line-height: 0;
+}
+
+.scene-plot__need.is-water {
+  background: #4b9fd5;
+}
+
+.scene-plot__need.is-weed {
+  background: #5a9f4e;
+}
+
+.scene-plot__need.is-bug {
+  background: #d9605c;
+}
+
 .scene-plot__mutant {
   display: inline-grid;
   flex: none;
@@ -421,6 +466,12 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+
+.scene-plot__phase {
+  margin-left: 2px;
+  font-weight: 500;
+  opacity: 0.78;
 }
 
 .farm-scene__hint {
@@ -441,6 +492,12 @@ onUnmounted(() => {
   .scene-plot__bubble.is-growing,
   .scene-plot__bubble.is-muted {
     display: none;
+  }
+
+  .scene-plot__need {
+    width: 8px;
+    height: 8px;
+    font-size: 6px;
   }
 
   .scene-plot__mutant {
