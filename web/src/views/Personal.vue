@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue'
 import BagPanel from '@/components/BagPanel.vue'
 import FarmPanel from '@/components/FarmPanel.vue'
+import PersonalResourceStrip from '@/components/PersonalResourceStrip.vue'
 import TaskPanel from '@/components/TaskPanel.vue'
 import FarmPageHeader from '@/components/ui/FarmPageHeader.vue'
 
@@ -32,6 +33,7 @@ watch(currentTab, (tab) => {
 <template>
   <div class="personal-page">
     <FarmPageHeader title="我的农场" description="照看作物，整理背包，收下每一份成长。" icon="i-carbon-sprout" />
+    <PersonalResourceStrip />
     <div class="personal-tabs" role="tablist" aria-label="个人板块">
       <button
         v-for="tab in TABS"
