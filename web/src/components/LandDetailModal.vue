@@ -1,27 +1,28 @@
 <script setup lang="ts">
-import { NButton } from 'naive-ui/es/button'
 import { NCard } from 'naive-ui/es/card'
 import { NModal } from 'naive-ui/es/modal'
-import { computed, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 const props = defineProps<{ land: any, player: any, connected: boolean }>()
-const emit = defineEmits<{ close: [], upgrade: [], fertilize: [], remove: [] }>()
+const emit = defineEmits<{ close: [] }>()
 const info = computed(() => props.land?.landInfo)
 
-/* ===== 作物信息（老版地块气泡口径） ===== */
+/* ===== 作物信息（老版地块气泡口径）===== */
 const land = computed(() => props.land)
 
 const now = ref(Date.now())
 let timer: ReturnType<typeof setInterval> | null = null
-watch(() => props.land, () => {
-  now.value = Date.now()
-}, { immediate: true })
-timer = setInterval(() => {
-  now.value = Date.now()
-}, 1000)
+onMounted(() => {
+  timer = setInterval(() => {
+    now.value = Date.now()
+  }, 1000)
+})
 onUnmounted(() => {
   if (timer)
     clearInterval(timer)
+})
+watch(() => props.land, () => {
+  now.value = Date.now()
 })
 
 const hasCrop = computed(() => Boolean(
@@ -89,12 +90,6 @@ function formatTime(sec: number) {
   return `${h > 0 ? `${h}:` : ''}${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
 }
 
-const canFertilize = computed(() =>
-  Number(land.value?.matureInSec) > 0
-  && !['locked', 'empty'].includes(String(land.value?.status || '')))
-
-const canRemove = computed(() => !['locked', 'empty'].includes(String(land.value?.status || '')) && hasCrop.value)
-
 /* ===== 土地等级 / 升级条件（原土地详情保留） ===== */
 const metrics = [
   { key: 'yieldBonus', label: '产量加成', unit: '%' },
@@ -133,7 +128,7 @@ function format(value: unknown) {
         <span class="font-display">土地详情 <span class="text-sm opacity-50">#{{ land?.id }}</span></span>
       </template>
 
-      <!-- 作物信息（老版地块气泡对齐 + 收获收益） -->
+      <!-- 作物信息（老版地块气泡对齐 + 成熟后每季收获收益） -->
       <template v-if="hasCrop && land">
         <div class="land-crop-head">
           <img v-if="land.plantImage || land.seedImage" :src="land.plantImage || land.seedImage" alt="" class="land-crop-thumb">
@@ -204,35 +199,8 @@ function format(value: unknown) {
           <span v-if="land.needWeed" class="rounded-full bg-green-100 px-2 py-0.5 text-green-700 dark:bg-green-900/40 dark:text-green-300">需要除草</span>
           <span v-if="land.needBug" class="rounded-full bg-red-100 px-2 py-0.5 text-red-700 dark:bg-red-900/40 dark:text-red-300">需要除虫</span>
         </div>
-
-        <div class="land-crop-actions">
-          <NButton size="small" type="primary" ghost :disabled="!canFertilize" @click="emit('fertilize')">
-            <template #icon>
-              <span class="i-carbon-growth" />
-            </template>
-            催熟
-          </NButton>
-          <NButton size="small" type="error" ghost :disabled="!canRemove" @click="emit('remove')">
-            <template #icon>
-              <span class="i-carbon-trash-can" />
-            </template>
-            铲除
-          </NButton>
-          <NButton
-            v-if="info && info.mode !== 'max' && info.serverAllowed && connected"
-            size="small"
-            type="primary"
-            @click="emit('upgrade')"
-          >
-            <template #icon>
-              <span class="i-carbon-upgrade" />
-            </template>
-            {{ info.mode === 'unlock' ? '解锁土地' : '升级土地' }}
-          </NButton>
-        </div>
       </template>
 
-      <!-- 土地等级与升级条件（原有内容保留） -->
       <template v-if="info">
         <div class="land-detail-levels" :class="{ 'land-detail-levels--compare': info.next && info.current }">
           <div v-if="info.current" class="land-detail-soil">
@@ -314,137 +282,122 @@ function format(value: unknown) {
   border-radius: 20px;
 }
 
-/* ===== 作物信息区 ===== */
+/* ===== 作物信息 ===== */
 .land-crop-head {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding-bottom: 12px;
+  padding: 2px 0 12px;
 }
 .land-crop-thumb {
-  width: 52px;
-  height: 52px;
+  width: 56px;
+  height: 56px;
   object-fit: contain;
+  border-radius: 12px;
+  background: rgba(69, 155, 93, 0.08);
 }
 .land-crop-thumb-fallback {
-  width: 40px;
-  height: 40px;
-  color: var(--ui-subtle, #9aa39c);
-  font-size: 32px;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  background: rgba(69, 155, 93, 0.08);
+  font-size: 26px;
+  color: #278452;
 }
 .land-crop-title {
   display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 10px;
-}
-.land-crop-title strong {
-  font-size: 15px;
+  flex-direction: column;
+  gap: 4px;
 }
 .land-crop-status {
-  padding: 3px 8px;
-  border: 1px solid rgba(67, 141, 99, 0.18);
+  align-self: flex-start;
+  padding: 1px 10px;
   border-radius: 999px;
-  color: #2e714b;
-  background: rgba(228, 241, 231, 0.9);
-  font-size: 10px;
-  font-weight: var(--fw-700, 700);
+  background: rgba(69, 155, 93, 0.14);
+  color: #278452;
+  font-size: 12px;
+  font-weight: var(--fw-600);
 }
 .land-crop-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(4, 1fr);
   gap: 8px;
+  margin-bottom: 12px;
 }
 .land-crop-cell {
-  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 6px;
   border-radius: 10px;
-  background: color-mix(in srgb, var(--n-color, #fff) 60%, transparent);
-  box-shadow: inset 0 0 0 1px var(--n-border-color, rgba(0, 0, 0, 0.08));
-}
-.land-crop-cell small {
-  display: block;
-  color: var(--ui-subtle, #8b948d);
-  font-size: 10px;
-}
-.land-crop-cell strong {
-  margin-top: 2px;
-  display: block;
-  font-size: 13px;
+  background: rgba(127, 127, 127, 0.07);
+  text-align: center;
   font-variant-numeric: tabular-nums;
 }
+.land-crop-cell small {
+  font-size: 11px;
+  opacity: 0.65;
+}
 .land-crop-exp {
-  color: #2e714b;
+  color: #2f7ed8;
 }
 .land-crop-gold {
-  color: #b8860b;
+  color: #c8871a;
 }
 .land-crop-phase {
-  margin-top: 10px;
-  padding: 8px;
-  border-radius: 10px;
-  background: rgba(67, 141, 99, 0.08);
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(69, 155, 93, 0.08);
 }
 .land-crop-phase-fill {
   height: 100%;
-  border-radius: 999px;
-  background: #22a05c;
-  transition: width 0.3s ease;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #459b5d, #6cc07f);
+  transition: width 0.4s ease;
 }
 .land-crop-mutants {
-  margin-top: 10px;
-  padding: 10px;
-  border-radius: 10px;
-  background: rgba(233, 88, 138, 0.07);
+  margin-top: 12px;
 }
 .land-crop-mutants-title {
   margin-bottom: 6px;
-  color: #d0508a;
-  font-size: 11px;
-  font-weight: var(--fw-600, 600);
+  font-size: 12px;
+  font-weight: var(--fw-600);
+  opacity: 0.7;
 }
 .land-mutant-chip {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
+  gap: 5px;
+  padding: 3px 9px;
   border-radius: 999px;
-  background: var(--n-color, #fff);
-  color: #b8407e;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-  font-size: 11px;
+  background: rgba(192, 113, 56, 0.12);
+  color: #a05a22;
+  font-size: 12px;
 }
 .land-mutant-desc {
-  margin-top: 8px;
-  padding: 8px;
-  border-radius: 8px;
-  color: #a34a77;
-  background: color-mix(in srgb, var(--n-color, #fff) 85%, transparent);
-  font-size: 11px;
-  line-height: 1.6;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(127, 127, 127, 0.06);
+  color: var(--ui-muted, #888);
+  font-size: 12px;
+  line-height: 1.7;
 }
 .land-crop-flags {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 10px;
-  font-size: 11px;
-}
-.land-crop-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
   margin-top: 12px;
 }
 
-/* ===== 土地等级与升级条件（原有样式保留） ===== */
 .land-detail-levels {
   display: grid;
   justify-content: center;
   align-items: center;
   gap: 12px;
-  padding: 0 0 18px;
+  padding: 16px 0 18px;
 }
 .land-detail-levels--compare {
   grid-template-columns: 1fr auto 1fr;
@@ -543,7 +496,7 @@ function format(value: unknown) {
     font-size: 13px;
   }
   .land-crop-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 </style>

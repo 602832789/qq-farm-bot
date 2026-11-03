@@ -407,34 +407,6 @@ export const useFarmStore = defineStore('farm', () => {
     return result
   }
 
-  /** 升级单块土地：成功后刷新土地列表，失败把错误信息抛给调用方。 */
-  async function upgradeLand(accountId: string, landId: number) {
-    if (!accountId || !landId)
-      return false
-    const res = await api.post('/api/land/upgrade', { landId }, {
-      headers: { 'x-account-id': accountId },
-      skipErrorToast: true,
-    } as any)
-    if (!res.data?.ok)
-      throw new Error(getApiErrorMessage(res.data, '土地升级失败'))
-    await fetchLands(accountId)
-    return res.data.data ?? true
-  }
-
-  /** 铲除单块土地上的作物：成功后刷新土地列表。 */
-  async function removePlant(accountId: string, landId: number) {
-    if (!accountId || !landId)
-      return false
-    const res = await api.post('/api/land/remove', { landId }, {
-      headers: { 'x-account-id': accountId },
-      skipErrorToast: true,
-    } as any)
-    if (!res.data?.ok)
-      throw new Error(getApiErrorMessage(res.data, '铲除作物失败'))
-    await fetchLands(accountId)
-    return res.data.data ?? true
-  }
-
   return {
     lands,
     summary,
@@ -461,7 +433,5 @@ export const useFarmStore = defineStore('farm', () => {
     resetInteractionState,
     fertilizeLand,
     fertilizeAll,
-    upgradeLand,
-    removePlant,
   }
 })

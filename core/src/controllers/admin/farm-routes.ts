@@ -138,36 +138,6 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
         }
     });
 
-    // API: 升级单块土地（红土/黑土/金土/紫金）。
-    app.post('/api/land/upgrade', async (req: Request, res: Response) => {
-        const id = getAccId(ctx, req);
-        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
-
-        try {
-            const landId = Number(req.body?.landId) || 0;
-            if (!landId) return res.status(400).json({ ok: false, error: '缺少 landId' });
-            const data = await ctx.provider.upgradeLand(id, landId);
-            res.json({ ok: true, data });
-        } catch (e: any) {
-            handleApiError(res, e);
-        }
-    });
-
-    // API: 铲除单块土地上的作物。
-    app.post('/api/land/remove', async (req: Request, res: Response) => {
-        const id = getAccId(ctx, req);
-        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
-
-        try {
-            const landId = Number(req.body?.landId) || 0;
-            if (!landId) return res.status(400).json({ ok: false, error: '缺少 landId' });
-            const data = await ctx.provider.removePlant(id, landId);
-            res.json({ ok: true, data });
-        } catch (e: any) {
-            handleApiError(res, e);
-        }
-    });
-
     // API: 在自己农场按地块编号顺序使用特殊互动道具。
     app.post('/api/farm/interaction-items/use-batch', async (req: Request, res: Response) => {
         const id = getAccId(ctx, req);
