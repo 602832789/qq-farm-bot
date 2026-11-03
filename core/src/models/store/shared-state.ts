@@ -78,6 +78,10 @@ const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
         skip_own_weed_bug: true,
         show_manual_fertilizer: true,
 
+        // ---- 宠物（自动喂狗粮，默认开启） ----
+        pet_feed_dog_food: true,
+        pet_feed_dog_food_auto_buy: true,
+
         // ---- 活动自动化（旧版功能模块「日常与活动」，默认关闭） ----
         task_after_farm: false,
         fertilizer_2x2_ripen: false,
@@ -193,7 +197,7 @@ const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
     bagSeedMultiLandReservationEnabled: false,
     bagSeedLandTypes: {},
     bagSeedFallbackStrategy: 'level',
-    prioritize2x2Crops: false,
+    prioritize2x2Crops: true,
     autoAcceptFriendMinLevel: 0,
     autoAcceptRequireOwnLevel: false,
     autoAcceptHarvestStealEnabled: true,

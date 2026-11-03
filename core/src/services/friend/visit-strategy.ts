@@ -10,6 +10,7 @@ const {
     getFriendBlacklist,
     getPlantBlacklist,
     getFriendsListCacheTtlSec,
+    getStealDelaySeconds,
 } = require('../../models/store');
 const { getUserState } = require('../../utils/network');
 const { toNum, getServerTimeSec, getSystemClockMinutes, log, logWarn, sleep, randomDelay } = require('../../utils/utils');
@@ -24,6 +25,7 @@ const {
 const { getCareerInfoOrNull } = require('../career');
 const { recordOperation } = require('../stats');
 const { sellAllFruits } = require('../warehouse');
+const { observeFriendLands } = require('./maturity-plan');
 const {
     getAllFriends,
     delFriend,
@@ -822,6 +824,9 @@ export async function visitFriend(
     const plantBlacklist: number[] = getPlantBlacklist(accountId);
     const status: AnalyzeResult = analyzeFriendLands(lands, myGid, name, { plantBlacklist });
 
+    // 成熟计划精确校准：地块 phases 里的成熟墙钟比摘要 ripe_time_sec 准，覆盖写入（老版本逻辑移植）。
+    observeFriendLands(gid, lands, { name });
+
     // 执行操作
     const actions: string[] = [];
 
@@ -854,6 +859,13 @@ export async function visitFriend(
     // 2. 偷菜操作
     if (stealEnabled && status.stealable.length > 0) {
         const targetLands: number[] = status.stealable;
+
+        // 偷菜延迟：设置里的「偷菜延迟 (秒)」在执行偷取前生效，带 ±30% 随机抖动。
+        const stealDelaySec: number = getStealDelaySeconds(accountId);
+        if (stealDelaySec > 0) {
+            const delayMs: number = stealDelaySec * 1000;
+            await randomDelay(Math.round(delayMs * 0.7), Math.round(delayMs * 1.3));
+        }
 
         let ok: number = 0;
         const stolenPlants: string[] = [];

@@ -45,6 +45,7 @@ const {
 } = require('./visit-strategy');
 const { buildFriendVisitPlan } = require('./visit-plan');
 const { getFriendDogState, flushFriendPetCacheNow } = require('./pet-cache');
+const { observeFriendSummary, claimDueFriends } = require('./maturity-plan');
 
 // 延迟引用 pet-sync，它反向依赖本模块的 isFriendCheckRunning
 function petSyncRef(): any {
@@ -317,6 +318,13 @@ export async function checkFriends(options: CheckFriendsOptions = {}): Promise<b
 
         const blacklist: Set<number> = new Set(getFriendBlacklist(accountId));
 
+        // 成熟计划观测：摘要里的 ripe_time_sec 是偷菜动态唤醒的排程依据（老版本逻辑移植）。
+        for (const friend of friends) {
+            const gid: number = toNum(friend && friend.gid);
+            if (!gid || gid === state.gid || blacklist.has(gid)) continue;
+            observeFriendSummary(friend);
+        }
+
         // 经验满不帮时，本轮只帮当天缓存已确认是护主犬的好友；缓存没结论的交给每日宠物同步补齐。
         const stopWhenExpLimit: boolean = !!isAutomationOn('friend_help_exp_limit') && !ignoreExpLimit;
         const protectDogBypassEnabled: boolean = !!isAutomationOn('friend_help_protect_dog_ignore_exp_limit');
@@ -410,6 +418,9 @@ export async function checkFriends(options: CheckFriendsOptions = {}): Promise<b
                 // ignore
             }
         }
+
+        // 到期成熟计划归位：避免一次没偷成的旧到期点把动态唤醒长期钉在最小值。
+        claimDueFriends();
 
         // 生成总结日志
         const summary: string[] = [];

@@ -610,7 +610,7 @@ async function performFriendInteractionItemBatch(friendGidInput: unknown, itemId
     };
 }
 
-async function performFriendFarmInteractionItem(friendGidInput: unknown, itemIdInput: unknown, propagateErrors: boolean = false): Promise<any> {
+async function performFriendFarmInteractionItem(friendGidInput: unknown, itemIdInput: unknown, _propagateErrors: boolean = false): Promise<any> {
     const friendGid = positiveDecimal(friendGidInput, 'INVALID_FRIEND_INTERACTION_GID', 'friendGid');
     const friendGidNumber = safePositiveNumber(friendGid, 'INVALID_FRIEND_INTERACTION_GID', 'friendGid');
     const itemId = safePositiveNumber(itemIdInput, 'INVALID_FRIEND_INTERACTION_ITEM_ID', 'itemId');

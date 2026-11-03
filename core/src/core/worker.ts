@@ -10,7 +10,7 @@ const { getAutomation, getPreferredSeed, getConfigSnapshot, applyConfigSnapshot 
 const { checkAndClaimEmails } = require('../services/email');
 const { getEmailDailyState } = require('../services/email');
 const { checkFarm, startFarmCheckLoop, stopFarmCheckLoop, refreshFarmCheckLoop, getLandsDetail, getAvailableSeeds, purchaseSeed, runFarmOperation, runFertilizerByConfig, fertilizeOwnLand } = require('../services/farm');
-const { checkFriends, startFriendCheckLoop, stopFriendCheckLoop, refreshFriendCheckLoop, getFriendsList, getFriendsListCacheOnly, getFriendLandsDetail, doFriendOperation, deleteFriend } = require('../services/friend');
+const { checkFriends, startFriendCheckLoop, stopFriendCheckLoop, refreshFriendCheckLoop, getFriendsList, getFriendsListCacheOnly, getFriendLandsDetail, doFriendOperation, deleteFriend, getNextStealDelayMs } = require('../services/friend');
 const { getInteractRecords } = require('../services/interact');
 const { processInviteCodes } = require('../services/invite');
 const { autoBuyFertilizer, checkAndBuyFertilizerBoth, buyFreeGifts, getFreeGiftDailyState } = require('../services/mall');
@@ -21,6 +21,7 @@ const { createScheduler, getSchedulerRegistrySnapshot } = require('../services/s
 const { checkDailyShareStatus, getShareDailyState } = require('../services/share');
 const { refreshActivityWindows } = require('../services/activity-windows');
 const { resetSessionGains, recordOperation, initStatsWithPersistence, saveStats } = require('../services/stats');
+const { startPetFeedCheckTimer, stopPetFeedCheckTimer } = require('../services/pet-feed');
 const { initStatusBar, setStatusPlatform, statusData } = require('../services/status');
 const { setRecordGoldExpHook } = require('../services/status');
 const { cleanupTaskSystem, checkAndClaimTasks, getTaskClaimDailyState, getTaskDailyStateLikeApp, getGrowthTaskStateLikeApp } = require('../services/task');
@@ -315,7 +316,16 @@ async function runFriendTick(auto: any): Promise<void> {
     } catch (e: any) {
         log('系统', `好友统一任务执行失败: ${e.message}`, { module: 'system', event: '好友统一任务', result: 'error' });
     } finally {
-        nextFriendRunAt = Date.now() + friendMs;
+        // 老版本偷菜时间逻辑移植：开启偷菜时，若好友作物成熟窗口早于常规随机间隔，
+        // 就提前唤醒本轮好友巡查（成熟瞬间去偷）；否则维持常规节奏，帮助频率不受影响。
+        let delay: number = friendMs;
+        if (auto.friend_steal) {
+            try {
+                const stealWakeMs: number = getNextStealDelayMs();
+                if (stealWakeMs > 0 && stealWakeMs < delay) delay = Math.max(5000, stealWakeMs);
+            } catch { /* 成熟计划不可用时回退常规节奏 */ }
+        }
+        nextFriendRunAt = Date.now() + delay;
         friendTaskRunning = false;
     }
 }
@@ -417,6 +427,7 @@ async function runStartupSequence(canContinue: () => boolean = () => loginReady)
         startDailyRoutineTimer(false);
         startMysteryShopTimer();
         startActivityAutomationTimer();
+        startPetFeedCheckTimer();
     } catch (e: any) {
         log('系统', `登录启动序列执行失败: ${e.message}`, { module: 'system', event: '启动序列', result: 'error' });
     }
@@ -513,6 +524,7 @@ function applyRuntimeConfig(snapshot: any, syncNow: boolean = false): number {
 
             startMysteryShopTimer();
             startActivityAutomationTimer();
+            startPetFeedCheckTimer();
         }
     }
 
@@ -735,6 +747,7 @@ function quiesceBot(reason: string): void {
     stopUnifiedScheduler();
     stopFarmCheckLoop();
     stopFriendCheckLoop();
+    stopPetFeedCheckTimer();
     stopDailyRoutineTimer();
     cleanupTaskSystem();
     workerScheduler.clearAll();

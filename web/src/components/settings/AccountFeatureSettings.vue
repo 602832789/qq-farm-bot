@@ -11,7 +11,7 @@ import BaseSwitch from '@/components/ui/BaseSwitch.vue'
 import { MILK_TEA_AUTOMATION_OPTIONS } from '@/constants/activity-windows'
 import { FERTILIZER_TIME_UNITS, fertilizerTimeSeconds, fertilizerTimeValue } from '@/utils/fertilizer-time'
 
-type ModuleKey = 'planting' | 'fertilizer' | 'friends' | 'steal' | 'merchant' | 'activity'
+type ModuleKey = 'planting' | 'fertilizer' | 'friends' | 'steal' | 'merchant' | 'activity' | 'pet'
 
 const props = defineProps<{
   currentAccountName: string | null
@@ -49,6 +49,7 @@ const moduleInfo: Record<ModuleKey, { title: string, description: string, icon: 
   steal: { title: '偷菜', description: '巡查频率和操作延迟', icon: 'i-carbon-crop-health', image: '/game-config/module_icons/steal.png', tone: 'lime' },
   merchant: { title: '神秘商人', description: '商品购买和货币范围', icon: 'i-carbon-store', image: '/game-config/module_icons/merchant.png', tone: 'orange' },
   activity: { title: '日常与活动', description: '日常任务、活动奖励和活动道具', icon: 'i-carbon-events', image: '/game-config/module_icons/activity-task.png', tone: 'violet' },
+  pet: { title: '宠物', description: '自动喂狗粮，保持上场宠物看护时长', icon: 'i-carbon-dog-walker', image: '', tone: 'rose' },
 }
 
 const activeInfo = computed(() => activeModule.value ? moduleInfo[activeModule.value] : null)
@@ -126,6 +127,13 @@ function summaryTags(key: ModuleKey) {
       currencies.join('、') || '未选货币',
     ]
   }
+  if (key === 'pet') {
+    return [
+      automation.value.automation.pet_feed_dog_food ? '自动喂狗粮' : '不喂狗粮',
+      automation.value.automation.pet_feed_dog_food_auto_buy ? '狗粮不足自动购礼包' : '不足不购买',
+      '每小时检查 · 上线立即检查',
+    ]
+  }
   return [
     automation.value.automation.task ? '自动完成日常任务' : '不做日常',
     automation.value.automation.task_after_farm && '种植收获后巡查任务',
@@ -147,6 +155,8 @@ function moduleEnabled(key: ModuleKey) {
     return automation.value.automation.friend && automation.value.automation.friend_steal
   if (key === 'merchant')
     return automation.value.automation.mystery_shop_auto_buy
+  if (key === 'pet')
+    return automation.value.automation.pet_feed_dog_food
   return activityEnabledCount.value > 0 || automation.value.automation.task || automation.value.automation.task_after_farm
 }
 
@@ -173,6 +183,9 @@ function setModuleEnabled(key: ModuleKey, enabled: boolean) {
   }
   else if (key === 'merchant') {
     automation.value.automation.mystery_shop_auto_buy = enabled
+  }
+  else if (key === 'pet') {
+    automation.value.automation.pet_feed_dog_food = enabled
   }
   else {
     automation.value.automation.task = enabled
@@ -340,7 +353,11 @@ function cancel() {
                   <BaseSwitch v-model="automation.automation.golden_bug_clear" label="祛除黄金虫" />
                   <BaseSwitch v-model="automation.automation.farm_push" label="推送触发巡田" />
                   <BaseSwitch v-model="automation.automation.skip_own_weed_bug" label="保留自己农场的草虫" />
+                  <BaseSwitch v-model="strategy.prioritize2x2Crops" label="优先种植 2×2 作物" />
                 </div>
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                  优先种植 2×2 作物开启后，选种时占地 2×2 的四格作物拥有最高优先级，排在优先种子与单格作物前面；土地不够放 2×2 时自动回落到单格作物。
+                </p>
               </section>
 
               <section class="border border-gray-100 rounded-lg p-4 space-y-3 dark:border-gray-700">
@@ -489,6 +506,21 @@ function cancel() {
                     <BaseSwitch v-model="automation.automation.mystery_shop_allow_gold_bean" label="金豆豆" />
                   </div>
                 </div>
+              </section>
+            </div>
+
+            <div v-else-if="activeModule === 'pet'" class="space-y-4">
+              <section class="border border-gray-100 rounded-lg bg-gray-50/70 p-4 space-y-3 dark:border-gray-700 dark:bg-gray-900/25">
+                <div class="text-sm text-gray-700 font-medium dark:text-gray-300">
+                  自动喂狗粮
+                </div>
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <BaseSwitch v-model="automation.automation.pet_feed_dog_food" label="自动喂狗粮" />
+                  <BaseSwitch v-model="automation.automation.pet_feed_dog_food_auto_buy" label="狗粮不足自动购买礼包" />
+                </div>
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                  保持上场宠物的看护时长：不足一周时自动用背包狗粮补满；狗粮不足时自动从商城购买狗粮礼包（每次检查最多买 2 个）。每小时检查并喂食一次，上线时立即检查一次。
+                </p>
               </section>
             </div>
 

@@ -9,6 +9,14 @@ export {
 } from './gid-manager';
 
 export {
+    claimDueFriends,
+    getNextStealDelayMs,
+    observeFriendLands,
+    observeFriendSummary,
+    resetFriendMaturityPlans,
+} from './maturity-plan';
+
+export {
     getFriendDogState,
     getFriendPetCacheStats,
 } from './pet-cache';

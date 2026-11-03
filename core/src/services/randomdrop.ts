@@ -5,7 +5,7 @@ export {};
 
 const { sendMsgAsync } = require('../utils/network');
 const { types } = require('../utils/proto');
-const { log, toNum } = require('../utils/utils');
+const { toNum } = require('../utils/utils');
 
 async function getActivityInfo(): Promise<any> {
     const body: Uint8Array = types.RandomDropGetActivityInfoRequest.encode(
@@ -15,7 +15,7 @@ async function getActivityInfo(): Promise<any> {
     return types.RandomDropGetActivityInfoReply.decode(replyBody);
 }
 
-function getRewardSummary(items: any[]): string {
+function _getRewardSummary(items: any[]): string {
     const list: any[] = Array.isArray(items) ? items : [];
     const summary: string[] = [];
     for (const it of list) {

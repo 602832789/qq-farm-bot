@@ -1,5 +1,4 @@
 export {};
-const sharedState = require('./shared-state');
 const globalConfig = require('./global-config');
 const accountConfig = require('./account-config');
 const accounts = require('./accounts');

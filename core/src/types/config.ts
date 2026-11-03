@@ -45,6 +45,10 @@ export interface AutomationConfig {
   skip_own_weed_bug: boolean;
   show_manual_fertilizer: boolean;
 
+  // ---- 宠物（自动喂狗粮） ----
+  pet_feed_dog_food: boolean;
+  pet_feed_dog_food_auto_buy: boolean;
+
   // ---- 活动自动化（旧版功能模块「日常与活动」） ----
   task_after_farm: boolean;
   fertilizer_2x2_ripen: boolean;

@@ -222,8 +222,8 @@ function sortBagSeedsForPlanting(bagSeeds: any[], priorityList: any[] | undefine
 }
 
 /**
- * 「优先种植 2×2 作物」：在不改动原有排序依据的前提下，把多格作物整体提前。
- * 显式指定优先级的种子（优先种子 / 背包优先顺序）保持原位，避免把这个开关变成覆盖用户选择的开关。
+ * 「优先种植 2×2 作物」：开启后多格作物拥有最高种植优先级。
+ * 多格作物整体排在最前，显式指定优先级的种子（优先种子 / 背包优先顺序）次之，单格作物最后。
  */
 function preferMultiSizeSeeds<T extends { seedId?: any }>(seeds: T[], pinnedSeedIds: Array<number | string> = []): T[] {
     const list = Array.isArray(seeds) ? seeds : [];
@@ -239,7 +239,7 @@ function preferMultiSizeSeeds<T extends { seedId?: any }>(seeds: T[], pinnedSeed
         else single.push(seed);
     }
     if (multi.length === 0) return [...head, ...single];
-    return [...head, ...multi, ...single];
+    return [...multi, ...head, ...single];
 }
 
 /**

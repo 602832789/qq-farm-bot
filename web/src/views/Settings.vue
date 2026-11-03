@@ -134,7 +134,7 @@ const localStrategySettings = ref({
   bagSeedMultiLandReservationEnabled: false,
   bagSeedLandTypes: {} as Record<string, string[]>,
   bagSeedFallbackStrategy: 'level',
-  prioritize2x2Crops: false,
+  prioritize2x2Crops: true,
   stealDelaySeconds: 0,
   plantOrderRandom: false,
   plantDelaySeconds: 0,
@@ -252,6 +252,8 @@ const localAutomationSettings = ref({
     fertilizer_land_types: [...defaultFertilizerLandTypes],
     fertilizer_smart_seconds: 300,
     show_manual_fertilizer: true,
+    pet_feed_dog_food: true,
+    pet_feed_dog_food_auto_buy: true,
   },
   fertilizerBuyOrganicCount: 10,
   fertilizerBuyOrganicThresholdHours: 10,
@@ -306,6 +308,8 @@ function syncLocalAutomationSettings() {
         fertilizer_land_types: [...allFertilizerLandTypes],
         fertilizer_smart_seconds: 300,
         show_manual_fertilizer: true,
+        pet_feed_dog_food: true,
+        pet_feed_dog_food_auto_buy: true,
       }
     }
     else {
@@ -339,6 +343,8 @@ function syncLocalAutomationSettings() {
         fertilizer_land_types: [...allFertilizerLandTypes],
         fertilizer_smart_seconds: 300,
         show_manual_fertilizer: true,
+        pet_feed_dog_food: true,
+        pet_feed_dog_food_auto_buy: true,
       }
       localAutomationSettings.value.automation = {
         ...defaults,

@@ -53,6 +53,9 @@ export interface AutomationConfig {
   mystery_shop_purchase_notify?: boolean
   skip_own_weed_bug?: boolean
   show_manual_fertilizer?: boolean
+  // 宠物（自动喂狗粮）
+  pet_feed_dog_food?: boolean
+  pet_feed_dog_food_auto_buy?: boolean
   // 观星 / 星砂集市 / 节气
   star_passport_claim?: boolean
   star_solar_claim?: boolean
@@ -337,7 +340,7 @@ function createDefaultSettings(): SettingsState {
     bagSeedMultiLandReservationEnabled: false,
     bagSeedLandTypes: {},
     bagSeedFallbackStrategy: 'level',
-    prioritize2x2Crops: false,
+    prioritize2x2Crops: true,
     intervals: {},
     friendQuietHours: { enabled: false, start: '23:00', end: '07:00', continueFarm: true },
     automation: {},
