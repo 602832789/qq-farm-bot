@@ -41,7 +41,10 @@ const query = ref('')
 const book = computed(() => data.value?.[currentType.value] || null)
 const items = computed<any[]>(() => Array.isArray(book.value?.items) ? book.value.items : [])
 const collectedCount = computed(() => items.value.filter(item => item.unlocked).length)
-const purchasableCount = computed(() => items.value.filter(canPurchaseSeed).length)
+const userLevel = computed(() => Number(statusStore.status?.status?.level) || 0)
+/** 老版语义：可购买数量只统计未点亮（未收藏）且当前可下单的种子。 */
+const buyableMissingItems = computed(() => items.value.filter(item => !item.unlocked && canPurchaseSeed(item)))
+const purchasableCount = computed(() => buyableMissingItems.value.length)
 const illustratedBuffs = computed(() => Array.isArray(book.value?.buffs) ? book.value.buffs : [])
 const currentIllustratedBuffs = computed(() => Array.isArray(book.value?.currentBuffs) ? book.value.currentBuffs : [])
 const illustratedLevelMap = computed(() => new Map(
@@ -76,7 +79,7 @@ function matches(item: any) {
   if (filter.value === 'missing')
     return !item.unlocked
   if (filter.value === 'buyable')
-    return canPurchaseSeed(item)
+    return !item.unlocked && canPurchaseSeed(item)
   return true
 }
 
@@ -179,6 +182,55 @@ function cropMeta(item: any) {
   return item.unlocked ? '已收藏' : '未收藏'
 }
 
+/** 一键购买未点亮种子（老版 buy-all 移植）：逐个走现有购种接口，失败不中断。 */
+const buyAllDialogOpen = ref(false)
+const buyAllRunning = ref(false)
+const buyAllProgress = ref({ done: 0, total: 0, success: 0, fail: 0 })
+
+async function runBuyAllMissing() {
+  if (!currentAccountId.value || buyAllRunning.value)
+    return
+  const targets = buyableMissingItems.value.filter(item => Number.isSafeInteger(item?.shopSeed?.goodsId) && item.shopSeed.goodsId > 0)
+  if (!targets.length)
+    return
+  const accountId = String(currentAccountId.value)
+  const revision = ++purchaseRevision
+  buyAllRunning.value = true
+  buyAllProgress.value = { done: 0, total: targets.length, success: 0, fail: 0 }
+  try {
+    for (const item of targets) {
+      try {
+        const response = await api.post('/api/seeds/purchase', { goodsId: item.shopSeed.goodsId, count: 1 }, {
+          headers: { 'x-account-id': accountId },
+          skipErrorToast: true,
+        } as any)
+        if (revision !== purchaseRevision || accountId !== String(currentAccountId.value))
+          return
+        if (!response.data?.ok)
+          throw new Error(getApiErrorMessage(response.data, '购买失败'))
+        buyAllProgress.value.success++
+      }
+      catch {
+        buyAllProgress.value.fail++
+      }
+      buyAllProgress.value.done++
+    }
+    if (revision !== purchaseRevision || accountId !== String(currentAccountId.value))
+      return
+    const { success, fail } = buyAllProgress.value
+    if (fail === 0)
+      toast.success(`一键购买完成：成功 ${success} 个`)
+    else
+      toast.warning(`一键购买完成：成功 ${success} 个，失败 ${fail} 个`)
+    buyAllDialogOpen.value = false
+    await refresh()
+  }
+  finally {
+    if (revision === purchaseRevision)
+      buyAllRunning.value = false
+  }
+}
+
 async function refresh() {
   if (currentAccountId.value && isConnected.value)
     await illustratedStore.fetch(currentAccountId.value)
@@ -235,6 +287,8 @@ watch([currentAccountId, isConnected], () => {
   purchaseDialogOpen.value = false
   selectedSeedItem.value = null
   purchasingSeedId.value = null
+  buyAllDialogOpen.value = false
+  buyAllRunning.value = false
   detailsOpen.value = false
   illustratedStore.reset()
 }, { flush: 'sync' })
@@ -265,6 +319,9 @@ watch([currentAccountId, isConnected], refresh, { immediate: true })
         :hint="progressHint"
       >
         <template #actions>
+          <NButton v-if="!isMutant" type="primary" ghost :disabled="purchasableCount <= 0" :title="`一键购买 ${purchasableCount} 个未点亮种子`" @click="buyAllDialogOpen = true">
+            一键购买未解锁
+          </NButton>
           <NButton secondary @click="detailsOpen = true">
             {{ isMutant ? '加成详情' : '奖励详情' }}
           </NButton>
@@ -283,6 +340,13 @@ watch([currentAccountId, isConnected], refresh, { immediate: true })
             <span v-for="bonus in currentIllustratedBuffs" :key="`current-buff-${bonus.id}`" class="book-chip">{{ bonus.name }} · {{ formatBuffValue(bonus) }}</span>
           </template>
           <span v-else class="book-chip-label">暂无，提升图鉴等级后解锁</span>
+        </template>
+        <template v-else>
+          <span class="book-chip-label">图鉴统计</span>
+          <span class="book-chip">已解锁 {{ collectedCount }} / {{ items.length }}</span>
+          <span class="book-chip">未解锁 {{ items.length - collectedCount }}</span>
+          <span class="book-chip">可购买 {{ purchasableCount }}</span>
+          <span class="book-chip">等级 Lv.{{ userLevel }}</span>
         </template>
       </BookOverview>
 
@@ -327,6 +391,31 @@ watch([currentAccountId, isConnected], refresh, { immediate: true })
         :description="items.length ? '换个筛选或搜索词试试' : `当前账号还没有${bookName}记录`"
         :icon="items.length ? 'i-carbon-search' : 'i-carbon-book'"
       />
+
+      <NModal v-model:show="buyAllDialogOpen" :mask-closable="!buyAllRunning" :close-on-esc="!buyAllRunning">
+        <NCard class="max-w-sm w-[calc(100vw-32px)]" title="确认一键购买未解锁种子" :closable="!buyAllRunning" @close="buyAllDialogOpen = false">
+          <p class="buy-all-confirm__text">
+            将逐个购买当前图鉴中所有<b>未点亮</b>且可下单的种子。
+          </p>
+          <p class="buy-all-confirm__text">
+            可购买数量：<b>{{ buyableMissingItems.length }}</b>
+            <template v-if="buyAllRunning">（进度 {{ buyAllProgress.done }}/{{ buyAllProgress.total }}，成功 {{ buyAllProgress.success }}，失败 {{ buyAllProgress.fail }}）</template>
+          </p>
+          <p class="buy-all-confirm__hint">
+            购买后种子会进入背包，需种植/收获后图鉴才会点亮；已达限购或等级不足的种子会自动跳过并计为失败。
+          </p>
+          <template #footer>
+            <div class="flex justify-end gap-2">
+              <NButton secondary :disabled="buyAllRunning" @click="buyAllDialogOpen = false">
+                取消
+              </NButton>
+              <NButton type="primary" :loading="buyAllRunning" :disabled="buyableMissingItems.length <= 0" @click="runBuyAllMissing">
+                开始购买
+              </NButton>
+            </div>
+          </template>
+        </NCard>
+      </NModal>
 
       <NModal v-model:show="purchaseDialogOpen" :mask-closable="purchasingSeedId === null" :close-on-esc="purchasingSeedId === null">
         <NCard class="max-w-sm w-[calc(100vw-32px)]" :title="`购买${selectedSeedItem?.name || ''}种子`" :closable="purchasingSeedId === null" @close="purchaseDialogOpen = false">
@@ -407,6 +496,18 @@ watch([currentAccountId, isConnected], refresh, { immediate: true })
 </template>
 
 <style scoped>
+.buy-all-confirm__text {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+
+.buy-all-confirm__hint {
+  margin: 10px 0 0;
+  color: var(--ui-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 .book-page {
   display: flex;
   min-width: 0;

@@ -1161,12 +1161,6 @@ async function handleApiCall(msg: any): Promise<void> {
             case 'getPropsShop':
                 result = await require('../services/commerce').getPropsShop();
                 break;
-            case 'getShopInfo':
-                result = await require('../services/farm/api').getShopInfo(Number(args[0]) || 0);
-                break;
-            case 'buyGoods':
-                result = await require('../services/farm/api').buyGoods(Number(args[0]) || 0, Number(args[1]) || 1, Number(args[2]) || 0);
-                break;
             case 'purchaseProps':
                 result = await require('../services/commerce').purchaseProps(args[0], args[1], args[2]);
                 break;
