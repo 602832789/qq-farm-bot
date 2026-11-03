@@ -15,6 +15,7 @@ export default defineConfig({
     'i-carbon-idea',
     'i-carbon-gift',
     'i-carbon-dog-walker',
+    'i-fas-paw',
     'i-carbon-calendar',
     'i-carbon-arrow-right',
     'i-carbon-locked',

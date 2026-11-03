@@ -13,6 +13,7 @@ import { useBagStore } from '@/stores/bag'
 import { useStatusStore } from '@/stores/status'
 import { useToastStore } from '@/stores/toast'
 import { milkTeaCountdown } from '@/utils/dashboard-activity-check'
+import { partitionOperations } from '@/utils/dashboard-operations'
 
 const statusStore = useStatusStore()
 const accountStore = useAccountStore()
@@ -377,15 +378,25 @@ function formatLogTime(timeStr: string) {
   return parts.length > 1 ? parts[1] : timeStr
 }
 
+// 动作统计元信息按老版本全量恢复（今日统计面板）。
 const OP_META: Record<string, { label: string, icon: string, color: string }> = {
-  harvest: { label: '收获', icon: 'i-carbon-wheat', color: 'text-green-500' },
-  farming: { label: '一键务农', icon: 'i-carbon-agriculture-analytics', color: 'text-yellow-500' },
+  harvest: { label: '收获', icon: 'i-carbon-crop-growth', color: 'text-green-500' },
+  water: { label: '浇水', icon: 'i-carbon-rain-drop', color: 'text-blue-400' },
+  weed: { label: '除草', icon: 'i-carbon-cut', color: 'text-yellow-500' },
+  bug: { label: '除虫', icon: 'i-carbon-pest', color: 'text-red-400' },
+  farming: { label: '一键务农', icon: 'i-carbon-clean', color: 'text-teal-500' },
   fertilize: { label: '施肥', icon: 'i-carbon-chemistry', color: 'text-emerald-500' },
-  plant: { label: '种植', icon: 'i-carbon-sprout', color: 'text-lime-500' },
+  plant: { label: '种植', icon: 'i-carbon-tree', color: 'text-lime-500' },
   steal: { label: '偷菜', icon: 'i-carbon-run', color: 'text-orange-500' },
+  helpWater: { label: '帮浇水', icon: 'i-carbon-rain-drop', color: 'text-blue-300' },
+  goldenBugClear: { label: '清黄金虫', icon: 'i-carbon-clean', color: 'text-amber-500' },
+  goldenBugPut: { label: '放黄金虫', icon: 'i-carbon-pest', color: 'text-yellow-500' },
+  helpWeed: { label: '帮除草', icon: 'i-carbon-cut', color: 'text-yellow-400' },
+  helpBug: { label: '帮除虫', icon: 'i-carbon-pest', color: 'text-red-300' },
   helpFarming: { label: '帮务农', icon: 'i-carbon-collaborate', color: 'text-yellow-400' },
   taskClaim: { label: '任务', icon: 'i-carbon-task-complete', color: 'text-indigo-500' },
-  sell: { label: '出售', icon: 'i-carbon-currency-dollar', color: 'text-pink-500' },
+  sell: { label: '出售', icon: 'i-carbon-shopping-cart', color: 'text-pink-500' },
+  tongQiGift: { label: '同气礼包', icon: 'i-carbon-gift', color: 'text-rose-500' },
 }
 
 const filteredOperations = computed(() => {
@@ -399,12 +410,19 @@ const filteredOperations = computed(() => {
   return result
 })
 
+// 老版本今日统计：主动作按次数排序展示，无记录的收进折叠区。
+const operationGroups = computed(() => partitionOperations(filteredOperations.value))
+
 function getOpName(key: string | number) {
   return OP_META[String(key)]?.label || String(key)
 }
 
 function getOpIcon(key: string | number) {
-  return OP_META[String(key)]?.icon
+  return OP_META[String(key)]?.icon || 'i-carbon-circle-dash'
+}
+
+function getOpColor(key: string | number) {
+  return OP_META[String(key)]?.color || 'text-gray-400'
 }
 
 const platformLabel = computed(() => getPlatformLabel(accountStore.currentAccount?.platform))
@@ -827,8 +845,9 @@ useIntervalFn(updateCountdowns, 1000)
 
         <!-- Operations Grid -->
         <div class="farm-card rounded-2xl bg-white p-5 shadow-md dark:bg-gray-800">
-          <h3 class="mb-3 flex items-center gap-2 text-lg font-display font-medium">
-            <span class="i-carbon-chart-column" /> <span>今日统计</span>
+          <h3 class="mb-3 flex items-center justify-between gap-2 text-lg font-display font-medium">
+            <span class="flex items-center gap-2"><span class="i-carbon-chart-column" /> <span>今日统计</span></span>
+            <span class="text-xs text-gray-400 font-normal">{{ operationGroups.active.length }} 项有记录</span>
           </h3>
           <EmptyState
             v-if="!status?.connection?.connected"
@@ -837,23 +856,41 @@ useIntervalFn(updateCountdowns, 1000)
             description="启动账号后显示今日收获与互动统计"
             icon="i-carbon-connection-signal-off"
           />
-          <div v-else class="grid grid-cols-2 gap-2 2xl:gap-3">
-            <div
-              v-for="(val, key) in filteredOperations"
-              :key="key"
-              class="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2 transition-transform hover:scale-105 dark:bg-gray-700/30"
-            >
-              <div class="flex items-center gap-2">
-                <span class="select-none text-base 2xl:text-lg" :class="getOpIcon(key)" />
-                <div class="text-xs text-gray-500 2xl:text-sm">
-                  {{ getOpName(key) }}
+          <div v-else-if="!operationGroups.active.length" class="flex flex-col items-center justify-center gap-1 py-6 text-center">
+            <span class="i-carbon-sprout text-3xl text-gray-300 dark:text-gray-600" />
+            <strong class="text-sm text-gray-700 dark:text-gray-200">等待第一份收获</strong>
+            <p class="text-xs text-gray-400">
+              本轮巡查完成后，主动作统计会在这里更新。
+            </p>
+          </div>
+          <template v-else>
+            <div class="grid grid-cols-2 gap-2 2xl:gap-3" role="region" aria-label="今日动作统计，可滚动查看">
+              <div
+                v-for="[key, val] in operationGroups.active"
+                :key="key"
+                class="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2 transition-transform hover:scale-105 dark:bg-gray-700/30"
+              >
+                <div class="flex items-center gap-2">
+                  <span class="select-none text-base 2xl:text-lg" :class="[getOpIcon(key), getOpColor(key)]" />
+                  <div class="text-xs text-gray-500 2xl:text-sm">
+                    {{ getOpName(key) }}
+                  </div>
+                </div>
+                <div class="text-sm font-bold 2xl:text-base">
+                  {{ val }}<small class="ml-0.5 text-[10px] text-gray-400 font-normal">次</small>
                 </div>
               </div>
-              <div class="text-sm font-bold 2xl:text-base">
-                {{ val }}
-              </div>
             </div>
-          </div>
+            <details v-if="operationGroups.inactive.length" class="mt-3">
+              <summary class="flex cursor-pointer list-none items-center justify-between text-xs text-gray-400">
+                <span>其余 {{ operationGroups.inactive.length }} 项暂无记录</span>
+                <span class="i-carbon-chevron-down" aria-hidden="true" />
+              </summary>
+              <div class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-400">
+                <span v-for="[key, val] in operationGroups.inactive" :key="key">{{ getOpName(key) }} <b>{{ val }}</b></span>
+              </div>
+            </details>
+          </template>
         </div>
       </div>
     </div>

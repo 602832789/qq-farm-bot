@@ -35,6 +35,7 @@ export {
     isHelpExpLimitReached,
     onFriendApplicationReceived,
     refreshFriendCheckLoop,
+    runScheduledStealCheck,
     startFriendCheckLoop,
     stopFriendCheckLoop,
 } from './scheduler';

@@ -45,7 +45,7 @@ const {
 } = require('./visit-strategy');
 const { buildFriendVisitPlan } = require('./visit-plan');
 const { getFriendDogState, flushFriendPetCacheNow } = require('./pet-cache');
-const { observeFriendSummary, claimDueFriends } = require('./maturity-plan');
+const { observeFriendSummary, claimDueFriends, getNextStealDelayMs } = require('./maturity-plan');
 
 // 延迟引用 pet-sync，它反向依赖本模块的 isFriendCheckRunning
 function petSyncRef(): any {
@@ -443,6 +443,83 @@ export async function checkFriends(options: CheckFriendsOptions = {}): Promise<b
     } finally {
         isCheckingFriends = false;
     }
+}
+
+// ============ 偷菜排程（老版本 runScheduledStealCheck 移植）============
+
+const STEAL_CALIBRATION_INTERVAL_MS = 15 * 60 * 1000;
+let lastStealCalibrationAt = 0;
+
+function isStealCalibrationDue(now: number = Date.now()): boolean {
+    return now - lastStealCalibrationAt >= STEAL_CALIBRATION_INTERVAL_MS;
+}
+
+/**
+ * 成熟驱动的偷菜巡查：只进「到期好友 + 摘要显示已可偷的好友」的农场，
+ * 每 15 分钟校准一轮好友列表摘要。返回下次偷菜唤醒延迟（毫秒），
+ * 由 worker 的独立偷菜 Tick 消费——作物成熟的瞬间醒来去偷，与老版本节奏一致。
+ */
+export async function runScheduledStealCheck(): Promise<number> {
+    const state: any = getUserState();
+    if (!isAutomationOn('friend') || !isAutomationOn('friend_steal')) return getNextStealDelayMs();
+    if (isCheckingFriends || !state.gid || inFriendQuietHours()) return 60 * 1000;
+
+    isCheckingFriends = true;
+    const accountId: string = process.env.FARM_ACCOUNT_ID || '';
+    try {
+        const targets = new Map<number, { gid: number; name: string }>();
+        // 到期成熟计划：matureAt ≤ now 的好友立即去偷（claim 会把到期点推后 5 分钟重查）。
+        for (const due of claimDueFriends({ limit: 12 })) {
+            targets.set(due.gid, { gid: due.gid, name: due.name || `GID:${due.gid}` });
+        }
+
+        if (isStealCalibrationDue()) {
+            const friendsReply: any = await getAllFriends();
+            cacheFriendsListFromReply(friendsReply);
+            const friends: any[] = extractReplyFriends(friendsReply);
+            const blacklist: Set<number> = new Set(getFriendBlacklist(accountId));
+            for (const friend of friends) {
+                const gid: number = toNum(friend && friend.gid);
+                if (!gid || gid === state.gid || blacklist.has(gid)) continue;
+                observeFriendSummary(friend);
+                if (toNum(friend && friend.plant && friend.plant.steal_plant_num) > 0 && !targets.has(gid)) {
+                    targets.set(gid, { gid, name: String(friend.remark || friend.name || `GID:${gid}`) });
+                }
+            }
+            lastStealCalibrationAt = Date.now();
+        }
+
+        const visitTargets = [...targets.values()].slice(0, 12);
+        const totalActions: any = { steal: 0, farming: 0, putBug: 0, putWeed: 0 };
+        for (const target of visitTargets) {
+            try {
+                await visitFriend(
+                    { gid: target.gid, name: target.name },
+                    totalActions,
+                    state.gid,
+                    state.accountId,
+                    { allowSteal: true, allowHelp: false, allowBad: false },
+                );
+            } catch (e: any) {
+                logWarn('好友', `定时偷菜检查失败: ${target.name}: ${e.message}`);
+            }
+            await randomDelay(800, 1600);
+        }
+
+        if (totalActions.steal > 0) {
+            try {
+                await sellAllFruits();
+            } catch {
+                // ignore
+            }
+            log('好友', `偷菜巡查完成 → 偷${totalActions.steal}`, {
+                module: 'friend', event: '偷菜巡查', result: 'ok', stolen: totalActions.steal,
+            });
+        }
+    } finally {
+        isCheckingFriends = false;
+    }
+    return getNextStealDelayMs();
 }
 
 // ============ 循环控制 ============

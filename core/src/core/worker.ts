@@ -10,7 +10,7 @@ const { getAutomation, getPreferredSeed, getConfigSnapshot, applyConfigSnapshot 
 const { checkAndClaimEmails } = require('../services/email');
 const { getEmailDailyState } = require('../services/email');
 const { checkFarm, startFarmCheckLoop, stopFarmCheckLoop, refreshFarmCheckLoop, getLandsDetail, getAvailableSeeds, purchaseSeed, runFarmOperation, runFertilizerByConfig, fertilizeOwnLand } = require('../services/farm');
-const { checkFriends, startFriendCheckLoop, stopFriendCheckLoop, refreshFriendCheckLoop, getFriendsList, getFriendsListCacheOnly, getFriendLandsDetail, doFriendOperation, deleteFriend, getNextStealDelayMs } = require('../services/friend');
+const { checkFriends, startFriendCheckLoop, stopFriendCheckLoop, refreshFriendCheckLoop, getFriendsList, getFriendsListCacheOnly, getFriendLandsDetail, doFriendOperation, deleteFriend, runScheduledStealCheck } = require('../services/friend');
 const { getInteractRecords } = require('../services/interact');
 const { processInviteCodes } = require('../services/invite');
 const { autoBuyFertilizer, checkAndBuyFertilizerBoth, buyFreeGifts, getFreeGiftDailyState } = require('../services/mall');
@@ -113,6 +113,9 @@ let farmTaskRunning: boolean = false;
 let nextFarmRunAt: number = 0;
 let friendTaskRunning: boolean = false;
 let nextFriendRunAt: number = 0;
+let stealTaskRunning: boolean = false;
+let nextStealRunAt: number = 0;
+let nextStealDelayMs: number = 0;
 // 网关卡住时两条定时任务各自的退避时长（毫秒），0 表示按正常间隔跑
 const businessBackoffMs: Record<string, number> = { farm: 0, friend: 0 };
 let lastStatusHash: string = '';
@@ -209,7 +212,10 @@ function resetUnifiedSchedule(): void {
     );
     const now = Date.now();
     nextFarmRunAt = now + farmMs;
+    // 老版本节奏：帮忙循环保底常规间隔，偷菜首轮给一个短的随机窗口，
+    // 后续完全由 runScheduledStealCheck 返回的成熟时间动态决定。
     nextFriendRunAt = now + friendMs;
+    nextStealRunAt = now + randomIntervalMs(5000, 15000);
     businessBackoffMs.farm = 0;
     businessBackoffMs.friend = 0;
 }
@@ -289,16 +295,21 @@ async function runFarmTick(auto: any): Promise<void> {
     }
 }
 
-// ============ 好友统一任务：偷菜、帮助、放虫放草 ============
+// ============ 帮助 Tick（帮忙 + 放虫放草，老版本节奏：低频 ~10 分钟）============
 async function runFriendTick(auto: any): Promise<void> {
     if (friendTaskRunning) return;
-    const friendMs = randomIntervalMs(
-        workerConfig.friendCheckIntervalMin || 12000,
-        workerConfig.friendCheckIntervalMax || 15000
+    // 老版本 runHelpTick：间隔随机 30~35s，但最终固定抬到 10 分钟低频——
+    // 好友帮忙不需要追着时间跑，偷菜才需要（有独立成熟驱动循环）。
+    const helpMs = Math.max(
+        10 * 60 * 1000,
+        randomIntervalMs(
+            workerConfig.helpCheckIntervalMin || 30000,
+            workerConfig.helpCheckIntervalMax || 35000
+        )
     );
     // friend 总开关仍控制好友任务总入口；关闭时也要推进到期时间，避免调度器每秒空转。
     if (!auto.friend) {
-        nextFriendRunAt = Date.now() + friendMs;
+        nextFriendRunAt = Date.now() + helpMs;
         return;
     }
 
@@ -310,23 +321,43 @@ async function runFriendTick(auto: any): Promise<void> {
 
     friendTaskRunning = true;
     try {
-        // checkFriends 内部保留各自开关、经验上限、黑名单和每日捣乱次数判断。
-        // 好友农场任务排在自己农场之后，前台操作永远优先于它。
-        await runWithRequestClass('friend', () => checkFriends());
+        // 帮助循环保留各自开关、经验上限、黑名单和每日捣乱次数判断。
+        // 偷菜已拆到独立的成熟驱动 Tick（runStealTick），这里只管帮忙与放虫放草。
+        await runWithRequestClass('friend', async () => {
+            if (auto.friend_help) await checkFriends({ onlyHelp: true });
+            if (auto.friend_bad) await checkFriends({ onlyBad: true });
+        });
     } catch (e: any) {
-        log('系统', `好友统一任务执行失败: ${e.message}`, { module: 'system', event: '好友统一任务', result: 'error' });
+        log('系统', `好友帮助任务执行失败: ${e.message}`, { module: 'system', event: '好友帮助任务', result: 'error' });
     } finally {
-        // 老版本偷菜时间逻辑移植：开启偷菜时，若好友作物成熟窗口早于常规随机间隔，
-        // 就提前唤醒本轮好友巡查（成熟瞬间去偷）；否则维持常规节奏，帮助频率不受影响。
-        let delay: number = friendMs;
-        if (auto.friend_steal) {
-            try {
-                const stealWakeMs: number = getNextStealDelayMs();
-                if (stealWakeMs > 0 && stealWakeMs < delay) delay = Math.max(5000, stealWakeMs);
-            } catch { /* 成熟计划不可用时回退常规节奏 */ }
-        }
-        nextFriendRunAt = Date.now() + delay;
+        nextFriendRunAt = Date.now() + helpMs;
         friendTaskRunning = false;
+    }
+}
+
+// ============ 偷菜 Tick（成熟驱动，老版本 runStealTick 移植）============
+async function runStealTick(auto: any): Promise<void> {
+    if (stealTaskRunning) return;
+    if (!auto.friend || !auto.friend_steal) {
+        nextStealRunAt = Date.now() + (15 * 60 * 1000);
+        return;
+    }
+    const deferMs = nextBusinessTickDeferMs('friend');
+    if (deferMs > 0) {
+        nextStealRunAt = Date.now() + deferMs;
+        return;
+    }
+    stealTaskRunning = true;
+    nextStealDelayMs = 0;
+    try {
+        await runWithRequestClass('friend', async () => {
+            nextStealDelayMs = await runScheduledStealCheck();
+        });
+    } catch (e: any) {
+        log('系统', `偷菜巡查执行失败: ${e.message}`, { module: 'system', event: '偷菜巡查', result: 'error' });
+    } finally {
+        nextStealRunAt = Date.now() + Math.max(1000, Number(nextStealDelayMs) || 15 * 60 * 1000);
+        stealTaskRunning = false;
     }
 }
 
@@ -335,12 +366,14 @@ async function runUnifiedTick(): Promise<void> {
     const now = Date.now();
     const dueFarm = now >= nextFarmRunAt;
     const dueFriend = now >= nextFriendRunAt;
-    if (!dueFarm && !dueFriend) return;
+    const dueSteal = now >= nextStealRunAt;
+    if (!dueFarm && !dueFriend && !dueSteal) return;
 
     const auto = getAutomation();
-    // 串行执行而非并行，避免并发请求过多导致超时
+    // 串行执行而非并行，避免并发请求过多导致超时（顺序与老版本一致：农场 → 帮忙 → 偷菜）
     if (dueFarm) await runExclusiveAutomationTask('farm_tick', () => runFarmTick(auto));
     if (dueFriend) await runExclusiveAutomationTask('friend_tick', () => runFriendTick(auto));
+    if (dueSteal) await runExclusiveAutomationTask('steal_tick', () => runStealTick(auto));
 }
 
 function scheduleUnifiedNextTick(): void {
@@ -351,7 +384,8 @@ function scheduleUnifiedNextTick(): void {
     const now = Date.now();
     const nextAt = Math.min(
         Number(nextFarmRunAt) || (now + 1000),
-        Number(nextFriendRunAt) || (now + 1000)
+        Number(nextFriendRunAt) || (now + 1000),
+        Number(nextStealRunAt) || (now + 1000)
     );
     const delayMs = Math.max(1000, nextAt - now); // 最低 1 秒
 
@@ -1279,6 +1313,7 @@ function syncStatus(force: boolean = false): void {
     const nowMs = Date.now();
     const farmRemainSec = Math.max(0, Math.ceil((Number(nextFarmRunAt || 0) - nowMs) / 1000));
     const friendRemainSec = Math.max(0, Math.ceil((Number(nextFriendRunAt || 0) - nowMs) / 1000));
+    const stealRemainSec = Math.max(0, Math.ceil((Number(nextStealRunAt || 0) - nowMs) / 1000));
     const visitStrategy = require('../services/friend/visit-strategy');
     const friendQuiet = !!visitStrategy.inFriendQuietHours();
     const farmQuiet = !!visitStrategy.inFarmQuietHours();
@@ -1286,7 +1321,7 @@ function syncStatus(force: boolean = false): void {
     fullStats.nextChecks = {
         farmRemainSec,
         helpRemainSec: friendRemainSec,
-        stealRemainSec: friendRemainSec,
+        stealRemainSec,
         friendRemainSec,
         farmQuiet,
         friendQuiet,

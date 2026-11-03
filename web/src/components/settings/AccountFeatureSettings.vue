@@ -49,7 +49,7 @@ const moduleInfo: Record<ModuleKey, { title: string, description: string, icon: 
   steal: { title: '偷菜', description: '巡查频率和操作延迟', icon: 'i-carbon-crop-health', image: '/game-config/module_icons/steal.png', tone: 'lime' },
   merchant: { title: '神秘商人', description: '商品购买和货币范围', icon: 'i-carbon-store', image: '/game-config/module_icons/merchant.png', tone: 'orange' },
   activity: { title: '日常与活动', description: '日常任务、活动奖励和活动道具', icon: 'i-carbon-events', image: '/game-config/module_icons/activity-task.png', tone: 'violet' },
-  pet: { title: '宠物', description: '自动喂狗粮，保持上场宠物看护时长', icon: 'i-carbon-dog-walker', image: '', tone: 'rose' },
+  pet: { title: '宠物', description: '自动喂狗粮，保持上场宠物看护时长', icon: 'i-fas-paw', image: '', tone: 'rose' },
 }
 
 const activeInfo = computed(() => activeModule.value ? moduleInfo[activeModule.value] : null)

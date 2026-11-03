@@ -366,6 +366,9 @@ async function plantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<number,
     // 每个种子每轮最多预留一组布局；各种子预留的整组目标布局互不重叠。
     const reservedSeedIds = new Set<number>();
     const claimedLayoutLandIds = new Set<number>();
+    // 老版本规则：等待清空的 2×2 预留区最多一组（已完全空闲的组不占预算），
+    // 避免「优先种植 2×2」把所有空地都囤起来、单格作物完全没地种。
+    let waiting2x2ReservationUsed = false;
 
     for (const seed of plantingOrder) {
         if (remainingLandIds.length === 0 || !fallbackAllowed) break;
@@ -391,10 +394,16 @@ async function plantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<number,
             const allEligibleLandIds = seed.landTypes
                 ? filterLandIdsByTypes(allUnlockedLandIds, landTypeById, seed.landTypes)
                 : allUnlockedLandIds;
-            const reservation = multiLandReservationEnabled
+            // 「优先种植 2×2」开启时，多格作物凑不齐布局也要预留目标布局中已空出的地，
+            // 等占着位置的单格作物成熟收获后整组清空再种 2×2（老版本 2×2 预留逻辑移植）。
+            const allow2x2WaitReservation = prioritize2x2Crops
+                && plantSize > 1
+                && !explicitPrioritySeedIds.has(toNum(seed.seedId))
+                && !waiting2x2ReservationUsed;
+            const reservation = (multiLandReservationEnabled || allow2x2WaitReservation)
                 && !reservedSeedIds.has(toNum(seed.seedId))
                 && plantSize > 1
-                && explicitPrioritySeedIds.has(toNum(seed.seedId))
+                && (explicitPrioritySeedIds.has(toNum(seed.seedId)) || allow2x2WaitReservation)
                 ? selectFutureLayoutReservation(allowedLandIds, allEligibleLandIds, plantSize, {
                     registered: getRegisteredLayout(seed.seedId),
                     excludeLandIds: claimedLayoutLandIds,
@@ -405,6 +414,7 @@ async function plantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<number,
                 registerLayout(seed.seedId, reservation.layout);
                 reservation.layout.landIds.forEach((id: number) => claimedLayoutLandIds.add(toNum(id)));
                 reservedSeedIds.add(toNum(seed.seedId));
+                if (allow2x2WaitReservation) waiting2x2ReservationUsed = true;
                 reservation.reservedLandIds.forEach((id: number) => deferredLandIds.add(id));
                 const reserved = new Set(reservation.reservedLandIds);
                 remainingLandIds = remainingLandIds.filter(id => !reserved.has(id));
