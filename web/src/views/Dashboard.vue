@@ -675,6 +675,9 @@ useIntervalFn(updateCountdowns, 1000)
               <span v-if="platformLabel" class="ov-presence__item">{{ platformLabel }}</span>
             </div>
           </div>
+          <BaseButton to="/personal" variant="secondary" size="sm" class="ov-farm-entry" aria-label="进入我的农场">
+            我的农场 <span class="i-carbon-arrow-up-right ml-1" aria-hidden="true" />
+          </BaseButton>
         </div>
 
         <div class="ov-exp">
@@ -1145,6 +1148,11 @@ useIntervalFn(updateCountdowns, 1000)
   display: flex;
   align-items: center;
   gap: 14px;
+}
+
+/* 老版首页入口：一键进入我的农场 */
+.ov-farm-entry {
+  flex-shrink: 0;
 }
 
 .ov-avatar {

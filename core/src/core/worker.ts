@@ -501,6 +501,8 @@ function applyRuntimeConfig(snapshot: any, syncNow: boolean = false): number {
     }
 
     const prevAuto = getAutomation();
+    const { getCapitalMode } = require('../models/store');
+    const prevCapitalMode = getCapitalMode();
     const accountId = process.env.FARM_ACCOUNT_ID || '';
     if (snapshot && snapshot.systemTimeZone !== undefined) {
         updateRuntimeConfig({ timeZone: snapshot.systemTimeZone });
@@ -519,6 +521,13 @@ function applyRuntimeConfig(snapshot: any, syncNow: boolean = false): number {
     }
     applyConfigSnapshot(snapshot || {}, { persist: false, accountId });
     if (rev > appliedConfigRevision) appliedConfigRevision = rev;
+
+    // 资本模式配置变更（关闭/换狗）时收回自动派出的宠物。
+    try {
+        require('../services/capital-mode').reconcileConfigChange(prevCapitalMode, getCapitalMode()).catch(() => null);
+    } catch (_e: any) {
+        // capital-mode 未初始化时忽略
+    }
 
     // 优先使用本次下发的间隔，避免 worker 内部 store 漂移导致回退默认值
     const incomingIntervals = (snapshot && snapshot.intervals && typeof snapshot.intervals === 'object')
@@ -957,6 +966,12 @@ async function handleApiCall(msg: any): Promise<void> {
                 result = await require('../services/pets').activateDog(args[0]);
                 break;
             case 'deployDog':
+                // 手动派出：释放资本模式的自动召回所有权。
+                try {
+                    require('../services/capital-mode').releaseForManualCommand();
+                } catch (_e: any) {
+                    // capital-mode 未初始化时忽略
+                }
                 result = await require('../services/pets').deployDog(args[0]);
                 break;
             case 'withdrawDog':

@@ -122,6 +122,12 @@ async function harvestMatureOwnLandsOnce(actions: string[], propagateErrors: boo
             landIds: [...harvestable],
             opType: 'fertilizer_followup',
         });
+        // 宠物资本模式：施肥后跟随收获同样触发召回。
+        try {
+            require('../capital-mode').handleFarmHarvested();
+        } catch (e: any) {
+            logWarn('宠物', `资本模式召回调度失败: ${e?.message || e}`);
+        }
         log('收获', `施肥后立即收获 ${harvestable.length} 块土地`, {
             module: 'farm',
             event: '施肥后收获作物',
@@ -164,6 +170,12 @@ async function runFarmOperation(
 
     const state = getUserState();
     const status = analyzeLands(lands, isFirstFarmCheck, state.gid);
+    // 宠物资本模式：临近成熟时先派出守护宠物（老版逻辑）。
+    try {
+        await require('../capital-mode').prepareForFarmOperation({ lands, analysis: status, opType });
+    } catch (e: any) {
+        logWarn('宠物', `资本模式派出检查失败: ${e?.message || e}`);
+    }
     const socialEventItemIds: number[] = getCleanableFarmSocialEventItemIds(landsReply);
     const hasTargetLandId = targetLandIdInput !== null
         && targetLandIdInput !== undefined
@@ -263,6 +275,12 @@ async function runFarmOperation(
                     landIds: [...harvestable],
                     opType,
                 });
+                // 宠物资本模式：收获完成后召回守护宠物。
+                try {
+                    require('../capital-mode').handleFarmHarvested();
+                } catch (e: any) {
+                    logWarn('宠物', `资本模式召回调度失败: ${e?.message || e}`);
+                }
             } catch (e: any) {
                 logWarn('收获', e.message, {
                     module: 'farm',

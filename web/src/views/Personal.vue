@@ -2,15 +2,13 @@
 import { ref, watch } from 'vue'
 import BagPanel from '@/components/BagPanel.vue'
 import FarmPanel from '@/components/FarmPanel.vue'
-import PetPanel from '@/components/PetPanel.vue'
 import TaskPanel from '@/components/TaskPanel.vue'
 import FarmPageHeader from '@/components/ui/FarmPageHeader.vue'
 
-type PersonalTab = 'farm' | 'pet' | 'bag' | 'task'
+type PersonalTab = 'farm' | 'bag' | 'task'
 
 const TABS: Array<{ key: PersonalTab, label: string, icon: string }> = [
   { key: 'farm', label: '我的农场', icon: 'i-carbon-sprout' },
-  { key: 'pet', label: '我的宠物', icon: 'i-carbon-dog-walker' },
   { key: 'bag', label: '我的背包', icon: 'i-carbon-box' },
   { key: 'task', label: '我的任务', icon: 'i-carbon-task' },
 ]
@@ -19,7 +17,6 @@ const currentTab = ref<PersonalTab>('farm')
 
 const tabPanels: Record<PersonalTab, any> = {
   farm: FarmPanel,
-  pet: PetPanel,
   bag: BagPanel,
   task: TaskPanel,
 }

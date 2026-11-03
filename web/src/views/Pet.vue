@@ -2,24 +2,28 @@
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
+import BaseSwitch from '@/components/ui/BaseSwitch.vue'
 import FarmPageHeader from '@/components/ui/FarmPageHeader.vue'
 import { useAccountStore } from '@/stores/account'
 import { usePetStore } from '@/stores/pet'
 import { useToastStore } from '@/stores/toast'
 
-type PetTab = 'pets' | 'logs'
+type PetTab = 'pets' | 'logs' | 'capital'
 
 const accountStore = useAccountStore()
 const petStore = usePetStore()
 const toast = useToastStore()
 const { currentAccountId } = storeToRefs(accountStore)
-const { snapshot, dogs, foods, protectLogs, loading, usingFood, operatingDogId, protectLogsLoading } = storeToRefs(petStore)
+const { snapshot, dogs, foods, protectLogs, loading, usingFood, operatingDogId, protectLogsLoading, capitalMode } = storeToRefs(petStore)
 const tab = ref<PetTab>('pets')
 const feedCounts = reactive<Record<number, number>>({})
+const capitalDraft = reactive({ enabled: false, dogId: 0, leadSeconds: 10 })
+const savingCapital = ref(false)
 
 const tabs: { key: PetTab, label: string, icon: string }[] = [
   { key: 'pets', label: '宠物管理', icon: 'i-fas-paw' },
   { key: 'logs', label: '守护记录', icon: 'i-carbon-security' },
+  { key: 'capital', label: '资本模式', icon: 'i-carbon-time' },
 ]
 const sortedDogs = computed(() => [...dogs.value].sort((a, b) => Number(b.active) - Number(a.active) || Number(b.owned) - Number(a.owned) || Number(b.activatable) - Number(a.activatable) || b.rarity - a.rarity))
 const ownedCount = computed(() => dogs.value.filter(dog => dog.owned).length)
@@ -71,10 +75,32 @@ async function load() {
     await Promise.all([
       petStore.fetchPetInfo(id),
       tab.value === 'logs' ? petStore.fetchProtectLogs(id) : Promise.resolve(true),
+      petStore.fetchCapitalMode(id),
     ])
+    Object.assign(capitalDraft, {
+      enabled: capitalMode.value.enabled,
+      dogId: capitalMode.value.dogId,
+      leadSeconds: capitalMode.value.leadSeconds,
+    })
   }
   catch (e: any) {
     toast.error(e?.response?.data?.error || e?.message || '加载失败')
+  }
+}
+
+async function saveCapitalSettings() {
+  if (savingCapital.value)
+    return
+  savingCapital.value = true
+  try {
+    await petStore.saveCapitalMode(String(currentAccountId.value), { ...capitalDraft })
+    toast.success('设置已保存')
+  }
+  catch (e: any) {
+    toast.error(e?.response?.data?.error || e?.message || '保存失败')
+  }
+  finally {
+    savingCapital.value = false
   }
 }
 
@@ -305,7 +331,7 @@ onMounted(load)
       </div>
     </template>
 
-    <section v-else class="flex flex-col farm-card rounded-lg lg:min-h-0 lg:flex-1 lg:overflow-hidden">
+    <section v-else-if="tab === 'logs'" class="flex flex-col farm-card rounded-lg lg:min-h-0 lg:flex-1 lg:overflow-hidden">
       <div class="flex shrink-0 items-center justify-between gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-700">
         <div>
           <h2 class="flex items-center gap-2 text-base text-gray-900 font-semibold dark:text-gray-100">
@@ -346,6 +372,66 @@ onMounted(load)
             <span class="text-[11px] text-gray-400">守护金币</span>
           </div>
         </article>
+      </div>
+    </section>
+
+    <!-- 资本模式：按作物成熟时间自动派出守护宠物，收获完成后自动召回。 -->
+    <section v-else class="flex flex-col farm-card rounded-lg lg:min-h-0 lg:flex-1 lg:overflow-hidden">
+      <div class="grid lg:grid-cols-[minmax(260px,0.75fr)_minmax(0,1.25fr)] lg:min-h-0 lg:flex-1">
+        <div class="flex flex-col justify-between border-b border-gray-200 p-5 lg:border-b-0 lg:border-r dark:border-gray-700 sm:p-6">
+          <div>
+            <div class="grid h-12 w-12 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--theme-primary)_12%,transparent)] text-[var(--theme-primary)]">
+              <span class="i-carbon-time text-2xl" />
+            </div>
+            <h2 class="mt-4 text-xl text-gray-900 font-semibold dark:text-gray-100">
+              定时守护
+            </h2>
+            <p class="mt-2 max-w-sm text-sm text-gray-500 leading-6 dark:text-gray-400">
+              按作物成熟时间自动派出宠物，收获完成 5 秒后自动召回。
+            </p>
+          </div>
+          <div class="mt-6 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+            <span class="h-2 w-2 rounded-full" :class="capitalDraft.enabled ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'" />当前状态：{{ capitalDraft.enabled ? '已启用' : '未启用' }}
+          </div>
+        </div>
+
+        <div class="p-5 lg:min-h-0 lg:overflow-y-auto sm:p-6">
+          <label class="flex items-center justify-between gap-4 border border-gray-200 rounded-lg px-4 py-3 dark:border-gray-700">
+            <span class="min-w-0">
+              <strong class="block text-sm text-gray-900 font-medium dark:text-gray-100">启用资本模式</strong>
+              <small class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">根据成熟时间自动安排守护</small>
+            </span>
+            <BaseSwitch v-model="capitalDraft.enabled" aria-label="启用宠物自动化" :disabled="savingCapital" />
+          </label>
+
+          <div class="grid mt-5 gap-4 sm:grid-cols-2">
+            <label class="min-w-0 text-sm text-gray-700 font-medium dark:text-gray-200">
+              守护宠物
+              <select v-model.number="capitalDraft.dogId" class="mt-2 h-10 w-full border border-gray-200 rounded-lg bg-[var(--input-bg)] px-3 text-sm text-gray-900 outline-none dark:border-gray-600 focus:border-[var(--theme-primary)] dark:text-gray-100 focus:ring-2 focus:ring-[color-mix(in_srgb,var(--theme-primary)_18%,transparent)]">
+                <option :value="0">请选择宠物</option>
+                <option v-for="dog in dogs.filter(dog => dog.owned)" :key="dog.id" :value="dog.id">{{ dog.name }}</option>
+              </select>
+            </label>
+            <label class="min-w-0 text-sm text-gray-700 font-medium dark:text-gray-200">
+              提前派出时间
+              <div class="relative mt-2">
+                <input v-model.number="capitalDraft.leadSeconds" type="number" min="5" max="300" class="h-10 w-full border border-gray-200 rounded-lg bg-[var(--input-bg)] px-3 pr-10 text-sm text-gray-900 outline-none dark:border-gray-600 focus:border-[var(--theme-primary)] dark:text-gray-100 focus:ring-2 focus:ring-[color-mix(in_srgb,var(--theme-primary)_18%,transparent)]">
+                <span class="absolute right-3 top-1/2 text-xs text-gray-400 -translate-y-1/2">秒</span>
+              </div>
+              <small class="mt-1.5 block text-xs text-gray-500 dark:text-gray-400">允许范围 5–300 秒</small>
+            </label>
+          </div>
+
+          <div class="mt-5 flex items-start gap-2 rounded-lg bg-gray-50 px-3 py-2.5 text-xs text-gray-500 leading-5 dark:bg-gray-700/40 dark:text-gray-400">
+            <span class="i-carbon-information mt-0.5 shrink-0 text-[var(--theme-primary)]" />已有手动派出的宠物不会被自动替换。
+          </div>
+
+          <div class="mt-5 flex justify-end border-t border-gray-200 pt-4 dark:border-gray-700">
+            <BaseButton :loading="savingCapital" :disabled="loading || (capitalDraft.enabled && !capitalDraft.dogId) || !Number.isInteger(capitalDraft.leadSeconds) || capitalDraft.leadSeconds < 5 || capitalDraft.leadSeconds > 300" @click="saveCapitalSettings">
+              <span v-if="!savingCapital" class="i-carbon-save mr-1" />保存设置
+            </BaseButton>
+          </div>
+        </div>
       </div>
     </section>
   </section>

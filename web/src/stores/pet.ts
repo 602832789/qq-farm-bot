@@ -68,6 +68,13 @@ export interface PetProtectLog {
   dogName: string
 }
 
+/** 宠物资本模式：按作物成熟时间自动派出守护宠物，收获后自动召回。 */
+export interface CapitalMode {
+  enabled: boolean
+  dogId: number
+  leadSeconds: number
+}
+
 export const usePetStore = defineStore('pet', () => {
   const snapshot = ref<PetSnapshot | null>(null)
   const loading = ref(false)
@@ -76,6 +83,7 @@ export const usePetStore = defineStore('pet', () => {
   const protectLogs = ref<PetProtectLog[]>([])
   const protectLogsTotal = ref(0)
   const protectLogsLoading = ref(false)
+  const capitalMode = ref<CapitalMode>({ enabled: false, dogId: 0, leadSeconds: 10 })
   const claimingGifts = ref(false)
   const giftError = ref('')
   const error = ref('')
@@ -97,6 +105,7 @@ export const usePetStore = defineStore('pet', () => {
     protectLogs.value = []
     protectLogsTotal.value = 0
     protectLogsLoading.value = false
+    capitalMode.value = { enabled: false, dogId: 0, leadSeconds: 10 }
     claimingGifts.value = false
     giftError.value = ''
     error.value = ''
@@ -131,6 +140,39 @@ export const usePetStore = defineStore('pet', () => {
     finally {
       protectLogsLoading.value = false
     }
+  }
+
+  async function fetchCapitalMode(requestedAccountId: string) {
+    const id = String(requestedAccountId || '').trim()
+    if (!id)
+      return false
+    try {
+      const res = await api.get('/api/dog/capital-mode', {
+        headers: { 'x-account-id': id },
+        skipErrorToast: true,
+      } as any)
+      if (res.data?.ok && accountId.value === id)
+        capitalMode.value = res.data.data as CapitalMode
+      return !!res.data?.ok
+    }
+    catch {
+      return false
+    }
+  }
+
+  async function saveCapitalMode(requestedAccountId: string, config: CapitalMode) {
+    const id = String(requestedAccountId || '').trim()
+    if (!id)
+      throw new Error('缺少账号')
+    const res = await api.post('/api/dog/capital-mode', config, {
+      headers: { 'x-account-id': id },
+      skipErrorToast: true,
+    } as any)
+    if (!res.data?.ok)
+      throw new Error(getApiErrorMessage(res.data, '保存失败'))
+    if (accountId.value === id && res.data?.data?.capitalMode)
+      capitalMode.value = res.data.data.capitalMode as CapitalMode
+    return res.data.data
   }
 
   async function fetchPetInfo(requestedAccountId: string) {
@@ -325,12 +367,15 @@ export const usePetStore = defineStore('pet', () => {
     protectLogs,
     protectLogsTotal,
     protectLogsLoading,
+    capitalMode,
     claimingGifts,
     giftError,
     error,
     accountId,
     fetchPetInfo,
     fetchProtectLogs,
+    fetchCapitalMode,
+    saveCapitalMode,
     claimDogSkillGifts,
     useDogFood,
     activateDog,

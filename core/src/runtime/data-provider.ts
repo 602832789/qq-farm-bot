@@ -302,6 +302,7 @@ function createDataProvider(options: DataProviderOptions) {
             if (!Object.hasOwn(snapshot, 'plantingStrategy')) copyIfPresent('strategy', 'plantingStrategy');
             copyIfPresent('preferredSeedId');
             if (!Object.hasOwn(snapshot, 'preferredSeedId')) copyIfPresent('seedId', 'preferredSeedId');
+            copyIfPresent('capitalMode');
             for (const key of [
                 'automation',
                 'intervals',

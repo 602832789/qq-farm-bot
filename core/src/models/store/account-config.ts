@@ -1,4 +1,4 @@
-import type { AccountConfig, AutomationConfig, BagSeedFallbackStrategy, FertilizerLandType, IntervalConfig, PlantingStrategy, QuietHoursConfig } from '../../types/config';
+import type { AccountConfig, AutomationConfig, BagSeedFallbackStrategy, CapitalModeConfig, FertilizerLandType, IntervalConfig, PlantingStrategy, QuietHoursConfig } from '../../types/config';
 export {};
 
 const sharedState = require('./shared-state');
@@ -20,6 +20,7 @@ const {
     normalizeAutoAcceptFriendMinLevel,
     normalizeAutoAcceptHarvestStealHarvest,
     normalizeAutoAcceptHarvestStealSteal,
+    normalizeCapitalMode,
     ALLOWED_PLANTING_STRATEGIES,
 } = sharedState;
 
@@ -106,6 +107,7 @@ function getConfigSnapshot(accountId?: unknown): AccountConfig & { ui: typeof gl
         automation: { ...cfg.automation },
         plantingStrategy: cfg.plantingStrategy,
         preferredSeedId: cfg.preferredSeedId,
+        capitalMode: { ...cfg.capitalMode },
         intervals: { ...cfg.intervals },
         friendQuietHours: { ...cfg.friendQuietHours },
         knownFriendGids: [...(cfg.knownFriendGids || [])],
@@ -182,6 +184,10 @@ function applyConfigSnapshot(snapshot: Record<string, any> | undefined, options:
 
     if (cfg.preferredSeedId !== undefined && cfg.preferredSeedId !== null) {
         next.preferredSeedId = Math.max(0, Number.parseInt(cfg.preferredSeedId, 10) || 0);
+    }
+
+    if (cfg.capitalMode && typeof cfg.capitalMode === 'object') {
+        next.capitalMode = normalizeCapitalMode(cfg.capitalMode, next.capitalMode);
     }
 
     if (cfg.intervals && typeof cfg.intervals === 'object') {
@@ -328,6 +334,18 @@ function isAutomationOn(key: string, accountId?: unknown): boolean {
 
 function getPreferredSeed(accountId?: unknown): number {
     return getAccountConfigSnapshot(accountId).preferredSeedId;
+}
+
+function getCapitalMode(accountId?: unknown): CapitalModeConfig {
+    return normalizeCapitalMode(getAccountConfigSnapshot(accountId).capitalMode);
+}
+
+function setCapitalMode(accountId: unknown, config: unknown): CapitalModeConfig {
+    const current = getAccountConfigSnapshot(accountId);
+    const next = normalizeAccountConfig(current, sharedState.accountFallbackConfig);
+    next.capitalMode = normalizeCapitalMode(config, next.capitalMode);
+    setAccountConfigSnapshot(accountId, next, true);
+    return { ...next.capitalMode };
 }
 
 function getPlantingStrategy(accountId?: unknown): PlantingStrategy {
@@ -521,6 +539,8 @@ module.exports = {
     setAutomation,
     isAutomationOn,
     getPreferredSeed,
+    getCapitalMode,
+    setCapitalMode,
     getPlantingStrategy,
     getBagSeedPriority,
     getBagSeedMultiLandReservationEnabled,

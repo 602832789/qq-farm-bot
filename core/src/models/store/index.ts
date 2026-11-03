@@ -11,6 +11,8 @@ module.exports = {
     setAutomation: accountConfig.setAutomation,
     isAutomationOn: accountConfig.isAutomationOn,
     getPreferredSeed: accountConfig.getPreferredSeed,
+    getCapitalMode: accountConfig.getCapitalMode,
+    setCapitalMode: accountConfig.setCapitalMode,
     getPlantingStrategy: accountConfig.getPlantingStrategy,
     getBagSeedPriority: accountConfig.getBagSeedPriority,
     getBagSeedMultiLandReservationEnabled: accountConfig.getBagSeedMultiLandReservationEnabled,

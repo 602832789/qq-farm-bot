@@ -150,10 +150,19 @@ export interface QuietHoursConfig {
   continueFarm: boolean;
 }
 
+/** 宠物资本模式：成熟前 leadSeconds 秒自动派出守护宠物，收获 5 秒后召回。 */
+export interface CapitalModeConfig {
+  enabled: boolean;
+  dogId: number;
+  leadSeconds: number;
+}
+
 export interface AccountConfig {
   automation: AutomationConfig;
   plantingStrategy: PlantingStrategy;
   preferredSeedId: number;
+  /** 宠物资本模式：按作物成熟时间自动派出守护宠物。 */
+  capitalMode: CapitalModeConfig;
   intervals: IntervalConfig;
   friendQuietHours: QuietHoursConfig;
   knownFriendGids: number[];

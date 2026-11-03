@@ -496,6 +496,30 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
         }
     });
 
+    // API: 读取宠物资本模式配置（按作物成熟时间自动派出守护宠物）。
+    app.get('/api/dog/capital-mode', (req: Request, res: Response) => {
+        const id = getAccId(ctx, req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        try {
+            res.json({ ok: true, data: store.getCapitalMode(id) });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    });
+
+    // API: 保存宠物资本模式配置；保存后立即下发 worker 并等待确认。
+    app.post('/api/dog/capital-mode', async (req: Request, res: Response) => {
+        const id = getAccId(ctx, req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        try {
+            const body = (req.body && typeof req.body === 'object') ? req.body : {};
+            const result = await ctx.provider.saveSettings(id, { capitalMode: body });
+            res.json({ ok: true, data: { capitalMode: store.getCapitalMode(id), confirmed: !!result?.confirmed, appliedRevision: result?.appliedRevision ?? null } });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    });
+
     // API: 获取背包种子列表
     app.get('/api/bag/seeds', async (req: Request, res: Response) => {
         const id = getAccId(ctx, req);

@@ -1,4 +1,4 @@
-import type { AccountConfig, AutomationConfig, BagSeedFallbackStrategy, FertilizerLandType, GlobalConfig, IntervalConfig, LoginSettings, OfflineReminder, PlantingStrategy, QuietHoursConfig } from '../../types/config';
+import type { AccountConfig, AutomationConfig, BagSeedFallbackStrategy, CapitalModeConfig, FertilizerLandType, GlobalConfig, IntervalConfig, LoginSettings, OfflineReminder, PlantingStrategy, QuietHoursConfig } from '../../types/config';
 export {};
 
 const { DEFAULT_TIME_ZONE, normalizeTimeZone, resolveClientVersion } = require('../../config/config');
@@ -45,6 +45,18 @@ const DEFAULT_LOGIN_SETTINGS: LoginSettings = {
     napCatEndpoint: '',
     napCatSignature: '',
 };
+
+const DEFAULT_CAPITAL_MODE: CapitalModeConfig = { enabled: false, dogId: 0, leadSeconds: 10 };
+
+function normalizeCapitalMode(value: unknown, fallback: CapitalModeConfig = DEFAULT_CAPITAL_MODE): CapitalModeConfig {
+    const input = (value && typeof value === 'object') ? value as Record<string, any> : {};
+    const base = (fallback && typeof fallback === 'object') ? fallback : DEFAULT_CAPITAL_MODE;
+    return {
+        enabled: input.enabled !== undefined ? input.enabled === true : base.enabled === true,
+        dogId: Math.max(0, Number(input.dogId ?? input.selectedDogId ?? base.dogId) || 0),
+        leadSeconds: Math.max(5, Math.min(300, Number(input.leadSeconds ?? input.secondsBeforeMature ?? base.leadSeconds) || 10)),
+    };
+}
 
 const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
     automation: {
@@ -155,6 +167,7 @@ const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
     },
     plantingStrategy: 'max_exp',
     preferredSeedId: 0,
+    capitalMode: { ...DEFAULT_CAPITAL_MODE },
     intervals: {
         farm: 2,
         farmMin: 20,
@@ -400,6 +413,7 @@ function cloneAccountConfig(base: Partial<AccountConfig> = DEFAULT_ACCOUNT_CONFI
         plantingStrategy: ALLOWED_PLANTING_STRATEGIES.includes(String(base.plantingStrategy || '') as PlantingStrategy)
             ? String(base.plantingStrategy) as PlantingStrategy
             : DEFAULT_ACCOUNT_CONFIG.plantingStrategy,
+        capitalMode: normalizeCapitalMode(base.capitalMode),
         preferredSeedId: Math.max(0, Number.parseInt(String(base.preferredSeedId), 10) || 0),
         plantBlacklist: rawPlantBlacklist.map(Number).filter(n => Number.isFinite(n) && n > 0),
         stealDelaySeconds: Math.max(0, Math.min(300, Number(base.stealDelaySeconds) || 0)),
@@ -464,6 +478,10 @@ function normalizeAccountConfig(input: unknown, fallback: AccountConfig = accoun
 
     if (src.preferredSeedId !== undefined && src.preferredSeedId !== null) {
         cfg.preferredSeedId = Math.max(0, Number.parseInt(src.preferredSeedId, 10) || 0);
+    }
+
+    if (src.capitalMode && typeof src.capitalMode === 'object') {
+        cfg.capitalMode = normalizeCapitalMode(src.capitalMode, cfg.capitalMode);
     }
 
     if (src.intervals && typeof src.intervals === 'object') {
@@ -747,6 +765,8 @@ module.exports = {
     normalizeAutoAcceptFriendMinLevel,
     normalizeAutoAcceptHarvestStealHarvest,
     normalizeAutoAcceptHarvestStealSteal,
+    normalizeCapitalMode,
+    DEFAULT_CAPITAL_MODE,
     normalizeAccountConfig,
     cloneAccountConfig,
     resolveAccountId,
