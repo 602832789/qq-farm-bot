@@ -277,6 +277,8 @@ function createDataProvider(options: DataProviderOptions) {
         fertilizeOwnLand: (accountRef: string, landId: unknown, fertilizerType: unknown) => (
             callWorkerApi(resolveAccountRefId(accountRef), 'fertilizeOwnLand', landId, fertilizerType)
         ),
+        upgradeLand: (accountRef: string, landId: unknown) => callWorkerApi(resolveAccountRefId(accountRef), 'upgradeLand', landId),
+        removePlant: (accountRef: string, landId: unknown) => callWorkerApi(resolveAccountRefId(accountRef), 'removePlant', landId),
         fertilizeAllOwnLands: (accountRef: string, fertilizerType: unknown, landIds?: unknown) => (
             callWorkerApi(resolveAccountRefId(accountRef), 'fertilizeAllOwnLands', fertilizerType, landIds)
         ),

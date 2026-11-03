@@ -1,11 +1,101 @@
 <script setup lang="ts">
+import { NButton } from 'naive-ui/es/button'
 import { NCard } from 'naive-ui/es/card'
 import { NModal } from 'naive-ui/es/modal'
-import { computed } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 
 const props = defineProps<{ land: any, player: any, connected: boolean }>()
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: [], upgrade: [], fertilize: [], remove: [] }>()
 const info = computed(() => props.land?.landInfo)
+
+/* ===== 作物信息（老版地块气泡口径） ===== */
+const land = computed(() => props.land)
+
+const now = ref(Date.now())
+let timer: ReturnType<typeof setInterval> | null = null
+watch(() => props.land, () => {
+  now.value = Date.now()
+}, { immediate: true })
+timer = setInterval(() => {
+  now.value = Date.now()
+}, 1000)
+onUnmounted(() => {
+  if (timer)
+    clearInterval(timer)
+})
+
+const hasCrop = computed(() => Boolean(
+  land.value?.plantName
+  || Number(land.value?.matureInSec) > 0
+  || ['growing', 'harvestable', 'stealable', 'harvested', 'dead'].includes(String(land.value?.status || '')),
+))
+
+const statusLabel = computed(() => {
+  const status = String(land.value?.status || '')
+  const phaseName = String(land.value?.phaseName || '').trim()
+  // “生长中”只是地块的操作状态；详情里应展示当前作物阶段。
+  if (status === 'growing' && phaseName)
+    return phaseName
+  const labels: Record<string, string> = {
+    harvestable: '可收获',
+    stealable: '可采摘',
+    harvested: '已成熟',
+    growing: '生长中',
+    dead: '已枯萎',
+    empty: '空闲',
+    locked: '未解锁',
+  }
+  return labels[status] || phaseName || '未知状态'
+})
+
+/** 变异效果：图标按 icon 名取官方运行时素材，闪电走雨落成诗专用图。 */
+const mutantEffects = computed(() => {
+  const effects = Array.isArray(land.value?.mutantEffects) ? land.value.mutantEffects : []
+  return effects.map((effect: any) => {
+    const icon = String(effect?.icon || '').trim()
+    return {
+      id: Number(effect?.id) || 0,
+      name: String(effect?.name || effect?.effect_name || icon || '变异').trim(),
+      icon,
+      image: icon === 'lightning'
+        ? '/game-config/effect_images/rain-poem/lightning-sense.png?v=2'
+        : (icon ? `/game-config/seed_images_named/mutant/${icon}.png` : ''),
+      tag: String(effect?.tag || '').trim(),
+      description: String(effect?.description || effect?.desc || effect?.tips || '').trim(),
+    }
+  }).filter((effect: any) => effect.icon || effect.name)
+})
+
+const phaseProgress = computed(() => {
+  const start = Number(land.value?.phaseStartTime) || 0
+  const end = Number(land.value?.phaseEndTime) || 0
+  if (end > start) {
+    const duration = end - start
+    const elapsed = Math.min(duration, Math.max(0, now.value / 1000 - start))
+    return { percent: Math.round(elapsed / duration * 100), elapsed, duration }
+  }
+  if (['harvestable', 'stealable', 'harvested', 'dead'].includes(String(land.value?.status || '')))
+    return { percent: 100, elapsed: 0, duration: 0 }
+  return null
+})
+
+function formatTime(sec: number) {
+  if (sec <= 0)
+    return ''
+  const wholeSeconds = Math.floor(sec)
+  const h = Math.floor(wholeSeconds / 3600)
+  const m = Math.floor((wholeSeconds % 3600) / 60)
+  const s = wholeSeconds % 60
+  return `${h > 0 ? `${h}:` : ''}${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+}
+
+const canFertilize = computed(() =>
+  Number(land.value?.matureInSec) > 0
+  && !['locked', 'empty'].includes(String(land.value?.status || '')))
+
+const canRemove = computed(() => !['locked', 'empty'].includes(String(land.value?.status || '')) && hasCrop.value)
+
+/* ===== 土地等级 / 升级条件（原土地详情保留） ===== */
 const metrics = [
   { key: 'yieldBonus', label: '产量加成', unit: '%' },
   { key: 'growthReduction', label: '成长提速', unit: '%' },
@@ -42,6 +132,107 @@ function format(value: unknown) {
       <template #header>
         <span class="font-display">土地详情 <span class="text-sm opacity-50">#{{ land?.id }}</span></span>
       </template>
+
+      <!-- 作物信息（老版地块气泡对齐 + 收获收益） -->
+      <template v-if="hasCrop && land">
+        <div class="land-crop-head">
+          <img v-if="land.plantImage || land.seedImage" :src="land.plantImage || land.seedImage" alt="" class="land-crop-thumb">
+          <span v-else class="land-crop-thumb-fallback i-carbon-sprout" aria-hidden="true" />
+          <div class="land-crop-title">
+            <strong>{{ land.plantName || '未种植' }}</strong>
+            <span class="land-crop-status">{{ statusLabel }}</span>
+          </div>
+        </div>
+
+        <div class="land-crop-grid">
+          <div class="land-crop-cell">
+            <small>成熟倒计时</small>
+            <strong>{{ Number(land.matureInSec) > 0 ? formatTime(Number(land.matureInSec)) : '—' }}</strong>
+          </div>
+          <div class="land-crop-cell">
+            <small>生长季数</small>
+            <strong>{{ land.totalSeason > 0 ? `${land.currentSeason}/${land.totalSeason}` : '—' }}</strong>
+          </div>
+          <div class="land-crop-cell">
+            <small>每季经验</small>
+            <strong class="land-crop-exp">+{{ Number(land.harvestExpPerSeason) || 0 }}</strong>
+          </div>
+          <div class="land-crop-cell">
+            <small>每季金币</small>
+            <strong class="land-crop-gold">+{{ (Number(land.harvestGoldPerSeason) || 0).toLocaleString('zh-CN') }}</strong>
+          </div>
+        </div>
+
+        <div v-if="phaseProgress" class="land-crop-phase">
+          <div class="flex items-center justify-between gap-2 text-[11px]">
+            <span class="truncate text-emerald-700 font-medium dark:text-emerald-300">
+              {{ land.phaseName || '当前阶段' }}
+            </span>
+            <span class="shrink-0 text-emerald-600 tabular-nums font-semibold dark:text-emerald-300">
+              {{ phaseProgress.percent }}%
+            </span>
+          </div>
+          <div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-emerald-100 dark:bg-emerald-900/60">
+            <div class="land-crop-phase-fill" :style="{ width: `${phaseProgress.percent}%` }" />
+          </div>
+          <div v-if="phaseProgress.duration > 0" class="mt-1 flex justify-between text-[10px] text-gray-400 tabular-nums">
+            <span>已进行 {{ formatTime(phaseProgress.elapsed) }}</span>
+            <span>本阶段 {{ formatTime(phaseProgress.duration) }}</span>
+          </div>
+        </div>
+
+        <div v-if="mutantEffects.length" class="land-crop-mutants">
+          <div class="land-crop-mutants-title">
+            变异效果
+          </div>
+          <div class="flex flex-wrap gap-1.5">
+            <span v-for="effect in mutantEffects" :key="`mut-${effect.id}-${effect.icon}`" class="land-mutant-chip">
+              <img v-if="effect.image" :src="effect.image" alt="" class="h-4 w-4 object-contain">
+              <span class="font-medium">{{ effect.name }}</span>
+              <span v-if="effect.tag && effect.tag !== '无'" class="text-[10px] text-pink-400">· {{ effect.tag }}</span>
+            </span>
+          </div>
+          <div v-if="mutantEffects.some(effect => effect.description)" class="land-mutant-desc">
+            <div v-for="effect in mutantEffects" :key="`mut-desc-${effect.id}-${effect.icon}`">
+              {{ effect.description || effect.name }}
+            </div>
+          </div>
+        </div>
+
+        <div v-if="land.needWater || land.needWeed || land.needBug" class="land-crop-flags">
+          <span v-if="land.needWater" class="rounded-full bg-blue-100 px-2 py-0.5 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">需要浇水</span>
+          <span v-if="land.needWeed" class="rounded-full bg-green-100 px-2 py-0.5 text-green-700 dark:bg-green-900/40 dark:text-green-300">需要除草</span>
+          <span v-if="land.needBug" class="rounded-full bg-red-100 px-2 py-0.5 text-red-700 dark:bg-red-900/40 dark:text-red-300">需要除虫</span>
+        </div>
+
+        <div class="land-crop-actions">
+          <NButton size="small" type="primary" ghost :disabled="!canFertilize" @click="emit('fertilize')">
+            <template #icon>
+              <span class="i-carbon-growth" />
+            </template>
+            催熟
+          </NButton>
+          <NButton size="small" type="error" ghost :disabled="!canRemove" @click="emit('remove')">
+            <template #icon>
+              <span class="i-carbon-trash-can" />
+            </template>
+            铲除
+          </NButton>
+          <NButton
+            v-if="info && info.mode !== 'max' && info.serverAllowed && connected"
+            size="small"
+            type="primary"
+            @click="emit('upgrade')"
+          >
+            <template #icon>
+              <span class="i-carbon-upgrade" />
+            </template>
+            {{ info.mode === 'unlock' ? '解锁土地' : '升级土地' }}
+          </NButton>
+        </div>
+      </template>
+
+      <!-- 土地等级与升级条件（原有内容保留） -->
       <template v-if="info">
         <div class="land-detail-levels" :class="{ 'land-detail-levels--compare': info.next && info.current }">
           <div v-if="info.current" class="land-detail-soil">
@@ -108,7 +299,7 @@ function format(value: unknown) {
           </p>
         </section>
       </template>
-      <p v-else>
+      <p v-else-if="!hasCrop">
         土地详情暂未获取，请刷新农场。
       </p>
     </NCard>
@@ -122,6 +313,132 @@ function format(value: unknown) {
   overflow-y: auto;
   border-radius: 20px;
 }
+
+/* ===== 作物信息区 ===== */
+.land-crop-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 12px;
+}
+.land-crop-thumb {
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
+}
+.land-crop-thumb-fallback {
+  width: 40px;
+  height: 40px;
+  color: var(--ui-subtle, #9aa39c);
+  font-size: 32px;
+}
+.land-crop-title {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+.land-crop-title strong {
+  font-size: 15px;
+}
+.land-crop-status {
+  padding: 3px 8px;
+  border: 1px solid rgba(67, 141, 99, 0.18);
+  border-radius: 999px;
+  color: #2e714b;
+  background: rgba(228, 241, 231, 0.9);
+  font-size: 10px;
+  font-weight: var(--fw-700, 700);
+}
+.land-crop-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.land-crop-cell {
+  padding: 8px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--n-color, #fff) 60%, transparent);
+  box-shadow: inset 0 0 0 1px var(--n-border-color, rgba(0, 0, 0, 0.08));
+}
+.land-crop-cell small {
+  display: block;
+  color: var(--ui-subtle, #8b948d);
+  font-size: 10px;
+}
+.land-crop-cell strong {
+  margin-top: 2px;
+  display: block;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.land-crop-exp {
+  color: #2e714b;
+}
+.land-crop-gold {
+  color: #b8860b;
+}
+.land-crop-phase {
+  margin-top: 10px;
+  padding: 8px;
+  border-radius: 10px;
+  background: rgba(67, 141, 99, 0.08);
+}
+.land-crop-phase-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: #22a05c;
+  transition: width 0.3s ease;
+}
+.land-crop-mutants {
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(233, 88, 138, 0.07);
+}
+.land-crop-mutants-title {
+  margin-bottom: 6px;
+  color: #d0508a;
+  font-size: 11px;
+  font-weight: var(--fw-600, 600);
+}
+.land-mutant-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--n-color, #fff);
+  color: #b8407e;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  font-size: 11px;
+}
+.land-mutant-desc {
+  margin-top: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  color: #a34a77;
+  background: color-mix(in srgb, var(--n-color, #fff) 85%, transparent);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.land-crop-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 11px;
+}
+.land-crop-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* ===== 土地等级与升级条件（原有样式保留） ===== */
 .land-detail-levels {
   display: grid;
   justify-content: center;
@@ -224,6 +541,9 @@ function format(value: unknown) {
   }
   .land-detail-modal {
     font-size: 13px;
+  }
+  .land-crop-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 </style>

@@ -13,6 +13,7 @@ const {
     getPlantGrowPhases,
     getItemById,
     getItemImageById,
+    getFruitPrice,
     getMutantEffectsByIds,
     getMutantDisplayPlantId,
 } = require('../../config/gameConfig');
@@ -363,6 +364,22 @@ function buildLandDetail(land: any, options: { friendMode?: boolean; landsMap?: 
     const plantName = getPlantName(displayPlantId) || getPlantName(plantId) || plant.name || '未知';
     const plantCfg = getPlantById(plantId);
     const seedId = toNum(plantCfg?.seed_id);
+    // 成熟后每季可收获的经验与金币（老版 getSeedHarvestInfo 口径：经验取 plant.exp，
+    // 金币取果实单价 × 果实数量）。
+    const harvestExpPerSeason = toNum(plantCfg?.exp) || 0;
+    const harvestFruitId = toNum(plantCfg?.fruit?.id) || 0;
+    const harvestGoldPerSeason = harvestFruitId > 0
+        ? getFruitPrice(harvestFruitId) * (toNum(plantCfg?.fruit?.count) || 0)
+        : 0;
+    // 当前阶段的起止时间（秒），供详情弹窗画阶段进度条；末段（成熟）无结束时间。
+    const phaseBeginSec = toTimeSec(currentPhase.begin_time);
+    const phaseEndSecRaw = Array.isArray(plant.phases)
+        ? plant.phases
+            .map((phase: any) => toTimeSec(phase?.begin_time))
+            .filter((time: number) => time > phaseBeginSec)
+            .sort((left: number, right: number) => left - right)[0]
+        : null;
+    const phaseEndTime = Number.isFinite(phaseEndSecRaw) && phaseEndSecRaw ? phaseEndSecRaw : null;
     const plantSize = Math.max(1, toNum(plantCfg?.size) || toNum(sourceLand?.land_size) || landSize || 1);
     const totalSeason = Math.max(1, toNum(plantCfg?.seasons) || 1);
     const currentSeasonRaw = toNum(plant.season);
@@ -394,6 +411,10 @@ function buildLandDetail(land: any, options: { friendMode?: boolean; landsMap?: 
         seedId,
         seedImage: seedId > 0 ? getSeedImageBySeedId(seedId) : '',
         phaseName: currentPhase.phaseName || PHASE_NAMES[phaseVal] || '',
+        phaseStartTime: phaseBeginSec > 0 ? phaseBeginSec : null,
+        phaseEndTime,
+        harvestExpPerSeason,
+        harvestGoldPerSeason,
         currentSeason,
         totalSeason,
         matureInSec,
