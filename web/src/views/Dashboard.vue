@@ -12,6 +12,7 @@ import { getPlatformLabel, useAccountStore } from '@/stores/account'
 import { useBagStore } from '@/stores/bag'
 import { useStatusStore } from '@/stores/status'
 import { useToastStore } from '@/stores/toast'
+import { milkTeaCountdown } from '@/utils/dashboard-activity-check'
 
 const statusStore = useStatusStore()
 const accountStore = useAccountStore()
@@ -192,64 +193,101 @@ function formatBucketTime(item: any) {
   return `${(count / 3600).toFixed(1)}h`
 }
 
-// Next Check Countdown
+// Next Check Countdown —— 旧版四项：农场巡查 / 好友帮助 / 好友偷菜 / 奶茶自动化
 const nextFarmCheck = ref('--:--:--')
-const nextFriendCheck = ref('--:--:--')
+const nextHelpCheck = ref('--:--:--')
+const nextStealCheck = ref('--:--:--')
+const countdownNow = ref(Date.now())
 const localUptime = ref(0)
+const milkTeaCheck = computed(() => milkTeaCountdown(status.value?.nextChecks?.milkTea, countdownNow.value))
+const farmCountdownTotal = ref(1)
+const helpCountdownTotal = ref(1)
+const stealCountdownTotal = ref(1)
 let localNextFarmRemainSec = 0
-let localNextFriendRemainSec = 0
+let localNextHelpRemainSec = 0
+let localNextStealRemainSec = 0
 let farmQuiet = false
 let friendQuiet = false
+let helpEnabled = true
+let stealEnabled = true
+
+function syncCountdownTotal(total: typeof farmCountdownTotal, remain: number, previousRemain: number) {
+  if (remain > previousRemain || total.value <= 1)
+    total.value = Math.max(1, remain)
+}
+
+function getCountdownProgress(remain: number, total: number) {
+  return Math.max(0, Math.min(100, (remain / Math.max(1, total)) * 100))
+}
 
 function updateCountdowns() {
-  // Update uptime
+  countdownNow.value = Date.now()
   if (!status.value?.connection?.connected) {
     nextFarmCheck.value = '账号未登录'
-    nextFriendCheck.value = '账号未登录'
+    nextHelpCheck.value = '账号未登录'
+    nextStealCheck.value = '账号未登录'
+    return
+  }
+
+  localUptime.value++
+
+  if (farmQuiet) {
+    nextFarmCheck.value = '静默中'
+  }
+  else if (localNextFarmRemainSec > 0) {
+    localNextFarmRemainSec--
+    nextFarmCheck.value = formatDuration(localNextFarmRemainSec)
   }
   else {
-    localUptime.value++
-    if (farmQuiet) {
-      nextFarmCheck.value = '静默中'
-    }
-    else if (localNextFarmRemainSec > 0) {
-      localNextFarmRemainSec--
-      nextFarmCheck.value = formatDuration(localNextFarmRemainSec)
-    }
-    else {
-      nextFarmCheck.value = '巡查中...'
-    }
+    nextFarmCheck.value = '检查中...'
+  }
 
-    if (friendQuiet) {
-      nextFriendCheck.value = '静默中'
-    }
-    else if (localNextFriendRemainSec > 0) {
-      localNextFriendRemainSec--
-      nextFriendCheck.value = formatDuration(localNextFriendRemainSec)
-    }
-    else {
-      nextFriendCheck.value = '巡查中...'
-    }
+  if (!helpEnabled) {
+    nextHelpCheck.value = '已关闭'
+  }
+  else if (friendQuiet) {
+    nextHelpCheck.value = '静默中'
+  }
+  else if (localNextHelpRemainSec > 0) {
+    localNextHelpRemainSec--
+    nextHelpCheck.value = formatDuration(localNextHelpRemainSec)
+  }
+  else {
+    nextHelpCheck.value = '检查中...'
+  }
+
+  if (!stealEnabled) {
+    nextStealCheck.value = '已关闭'
+  }
+  else if (friendQuiet) {
+    nextStealCheck.value = '静默中'
+  }
+  else if (localNextStealRemainSec > 0) {
+    localNextStealRemainSec--
+    nextStealCheck.value = formatDuration(localNextStealRemainSec)
+  }
+  else {
+    nextStealCheck.value = '检查中...'
   }
 }
 
 watch(() => status.value?.nextChecks, (nextChecks) => {
+  countdownNow.value = Date.now()
   if (nextChecks) {
-    // Only update local counters if they are significantly different or 0
-    // Actually, we should sync from server periodically.
-    // Here we just take server value when it comes.
-    localNextFarmRemainSec = nextChecks.farmRemainSec || 0
-    // 统一好友任务倒计时；兼容旧 Worker 返回的帮助/偷菜字段。
-    localNextFriendRemainSec = nextChecks.friendRemainSec
-      ?? nextChecks.helpRemainSec
-      ?? nextChecks.stealRemainSec
-      ?? 0
+    const farmRemainSec = Number(nextChecks.farmRemainSec) || 0
+    const helpRemainSec = Number(nextChecks.helpRemainSec ?? nextChecks.friendRemainSec) || 0
+    const stealRemainSec = Number(nextChecks.stealRemainSec ?? nextChecks.friendRemainSec) || 0
+    syncCountdownTotal(farmCountdownTotal, farmRemainSec, localNextFarmRemainSec)
+    syncCountdownTotal(helpCountdownTotal, helpRemainSec, localNextHelpRemainSec)
+    syncCountdownTotal(stealCountdownTotal, stealRemainSec, localNextStealRemainSec)
+    localNextFarmRemainSec = farmRemainSec
+    localNextHelpRemainSec = helpRemainSec
+    localNextStealRemainSec = stealRemainSec
     farmQuiet = !!nextChecks.farmQuiet
-    friendQuiet = nextChecks.friendQuiet
-      ?? nextChecks.helpQuiet
-      ?? nextChecks.stealQuiet
-      ?? false
-    updateCountdowns() // Update immediately
+    friendQuiet = !!(nextChecks.friendQuiet ?? nextChecks.helpQuiet ?? nextChecks.stealQuiet)
+    helpEnabled = nextChecks.helpEnabled !== false
+    stealEnabled = nextChecks.stealEnabled !== false
+    updateCountdowns()
   }
 }, { immediate: true })
 
@@ -257,6 +295,64 @@ watch(() => status.value?.uptime, (uptime) => {
   if (uptime !== undefined)
     localUptime.value = uptime
 }, { immediate: true })
+
+/** 与旧版一致：状态就绪且连接在线时才展示真实倒计时。 */
+const checksReady = computed(() => !!status.value && !statusStore.error && status.value?.connection?.connected === true)
+
+const syncLabel = computed(() => {
+  if (!currentAccountId.value)
+    return '未选择账号'
+  if (statusStore.error)
+    return '同步失败'
+  if (!status.value)
+    return '正在同步'
+  if (!status.value?.connection?.connected)
+    return '账号未连接'
+  return realtimeConnected.value ? '实时同步中' : '轮询同步中'
+})
+
+interface DashboardCheck {
+  key: string
+  label: string
+  icon: string
+  time: string
+  progress: number
+  description?: string
+}
+
+const countdowns = computed((): DashboardCheck[] => [
+  {
+    key: 'farm',
+    label: '农场巡查',
+    icon: 'i-carbon-sprout',
+    time: nextFarmCheck.value,
+    progress: getCountdownProgress(localNextFarmRemainSec, farmCountdownTotal.value),
+  },
+  {
+    key: 'help',
+    label: '好友帮助',
+    icon: 'i-carbon-rain-drop',
+    time: nextHelpCheck.value,
+    progress: helpEnabled ? getCountdownProgress(localNextHelpRemainSec, helpCountdownTotal.value) : 0,
+    description: helpEnabled ? '与偷菜同轮好友巡查' : '好友帮助已关闭',
+  },
+  {
+    key: 'steal',
+    label: '好友偷菜',
+    icon: 'i-carbon-run',
+    time: nextStealCheck.value,
+    progress: stealEnabled ? getCountdownProgress(localNextStealRemainSec, stealCountdownTotal.value) : 0,
+    description: stealEnabled ? '与帮助同轮好友巡查' : '好友偷菜已关闭',
+  },
+  {
+    key: 'milk-tea',
+    label: '奶茶自动化',
+    icon: 'i-carbon-cafe',
+    time: milkTeaCheck.value.time,
+    progress: milkTeaCheck.value.progress,
+    description: milkTeaCheck.value.description,
+  },
+])
 
 function formatDuration(seconds: number) {
   if (seconds <= 0)
@@ -701,32 +797,33 @@ useIntervalFn(updateCountdowns, 1000)
 
       <!-- Right Column Stack -->
       <div class="min-w-0 flex flex-col gap-6 md:w-1/4 md:self-start">
-        <!-- Next Checks -->
-        <div class="flex flex-col farm-card rounded-2xl bg-white p-6 shadow-md dark:bg-gray-800">
-          <h3 class="mb-4 flex items-center gap-2 text-lg font-display font-medium">
-            <span class="i-carbon-time" /> <span>下次巡查倒计时</span>
-          </h3>
-          <div class="flex flex-col justify-center gap-4">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2 text-gray-700 dark:text-gray-300">
-                <span class="i-carbon-sprout text-lg text-green-500" />
-                <span>农场</span>
-              </div>
-              <div class="text-lg tabular-nums font-bold">
-                {{ nextFarmCheck }}
-              </div>
+        <!-- 自动巡查：旧版四项倒计时 -->
+        <section class="dashboard-checks farm-card rounded-2xl bg-white p-5 shadow-md dark:bg-gray-800">
+          <div class="dashboard-panel-heading">
+            <h2>自动巡查</h2>
+            <span class="dashboard-sync" :class="{ 'is-online': checksReady }">
+              <span class="dashboard-sync-dot" />{{ syncLabel }}
+            </span>
+          </div>
+          <div
+            v-for="check in countdowns"
+            :key="check.key"
+            class="dashboard-check"
+            :class="`dashboard-check--${check.key}`"
+          >
+            <span class="dashboard-check-icon"><span :class="check.icon" aria-hidden="true" /></span>
+            <div class="dashboard-check-info">
+              <h3>{{ check.label }}</h3>
+              <p>{{ checksReady ? check.description || '下次检查倒计时' : syncLabel }}</p>
             </div>
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2 text-gray-700 dark:text-gray-300">
-                <span class="i-carbon-collaborate text-lg text-blue-500" />
-                <span>好友任务</span>
-              </div>
-              <div class="text-lg tabular-nums font-bold">
-                {{ nextFriendCheck }}
+            <div class="dashboard-check-time">
+              {{ checksReady ? check.time : '—' }}
+              <div class="dashboard-check-progress">
+                <span :style="{ width: `${checksReady ? check.progress : 0}%` }" />
               </div>
             </div>
           </div>
-        </div>
+        </section>
 
         <!-- Operations Grid -->
         <div class="farm-card rounded-2xl bg-white p-5 shadow-md dark:bg-gray-800">
@@ -764,6 +861,135 @@ useIntervalFn(updateCountdowns, 1000)
 </template>
 
 <style scoped>
+/* 自动巡查：沿用旧版 dashboard-check 结构与间距 */
+.dashboard-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dashboard-panel-heading h2 {
+  color: var(--ui-ink);
+  font-size: 16px;
+  font-weight: var(--fw-600);
+}
+
+.dashboard-sync {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 7px;
+  border-radius: 4px;
+  color: var(--ui-muted);
+  background: var(--ui-surface-soft);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.dashboard-sync.is-online {
+  color: var(--theme-primary);
+  background: color-mix(in srgb, var(--theme-primary) 12%, transparent);
+}
+
+.dashboard-sync-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.dashboard-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 0;
+  border-top: 1px solid var(--ui-border);
+}
+
+.dashboard-panel-heading + .dashboard-check {
+  margin-top: 10px;
+  border-top: 0;
+}
+
+.dashboard-check:last-child {
+  padding-bottom: 0;
+}
+
+.dashboard-check-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  color: var(--theme-primary);
+  background: color-mix(in srgb, var(--theme-primary) 14%, var(--ui-surface));
+  font-size: 22px;
+}
+
+.dashboard-check--help .dashboard-check-icon {
+  color: #3c8fb5;
+  background: color-mix(in srgb, #3c8fb5 14%, var(--ui-surface));
+}
+
+.dashboard-check--steal .dashboard-check-icon {
+  color: #b8862f;
+  background: color-mix(in srgb, #b8862f 16%, var(--ui-surface));
+}
+
+.dashboard-check--milk-tea .dashboard-check-icon {
+  color: #b06a3c;
+  background: color-mix(in srgb, #b06a3c 16%, var(--ui-surface));
+}
+
+.dashboard-check-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.dashboard-check-info h3 {
+  color: var(--ui-ink);
+  font-size: 13px;
+  font-weight: var(--fw-600);
+}
+
+.dashboard-check-info p {
+  margin-top: 4px;
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+
+.dashboard-check-time {
+  max-width: 47%;
+  color: var(--ui-ink);
+  text-align: right;
+  font-size: 17px;
+  font-weight: var(--fw-700);
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-check-progress {
+  width: 78px;
+  height: 3px;
+  margin: 8px 0 0 auto;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--ui-surface-soft);
+}
+
+.dashboard-check-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--theme-primary);
+  transition: width 0.3s linear;
+}
+
 .overview-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

@@ -1205,6 +1205,47 @@ async function getDailyGiftOverview(propagateErrors: boolean = false): Promise<a
     };
 }
 
+/**
+ * 奶茶热销中：把「活动自动化」的真实调度状态折算成首页倒计时用的结构。
+ * 旧版由活动自动检查循环提供；新版这些开关统一走 activity_automation_interval 定时任务，
+ * 所以这里直接读该任务的下次到期时间，开关全关时返回 disabled，避免首页显示假倒计时。
+ */
+const MILK_TEA_AUTOMATION_KEYS = [
+    'milk_tea_auto_open',
+    'milk_tea_auto_rewards',
+    'milk_tea_auto_seeds',
+    'milk_tea_share',
+    'milk_tea_share_daily',
+    'milk_tea_share_rewards',
+    'milk_tea_fund_rewards',
+    'milk_tea_cashier',
+    'milk_tea_wages',
+    'milk_tea_upgrade',
+    'milk_tea_craft',
+    'milk_tea_boost',
+    'milk_tea_interact',
+    'milk_tea_hire',
+    'milk_tea_seed_buy',
+];
+
+function getMilkTeaAutoCheckStatus(): any {
+    const automation = getAutomation() || {};
+    const enabledActionCount = MILK_TEA_AUTOMATION_KEYS.filter(key => automation[key] === true).length;
+    const base = { intervalSec: 300, enabledActionCount, nextRunAt: null };
+    if (!enabledActionCount) return { ...base, state: 'disabled' };
+    let tasks: any[] = [];
+    try {
+        const snapshot = workerScheduler.getSnapshot ? workerScheduler.getSnapshot() : null;
+        tasks = Array.isArray(snapshot && snapshot.tasks) ? snapshot.tasks : [];
+    } catch {
+        tasks = [];
+    }
+    const task = tasks.find(item => item && item.name === 'activity_automation_interval'
+        && !item.running && Number(item.nextRunAt) > 0);
+    if (!task) return { ...base, state: 'idle' };
+    return { ...base, state: 'scheduled', nextRunAt: Number(task.nextRunAt) };
+}
+
 function syncStatus(force: boolean = false): void {
     if (!process.send && !parentPort) return;
 
@@ -1228,6 +1269,7 @@ function syncStatus(force: boolean = false): void {
     const visitStrategy = require('../services/friend/visit-strategy');
     const friendQuiet = !!visitStrategy.inFriendQuietHours();
     const farmQuiet = !!visitStrategy.inFarmQuietHours();
+    const automation = getAutomation() || {};
     fullStats.nextChecks = {
         farmRemainSec,
         helpRemainSec: friendRemainSec,
@@ -1237,6 +1279,11 @@ function syncStatus(force: boolean = false): void {
         friendQuiet,
         helpQuiet: friendQuiet,
         stealQuiet: friendQuiet,
+        // 好友帮忙与偷菜在同一轮好友巡查里一起做，开关状态各自独立，首页据此决定显示倒计时还是「已关闭」。
+        helpEnabled: automation.friend_help !== false,
+        stealEnabled: automation.friend_steal !== false,
+        friendEnabled: automation.friend !== false,
+        milkTea: getMilkTeaAutoCheckStatus(),
     };
 
     fullStats.automation = getAutomation();
