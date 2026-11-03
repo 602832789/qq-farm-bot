@@ -44,6 +44,86 @@ export interface AutomationConfig {
   fertilizer_smart_seconds: number;
   skip_own_weed_bug: boolean;
   show_manual_fertilizer: boolean;
+
+  // ---- 活动自动化（旧版功能模块「日常与活动」） ----
+  task_after_farm: boolean;
+  fertilizer_2x2_ripen: boolean;
+  friend_golden_bug: boolean;
+  golden_bug_clear: boolean;
+  mall_coupon_gift_buy: boolean;
+
+  // 观星 / 星砂集市 / 节气
+  star_passport_claim: boolean;
+  star_solar_claim: boolean;
+  star_solar_quiz_claim: boolean;
+  star_record_claim: boolean;
+  // 青莓酒馆
+  qingmei_seed_claim: boolean;
+  qingmei_wine_brew: boolean;
+  // 七夕
+  qixi_dew_use: boolean;
+  qixi_bridge_build: boolean;
+  qixi_sachet_gift: boolean;
+  qixi_friend_priority: number[];
+  // 雨落成诗
+  rain_poem_bottle_buy: boolean;
+  rain_poem_weather_collect: boolean;
+  rain_poem_summon_use: boolean;
+  rain_poem_prank_use: boolean;
+  rain_poem_research_unlock: boolean;
+  // 公益红花
+  charity_flower_share_claim: boolean;
+  charity_flower_donate: boolean;
+  charity_flower_reward_claim: boolean;
+  charity_flower_public_fund_claim: boolean;
+  // 许愿签
+  wish_sign_draw: boolean;
+  wish_sign_choice: number;
+  wish_sign_claim: boolean;
+  // 分享奖励
+  share_reward_share: boolean;
+  share_reward_daily: boolean;
+  share_reward_milestones: boolean;
+  // 萌宠成长日记
+  pet_diary_adopt: boolean;
+  pet_diary_feed: boolean;
+  pet_diary_draw: boolean;
+  pet_diary_story_claim: boolean;
+  pet_diary_seed_claim: boolean;
+  pet_diary_solar_claim: boolean;
+  pet_diary_treasure_open: boolean;
+  pet_diary_compensation_claim: boolean;
+  pet_diary_charm_equip: boolean;
+  pet_diary_battle: boolean;
+  // 奶茶店
+  milk_tea_share: boolean;
+  milk_tea_share_daily: boolean;
+  milk_tea_share_rewards: boolean;
+  milk_tea_fund_rewards: boolean;
+  milk_tea_cashier: boolean;
+  milk_tea_wages: boolean;
+  milk_tea_upgrade: boolean;
+  milk_tea_craft: boolean;
+  milk_tea_boost: boolean;
+  milk_tea_interact: boolean;
+  milk_tea_interaction_type: number;
+  milk_tea_hire: boolean;
+  milk_tea_hire_duration: number;
+  milk_tea_hire_talent: number;
+  milk_tea_hire_primary_talent: number;
+  milk_tea_hire_backup_talent: number;
+  milk_tea_seed_buy: boolean;
+  milk_tea_auto_open: boolean;
+  milk_tea_auto_rewards: boolean;
+  milk_tea_auto_seeds: boolean;
+  milk_tea_auto_work: boolean;
+  milk_tea_auto_upgrade: boolean;
+  milk_tea_auto_craft: boolean;
+  milk_tea_auto_hire: boolean;
+  milk_tea_auto_boost: boolean;
+  milk_tea_work_interaction_type: number;
+  milk_tea_seed_policy: Record<string, unknown>;
+  milk_tea_hire_policy: Record<string, unknown>;
 }
 
 export interface IntervalConfig {

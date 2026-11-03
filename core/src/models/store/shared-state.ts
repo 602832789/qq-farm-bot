@@ -77,6 +77,77 @@ const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
         fertilizer_smart_seconds: 300,
         skip_own_weed_bug: true,
         show_manual_fertilizer: true,
+
+        // ---- 活动自动化（旧版功能模块「日常与活动」，默认关闭） ----
+        task_after_farm: false,
+        fertilizer_2x2_ripen: false,
+        friend_golden_bug: false,
+        golden_bug_clear: true,
+        mall_coupon_gift_buy: false,
+
+        star_passport_claim: false,
+        star_solar_claim: false,
+        star_solar_quiz_claim: false,
+        star_record_claim: false,
+        qingmei_seed_claim: false,
+        qingmei_wine_brew: false,
+        qixi_dew_use: false,
+        qixi_bridge_build: false,
+        qixi_sachet_gift: false,
+        qixi_friend_priority: [],
+        rain_poem_bottle_buy: false,
+        rain_poem_weather_collect: false,
+        rain_poem_summon_use: false,
+        rain_poem_prank_use: false,
+        rain_poem_research_unlock: false,
+        charity_flower_share_claim: false,
+        charity_flower_donate: false,
+        charity_flower_reward_claim: false,
+        charity_flower_public_fund_claim: false,
+        wish_sign_draw: false,
+        wish_sign_choice: 1,
+        wish_sign_claim: false,
+        share_reward_share: false,
+        share_reward_daily: false,
+        share_reward_milestones: false,
+        pet_diary_adopt: false,
+        pet_diary_feed: false,
+        pet_diary_draw: false,
+        pet_diary_story_claim: false,
+        pet_diary_seed_claim: false,
+        pet_diary_solar_claim: false,
+        pet_diary_treasure_open: false,
+        pet_diary_compensation_claim: false,
+        pet_diary_charm_equip: false,
+        pet_diary_battle: false,
+        milk_tea_share: false,
+        milk_tea_share_daily: false,
+        milk_tea_share_rewards: false,
+        milk_tea_fund_rewards: false,
+        milk_tea_cashier: false,
+        milk_tea_wages: false,
+        milk_tea_upgrade: false,
+        milk_tea_craft: false,
+        milk_tea_boost: false,
+        milk_tea_interact: false,
+        milk_tea_interaction_type: 1,
+        milk_tea_hire: false,
+        milk_tea_hire_duration: 1,
+        milk_tea_hire_talent: 0,
+        milk_tea_hire_primary_talent: 0,
+        milk_tea_hire_backup_talent: 0,
+        milk_tea_seed_buy: false,
+        milk_tea_auto_open: false,
+        milk_tea_auto_rewards: false,
+        milk_tea_auto_seeds: false,
+        milk_tea_auto_work: false,
+        milk_tea_auto_upgrade: false,
+        milk_tea_auto_craft: false,
+        milk_tea_auto_hire: false,
+        milk_tea_auto_boost: false,
+        milk_tea_work_interaction_type: 1,
+        milk_tea_seed_policy: {},
+        milk_tea_hire_policy: {},
     },
     plantingStrategy: 'max_exp',
     preferredSeedId: 0,
@@ -130,6 +201,23 @@ const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
 };
 
 const ALLOWED_AUTOMATION_KEYS: Set<string> = new Set(Object.keys(DEFAULT_ACCOUNT_CONFIG.automation));
+
+// 活动自动化里不是布尔的字段：数值、好友优先列表、奶茶策略对象。
+// 归一化时必须保留原类型，否则会被 !!v 压成 true/false。
+const AUTOMATION_NUMBER_KEYS: Set<string> = new Set([
+    'wish_sign_choice',
+    'milk_tea_interaction_type',
+    'milk_tea_work_interaction_type',
+    'milk_tea_hire_duration',
+    'milk_tea_hire_talent',
+    'milk_tea_hire_primary_talent',
+    'milk_tea_hire_backup_talent',
+]);
+
+const AUTOMATION_OBJECT_KEYS: Set<string> = new Set([
+    'milk_tea_seed_policy',
+    'milk_tea_hire_policy',
+]);
 
 // ============ Normalization Helpers ============
 
@@ -347,6 +435,15 @@ function normalizeAccountConfig(input: unknown, fallback: AccountConfig = accoun
                 cfg.automation.fertilizer_land_types = normalizeFertilizerLandTypes(v, cfg.automation.fertilizer_land_types);
             } else if (k === 'fertilizer_smart_seconds') {
                 cfg.automation.fertilizer_smart_seconds = Math.max(30, Math.min(3600, Number(v) || 300));
+            } else if (AUTOMATION_NUMBER_KEYS.has(k)) {
+                const n = Number(v);
+                if (Number.isFinite(n)) (cfg.automation as any)[k] = Math.max(0, Math.floor(n));
+            } else if (k === 'qixi_friend_priority') {
+                (cfg.automation as any)[k] = Array.isArray(v)
+                    ? v.map(item => Number(item)).filter(item => Number.isFinite(item) && item > 0).slice(0, 50)
+                    : cfg.automation.qixi_friend_priority;
+            } else if (AUTOMATION_OBJECT_KEYS.has(k)) {
+                if (v && typeof v === 'object' && !Array.isArray(v)) (cfg.automation as any)[k] = { ...v };
             } else {
                 (cfg.automation as any)[k] = !!v;
             }

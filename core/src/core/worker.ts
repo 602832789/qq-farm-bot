@@ -374,6 +374,13 @@ function stopMysteryShopTimer(): void {
     workerScheduler.clear('mystery_shop_after_save');
 }
 
+/** 活动自动化：与农场主循环同进程，按 automation 开关逐项执行活动领取。 */
+function startActivityAutomationTimer(): void {
+    if (!loginReady) return;
+    const { startActivityAutomation } = require('../services/activity-automation');
+    startActivityAutomation(workerScheduler);
+}
+
 
 /**
  * 登录完成后的启动序列。
@@ -409,6 +416,7 @@ async function runStartupSequence(canContinue: () => boolean = () => loginReady)
         startUnifiedScheduler();
         startDailyRoutineTimer(false);
         startMysteryShopTimer();
+        startActivityAutomationTimer();
     } catch (e: any) {
         log('系统', `登录启动序列执行失败: ${e.message}`, { module: 'system', event: '启动序列', result: 'error' });
     }
@@ -504,6 +512,7 @@ function applyRuntimeConfig(snapshot: any, syncNow: boolean = false): number {
             }
 
             startMysteryShopTimer();
+            startActivityAutomationTimer();
         }
     }
 

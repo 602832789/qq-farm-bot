@@ -23,8 +23,23 @@ const {
     ALLOWED_PLANTING_STRATEGIES,
 } = sharedState;
 
-function cloneBagSeedLandTypes(input: Record<string, FertilizerLandType[]> | undefined): Record<string, FertilizerLandType[]> {
-    const cloned: Record<string, FertilizerLandType[]> = {};
+// 活动自动化里需要按数值/数组/对象保存的字段，其余开关一律布尔。
+const AUTOMATION_NUMBER_KEYS = new Set([
+    'wish_sign_choice',
+    'milk_tea_interaction_type',
+    'milk_tea_work_interaction_type',
+    'milk_tea_hire_duration',
+    'milk_tea_hire_talent',
+    'milk_tea_hire_primary_talent',
+    'milk_tea_hire_backup_talent',
+]);
+
+const AUTOMATION_OBJECT_KEYS = new Set([
+    'milk_tea_seed_policy',
+    'milk_tea_hire_policy',
+]);
+
+function cloneBagSeedLandTypes(input: Record<string, FertilizerLandType[]> | undefined): Record<string, FertilizerLandType[]> {    const cloned: Record<string, FertilizerLandType[]> = {};
     for (const [seedId, types] of Object.entries(input || {})) {
         cloned[seedId] = [...(types || [])];
     }
@@ -143,6 +158,17 @@ function applyConfigSnapshot(snapshot: Record<string, any> | undefined, options:
                 (next.automation as any)[k] = normalizeFertilizerLandTypes(v, next.automation.fertilizer_land_types);
             } else if (k === 'fertilizer_smart_seconds') {
                 (next.automation as any)[k] = Math.max(30, Math.min(3600, Number(v) || 300));
+            } else if (AUTOMATION_NUMBER_KEYS.has(k)) {
+                const n = Number(v);
+                if (Number.isFinite(n)) (next.automation as any)[k] = Math.max(0, Math.floor(n));
+            } else if (k === 'qixi_friend_priority') {
+                (next.automation as any)[k] = Array.isArray(v)
+                    ? v.map(item => Number(item)).filter(n => Number.isFinite(n) && n > 0).slice(0, 50)
+                    : next.automation.qixi_friend_priority;
+            } else if (AUTOMATION_OBJECT_KEYS.has(k)) {
+                (next.automation as any)[k] = (v && typeof v === 'object' && !Array.isArray(v))
+                    ? { ...v }
+                    : (next.automation as any)[k];
             } else {
                 (next.automation as any)[k] = !!v;
             }

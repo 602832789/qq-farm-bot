@@ -9,7 +9,7 @@ import api, { getApiErrorMessage } from '@/api'
 import AccountModal from '@/components/AccountModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import PageTabs from '@/components/PageTabs.vue'
-import FeatureModuleSettings from '@/components/settings/FeatureModuleSettings.vue'
+import AccountFeatureSettings from '@/components/settings/AccountFeatureSettings.vue'
 import BagSeedPriorityItem from '@/components/settings/BagSeedPriorityItem.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
@@ -303,7 +303,6 @@ const plantingStrategyOptions = [
   { label: '背包种子优先', value: 'bag_priority' },
 ]
 
-const plantingStrategyLabel = computed(() => plantingStrategyOptions.find(option => option.value === localStrategySettings.value.plantingStrategy)?.label || '')
 
 const BAG_FALLBACK_STRATEGY_OPTIONS = [
   { label: '最高等级作物', value: 'level' },
@@ -1006,25 +1005,38 @@ function syncLocalAutomationSettings() {
   }
 }
 
-async function saveAutomationSettings() {
+
+// ==================== 功能模块（旧版六模块） ====================
+// 功能模块里既改 automation，也改部分策略字段（策略、巡查间隔、静默时段），
+// 所以保存时把两份模型合并成一次请求，避免用户切换标签后改动丢失。
+async function handleFeatureModuleSave() {
   const accountId = currentAccountId.value
   if (!accountId)
     return
   automationSaving.value = true
   try {
-    const payload = JSON.parse(JSON.stringify(localAutomationSettings.value))
-    payload.automation.fertilizer_land_types = normalizeFertilizerLandTypes(payload.automation.fertilizer_land_types)
+    const payload: any = {
+      ...JSON.parse(JSON.stringify(localStrategySettings.value)),
+      ...JSON.parse(JSON.stringify(localAutomationSettings.value)),
+    }
+    if (payload.automation?.fertilizer_land_types) {
+      payload.automation.fertilizer_land_types = normalizeFertilizerLandTypes(payload.automation.fertilizer_land_types)
+    }
+    if (payload.plantingStrategy === 'bag_priority') {
+      bagSortRequestRevision++
+      payload.bagSeedPriority = mergeVisibleBagSeedOrder(normalizeVisibleBagSeedOrder(payload.bagSeedPriority))
+    }
     const res = await settingStore.saveSettings(accountId, payload)
     if (accountId !== currentAccountId.value)
       return
     if (res.ok) {
+      syncLocalStrategySettings()
       syncLocalAutomationSettings()
-      showAlert('自动控制设置已保存', 'primary')
+      showAlert('功能模块设置已保存', 'primary')
 
-      // 如果启用了自动购买化肥，立即检测并购买
-      if (payload.automation.fertilizer_buy_organic || payload.automation.fertilizer_buy_normal) {
+      if (payload.automation?.fertilizer_buy_organic || payload.automation?.fertilizer_buy_normal) {
         try {
-          const buyRes = await api.post('/api/fertilizer/check-and-buy', {
+          await api.post('/api/fertilizer/check-and-buy', {
             buyOrganic: payload.automation.fertilizer_buy_organic,
             buyNormal: payload.automation.fertilizer_buy_normal,
             organicCount: payload.fertilizerBuyOrganicCount,
@@ -1034,11 +1046,6 @@ async function saveAutomationSettings() {
           }, {
             headers: { 'x-account-id': accountId },
           })
-          if (accountId === currentAccountId.value && buyRes.data?.ok) {
-            const totalBought = (buyRes.data.organicBought || 0) + (buyRes.data.normalBought || 0)
-            if (totalBought > 0)
-              showAlert(`已自动购买 ${totalBought} 个化肥`, 'primary')
-          }
         }
         catch (e) {
           console.error('检测购买化肥失败', e)
@@ -1047,7 +1054,7 @@ async function saveAutomationSettings() {
     }
     else {
       const message = res.unconfirmed && res.saved
-        ? `自动控制已保存，但运行进程尚未确认应用：${res.error || '请稍后重试或重启账号'}`
+        ? `设置已保存，但运行进程尚未确认应用：${res.error || '请稍后重试或重启账号'}`
         : `保存失败: ${res.error}`
       showAlert(message, res.unconfirmed && res.saved ? 'primary' : 'danger')
     }
@@ -1922,19 +1929,20 @@ async function handleResetSystemConfig() {
             <p>{{ currentAccountId ? '账号设置加载失败，请切换账号或刷新页面重试' : '请先选择账号' }}</p>
           </div>
 
-          <FeatureModuleSettings
+          <AccountFeatureSettings
             v-else
-            v-model="localAutomationSettings"
-            :saving="automationSaving"
-            :account-name="currentAccountName"
+            v-model:strategy="localStrategySettings"
+            v-model:automation="localAutomationSettings"
+            :current-account-name="currentAccountName"
+            :current-account-id="currentAccountId"
+            :loading="settingsLoading"
+            :saving="automationSaving || strategySaving"
+            :planting-strategy-options="plantingStrategyOptions"
+            :bag-fallback-strategy-options="BAG_FALLBACK_STRATEGY_OPTIONS"
+            :strategy-preview-label="strategyPreviewLabel"
             :fertilizer-land-type-options="fertilizerLandTypeOptions"
             :fertilizer-options="fertilizerOptions"
-            :strategy-label="plantingStrategyLabel"
-            :steal-delay-seconds="localStrategySettings.stealDelaySeconds"
-            :friend-min="localStrategySettings.intervals.friendMin"
-            :friend-max="localStrategySettings.intervals.friendMax"
-            @save="saveAutomationSettings"
-            @open-strategy="setActiveTab('strategy')"
+            @save="handleFeatureModuleSave"
           />
         </div>
 
