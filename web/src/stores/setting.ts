@@ -206,6 +206,8 @@ export interface SettingsState {
   bagSeedMultiLandReservationEnabled: boolean
   bagSeedLandTypes: Record<string, string[]>
   bagSeedFallbackStrategy: string
+  /** 优先种植 2×2 作物：开启后选种时多格作物排在单格前面。 */
+  prioritize2x2Crops: boolean
   intervals: IntervalsConfig
   friendQuietHours: FriendQuietHoursConfig
   automation: AutomationConfig
@@ -235,6 +237,7 @@ type SaveableSettingsKey
     | 'bagSeedMultiLandReservationEnabled'
     | 'bagSeedLandTypes'
     | 'bagSeedFallbackStrategy'
+    | 'prioritize2x2Crops'
     | 'intervals'
     | 'friendQuietHours'
     | 'automation'
@@ -261,6 +264,7 @@ const SAVEABLE_SETTINGS_KEYS: SaveableSettingsKey[] = [
   'bagSeedMultiLandReservationEnabled',
   'bagSeedLandTypes',
   'bagSeedFallbackStrategy',
+  'prioritize2x2Crops',
   'intervals',
   'friendQuietHours',
   'automation',
@@ -333,6 +337,7 @@ function createDefaultSettings(): SettingsState {
     bagSeedMultiLandReservationEnabled: false,
     bagSeedLandTypes: {},
     bagSeedFallbackStrategy: 'level',
+    prioritize2x2Crops: false,
     intervals: {},
     friendQuietHours: { enabled: false, start: '23:00', end: '07:00', continueFarm: true },
     automation: {},
@@ -389,6 +394,7 @@ export const useSettingStore = defineStore('setting', () => {
       bagSeedMultiLandReservationEnabled: data.bagSeedMultiLandReservationEnabled ?? defaults.bagSeedMultiLandReservationEnabled,
       bagSeedLandTypes: cloneValue(data.bagSeedLandTypes ?? defaults.bagSeedLandTypes),
       bagSeedFallbackStrategy: data.bagSeedFallbackStrategy ?? defaults.bagSeedFallbackStrategy,
+      prioritize2x2Crops: !!data.prioritize2x2Crops,
       intervals: cloneValue(data.intervals || defaults.intervals),
       friendQuietHours: {
         ...defaults.friendQuietHours,

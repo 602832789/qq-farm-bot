@@ -66,16 +66,35 @@ function normalizeAccount(raw: any): Account {
     };
     const nick = String(source.nick || '').trim();
     if (nick) account.nick = nick;
+    // 微信授权凭据：缺失时保持空串，续期时按“缺少凭据，请重新扫码”处理。
+    const wxid = String(source.wxid || source.openid || '').trim();
+    if (wxid) account.wxid = wxid;
+    const refreshToken = String(source.refreshtoken || '').trim();
+    if (refreshToken) account.refreshtoken = refreshToken;
+    const accessToken = String(source.accesstoken || '').trim();
+    if (accessToken) account.accesstoken = accessToken;
+    const loginBuffer = String(source.loginBuffer || '').trim();
+    if (loginBuffer) account.loginBuffer = loginBuffer;
+    for (const key of ['expires_in', 'expires_at', 'wxCredentialRefreshedAt', 'wxCredentialLastAttemptAt'] as const) {
+        const value = Number(source[key]);
+        if (Number.isFinite(value) && value > 0) account[key] = value;
+    }
+    const refreshError = String(source.wxCredentialRefreshError || '').trim();
+    if (refreshError) account.wxCredentialRefreshError = refreshError;
     return account;
 }
 
-function addOrUpdateAccount(acc: Partial<Account> & { avatarUrl?: string }): AccountsData {
+function addOrUpdateAccount(acc: Partial<Account> & { avatarUrl?: string; openid?: string }): AccountsData {
     const { ensureAccountConfig } = require('./account-config');
     const data = getAccounts();
     let touchedAccountId = '';
     const source: any = acc || {};
     const cleanAccount: any = {};
-    for (const key of ['id', 'name', 'code', 'platform', 'uin', 'qq', 'avatar', 'avatarUrl', 'nick']) {
+    for (const key of [
+        'id', 'name', 'code', 'platform', 'uin', 'qq', 'avatar', 'avatarUrl', 'nick',
+        'wxid', 'openid', 'refreshtoken', 'accesstoken', 'loginBuffer',
+        'expires_in', 'expires_at', 'wxCredentialRefreshedAt', 'wxCredentialLastAttemptAt', 'wxCredentialRefreshError',
+    ]) {
         if (source[key] !== undefined) cleanAccount[key] = source[key];
     }
     acc = cleanAccount;
@@ -96,6 +115,14 @@ function addOrUpdateAccount(acc: Partial<Account> & { avatarUrl?: string }): Acc
             uin: acc.uin ? String(acc.uin) : '',
             qq: acc.qq ? String(acc.qq) : (acc.uin ? String(acc.uin) : ''),
             avatar: acc.avatar || acc.avatarUrl || '',
+            ...(acc.wxid || acc.openid ? { wxid: String(acc.wxid || acc.openid) } : {}),
+            ...(acc.refreshtoken ? { refreshtoken: String(acc.refreshtoken) } : {}),
+            ...(acc.accesstoken ? { accesstoken: String(acc.accesstoken) } : {}),
+            ...(acc.loginBuffer ? { loginBuffer: String(acc.loginBuffer) } : {}),
+            ...(acc.expires_in ? { expires_in: Number(acc.expires_in) } : {}),
+            ...(acc.expires_at ? { expires_at: Number(acc.expires_at) } : {}),
+            ...(acc.wxCredentialRefreshedAt ? { wxCredentialRefreshedAt: Number(acc.wxCredentialRefreshedAt) } : {}),
+            ...(acc.wxCredentialLastAttemptAt ? { wxCredentialLastAttemptAt: Number(acc.wxCredentialLastAttemptAt) } : {}),
             createdAt: Date.now(),
             updatedAt: Date.now(),
         });

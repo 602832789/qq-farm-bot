@@ -80,6 +80,16 @@ const isBagPriority = computed(() => settings.value.plantingStrategy === 'bag_pr
       </div>
     </div>
 
+    <div class="border border-gray-200 rounded-lg bg-gray-50/70 p-3 dark:border-gray-700 dark:bg-gray-800/40">
+      <BaseSwitch
+        v-model="settings.prioritize2x2Crops"
+        label="优先种植 2×2 作物"
+      />
+      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+        开启后，选种时把占地 2×2 的四格作物排在单格作物前面，土地不够放 2×2 时自动回落到单格作物。显式指定的优先种子与背包优先顺序仍然优先。
+      </p>
+    </div>
+
     <div v-if="isBagPriority" class="space-y-3">
       <BaseSelect
         v-model="settings.bagSeedFallbackStrategy"

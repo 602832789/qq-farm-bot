@@ -1,7 +1,7 @@
 import type { GlobalConfig, LoginSettings, OfflineReminder, SystemConfig, UIConfig } from '../../types/config';
 export {};
 
-const { DEFAULT_CLIENT_VERSION, DEFAULT_WX_CLIENT_VERSION, DEFAULT_TIME_ZONE, normalizeTimeZone, resolveClientVersionUpdatedAt } = require('../../config/config');
+const { DEFAULT_CLIENT_VERSION, DEFAULT_WX_CLIENT_VERSION, DEFAULT_TIME_ZONE, DEFAULT_AUTO_CODE_REFRESH, normalizeAutoCodeRefresh, normalizeTimeZone, resolveClientVersionUpdatedAt, getDefaultSystemConfig } = require('../../config/config');
 
 const sharedState = require('./shared-state');
 
@@ -114,7 +114,12 @@ function setOfflineReminder(cfg: Partial<OfflineReminder> | undefined): OfflineR
 }
 
 function getSystemConfig(): SystemConfig | null {
-    return globalConfig.systemConfig ? { ...globalConfig.systemConfig } : null;
+    if (!globalConfig.systemConfig) return null;
+    const config = globalConfig.systemConfig;
+    return {
+        ...config,
+        autoCodeRefresh: normalizeAutoCodeRefresh(config.autoCodeRefresh),
+    };
 }
 
 function setSystemConfig(config: Partial<SystemConfig> | undefined): SystemConfig | null {
@@ -129,13 +134,16 @@ function setSystemConfig(config: Partial<SystemConfig> | undefined): SystemConfi
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) NetType/WIFI MiniProgramEnv/Windows WindowsWechat/WMPF WindowsWechat(0x63090a13)',
     };
     const current = globalConfig.systemConfig;
+    // 只改账号保活这类局部设置时，其余字段必须回落到默认值而不是空串，
+    // 否则一次局部保存会把 serverUrl / platform 之类的连接参数清空。
+    const defaults = getDefaultSystemConfig();
     const srcDevice = {
         ...(current?.deviceInfo || {}),
         ...((config.deviceInfo && typeof config.deviceInfo === 'object') ? config.deviceInfo : {}),
     };
     const topVersion = String(config.clientVersion || '').trim();
     const deviceVersion = String(config.deviceInfo?.clientVersion || '').trim();
-    const requestedVersion = deviceVersion || topVersion || current?.clientVersion;
+    const requestedVersion = deviceVersion || topVersion || current?.clientVersion || defaults.clientVersion;
     const clientVersion = requestedVersion || DEFAULT_DEVICE_INFO.clientVersion;
     const currentVersion = String(globalConfig.systemConfig?.clientVersion || DEFAULT_DEVICE_INFO.clientVersion).trim();
     const currentUpdatedAt = Number(globalConfig.systemConfig?.clientVersionUpdatedAt);
@@ -163,15 +171,19 @@ function setSystemConfig(config: Partial<SystemConfig> | undefined): SystemConfi
         userAgent: String((srcDevice as any).userAgent || DEFAULT_DEVICE_INFO.userAgent).trim(),
     };
     const next: SystemConfig = {
-        serverUrl: String(config.serverUrl ?? current?.serverUrl ?? '').trim(),
+        serverUrl: String(config.serverUrl ?? current?.serverUrl ?? defaults.serverUrl).trim(),
         clientVersion: deviceInfo.clientVersion,
         clientVersionUpdatedAt,
         wxClientVersion,
         wxClientVersionUpdatedAt,
-        platform: String(config.platform || current?.platform || 'qq').trim(),
+        platform: String(config.platform || current?.platform || defaults.platform).trim(),
         os: deviceInfo.os,
-        timeZone: normalizeTimeZone(config.timeZone || current?.timeZone || DEFAULT_TIME_ZONE),
+        timeZone: normalizeTimeZone(config.timeZone || current?.timeZone || defaults.timeZone || DEFAULT_TIME_ZONE),
         deviceInfo,
+        // 只改账号保活时不要把其它系统设置清零：缺字段时沿用已保存的值。
+        autoCodeRefresh: normalizeAutoCodeRefresh(config.autoCodeRefresh === undefined
+            ? (current?.autoCodeRefresh || DEFAULT_AUTO_CODE_REFRESH)
+            : config.autoCodeRefresh),
     };
     saveGlobalConfig({ systemConfig: next });
     return { ...globalConfig.systemConfig };

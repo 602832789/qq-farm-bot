@@ -86,6 +86,7 @@ function summaryTags(key: ModuleKey) {
     const fallbackLabel = props.bagFallbackStrategyOptions.find(option => option.value === strategy.value.bagSeedFallbackStrategy)?.label
     return [
       primaryLabel || '未设置策略',
+      ...(strategy.value.prioritize2x2Crops ? ['优先 2×2'] : []),
       ...(hasFallback ? [`第二策略：${fallbackLabel || '未设置'}`] : []),
       automation.value.automation.sell ? '卖果实' : '不卖果实',
       `巡田 ${intervalTag(strategy.value.intervals.farmMin, strategy.value.intervals.farmMax)}`,

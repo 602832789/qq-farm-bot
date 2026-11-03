@@ -129,6 +129,77 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
         }
     });
 
+    // API: 续期微信授权（批量）。返回每个账号的结果，前端据此提示成功/失败数量。
+    async function refreshWxCredentials(req: Request, res: Response): Promise<any> {
+        try {
+            const { hasWxCredential, refreshAccountCredential } = require('../../services/wx-credential');
+            const accounts = (ctx.provider.getAccounts().accounts || []);
+            const wxAccounts = accounts.filter((account: any) => String(account.platform || '') === 'wx');
+            const targetAccounts = wxAccounts.filter((account: any) => hasWxCredential(account));
+            if (targetAccounts.length === 0) {
+                return res.json({
+                    ok: false,
+                    error: wxAccounts.length === 0 ? '当前没有微信账号' : '没有可续期的微信账号，请重新扫码登录',
+                    data: { total: 0, success: 0, failed: 0, skipped: wxAccounts.length },
+                });
+            }
+
+            const results: any[] = [];
+            for (const account of targetAccounts) {
+                const result = await refreshAccountCredential(account.id);
+                results.push({
+                    accountId: String(account.id),
+                    name: result.accountName,
+                    ok: result.ok,
+                    error: result.ok ? '' : (result.error || '续期失败'),
+                });
+            }
+
+            const success = results.filter(item => item.ok).length;
+            const failed = results.length - success;
+            if (ctx.provider.addAccountLog) {
+                const detail = results.map(item => `${item.name}${item.ok ? '✓' : '✗'}`).join('、');
+                ctx.provider.addAccountLog(
+                    failed === 0 ? 'refresh_wx_credentials' : 'refresh_wx_credentials_failed',
+                    `续期微信授权：成功 ${success} 个，失败 ${failed} 个（${detail}）`,
+                    '',
+                    '',
+                );
+            }
+            res.json({
+                ok: failed === 0,
+                ...(failed > 0 ? { error: `${failed} 个账号续期失败` } : {}),
+                data: {
+                    total: results.length,
+                    success,
+                    failed,
+                    skipped: wxAccounts.length - targetAccounts.length,
+                    results,
+                },
+            });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    }
+
+    app.post('/api/accounts/refresh-wx-credentials', refreshWxCredentials);
+    app.post('/api/accounts/refresh-wx-codes', refreshWxCredentials);
+
+    app.post('/api/accounts/:id/refresh-wx-credential', async (req: Request, res: Response) => {
+        try {
+            const { refreshAccountCredential } = require('../../services/wx-credential');
+            const accountId = resolveAccId(ctx, req.params.id) || String(req.params.id || '');
+            const result = await refreshAccountCredential(accountId);
+            res.status(result.ok ? 200 : 400).json({
+                ok: result.ok,
+                ...(result.ok ? {} : { error: result.error || '续期失败' }),
+                data: result,
+            });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    });
+
     app.delete('/api/accounts/:id', (req: Request, res: Response) => {
         try {
             const resolvedId = resolveAccId(ctx, req.params.id) || String(req.params.id || '');
@@ -373,6 +444,7 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
             const bagSeedMultiLandReservationEnabled = id && (typeof store.getBagSeedMultiLandReservationEnabled === 'function') ? store.getBagSeedMultiLandReservationEnabled(id) : false;
             const bagSeedLandTypes = id && (typeof store.getBagSeedLandTypes === 'function') ? store.getBagSeedLandTypes(id) : {};
             const bagSeedFallbackStrategy = id && (typeof store.getBagSeedFallbackStrategy === 'function') ? store.getBagSeedFallbackStrategy(id) : 'level';
+            const prioritize2x2Crops = id && (typeof store.getPrioritize2x2Crops === 'function') ? store.getPrioritize2x2Crops(id) : false;
             const autoAcceptFriendMinLevel = id && (typeof store.getAutoAcceptFriendMinLevel === 'function') ? store.getAutoAcceptFriendMinLevel(id) : 0;
             const autoAcceptRequireOwnLevel = id && (typeof store.getAutoAcceptRequireOwnLevel === 'function') ? store.getAutoAcceptRequireOwnLevel(id) : false;
             const autoAcceptHarvestStealEnabled = id && (typeof store.getAutoAcceptHarvestStealEnabled === 'function') ? store.getAutoAcceptHarvestStealEnabled(id) : true;
@@ -382,7 +454,7 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
             const offlineReminder = store.getOfflineReminder
                 ? store.getOfflineReminder()
                 : { channel: 'webhook', endpoint: '', token: '', secret: '', title: '账号下线提醒', msg: '账号下线', offlineDeleteSec: 0 };
-            res.json({ ok: true, data: { intervals, strategy, preferredSeed, friendQuietHours, automation, stealDelaySeconds, plantOrderRandom, plantDelaySeconds, fertilizerBuyOrganicCount, fertilizerBuyOrganicThresholdHours, fertilizerBuyNormalCount, fertilizerBuyNormalThresholdHours, fertilizerBuyCheckIntervalMinutes, bagSeedPriority, bagSeedMultiLandReservationEnabled, bagSeedLandTypes, bagSeedFallbackStrategy, autoAcceptFriendMinLevel, autoAcceptRequireOwnLevel, autoAcceptHarvestStealEnabled, autoAcceptHarvestStealHarvest, autoAcceptHarvestStealSteal, ui, offlineReminder } });
+            res.json({ ok: true, data: { intervals, strategy, preferredSeed, friendQuietHours, automation, stealDelaySeconds, plantOrderRandom, plantDelaySeconds, fertilizerBuyOrganicCount, fertilizerBuyOrganicThresholdHours, fertilizerBuyNormalCount, fertilizerBuyNormalThresholdHours, fertilizerBuyCheckIntervalMinutes, bagSeedPriority, bagSeedMultiLandReservationEnabled, bagSeedLandTypes, bagSeedFallbackStrategy, prioritize2x2Crops, autoAcceptFriendMinLevel, autoAcceptRequireOwnLevel, autoAcceptHarvestStealEnabled, autoAcceptHarvestStealHarvest, autoAcceptHarvestStealSteal, ui, offlineReminder } });
         } catch (e: any) {
             handleApiError(res, e);
         }
@@ -458,9 +530,12 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
 
     app.post('/api/settings/system-config', (req: Request, res: Response) => {
         try {
-            const { serverUrl, clientVersion, wxClientVersion, platform, os, timeZone, deviceInfo } = req.body || {};
-            const saved = store.setSystemConfig({ serverUrl, clientVersion, wxClientVersion, platform, os, timeZone, deviceInfo });
+            const { serverUrl, clientVersion, wxClientVersion, platform, os, timeZone, deviceInfo, autoCodeRefresh } = req.body || {};
+            const saved = store.setSystemConfig({ serverUrl, clientVersion, wxClientVersion, platform, os, timeZone, deviceInfo, autoCodeRefresh });
             updateRuntimeConfig(saved);
+            if (autoCodeRefresh !== undefined && ctx.provider.applyAccountKeepAliveConfig) {
+                ctx.provider.applyAccountKeepAliveConfig();
+            }
             if (ctx.provider && typeof ctx.provider.broadcastConfig === 'function') {
                 ctx.provider.broadcastConfig('');
             }

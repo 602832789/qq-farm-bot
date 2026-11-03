@@ -7,11 +7,20 @@ export interface Account {
   id: string
   name: string
   nick?: string
-  uin?: number
+  uin?: number | string
   avatar?: string
   platform?: string
   running?: boolean
-  // Add other fields as discovered
+  runtimeState?: 'logging_in' | 'relogin_waiting' | 'running' | 'offline' | 'stopping' | 'stopped'
+  reloginAt?: number | null
+  /** 微信 openid（续期微信授权用）。 */
+  wxid?: string
+  /** 微信授权到期信息，用于展示剩余时间。 */
+  expires_at?: number
+  expires_in?: number
+  wxCredentialRefreshedAt?: number
+  wxCredentialLastAttemptAt?: number
+  wxCredentialRefreshError?: string
 }
 
 export interface AccountLog {
@@ -147,6 +156,13 @@ export const useAccountStore = defineStore('account', () => {
     }
   }
 
+  /** 续期全部微信账号授权（后端逐账号刷新并写回新 Code）。 */
+  async function refreshWxCodes() {
+    const res = await api.post('/api/accounts/refresh-wx-credentials')
+    await fetchAccounts()
+    return res.data
+  }
+
   async function updateAccount(id: string, payload: any) {
     try {
       // core uses POST /api/accounts for both add and update (if id is present)
@@ -173,6 +189,7 @@ export const useAccountStore = defineStore('account', () => {
     fetchLogs,
     addAccount,
     updateAccount,
+    refreshWxCodes,
     setCurrentAccount,
     syncAccountAvatar,
   }

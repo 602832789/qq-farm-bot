@@ -171,6 +171,8 @@ export interface AccountConfig {
   /** seedId -> 允许种植的土地类型。缺 key 视为不限制。 */
   bagSeedLandTypes: Record<string, FertilizerLandType[]>;
   bagSeedFallbackStrategy: BagSeedFallbackStrategy;
+  /** 选种时把多格（2×2）作物排在单格作物前面。 */
+  prioritize2x2Crops: boolean;
   autoAcceptFriendMinLevel: number;
   autoAcceptRequireOwnLevel: boolean;
   autoAcceptHarvestStealEnabled: boolean;
@@ -209,6 +211,15 @@ export interface DeviceInfo {
   userAgent: string;
 }
 
+export interface AutoCodeRefreshConfig {
+  /** 定时重登：按间隔刷新微信授权并重启账号，保持登录态。 */
+  enabled: boolean;
+  intervalMinutes: number;
+  /** 掉线重登：账号掉线后等待一段时间自动续期并重登。 */
+  offlineEnabled: boolean;
+  offlineDelaySeconds: number;
+}
+
 export interface SystemConfig {
   serverUrl: string;
   clientVersion: string;
@@ -219,6 +230,7 @@ export interface SystemConfig {
   os: string;
   timeZone: string;
   deviceInfo: DeviceInfo;
+  autoCodeRefresh?: AutoCodeRefreshConfig;
 }
 
 export interface GlobalConfig {

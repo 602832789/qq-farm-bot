@@ -9,6 +9,7 @@ const { createDataProvider } = require('./data-provider');
 const { createReloginReminderService } = require('./relogin-reminder');
 const { createRuntimeState } = require('./runtime-state');
 const { createWorkerManager } = require('./worker-manager');
+const { startWxKeepAlive, stopWxKeepAlive, applyWxKeepAliveConfig, notifyAccountOffline } = require('../services/wx-keepalive');
 
 const OPERATION_KEYS = ['harvest', 'farming', 'fertilize', 'plant', 'steal', 'helpFarming', 'taskClaim', 'sell', 'upgrade'];
 
@@ -66,6 +67,9 @@ function createRuntimeEngine(options: RuntimeEngineOptions = {}) {
         sendConfiguredPush,
     } = reloginReminder;
 
+    // 保活回调要在 workerManager 之后才能拿到 restartWorker，这里用一层间接引用避免循环依赖。
+    const wxKeepAliveBridge: { notify?: (accountId: string, accountName: string, reason: string) => void } = {};
+
     const { startWorker, stopWorker, restartWorker, callWorkerApi } = createWorkerManager({
         fork,
         WorkerThread: Worker,
@@ -92,7 +96,23 @@ function createRuntimeEngine(options: RuntimeEngineOptions = {}) {
             runtimeEvents.emit('worker_log', { entry, accountId, accountName });
             if (onLog) onLog(entry, accountId, accountName);
         },
+        onAccountOffline: (accountId: string, accountName: string, reason: string) => {
+            if (typeof wxKeepAliveBridge.notify === 'function') wxKeepAliveBridge.notify(accountId, accountName, reason);
+        },
     });
+
+    wxKeepAliveBridge.notify = (accountId: string, _accountName: string, reason: string) => {
+        notifyAccountOffline(accountId, reason);
+    };
+
+    function startAccountKeepAlive(): void {
+        startWxKeepAlive({
+            restartWorker: (account: any) => restartWorker(account),
+            isAccountRunning: (accountId: string) => !!workers[String(accountId)],
+            log,
+            addAccountLog,
+        });
+    }
     const dataProvider = createDataProvider({
         workers,
         globalLogs: GLOBAL_LOGS,
@@ -170,6 +190,8 @@ function createRuntimeEngine(options: RuntimeEngineOptions = {}) {
         if (shouldAutoStartAccounts) {
             startAllAccounts();
         }
+
+        startAccountKeepAlive();
     }
 
     function stopAllAccounts(): void {
@@ -194,6 +216,9 @@ function createRuntimeEngine(options: RuntimeEngineOptions = {}) {
         callWorkerApi,
         log,
         addAccountLog,
+        startAccountKeepAlive,
+        stopAccountKeepAlive: stopWxKeepAlive,
+        applyAccountKeepAliveConfig: applyWxKeepAliveConfig,
     };
 }
 

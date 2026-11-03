@@ -193,6 +193,7 @@ const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
     bagSeedMultiLandReservationEnabled: false,
     bagSeedLandTypes: {},
     bagSeedFallbackStrategy: 'level',
+    prioritize2x2Crops: false,
     autoAcceptFriendMinLevel: 0,
     autoAcceptRequireOwnLevel: false,
     autoAcceptHarvestStealEnabled: true,
@@ -411,6 +412,9 @@ function cloneAccountConfig(base: Partial<AccountConfig> = DEFAULT_ACCOUNT_CONFI
             : DEFAULT_ACCOUNT_CONFIG.bagSeedMultiLandReservationEnabled,
         bagSeedLandTypes: normalizeBagSeedLandTypes(base.bagSeedLandTypes),
         bagSeedFallbackStrategy: normalizeBagSeedFallbackStrategy(base.bagSeedFallbackStrategy),
+        prioritize2x2Crops: base.prioritize2x2Crops !== undefined
+            ? !!base.prioritize2x2Crops
+            : DEFAULT_ACCOUNT_CONFIG.prioritize2x2Crops,
         autoAcceptFriendMinLevel: normalizeAutoAcceptFriendMinLevel(base.autoAcceptFriendMinLevel, DEFAULT_ACCOUNT_CONFIG.autoAcceptFriendMinLevel),
         autoAcceptRequireOwnLevel: !!base.autoAcceptRequireOwnLevel,
         autoAcceptHarvestStealEnabled: base.autoAcceptHarvestStealEnabled !== undefined
@@ -552,6 +556,10 @@ function normalizeAccountConfig(input: unknown, fallback: AccountConfig = accoun
 
     if (src.bagSeedFallbackStrategy !== undefined && src.bagSeedFallbackStrategy !== null) {
         cfg.bagSeedFallbackStrategy = normalizeBagSeedFallbackStrategy(src.bagSeedFallbackStrategy, cfg.bagSeedFallbackStrategy);
+    }
+
+    if (src.prioritize2x2Crops !== undefined && src.prioritize2x2Crops !== null) {
+        cfg.prioritize2x2Crops = !!src.prioritize2x2Crops;
     }
 
     if (src.autoAcceptFriendMinLevel !== undefined && src.autoAcceptFriendMinLevel !== null) {

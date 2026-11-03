@@ -40,6 +40,8 @@ let wxPollController: AbortController | undefined
 let wxPollInFlight: Promise<void> | undefined
 let wxPollKey = ''
 let wxPendingCode = ''
+// 扫码确认后后端会返回续期凭据（refreshtoken 等），随账号一起保存才能免扫码续期。
+let wxPendingCredential: Record<string, any> | null = null
 const qqTaskId = ref('')
 const qqStatus = ref('')
 const qqError = ref('')
@@ -101,12 +103,16 @@ function clearQrNameSubmitTimer() {
   }
 }
 
-async function addQrAccount(platform: 'wx' | 'qq', code: string, nickname: string) {
+async function addQrAccount(platform: 'wx' | 'qq', code: string, nickname: string, credential: Record<string, any> | null = null) {
   const name = form.name.trim() || nickname
-  if (platform === 'wx')
+  if (platform === 'wx') {
     wxPendingCode = code
-  else
+    if (credential && credential.refreshtoken)
+      wxPendingCredential = credential
+  }
+  else {
     qqPendingCode = code
+  }
 
   if (!name) {
     if (platform === 'wx') {
@@ -141,9 +147,29 @@ async function submitPendingQrAccount(platform: 'wx' | 'qq') {
     qqStatus.value = props.editData ? '正在重新登录...' : '正在添加账号...'
   }
 
-  const payload: any = { name, code, platform, loginType: 'manual' }
+  const credential = platform === 'wx' ? wxPendingCredential : null
+  const payload: any = {
+    name,
+    code,
+    platform,
+    loginType: 'manual',
+    ...(credential
+      ? {
+          wxid: credential.wxid,
+          refreshtoken: credential.refreshtoken,
+          accesstoken: credential.accesstoken,
+          loginBuffer: credential.loginBuffer,
+          expires_in: credential.expires_in,
+          expires_at: credential.expires_at,
+          wxCredentialRefreshedAt: credential.wxCredentialRefreshedAt,
+        }
+      : {}),
+  }
   const saved = await addAccount(payload, !!props.editData)
-  if (!saved && props.show && activeLoginTab.value === `${platform}_qr`) {
+  if (saved) {
+    wxPendingCredential = null
+  }
+  else if (props.show && activeLoginTab.value === `${platform}_qr`) {
     if (platform === 'wx')
       wxPendingCode = code
     else
@@ -245,6 +271,7 @@ function resetWxLogin() {
   wxError.value = ''
   wxQrUrl.value = ''
   wxLoading.value = false
+  wxPendingCredential = null
   wxPendingCode = ''
   clearQrNameSubmitTimer()
 }
@@ -261,10 +288,11 @@ async function getWxCodeAndAdd(taskId: string, flowVersion: number) {
     return
   const code = String(codeResult.data?.data?.code || '').trim()
   const nickname = String(codeResult.data?.data?.nickname || '').trim()
+  const credential = codeResult.data?.data?.credential || null
   if (!code)
     throw new Error('未获取到登录 Code')
 
-  await addQrAccount('wx', code, nickname)
+  await addQrAccount('wx', code, nickname, credential)
 }
 
 async function confirmWxLogin(taskId: string, flowVersion: number) {

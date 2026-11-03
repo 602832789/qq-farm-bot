@@ -125,6 +125,7 @@ function getConfigSnapshot(accountId?: unknown): AccountConfig & { ui: typeof gl
         bagSeedMultiLandReservationEnabled: !!cfg.bagSeedMultiLandReservationEnabled,
         bagSeedLandTypes: cloneBagSeedLandTypes(cfg.bagSeedLandTypes),
         bagSeedFallbackStrategy: cfg.bagSeedFallbackStrategy,
+        prioritize2x2Crops: !!cfg.prioritize2x2Crops,
         autoAcceptFriendMinLevel: cfg.autoAcceptFriendMinLevel,
         autoAcceptRequireOwnLevel: !!cfg.autoAcceptRequireOwnLevel,
         autoAcceptHarvestStealEnabled: !!cfg.autoAcceptHarvestStealEnabled,
@@ -277,6 +278,10 @@ function applyConfigSnapshot(snapshot: Record<string, any> | undefined, options:
         next.bagSeedFallbackStrategy = normalizeBagSeedFallbackStrategy(cfg.bagSeedFallbackStrategy, next.bagSeedFallbackStrategy);
     }
 
+    if (cfg.prioritize2x2Crops !== undefined && cfg.prioritize2x2Crops !== null) {
+        next.prioritize2x2Crops = !!cfg.prioritize2x2Crops;
+    }
+
     if (cfg.autoAcceptFriendMinLevel !== undefined && cfg.autoAcceptFriendMinLevel !== null) {
         next.autoAcceptFriendMinLevel = normalizeAutoAcceptFriendMinLevel(cfg.autoAcceptFriendMinLevel, next.autoAcceptFriendMinLevel);
     }
@@ -343,6 +348,10 @@ function getBagSeedLandTypes(accountId?: unknown): Record<string, FertilizerLand
 
 function getBagSeedFallbackStrategy(accountId?: unknown): BagSeedFallbackStrategy {
     return normalizeBagSeedFallbackStrategy(getAccountConfigSnapshot(accountId).bagSeedFallbackStrategy);
+}
+
+function getPrioritize2x2Crops(accountId?: unknown): boolean {
+    return !!getAccountConfigSnapshot(accountId).prioritize2x2Crops;
 }
 
 function getIntervals(accountId?: unknown): IntervalConfig {
@@ -517,6 +526,7 @@ module.exports = {
     getBagSeedMultiLandReservationEnabled,
     getBagSeedLandTypes,
     getBagSeedFallbackStrategy,
+    getPrioritize2x2Crops,
     getIntervals,
     getFriendQuietHours,
     getKnownFriendGids,

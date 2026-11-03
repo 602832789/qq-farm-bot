@@ -16,6 +16,15 @@ interface DevicePreset {
     deviceInfo: DeviceInfo;
 }
 
+interface AutoCodeRefreshConfig {
+    /** 定时重登：按间隔刷新微信授权并重启账号，保持登录态。 */
+    enabled: boolean;
+    intervalMinutes: number;
+    /** 掉线重登：账号掉线后等待一段时间自动续期并重登。 */
+    offlineEnabled: boolean;
+    offlineDelaySeconds: number;
+}
+
 interface SystemConfig {
     serverUrl: string;
     clientVersion: string;
@@ -26,6 +35,7 @@ interface SystemConfig {
     os: string;
     timeZone: string;
     deviceInfo: DeviceInfo;
+    autoCodeRefresh: AutoCodeRefreshConfig;
 }
 
 interface RuntimeConfig extends SystemConfig {
@@ -201,9 +211,25 @@ const DEFAULT_SYSTEM_CONFIG: SystemConfig = {
     os: DEFAULT_DEVICE_INFO.os,
     timeZone: DEFAULT_TIME_ZONE,
     deviceInfo: { ...DEFAULT_DEVICE_INFO },
+    autoCodeRefresh: { enabled: false, intervalMinutes: 60, offlineEnabled: false, offlineDelaySeconds: 60 },
 };
 
+/** 账号保活配置归一化：重登间隔 1~1440 分钟，掉线等待 1~86400 秒。 */
+function normalizeAutoCodeRefresh(input: unknown): AutoCodeRefreshConfig {
+    const src: any = (input && typeof input === 'object') ? input : {};
+    const interval = Number(src.intervalMinutes);
+    const delay = Number(src.offlineDelaySeconds);
+    return {
+        enabled: src.enabled === true,
+        // 只开掉线重登时也要保留一个可用的间隔值，避免保存后回到默认。
+        intervalMinutes: Number.isFinite(interval) ? Math.max(1, Math.min(1440, Math.round(interval))) : 60,
+        offlineEnabled: src.offlineEnabled === true,
+        offlineDelaySeconds: Number.isFinite(delay) ? Math.max(1, Math.min(86400, Math.round(delay))) : 60,
+    };
+}
+
 const CONFIG: RuntimeConfig = {
+    autoCodeRefresh: { ...DEFAULT_SYSTEM_CONFIG.autoCodeRefresh },
     serverUrl: DEFAULT_SYSTEM_CONFIG.serverUrl,
     clientVersion: DEFAULT_CLIENT_VERSION,
     clientVersionUpdatedAt: DEFAULT_CLIENT_VERSION_UPDATED_AT,
@@ -264,6 +290,9 @@ function updateRuntimeConfig(newConfig: Partial<SystemConfig>): void {
     if (newConfig.os && typeof newConfig.os === 'string') {
         CONFIG.os = newConfig.os;
     }
+    if (newConfig.autoCodeRefresh) {
+        CONFIG.autoCodeRefresh = normalizeAutoCodeRefresh(newConfig.autoCodeRefresh);
+    }
     if (newConfig.timeZone !== undefined) {
         CONFIG.timeZone = normalizeTimeZone(newConfig.timeZone);
     }
@@ -286,11 +315,16 @@ function getRuntimeConfig(): SystemConfig {
         os: CONFIG.os,
         timeZone: CONFIG.timeZone,
         deviceInfo: { ...CONFIG.deviceInfo },
+        autoCodeRefresh: { ...CONFIG.autoCodeRefresh },
     };
 }
 
 function getDefaultSystemConfig(): SystemConfig {
-    return { ...DEFAULT_SYSTEM_CONFIG, deviceInfo: { ...DEFAULT_DEVICE_INFO } };
+    return {
+        ...DEFAULT_SYSTEM_CONFIG,
+        deviceInfo: { ...DEFAULT_DEVICE_INFO },
+        autoCodeRefresh: { ...DEFAULT_SYSTEM_CONFIG.autoCodeRefresh },
+    };
 }
 
 function getDevicePresets(): DevicePreset[] {
@@ -330,6 +364,8 @@ module.exports = {
     updateRuntimeConfig,
     getRuntimeConfig,
     getDefaultSystemConfig,
+    normalizeAutoCodeRefresh,
+    DEFAULT_AUTO_CODE_REFRESH: DEFAULT_SYSTEM_CONFIG.autoCodeRefresh,
     getDevicePresets,
     getTimeZoneOptions,
     normalizeTimeZone,
