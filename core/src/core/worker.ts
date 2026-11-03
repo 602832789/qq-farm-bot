@@ -671,10 +671,12 @@ async function startBot(config: any): Promise<void> {
         if (onSellGain) {
             networkEvents.off('sell', onSellGain);
         }
-        onSellGain = (deltaGold: any) => {
-            const delta = Number(deltaGold || 0);
-            if (!Number.isFinite(delta) || delta <= 0) return;
-            recordOperation('sell', 1);
+        onSellGain = (sellInfo: any) => {
+            // 老版口径：优先取事件里的 count（实际卖出果实数量），兼容旧版纯金币数字量。
+            const gold = Number(sellInfo && sellInfo.gold || sellInfo || 0);
+            const count = Number(sellInfo && sellInfo.count || 0);
+            if (!Number.isFinite(gold) || gold <= 0) return;
+            if (count > 0) recordOperation('sell', count);
         };
         networkEvents.on('sell', onSellGain);
 
@@ -942,12 +944,15 @@ async function handleApiCall(msg: any): Promise<void> {
             case 'sellItems': {
                 const { sellItems: _sell } = require('../services/warehouse');
                 const sellList = Array.isArray(args[0]) ? args[0] : [];
+                // 手动出售同样按老版口径记录：累计卖出果实数量。
+                const sellTotalCount = sellList.reduce((sum: number, it: any) => sum + (Number(it?.count) || 0), 0);
                 result = await _sell(sellList.map((it: any) => ({
                     id: it.id,
                     count: it.count,
                     uid: it.uid || 0,
                     expire_time: it.expireTime ?? it.expire_time,
                 })));
+                if (sellTotalCount > 0) recordOperation('sell', sellTotalCount);
                 break;
             }
             case 'setItemsLocked':

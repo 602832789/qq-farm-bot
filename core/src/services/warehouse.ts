@@ -693,6 +693,9 @@ async function sellAllFruits(): Promise<void> {
         const goldBefore: number = totalsBefore.gold;
         let serverGoldTotal: number = 0;
         let knownGold: number = goldBefore;
+        // 老版口径：出售次数按实际卖出的果实数量累计（跳过的不可售条目不计入）。
+        let soldTotalCount: number = 0;
+        let skippedTotalCount: number = 0;
         for (let i = 0; i < toSell.length; i += SELL_BATCH_SIZE) {
             const batch: any[] = toSell.slice(i, i + SELL_BATCH_SIZE);
             try {
@@ -701,6 +704,7 @@ async function sellAllFruits(): Promise<void> {
                 const gained: number = Math.max(0, toNum(inferred.gain));
                 knownGold = inferred.nextKnownGold;
                 if (gained > 0) serverGoldTotal += gained;
+                soldTotalCount += batch.reduce((sum, it) => sum + toNum(it.count), 0);
             } catch (batchErr: any) {
                 // 某个条目可能参数非法，降级为逐个出售，跳过错误条目
                 logWarn('仓库', `批量出售失败，改为逐个重试: ${batchErr.message}`);
@@ -711,9 +715,11 @@ async function sellAllFruits(): Promise<void> {
                         const gained: number = Math.max(0, toNum(inferred.gain));
                         knownGold = inferred.nextKnownGold;
                         if (gained > 0) serverGoldTotal += gained;
+                        soldTotalCount += toNum(it.count);
                     } catch (singleErr: any) {
                         const sid: number = toNum(it.id);
                         const sc: number = toNum(it.count);
+                        skippedTotalCount += sc;
                         logWarn('仓库', `跳过不可售物品: ID=${sid} x${sc} (${singleErr.message})`, {
                             module: 'warehouse',
                             event: '跳过不可售物品',
@@ -766,6 +772,8 @@ async function sellAllFruits(): Promise<void> {
             event: totalGoldEarned > 0 ? 'sell_success' : 'sell_done',
             result: totalGoldEarned > 0 ? 'ok' : 'unknown_gain',
             count: toSell.length,
+            soldCount: Math.max(0, soldTotalCount),
+            skippedCount: skippedTotalCount,
             gold: totalGoldEarned,
             totalsBefore,
             totalsAfter,
@@ -773,9 +781,9 @@ async function sellAllFruits(): Promise<void> {
             totalsDeltaExp,
         });
 
-        // 发送出售事件，用于统计金币收益
+        // 发送出售事件，用于统计金币收益与出售次数（老版口径：count 为实际卖出果实数量）
         if (totalGoldEarned > 0) {
-            networkEvents.emit('sell', totalGoldEarned);
+            networkEvents.emit('sell', { gold: totalGoldEarned, count: Math.max(0, soldTotalCount) });
         }
     } catch (e: any) {
         logWarn('仓库', `出售失败: ${e.message}`);

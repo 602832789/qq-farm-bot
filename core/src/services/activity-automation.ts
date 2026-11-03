@@ -235,11 +235,14 @@ async function runActivityAutomationOnce(): Promise<string[]> {
                 if (did) {
                     executed.push(op.label);
                     logger.info('活动自动化执行', `${op.label} 完成`);
+                } else {
+                    // 无可领取 / 未开放也是常态，但要让用户在日志里能看到开关确实在跑。
+                    logger.info('活动自动化检查', `${op.label}：本轮无可领取或活动未开放`);
                 }
             } catch (error: any) {
-                // 活动未开启 / 无奖励 + 冷却未到都是常态，只记 debug，避免刷日志。
+                // 活动未开启 / 无奖励 + 冷却未到都是常态，但提升到 info，让用户看得到跳过原因。
                 const message = String(error?.message || error || '');
-                logger.debug('活动自动化跳过', `${op.label}: ${message}`);
+                logger.info('活动自动化跳过', `${op.label}: ${message}`);
             }
         }
 
@@ -277,7 +280,8 @@ async function runActivityAutomationOnce(): Promise<string[]> {
         for (const key of unsupported) {
             if (!automation[key] || warnedKeys.has(key)) continue;
             warnedKeys.add(key);
-            logger.warn('活动自动化待接入', `${key} 已开启，但当前版本尚未接入对应协议实现`);
+            // key 写进消息正文：组合日志只保留 message 字段，放 meta 会丢。
+            logger.warn(`活动自动化待接入: ${key} 已开启，但当前版本尚未接入对应协议实现`);
         }
     } finally {
         ticking = false;
