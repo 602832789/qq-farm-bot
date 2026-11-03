@@ -475,7 +475,7 @@ function itemDescription(item: any): string {
                   <th class="px-4 py-3 font-medium">
                     价格
                   </th>
-                  <th class="sticky right-0 z-10 bg-gray-50 px-4 py-3 text-center font-medium shadow-[-1px_0_0_0_rgba(0,0,0,0.05)] dark:bg-gray-800">
+                  <th class="sticky right-0 z-10 bg-gray-50 px-4 py-3 text-center shadow-[-1px_0_0_0_rgba(0,0,0,0.05)] font-medium dark:bg-gray-800">
                     操作
                   </th>
                 </tr>

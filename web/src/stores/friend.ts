@@ -384,7 +384,7 @@ export const useFriendStore = defineStore('friend', () => {
     }
   }
 
-  async function deleteFriend(accountId: string, friend: { gid: number; name?: string; avatarUrl?: string }) {
+  async function deleteFriend(accountId: string, friend: { gid: number, name?: string, avatarUrl?: string }) {
     const gid = Number(friend?.gid)
     if (!accountId || !gid)
       return { ok: false, message: '参数无效' }

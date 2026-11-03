@@ -132,7 +132,7 @@ function formatGiftProgress(gift: any) {
             >
               <span :class="getGiftIcon(gift.key)" />
             </div>
-            <span class="text-sm font-medium leading-tight 2xl:text-base" style="color: var(--theme-text, #374151)">
+            <span class="text-sm leading-tight font-medium 2xl:text-base" style="color: var(--theme-text, #374151)">
               {{ gift.label }}
             </span>
           </div>

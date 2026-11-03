@@ -1,16 +1,12 @@
 <script setup lang="ts">
 import { NButton } from 'naive-ui/es/button'
-import { NTab } from 'naive-ui/es/tabs'
-import { NTimePicker } from 'naive-ui/es/time-picker'
 import { storeToRefs } from 'pinia'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api, { getApiErrorMessage } from '@/api'
 import AccountModal from '@/components/AccountModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
-import PageTabs from '@/components/PageTabs.vue'
 import AccountFeatureSettings from '@/components/settings/AccountFeatureSettings.vue'
-import BagSeedPriorityItem from '@/components/settings/BagSeedPriorityItem.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
@@ -36,14 +32,26 @@ const userStore = useUserStore()
 const settingStore = useSettingStore()
 const statusStore = useStatusStore()
 
-type SettingsTab = 'account' | 'strategy' | 'automation' | 'system'
-const storedTab = localStorage.getItem('settings-active-tab')
-const settingsTabKeys: SettingsTab[] = ['account', 'strategy', 'automation', 'system']
+type SettingsTab = 'account' | 'account-config' | 'notification' | 'system-settings' | 'system'
+const settingsTabKeys: SettingsTab[] = ['account', 'account-config', 'notification', 'system-settings', 'system']
+// 旧标签仍可能出现在收藏夹或外部链接里，统一折到新分类上。
+const LEGACY_TAB_ALIAS: Record<string, SettingsTab> = {
+  'strategy': 'account-config',
+  'automation': 'account-config',
+  'default-plan': 'account-config',
+  'user': 'notification',
+  'capture': 'system',
+}
+function normalizeTab(value: string): SettingsTab | null {
+  if (LEGACY_TAB_ALIAS[value])
+    return LEGACY_TAB_ALIAS[value]
+  return settingsTabKeys.includes(value as SettingsTab) ? value as SettingsTab : null
+}
+const storedTab = localStorage.getItem('settings-active-tab') || ''
 const queryTab = String(route.query.tab || '')
-const initialTab = settingsTabKeys.includes(queryTab as SettingsTab)
-  ? queryTab as SettingsTab
-  : storedTab === 'user' ? 'system' : (storedTab as SettingsTab) || 'account'
+const initialTab = normalizeTab(queryTab) || normalizeTab(storedTab) || 'account'
 const activeTab = ref<SettingsTab>(initialTab)
+const tabsNav = ref<HTMLElement | null>(null)
 
 watch(activeTab, (newTab) => {
   localStorage.setItem('settings-active-tab', newTab)
@@ -52,24 +60,27 @@ watch(activeTab, (newTab) => {
       query: { ...route.query, tab: newTab },
     })
   }
+  void scrollActiveTabIntoView()
 })
 
 watch(() => route.query.tab, (value) => {
-  const nextTab = String(value || '')
-  if (settingsTabKeys.includes(nextTab as SettingsTab) && nextTab !== activeTab.value)
-    activeTab.value = nextTab as SettingsTab
+  const nextTab = normalizeTab(String(value || ''))
+  if (nextTab && nextTab !== activeTab.value)
+    activeTab.value = nextTab
 })
 
 const tabs = [
-  { key: 'account', label: '账号管理', icon: 'i-carbon-user-profile' },
-  { key: 'strategy', label: '策略设置', icon: 'i-carbon-settings-adjust' },
-  { key: 'automation', label: '功能模块', icon: 'i-carbon-catalog' },
-  { key: 'system', label: '系统设置', icon: 'i-carbon-settings' },
+  { key: 'account', label: '账号管理', icon: 'i-carbon-user-settings' },
+  { key: 'account-config', label: '账号设置', icon: 'i-carbon-settings-adjust' },
+  { key: 'notification', label: '通知设置', icon: 'i-carbon-notification' },
+  { key: 'system-settings', label: '全局设置', icon: 'i-carbon-settings' },
+  { key: 'system', label: '连接与设备', icon: 'i-carbon-settings-services' },
 ] as const
 
-function setActiveTab(value: string) {
-  if (tabs.some(tab => tab.key === value))
-    activeTab.value = value as typeof activeTab.value
+async function scrollActiveTabIntoView() {
+  await nextTick()
+  const button = tabsNav.value?.querySelector<HTMLElement>(`[data-settings-tab="${activeTab.value}"]`)
+  button?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
 }
 
 const modalVisible = ref(false)
@@ -93,12 +104,6 @@ function showAlert(message: string, type: 'primary' | 'danger' = 'primary') {
 // ==================== 账号管理 ====================
 const { accounts, loading: accountsLoading, currentAccountId } = storeToRefs(accountStore)
 const { status: runtimeStatus } = storeToRefs(statusStore)
-const analyticsSortByMap: Record<string, string> = {
-  max_exp: 'exp',
-  max_fert_exp: 'fert',
-  max_profit: 'profit',
-  max_fert_profit: 'fert_profit',
-}
 const automationSaving = ref(false)
 
 const showModal = ref(false)
@@ -141,6 +146,7 @@ onMounted(async () => {
   if (currentAccountId.value)
     await loadStrategyData(currentAccountId.value)
   await Promise.all([loadSystemConfig(), loadDevicePresets()])
+  await scrollActiveTabIntoView()
 })
 
 function openSettings(account: any) {
@@ -227,52 +233,8 @@ async function confirmClearStopped() {
   }
 }
 
-// ==================== 策略设置 ====================
+// ==================== 账号设置（策略 + 功能模块） ====================
 const { settings, loading: settingsLoading, loadedAccountId } = storeToRefs(settingStore)
-
-interface SeedOptionItem {
-  seedId: number
-  name: string
-  requiredLevel: number
-  price: number
-  locked?: boolean
-  soldOut?: boolean
-}
-
-const seedOptions = ref<SeedOptionItem[]>([])
-const seedOptionsRevision = ref(0)
-const strategySaving = ref(false)
-let strategyLoadRevision = 0
-let seedOptionsRequestRevision = 0
-let bagSeedsRequestRevision = 0
-let seedOptionsRequestAccountId = ''
-let seedOptionsLoadedAccountId = ''
-let bagSeedsRequestAccountId = ''
-let bagSeedsLoadedAccountId = ''
-let bagSortRequestRevision = 0
-let previewRequestRevision = 0
-
-// 游戏本地配置的种子名称（seedId -> name），与后端 getBagSeeds 的名称来源（Plant.json）同源。
-const plantNameBySeedId = ref(new Map<number, string>())
-let plantConfigLoaded = false
-
-async function ensurePlantConfigLoaded() {
-  if (plantConfigLoaded)
-    return
-  plantConfigLoaded = true
-  try {
-    const res = await api.get('/game-config/Plant.json', { skipErrorToast: true } as any)
-    const plants = Array.isArray(res?.data) ? res.data : []
-    plantNameBySeedId.value = new Map(
-      plants
-        .map((plant: any): [number, string] => [Number(plant?.seed_id) || 0, String(plant?.name || '').trim()])
-        .filter(([seedId, name]) => seedId > 0 && !!name),
-    )
-  }
-  catch {
-    // 静态配置加载失败时保持按种子 ID 显示
-  }
-}
 
 const currentAccountName = computed(() => {
   const acc = accounts.value.find((a: any) => a.id === currentAccountId.value)
@@ -303,7 +265,6 @@ const plantingStrategyOptions = [
   { label: '背包种子优先', value: 'bag_priority' },
 ]
 
-
 const BAG_FALLBACK_STRATEGY_OPTIONS = [
   { label: '最高等级作物', value: 'level' },
   { label: '最大经验/时', value: 'max_exp' },
@@ -312,439 +273,6 @@ const BAG_FALLBACK_STRATEGY_OPTIONS = [
   { label: '最大普通肥净利润/时', value: 'max_fert_profit' },
   { label: '优先种植种子', value: 'preferred' },
 ]
-
-interface BagSeedItem {
-  seedId: number
-  name: string
-  count: number
-  requiredLevel: number
-  plantSize: number
-  image?: string
-}
-
-const bagSeeds = ref<BagSeedItem[]>([])
-const bagSeedsLoading = ref(false)
-const bagSeedsError = ref<string | null>(null)
-const draggingBagSeedId = ref<number | null>(null)
-
-const visibleBagSeedIds = computed(() => bagSeeds.value.map(seed => seed.seedId))
-
-function normalizeVisibleBagSeedOrder(priority: number[] = localStrategySettings.value.bagSeedPriority) {
-  const visibleIds = visibleBagSeedIds.value
-  const visibleSet = new Set(visibleIds)
-  const normalized: number[] = []
-  for (const seedId of priority || []) {
-    const id = Number(seedId)
-    if (visibleSet.has(id) && !normalized.includes(id))
-      normalized.push(id)
-  }
-  for (const seedId of visibleIds) {
-    if (!normalized.includes(seedId))
-      normalized.push(seedId)
-  }
-  return normalized
-}
-
-function mergeVisibleBagSeedOrder(visibleOrder: number[]) {
-  const visibleIds = visibleBagSeedIds.value
-  const visibleSet = new Set(visibleIds)
-  const normalizedVisible = normalizeVisibleBagSeedOrder(visibleOrder)
-  const existing = [...new Set((localStrategySettings.value.bagSeedPriority || [])
-    .map(Number)
-    .filter(id => Number.isFinite(id) && id > 0))]
-  const merged: number[] = []
-  let visibleIndex = 0
-
-  for (const seedId of existing) {
-    if (visibleSet.has(seedId)) {
-      const replacement = normalizedVisible[visibleIndex++]
-      if (replacement !== undefined && !merged.includes(replacement))
-        merged.push(replacement)
-    }
-    else if (!merged.includes(seedId)) {
-      // 暂时缺货的种子保留原有优先级位置，重新入库后仍按原顺序执行。
-      merged.push(seedId)
-    }
-  }
-  while (visibleIndex < normalizedVisible.length) {
-    const seedId = normalizedVisible[visibleIndex++]!
-    if (!merged.includes(seedId))
-      merged.push(seedId)
-  }
-  return merged
-}
-
-const sortedBagSeeds = computed(() => {
-  const itemMap = new Map(bagSeeds.value.map(seed => [seed.seedId, seed]))
-  return normalizeVisibleBagSeedOrder()
-    .map(seedId => itemMap.get(seedId))
-    .filter((seed): seed is BagSeedItem => !!seed)
-})
-
-function setBagSeedLandTypes(seedId: number, types: string[]) {
-  const next = { ...localStrategySettings.value.bagSeedLandTypes }
-  // 按固定顺序收敛；不勾或勾满都等价于不限制，直接去掉该 seedId。
-  const normalized = fertilizerLandTypeOptions
-    .map(option => option.value)
-    .filter(value => types.includes(value))
-  if (normalized.length === 0 || normalized.length === fertilizerLandTypeOptions.length)
-    delete next[String(seedId)]
-  else
-    next[String(seedId)] = normalized
-  localStrategySettings.value.bagSeedLandTypes = next
-}
-
-// 设置页只列背包里现有的种子，缺货种子的限制仍保留，这里显式列出以免出现看不见的规则。
-const orphanRestrictedSeeds = computed(() => {
-  // 背包列表未加载时无法判断谁真的缺货，此时不显示，避免误清除已有限制。
-  if (bagSeeds.value.length === 0)
-    return []
-  const visible = new Set(visibleBagSeedIds.value)
-  return Object.entries(localStrategySettings.value.bagSeedLandTypes)
-    .map(([seedId, types]) => ({ seedId: Number(seedId), types: types || [] }))
-    .filter(item => item.seedId > 0 && item.types.length > 0 && !visible.has(item.seedId))
-    .sort((a, b) => a.seedId - b.seedId)
-    .map((item) => {
-      const labels = fertilizerLandTypeOptions
-        .filter(option => item.types.includes(option.value))
-        .map(option => option.label)
-      return {
-        seedId: item.seedId,
-        name: plantNameBySeedId.value.get(item.seedId) || `种子 #${item.seedId}`,
-        scope: `仅种 ${labels.join('、')}`,
-      }
-    })
-})
-
-function isAccountConnected(accountId: string) {
-  return String(runtimeStatus.value?.accountId || '') === String(accountId)
-    && runtimeStatus.value?.connection?.connected === true
-}
-
-async function fetchSeedOptions(accountId: string) {
-  if (
-    !accountId
-    || !isAccountConnected(accountId)
-    || seedOptionsRequestAccountId === accountId
-    || seedOptionsLoadedAccountId === accountId
-  ) {
-    return
-  }
-  const requestRevision = ++seedOptionsRequestRevision
-  seedOptionsRequestAccountId = accountId
-  try {
-    const { data } = await api.get('/api/seeds', {
-      headers: { 'x-account-id': accountId },
-      skipErrorToast: true,
-    } as any)
-    if (requestRevision !== seedOptionsRequestRevision || accountId !== currentAccountId.value)
-      return
-    seedOptions.value = data?.ok ? (data.data || []) : []
-    seedOptionsRevision.value++
-    if (accountId === currentAccountId.value)
-      seedOptionsLoadedAccountId = accountId
-  }
-  catch {
-    if (requestRevision === seedOptionsRequestRevision && accountId === currentAccountId.value) {
-      seedOptions.value = []
-      seedOptionsRevision.value++
-      seedOptionsLoadedAccountId = accountId
-    }
-  }
-  finally {
-    if (seedOptionsRequestAccountId === accountId)
-      seedOptionsRequestAccountId = ''
-  }
-}
-
-async function fetchBagSeeds(accountId = currentAccountId.value) {
-  if (
-    !accountId
-    || !isAccountConnected(accountId)
-    || bagSeedsRequestAccountId === accountId
-    || bagSeedsLoadedAccountId === accountId
-  ) {
-    return
-  }
-  const requestRevision = ++bagSeedsRequestRevision
-  bagSeedsRequestAccountId = accountId
-  bagSeedsLoading.value = true
-  bagSeedsError.value = null
-  ensurePlantConfigLoaded()
-  try {
-    const res = await api.get('/api/bag/seeds', {
-      headers: { 'x-account-id': accountId },
-      skipErrorToast: true,
-    } as any)
-    if (requestRevision !== bagSeedsRequestRevision || accountId !== currentAccountId.value)
-      return
-    if (res.data.ok) {
-      bagSeeds.value = (res.data.data || []).filter((seed: BagSeedItem) => seed.plantSize >= 1)
-    }
-    else {
-      bagSeeds.value = []
-      bagSeedsError.value = getApiErrorMessage(res.data, '加载失败')
-      bagSeedsLoadedAccountId = accountId
-    }
-    if (accountId === currentAccountId.value)
-      bagSeedsLoadedAccountId = accountId
-  }
-  catch (e: any) {
-    e.message = getApiErrorMessage(e, '加载失败')
-    if (requestRevision === bagSeedsRequestRevision && accountId === currentAccountId.value) {
-      bagSeedsError.value = e.message || '加载失败'
-      bagSeedsLoadedAccountId = accountId
-    }
-  }
-  finally {
-    if (requestRevision === bagSeedsRequestRevision && accountId === currentAccountId.value)
-      bagSeedsLoading.value = false
-    if (bagSeedsRequestAccountId === accountId)
-      bagSeedsRequestAccountId = ''
-  }
-}
-
-function materializeVisibleBagSeedOrder() {
-  return normalizeVisibleBagSeedOrder()
-}
-
-function saveVisibleBagSeedOrder(visibleOrder: number[]) {
-  bagSortRequestRevision++
-  localStrategySettings.value.bagSeedPriority = mergeVisibleBagSeedOrder(visibleOrder)
-}
-
-function compareBagSeedsByLevel(a: BagSeedItem, b: BagSeedItem) {
-  if (a.requiredLevel !== b.requiredLevel)
-    return b.requiredLevel - a.requiredLevel
-  return a.seedId - b.seedId
-}
-
-async function sortBagSeedsByFallbackStrategy(strategy: string, accountId = currentAccountId.value) {
-  if (!accountId || accountId !== currentAccountId.value)
-    return
-  const requestRevision = ++bagSortRequestRevision
-  const strategyAtRequest = strategy
-  const items = [...bagSeeds.value]
-  const ordered = [...items].sort(compareBagSeedsByLevel)
-
-  if (strategyAtRequest === 'preferred') {
-    const preferredSeedId = Number(localStrategySettings.value.preferredSeedId || 0)
-    ordered.sort((a, b) => {
-      const aPreferred = a.seedId === preferredSeedId ? 0 : 1
-      const bPreferred = b.seedId === preferredSeedId ? 0 : 1
-      return aPreferred - bPreferred || compareBagSeedsByLevel(a, b)
-    })
-  }
-  else if (strategyAtRequest !== 'level') {
-    const sortBy = analyticsSortByMap[strategyAtRequest]
-    if (sortBy) {
-      try {
-        const { data } = await api.get('/api/analytics', {
-          params: { sort: sortBy },
-          headers: { 'x-account-id': accountId },
-        })
-        if (requestRevision !== bagSortRequestRevision || accountId !== currentAccountId.value || localStrategySettings.value.bagSeedFallbackStrategy !== strategyAtRequest)
-          return
-        const rankMap = new Map<number, number>()
-        const rankings: any[] = data?.ok ? (data.data || []) : []
-        rankings.forEach((item, index) => rankMap.set(Number(item.seedId), index))
-        ordered.sort((a, b) => {
-          const aRank = rankMap.get(a.seedId) ?? Number.MAX_SAFE_INTEGER
-          const bRank = rankMap.get(b.seedId) ?? Number.MAX_SAFE_INTEGER
-          return aRank - bRank || compareBagSeedsByLevel(a, b)
-        })
-      }
-      catch {
-        // 排名请求失败时保留稳定的等级/ID顺序。
-      }
-    }
-  }
-
-  if (requestRevision !== bagSortRequestRevision || accountId !== currentAccountId.value || localStrategySettings.value.bagSeedFallbackStrategy !== strategyAtRequest)
-    return
-  saveVisibleBagSeedOrder(ordered.map(seed => seed.seedId))
-}
-
-async function ensureBagSeedsForUserSort(accountId: string) {
-  if (bagSeedsLoading.value || bagSeeds.value.length === 0)
-    await fetchBagSeeds(accountId)
-}
-
-async function handleBagFallbackStrategyChange(value: string | number) {
-  const accountId = currentAccountId.value
-  const strategy = String(value)
-  if (!accountId)
-    return
-  await ensureBagSeedsForUserSort(accountId)
-  if (accountId === currentAccountId.value && localStrategySettings.value.bagSeedFallbackStrategy === strategy)
-    await sortBagSeedsByFallbackStrategy(strategy, accountId)
-}
-
-async function handlePreferredSeedChange() {
-  const accountId = currentAccountId.value
-  if (!accountId || localStrategySettings.value.plantingStrategy !== 'bag_priority' || localStrategySettings.value.bagSeedFallbackStrategy !== 'preferred')
-    return
-  await ensureBagSeedsForUserSort(accountId)
-  if (accountId === currentAccountId.value && localStrategySettings.value.bagSeedFallbackStrategy === 'preferred')
-    await sortBagSeedsByFallbackStrategy('preferred', accountId)
-}
-
-async function resetBagSeedPriority() {
-  const accountId = currentAccountId.value
-  const strategy = localStrategySettings.value.bagSeedFallbackStrategy
-  if (!accountId)
-    return
-  await ensureBagSeedsForUserSort(accountId)
-  if (accountId === currentAccountId.value && localStrategySettings.value.bagSeedFallbackStrategy === strategy)
-    await sortBagSeedsByFallbackStrategy(strategy, accountId)
-}
-
-function moveBagSeed(seedId: number, direction: -1 | 1) {
-  const nextOrder = materializeVisibleBagSeedOrder()
-  const index = nextOrder.indexOf(seedId)
-  const targetIndex = index + direction
-  if (index < 0 || targetIndex < 0 || targetIndex >= nextOrder.length)
-    return
-
-  const temp = nextOrder[index]!
-  nextOrder[index] = nextOrder[targetIndex]!
-  nextOrder[targetIndex] = temp
-  saveVisibleBagSeedOrder(nextOrder)
-}
-
-function moveBagSeedUp(seedId: number) {
-  moveBagSeed(seedId, -1)
-}
-
-function moveBagSeedDown(seedId: number) {
-  moveBagSeed(seedId, 1)
-}
-
-function startBagSeedDrag(seedId: number, event: DragEvent) {
-  materializeVisibleBagSeedOrder()
-  draggingBagSeedId.value = seedId
-  if (event.dataTransfer) {
-    event.dataTransfer.effectAllowed = 'move'
-    event.dataTransfer.setData('text/plain', String(seedId))
-  }
-}
-
-function endBagSeedDrag() {
-  draggingBagSeedId.value = null
-}
-
-function dragOverBagSeed(_seedId: number, event: DragEvent) {
-  if (draggingBagSeedId.value === null)
-    return
-  event.preventDefault()
-  if (event.dataTransfer)
-    event.dataTransfer.dropEffect = 'move'
-}
-
-function dropBagSeed(seedId: number, event: DragEvent) {
-  event.preventDefault()
-  const sourceSeedId = draggingBagSeedId.value ?? Number(event.dataTransfer?.getData('text/plain') || '')
-  if (!sourceSeedId || sourceSeedId === seedId) {
-    endBagSeedDrag()
-    return
-  }
-
-  const nextOrder = materializeVisibleBagSeedOrder()
-  const sourceIndex = nextOrder.indexOf(sourceSeedId)
-  const targetIndex = nextOrder.indexOf(seedId)
-  if (sourceIndex < 0 || targetIndex < 0) {
-    endBagSeedDrag()
-    return
-  }
-
-  const [source] = nextOrder.splice(sourceIndex, 1)
-  const newTargetIndex = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex
-  nextOrder.splice(newTargetIndex, 0, source!)
-  saveVisibleBagSeedOrder(nextOrder)
-  endBagSeedDrag()
-}
-
-watch(() => [localStrategySettings.value.plantingStrategy, currentAccountId.value] as const, ([strategy, accountId], previous) => {
-  if (
-    strategy === 'bag_priority'
-    && accountId
-    && isAccountConnected(accountId)
-    && (previous?.[0] !== strategy || previous?.[1] !== accountId)
-  ) {
-    fetchBagSeeds(accountId)
-  }
-}, { immediate: true })
-
-const preferredSeedOptions = computed(() => {
-  const options: { label: string, value: number, disabled?: boolean }[] = [{ label: '自动选择', value: 0, disabled: false }]
-  options.push(...seedOptions.value.map(seed => ({
-    label: `${seed.requiredLevel}级 ${seed.name} (${seed.price}金)`,
-    value: seed.seedId,
-    disabled: seed.locked || seed.soldOut,
-  })))
-  return options
-})
-
-const strategyPreviewLabel = ref<string | null>(null)
-
-watch(() => [
-  localStrategySettings.value.plantingStrategy,
-  localStrategySettings.value.bagSeedFallbackStrategy,
-  localStrategySettings.value.preferredSeedId,
-  seedOptionsRevision.value,
-  currentAccountId.value,
-] as const, async ([plantingStrategy, fallbackStrategy, preferredSeedId, , accountId]) => {
-  const currentSeeds = seedOptions.value
-  const requestRevision = ++previewRequestRevision
-  let strategy = plantingStrategy
-  if (strategy === 'preferred') {
-    strategyPreviewLabel.value = null
-    return
-  }
-  if (strategy === 'bag_priority') {
-    strategy = fallbackStrategy || 'level'
-    if (strategy === 'preferred') {
-      const seed = preferredSeedId > 0 ? currentSeeds.find(item => item.seedId === preferredSeedId) : undefined
-      strategyPreviewLabel.value = seed ? `${seed.requiredLevel}级 ${seed.name}` : '未选择优先种子'
-      return
-    }
-  }
-  if (currentSeeds.length === 0) {
-    strategyPreviewLabel.value = null
-    return
-  }
-  const available = currentSeeds.filter(seed => !seed.locked && !seed.soldOut)
-  if (available.length === 0) {
-    strategyPreviewLabel.value = '暂无可用种子'
-    return
-  }
-  if (strategy === 'level') {
-    const best = [...available].sort((a, b) => b.requiredLevel - a.requiredLevel || a.seedId - b.seedId)[0]
-    strategyPreviewLabel.value = best ? `${best.requiredLevel}级 ${best.name}` : null
-    return
-  }
-  const sortBy = analyticsSortByMap[strategy]
-  if (!sortBy)
-    return
-
-  try {
-    const { data } = await api.get('/api/analytics', {
-      params: { sort: sortBy },
-      headers: accountId ? { 'x-account-id': accountId } : undefined,
-    })
-    if (requestRevision !== previewRequestRevision || accountId !== currentAccountId.value)
-      return
-    const rankings: any[] = data?.ok ? (data.data || []) : []
-    const availableIds = new Set(available.map(seed => seed.seedId))
-    const match = rankings.find(item => availableIds.has(Number(item.seedId)))
-    const seed = match ? available.find(item => item.seedId === Number(match.seedId)) : undefined
-    strategyPreviewLabel.value = seed ? `${seed.requiredLevel}级 ${seed.name}` : '暂无匹配种子'
-  }
-  catch {
-    if (requestRevision === previewRequestRevision && accountId === currentAccountId.value)
-      strategyPreviewLabel.value = null
-  }
-}, { immediate: true })
 
 function syncLocalStrategySettings() {
   if (settings.value) {
@@ -773,74 +301,18 @@ function syncLocalStrategySettings() {
 async function loadStrategyData(accountId = currentAccountId.value) {
   if (!accountId)
     return
-  const requestRevision = ++strategyLoadRevision
   const loaded = await settingStore.fetchSettings(accountId)
-  if (!loaded || requestRevision !== strategyLoadRevision || accountId !== currentAccountId.value)
+  if (!loaded || accountId !== currentAccountId.value)
     return
   syncLocalStrategySettings()
   syncLocalAutomationSettings()
   syncLocalOfflineSettings()
-  if (isAccountConnected(accountId))
-    await fetchSeedOptions(accountId)
-}
-
-async function saveStrategySettings() {
-  const accountId = currentAccountId.value
-  if (!accountId)
-    return
-  strategySaving.value = true
-  try {
-    const payload = JSON.parse(JSON.stringify(localStrategySettings.value))
-    if (payload.plantingStrategy === 'bag_priority') {
-      bagSortRequestRevision++
-      payload.bagSeedPriority = mergeVisibleBagSeedOrder(normalizeVisibleBagSeedOrder(payload.bagSeedPriority))
-    }
-    const res = await settingStore.saveSettings(accountId, payload)
-    if (accountId !== currentAccountId.value)
-      return
-    if (res.ok) {
-      syncLocalStrategySettings()
-      showAlert('策略设置已保存', 'primary')
-    }
-    else {
-      const message = res.unconfirmed && res.saved
-        ? `策略已保存，但运行进程尚未确认应用：${res.error || '请稍后重试或重启账号'}`
-        : `保存失败: ${res.error}`
-      showAlert(message, res.unconfirmed && res.saved ? 'primary' : 'danger')
-    }
-  }
-  finally {
-    if (accountId === currentAccountId.value)
-      strategySaving.value = false
-  }
 }
 
 watch(currentAccountId, (accountId) => {
-  strategySaving.value = false
   automationSaving.value = false
-  draggingBagSeedId.value = null
-  bagSeeds.value = []
-  bagSeedsError.value = null
-  seedOptions.value = []
-  seedOptionsRequestAccountId = ''
-  seedOptionsLoadedAccountId = ''
-  bagSeedsRequestAccountId = ''
-  bagSeedsLoadedAccountId = ''
-  strategyPreviewLabel.value = null
   if (accountId)
     loadStrategyData(accountId)
-})
-
-watch(() => [
-  runtimeStatus.value?.accountId,
-  runtimeStatus.value?.connection?.connected,
-  currentAccountId.value,
-] as const, ([statusAccountId, connected, accountId]) => {
-  if (!connected || !accountId || String(statusAccountId || '') !== String(accountId))
-    return
-  fetchSeedOptions(accountId)
-  if (localStrategySettings.value.plantingStrategy === 'bag_priority')
-    fetchBagSeeds(accountId)
 })
 
 // ==================== 自动控制 ====================
@@ -1005,7 +477,6 @@ function syncLocalAutomationSettings() {
   }
 }
 
-
 // ==================== 功能模块（旧版六模块） ====================
 // 功能模块里既改 automation，也改部分策略字段（策略、巡查间隔、静默时段），
 // 所以保存时把两份模型合并成一次请求，避免用户切换标签后改动丢失。
@@ -1023,8 +494,10 @@ async function handleFeatureModuleSave() {
       payload.automation.fertilizer_land_types = normalizeFertilizerLandTypes(payload.automation.fertilizer_land_types)
     }
     if (payload.plantingStrategy === 'bag_priority') {
-      bagSortRequestRevision++
-      payload.bagSeedPriority = mergeVisibleBagSeedOrder(normalizeVisibleBagSeedOrder(payload.bagSeedPriority))
+      // 顺序由弹窗里的背包排序组件维护，这里只做去重与非法值收敛，不再重排。
+      payload.bagSeedPriority = [...new Set<number>((payload.bagSeedPriority || [])
+        .map(Number)
+        .filter((id: number) => Number.isFinite(id) && id > 0))]
     }
     const res = await settingStore.saveSettings(accountId, payload)
     if (accountId !== currentAccountId.value)
@@ -1478,15 +951,25 @@ async function handleResetSystemConfig() {
 
 <template>
   <div class="settings-page page-stack">
-    <div class="settings-content">
-      <PageTabs :value="activeTab" @update:value="setActiveTab">
-        <NTab v-for="tab in tabs" :key="tab.key" :name="tab.key">
-          <span class="inline-flex items-center gap-2">
-            <span :class="tab.icon" />
+    <div class="settings-workspace">
+      <aside class="settings-navigation">
+        <div class="settings-navigation-label">
+          账号与偏好
+        </div>
+        <nav ref="tabsNav" class="settings-categories" aria-label="设置分类">
+          <button
+            v-for="tab in tabs"
+            :key="tab.key"
+            :data-settings-tab="tab.key"
+            class="settings-category"
+            :aria-pressed="activeTab === tab.key"
+            @click="activeTab = tab.key"
+          >
+            <div :class="tab.icon" />
             {{ tab.label }}
-          </span>
-        </NTab>
-      </PageTabs>
+          </button>
+        </nav>
+      </aside>
 
       <div class="settings-body">
         <!-- 账号管理 -->
@@ -1667,258 +1150,8 @@ async function handleResetSystemConfig() {
           />
         </div>
 
-        <!-- 策略设置 -->
-        <div v-else-if="activeTab === 'strategy'" class="space-y-4">
-          <div class="flex items-center justify-between">
-            <h3 class="flex items-center gap-2 text-lg text-gray-900 font-bold dark:text-gray-100">
-              <div class="i-fas-cog text-lg" />
-              策略设置
-              <span v-if="currentAccountName" class="ml-2 text-sm text-gray-500 font-normal dark:text-gray-400">
-                ({{ currentAccountName }})
-              </span>
-            </h3>
-          </div>
-
-          <div v-if="settingsLoading" class="py-4 text-center text-gray-500">
-            <span class="i-carbon-circle-dash mx-auto mb-2 inline-block animate-spin text-2xl" />
-            <p>加载中...</p>
-          </div>
-
-          <div v-else-if="!currentAccountId || loadedAccountId !== currentAccountId" class="py-8 text-center text-gray-500">
-            <div class="i-carbon-settings mx-auto mb-2 text-3xl text-gray-400" />
-            <p>{{ currentAccountId ? '账号设置加载失败，请切换账号或刷新页面重试' : '请先选择账号' }}</p>
-          </div>
-
-          <div v-else class="space-y-4">
-            <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <BaseSelect
-                v-model="localStrategySettings.plantingStrategy"
-                label="种植策略"
-                :options="plantingStrategyOptions"
-              />
-              <BaseSelect
-                v-if="localStrategySettings.plantingStrategy === 'preferred'"
-                v-model="localStrategySettings.preferredSeedId"
-                label="优先种植种子"
-                :options="preferredSeedOptions"
-              />
-              <BaseSelect
-                v-else-if="localStrategySettings.plantingStrategy === 'bag_priority' && localStrategySettings.bagSeedFallbackStrategy === 'preferred'"
-                v-model="localStrategySettings.preferredSeedId"
-                label="优先种植种子"
-                :options="preferredSeedOptions"
-                @change="handlePreferredSeedChange"
-              />
-              <div v-else class="flex flex-col gap-1.5">
-                <label class="text-sm text-gray-700 font-medium dark:text-gray-300">
-                  {{ localStrategySettings.plantingStrategy === 'bag_priority' ? '第二优先策略预览' : '策略选种预览' }}
-                </label>
-                <div
-                  class="w-full flex items-center justify-between border border-gray-200 rounded-lg bg-gray-50 px-3 py-2 text-gray-500 dark:border-gray-600 dark:bg-gray-800/50 dark:text-gray-400"
-                >
-                  <span class="truncate">{{ strategyPreviewLabel ?? '加载中...' }}</span>
-                  <span class="shrink-0 text-lg text-gray-400">▼</span>
-                </div>
-              </div>
-            </div>
-
-            <div v-if="localStrategySettings.plantingStrategy === 'bag_priority'" class="space-y-3">
-              <BaseSelect
-                v-model="localStrategySettings.bagSeedFallbackStrategy"
-                label="第二优先策略"
-                :options="BAG_FALLBACK_STRATEGY_OPTIONS"
-                @change="handleBagFallbackStrategyChange"
-              />
-              <div class="border border-gray-200 rounded-lg bg-gray-50/70 p-3 dark:border-gray-700 dark:bg-gray-800/40">
-                <BaseSwitch
-                  v-model="localStrategySettings.bagSeedMultiLandReservationEnabled"
-                  label="为高优先级多格种子预留土地"
-                />
-                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  开启后可能暂时留空部分土地，直到明确排在前面的多格种子凑齐连续布局。默认关闭。
-                </p>
-              </div>
-              <div class="border border-amber-200 rounded-lg bg-amber-50/70 p-3 space-y-3 dark:border-amber-800/50 dark:bg-amber-900/20">
-                <div class="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <div class="text-sm text-amber-900 font-semibold dark:text-amber-200">
-                      背包种子优先顺序
-                    </div>
-                    <p class="mt-1 text-xs text-amber-700/90 dark:text-amber-300/90">
-                      先按下方顺序消耗背包中的 1x1 / 2x2 种子；背包种子不足时，再按“第二优先策略”补种。切换第二优先策略或重置时会据此重新排序。
-                    </p>
-                    <p class="mt-1 text-xs text-amber-700/90 dark:text-amber-300/90">
-                      配了土地限制的种子会先占用它能种的地块，再由不限制的种子使用剩余空地。
-                    </p>
-                  </div>
-                  <NButton
-                    size="tiny"
-                    type="warning"
-                    secondary
-                    @click="resetBagSeedPriority"
-                  >
-                    重置顺序
-                  </NButton>
-                </div>
-                <div v-if="bagSeedsLoading" class="py-4 text-center text-sm text-amber-700 dark:text-amber-300">
-                  加载中...
-                </div>
-                <div v-else-if="bagSeedsError" class="py-4 text-center text-sm text-red-600 dark:text-red-400">
-                  {{ bagSeedsError }}
-                </div>
-                <div v-else-if="bagSeeds.length === 0" class="py-4 text-center text-sm text-amber-700 dark:text-amber-300">
-                  背包中暂无 1x1 / 2x2 种子
-                </div>
-                <div v-else class="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                  <BagSeedPriorityItem
-                    v-for="(seed, index) in sortedBagSeeds"
-                    :key="seed.seedId"
-                    :seed="seed"
-                    :index="index"
-                    :land-types="localStrategySettings.bagSeedLandTypes[String(seed.seedId)]"
-                    :land-type-options="fertilizerLandTypeOptions"
-                    :dragging="draggingBagSeedId === seed.seedId"
-                    :can-move-up="index > 0"
-                    :can-move-down="index < sortedBagSeeds.length - 1"
-                    @move-up="moveBagSeedUp(seed.seedId)"
-                    @move-down="moveBagSeedDown(seed.seedId)"
-                    @update:land-types="setBagSeedLandTypes(seed.seedId, $event)"
-                    @drag-start="startBagSeedDrag(seed.seedId, $event)"
-                    @drag-end="endBagSeedDrag"
-                    @drag-over="dragOverBagSeed(seed.seedId, $event)"
-                    @drop="dropBagSeed(seed.seedId, $event)"
-                  />
-                </div>
-                <div v-if="orphanRestrictedSeeds.length > 0" class="border-t border-amber-200 pt-2 dark:border-amber-800/50">
-                  <div class="text-xs text-amber-800 dark:text-amber-300">
-                    未持有但已配限制
-                  </div>
-                  <p class="mt-1 text-[11px] text-amber-700/80 dark:text-amber-300/80">
-                    这些种子当前不在背包中，限制已保留，重新入库后仍生效。
-                  </p>
-                  <div class="mt-2 flex flex-wrap gap-1.5">
-                    <span
-                      v-for="item in orphanRestrictedSeeds"
-                      :key="item.seedId"
-                      class="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-[11px] text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
-                    >
-                      {{ item.name }} · {{ item.scope }}
-                      <button
-                        type="button"
-                        class="i-carbon-close text-amber-600 dark:text-amber-300 hover:text-amber-900 dark:hover:text-amber-100"
-                        :title="`清除 ${item.name} 的土地限制`"
-                        :aria-label="`清除 ${item.name} 的土地限制`"
-                        @click="setBagSeedLandTypes(item.seedId, [])"
-                      />
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
-              <BaseInput
-                v-model.number="localStrategySettings.intervals.farmMin"
-                label="农场巡查最小 (秒)"
-                type="number"
-                min="1"
-              />
-              <BaseInput
-                v-model.number="localStrategySettings.intervals.farmMax"
-                label="农场巡查最大 (秒)"
-                type="number"
-                min="1"
-              />
-            </div>
-
-            <div class="grid grid-cols-2 gap-3 md:grid-cols-2">
-              <BaseInput
-                v-model.number="localStrategySettings.intervals.friendMin"
-                label="好友任务最小 (秒)"
-                type="number"
-                min="1"
-              />
-              <BaseInput
-                v-model.number="localStrategySettings.intervals.friendMax"
-                label="好友任务最大 (秒)"
-                type="number"
-                min="1"
-              />
-            </div>
-
-            <div class="flex flex-wrap items-center gap-4 border-t pt-3 dark:border-gray-700">
-              <BaseSwitch
-                v-model="localStrategySettings.friendQuietHours.enabled"
-                label="启用静默时段"
-              />
-              <div class="flex items-center gap-2">
-                <NTimePicker
-                  v-model:formatted-value="localStrategySettings.friendQuietHours.start"
-                  class="w-28"
-                  format="HH:mm"
-                  value-format="HH:mm"
-                  :clearable="false"
-                  :disabled="!localStrategySettings.friendQuietHours.enabled"
-                  size="small"
-                />
-                <span class="text-xs text-gray-500">-</span>
-                <NTimePicker
-                  v-model:formatted-value="localStrategySettings.friendQuietHours.end"
-                  class="w-28"
-                  format="HH:mm"
-                  value-format="HH:mm"
-                  :clearable="false"
-                  :disabled="!localStrategySettings.friendQuietHours.enabled"
-                  size="small"
-                />
-              </div>
-              <BaseSwitch
-                v-model="localStrategySettings.friendQuietHours.continueFarm"
-                label="静默时继续农场巡查"
-                :disabled="!localStrategySettings.friendQuietHours.enabled"
-              />
-            </div>
-
-            <div class="border-t pt-3 space-y-3 dark:border-gray-700">
-              <h4 class="text-sm text-gray-700 font-medium dark:text-gray-300">
-                种植与偷菜延迟设置
-              </h4>
-              <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
-                <BaseSwitch
-                  v-model="localStrategySettings.plantOrderRandom"
-                  label="种植顺序随机"
-                />
-                <BaseInput
-                  v-model.number="localStrategySettings.plantDelaySeconds"
-                  label="种植延迟 (秒)"
-                  type="number"
-                  min="0"
-                />
-                <BaseInput
-                  v-model.number="localStrategySettings.stealDelaySeconds"
-                  label="偷菜延迟 (秒)"
-                  type="number"
-                  min="0"
-                />
-              </div>
-            </div>
-
-            <div class="flex justify-end gap-2 border-t pt-3 dark:border-gray-700">
-              <BaseButton
-                variant="primary"
-                size="sm"
-                :loading="strategySaving"
-                @click="saveStrategySettings"
-              >
-                保存策略设置
-              </BaseButton>
-            </div>
-          </div>
-        </div>
-
-        <!-- 功能模块 -->
-        <div v-else-if="activeTab === 'automation'" class="space-y-4">
-
+        <!-- 账号设置（六个功能模块） -->
+        <div v-else-if="activeTab === 'account-config'" class="space-y-4">
           <div v-if="settingsLoading" class="py-4 text-center text-gray-500">
             <span class="i-carbon-circle-dash mx-auto mb-2 inline-block animate-spin text-2xl" />
             <p>加载中...</p>
@@ -1936,377 +1169,394 @@ async function handleResetSystemConfig() {
             :current-account-name="currentAccountName"
             :current-account-id="currentAccountId"
             :loading="settingsLoading"
-            :saving="automationSaving || strategySaving"
+            :saving="automationSaving"
             :planting-strategy-options="plantingStrategyOptions"
             :bag-fallback-strategy-options="BAG_FALLBACK_STRATEGY_OPTIONS"
-            :strategy-preview-label="strategyPreviewLabel"
             :fertilizer-land-type-options="fertilizerLandTypeOptions"
             :fertilizer-options="fertilizerOptions"
             @save="handleFeatureModuleSave"
           />
         </div>
 
-        <!-- 系统设置 -->
-        <div v-else-if="activeTab === 'system'" class="space-y-4">
+        <!-- 通知设置 -->
+        <div v-else-if="activeTab === 'notification'" class="space-y-4">
           <h3 class="text-lg text-gray-900 font-bold dark:text-gray-100">
-            系统设置
+            通知设置
           </h3>
+          <p class="text-xs text-gray-500 -mt-2 dark:text-gray-400">
+            账号离线后的推送渠道与清理策略
+          </p>
+          <section class="farm-card rounded-lg p-4">
+            <div class="mb-4 flex items-start gap-3">
+              <div class="h-9 w-9 flex shrink-0 items-center justify-center rounded-lg bg-green-50 text-green-600 dark:bg-green-900/25 dark:text-green-400">
+                <span class="i-carbon-notification text-xl" />
+              </div>
+              <div>
+                <h4 class="text-base text-gray-900 font-bold dark:text-gray-100">
+                  下线提醒
+                </h4>
+                <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                  配置账号离线后的通知与清理
+                </p>
+              </div>
+            </div>
 
-          <div class="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
-            <section class="farm-card rounded-lg p-4">
-              <div class="mb-4 flex items-start gap-3">
-                <div class="h-9 w-9 flex shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-900/25 dark:text-blue-400">
-                  <span class="i-carbon-settings-adjust text-xl" />
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div class="min-w-0 flex flex-col gap-1.5">
+                <div class="min-h-6 flex items-center justify-between gap-2">
+                  <span class="text-sm text-gray-700 font-medium dark:text-gray-300">推送渠道</span>
+                  <BaseButton
+                    variant="text"
+                    size="sm"
+                    :disabled="!currentChannelDocUrl"
+                    @click="openChannelDocs"
+                  >
+                    官方文档
+                  </BaseButton>
                 </div>
+                <BaseSelect
+                  v-model="localOffline.channel"
+                  :options="channelOptions"
+                />
+              </div>
+
+              <BaseInput
+                v-if="offlineChannelUsesEndpoint"
+                v-model="localOffline.endpoint"
+                :label="offlineEndpointLabel"
+                type="text"
+                :placeholder="offlineEndpointPlaceholder"
+              />
+
+              <BaseInput
+                v-if="!isDingTalkChannel"
+                v-model="localOffline.token"
+                :label="offlineTokenLabel"
+                type="text"
+                :placeholder="offlineTokenPlaceholder"
+              />
+
+              <template v-else>
+                <BaseInput
+                  v-model="localOffline.secret"
+                  label="加签密钥（可选）"
+                  type="password"
+                  placeholder="仅在机器人开启加签时填写 SEC..."
+                />
+                <p class="text-xs text-gray-500 leading-relaxed sm:col-span-2 dark:text-gray-400">
+                  从群机器人的设置页复制完整 Webhook；只有开启“加签”时才需要填写加签密钥。
+                </p>
+              </template>
+
+              <BaseInput
+                v-model="localOffline.title"
+                label="标题"
+                type="text"
+                placeholder="提醒标题"
+              />
+              <BaseInput
+                v-model.number="localOffline.offlineDeleteSec"
+                label="离线删除账号 (秒)"
+                type="number"
+                min="0"
+                placeholder="0 表示不删除"
+              />
+              <BaseInput
+                v-model="localOffline.msg"
+                label="内容"
+                type="text"
+                placeholder="提醒内容"
+                class="sm:col-span-2"
+              />
+            </div>
+
+            <div class="mt-3 flex justify-end gap-2 border-t pt-3 dark:border-gray-700">
+              <BaseButton
+                variant="secondary"
+                size="sm"
+                :loading="offlineTesting"
+                :disabled="offlineSaving"
+                @click="handleTestOffline"
+              >
+                测试通知
+              </BaseButton>
+              <BaseButton
+                variant="primary"
+                size="sm"
+                :loading="offlineSaving"
+                :disabled="offlineTesting"
+                @click="handleSaveOffline"
+              >
+                保存下线提醒设置
+              </BaseButton>
+            </div>
+          </section>
+        </div>
+
+        <!-- 全局设置 -->
+        <div v-else-if="activeTab === 'system-settings'" class="space-y-4">
+          <h3 class="text-lg text-gray-900 font-bold dark:text-gray-100">
+            全局设置
+          </h3>
+          <p class="text-xs text-gray-500 -mt-2 dark:text-gray-400">
+            服务器连接、时区与客户端设备参数，保存后下次登录生效
+          </p>
+
+          <section class="farm-card rounded-lg p-4">
+            <div class="mb-4 flex items-start gap-3">
+              <div class="h-9 w-9 flex shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-900/25 dark:text-blue-400">
+                <span class="i-carbon-settings-adjust text-xl" />
+              </div>
+              <div>
+                <h4 class="text-base text-gray-900 font-bold dark:text-gray-100">
+                  运行环境
+                </h4>
+                <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                  服务器连接、时区与客户端设备参数
+                </p>
+              </div>
+            </div>
+
+            <div v-if="systemConfigLoading" class="py-8 text-center text-gray-500">
+              <span class="i-svg-spinners-90-ring-with-bg inline-block text-2xl" />
+            </div>
+            <div v-else class="space-y-3">
+              <div v-if="devicePresets.length" class="border border-gray-200 rounded-lg bg-gray-50/70 p-3 dark:border-gray-700 dark:bg-gray-900/30">
+                <label class="mb-2 block text-sm text-gray-700 font-medium dark:text-gray-300">设备预设</label>
+                <div class="flex flex-wrap gap-2">
+                  <NButton
+                    v-for="preset in devicePresets"
+                    :key="preset.id"
+                    size="small"
+                    :type="selectedPresetId === preset.id ? 'primary' : 'default'"
+                    :secondary="selectedPresetId !== preset.id"
+                    :title="preset.description"
+                    @click="applyDevicePreset(preset.id)"
+                  >
+                    {{ preset.name }}
+                  </NButton>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <BaseInput
+                  v-model="localSystemConfig.serverUrl"
+                  label="服务器地址"
+                  type="text"
+                  placeholder="wss://..."
+                />
                 <div>
-                  <h4 class="text-base text-gray-900 font-bold dark:text-gray-100">
-                    运行环境
-                  </h4>
-                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                    服务器连接、时区与客户端设备参数
+                  <BaseSelect
+                    v-model="localSystemConfig.timeZone"
+                    label="系统时区"
+                    :options="timeZoneOptions"
+                  />
+                  <p class="mt-1 text-xs text-gray-500 leading-relaxed dark:text-gray-400">
+                    礼包、任务、安静时段和日志均以此时区为准。
                   </p>
                 </div>
               </div>
 
-              <div v-if="systemConfigLoading" class="py-8 text-center text-gray-500">
-                <span class="i-svg-spinners-90-ring-with-bg inline-block text-2xl" />
-              </div>
-              <div v-else class="space-y-3">
-                <div v-if="devicePresets.length" class="border border-gray-200 rounded-lg bg-gray-50/70 p-3 dark:border-gray-700 dark:bg-gray-900/30">
-                  <label class="mb-2 block text-sm text-gray-700 font-medium dark:text-gray-300">设备预设</label>
+              <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div class="border border-gray-200 rounded-lg bg-gray-50/70 p-3 dark:border-gray-700 dark:bg-gray-900/30">
+                  <label class="mb-2 block text-sm text-gray-700 font-medium dark:text-gray-300">平台</label>
                   <div class="flex flex-wrap gap-2">
                     <NButton
-                      v-for="preset in devicePresets"
-                      :key="preset.id"
+                      v-for="option in platformOptions"
+                      :key="option.value"
                       size="small"
-                      :type="selectedPresetId === preset.id ? 'primary' : 'default'"
-                      :secondary="selectedPresetId !== preset.id"
-                      :title="preset.description"
-                      @click="applyDevicePreset(preset.id)"
+                      :type="localSystemConfig.platform === option.value ? 'primary' : 'default'"
+                      :secondary="localSystemConfig.platform !== option.value"
+                      @click="localSystemConfig.platform = option.value"
                     >
-                      {{ preset.name }}
+                      {{ option.label }}
                     </NButton>
                   </div>
                 </div>
-
-                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <BaseInput
-                    v-model="localSystemConfig.serverUrl"
-                    label="服务器地址"
-                    type="text"
-                    placeholder="wss://..."
-                  />
-                  <div>
-                    <BaseSelect
-                      v-model="localSystemConfig.timeZone"
-                      label="系统时区"
-                      :options="timeZoneOptions"
-                    />
-                    <p class="mt-1 text-xs text-gray-500 leading-relaxed dark:text-gray-400">
-                      礼包、任务、安静时段和日志均以此时区为准。
-                    </p>
+                <div class="border border-gray-200 rounded-lg bg-gray-50/70 p-3 dark:border-gray-700 dark:bg-gray-900/30">
+                  <label class="mb-2 block text-sm text-gray-700 font-medium dark:text-gray-300">系统</label>
+                  <div class="flex flex-wrap gap-2">
+                    <NButton
+                      v-for="option in osOptions"
+                      :key="option.value"
+                      size="small"
+                      :type="localSystemConfig.deviceInfo.os === option.value ? 'primary' : 'default'"
+                      :secondary="localSystemConfig.deviceInfo.os !== option.value"
+                      @click="localSystemConfig.deviceInfo.os = option.value; localSystemConfig.os = option.value"
+                    >
+                      {{ option.label }}
+                    </NButton>
                   </div>
-                </div>
-
-                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div class="border border-gray-200 rounded-lg bg-gray-50/70 p-3 dark:border-gray-700 dark:bg-gray-900/30">
-                    <label class="mb-2 block text-sm text-gray-700 font-medium dark:text-gray-300">平台</label>
-                    <div class="flex flex-wrap gap-2">
-                      <NButton
-                        v-for="option in platformOptions"
-                        :key="option.value"
-                        size="small"
-                        :type="localSystemConfig.platform === option.value ? 'primary' : 'default'"
-                        :secondary="localSystemConfig.platform !== option.value"
-                        @click="localSystemConfig.platform = option.value"
-                      >
-                        {{ option.label }}
-                      </NButton>
-                    </div>
-                  </div>
-                  <div class="border border-gray-200 rounded-lg bg-gray-50/70 p-3 dark:border-gray-700 dark:bg-gray-900/30">
-                    <label class="mb-2 block text-sm text-gray-700 font-medium dark:text-gray-300">系统</label>
-                    <div class="flex flex-wrap gap-2">
-                      <NButton
-                        v-for="option in osOptions"
-                        :key="option.value"
-                        size="small"
-                        :type="localSystemConfig.deviceInfo.os === option.value ? 'primary' : 'default'"
-                        :secondary="localSystemConfig.deviceInfo.os !== option.value"
-                        @click="localSystemConfig.deviceInfo.os = option.value; localSystemConfig.os = option.value"
-                      >
-                        {{ option.label }}
-                      </NButton>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <BaseInput
-                    v-model="localSystemConfig.deviceInfo.clientVersion"
-                    label="QQ 客户端版本"
-                    type="text"
-                    :placeholder="defaultSystemConfig.deviceInfo.clientVersion || '从服务器加载中...'"
-                  />
-                  <BaseInput
-                    v-model="localSystemConfig.wxClientVersion"
-                    label="微信客户端版本"
-                    type="text"
-                    :placeholder="defaultSystemConfig.wxClientVersion || '从服务器加载中...'"
-                  />
-                  <BaseInput
-                    v-model="localSystemConfig.deviceInfo.sysSoftware"
-                    label="系统版本"
-                    type="text"
-                    placeholder="Windows 10"
-                  />
-                  <BaseInput
-                    v-model="localSystemConfig.deviceInfo.deviceId"
-                    label="设备标识"
-                    type="text"
-                    placeholder="DESKTOP-PC<WPC>"
-                  />
-                  <BaseInput
-                    v-model="localSystemConfig.deviceInfo.memory"
-                    label="内存 (MB)"
-                    type="text"
-                    placeholder="16384"
-                  />
-                  <BaseInput
-                    v-model="localSystemConfig.deviceInfo.network"
-                    label="网络"
-                    type="text"
-                    placeholder="wifi"
-                  />
-                  <BaseInput
-                    v-model="localSystemConfig.deviceInfo.userAgent"
-                    label="User-Agent"
-                    type="text"
-                    placeholder="Mozilla/5.0 ..."
-                  />
-                </div>
-
-                <div class="flex justify-end gap-2 border-t pt-3 dark:border-gray-700">
-                  <BaseButton variant="secondary" size="sm" :loading="systemConfigSaving" @click="handleResetSystemConfig">
-                    重置
-                  </BaseButton>
-                  <BaseButton variant="primary" size="sm" :loading="systemConfigSaving" @click="handleSaveSystemConfig">
-                    保存运行环境
-                  </BaseButton>
                 </div>
               </div>
-            </section>
 
-            <div class="min-w-0 space-y-4">
-              <section class="farm-card rounded-lg p-4">
-                <div class="mb-4 flex items-start gap-3">
-                  <div class="h-9 w-9 flex shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-600 dark:bg-violet-900/25 dark:text-violet-400">
-                    <span class="i-carbon-login text-xl" />
-                  </div>
-                  <div>
-                    <h4 class="text-base text-gray-900 font-bold dark:text-gray-100">
-                      登录设置
-                    </h4>
-                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                      控制添加账号时可用的扫码登录方式
-                    </p>
-                  </div>
-                </div>
+              <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <BaseInput
+                  v-model="localSystemConfig.deviceInfo.clientVersion"
+                  label="QQ 客户端版本"
+                  type="text"
+                  :placeholder="defaultSystemConfig.deviceInfo.clientVersion || '从服务器加载中...'"
+                />
+                <BaseInput
+                  v-model="localSystemConfig.wxClientVersion"
+                  label="微信客户端版本"
+                  type="text"
+                  :placeholder="defaultSystemConfig.wxClientVersion || '从服务器加载中...'"
+                />
+                <BaseInput
+                  v-model="localSystemConfig.deviceInfo.sysSoftware"
+                  label="系统版本"
+                  type="text"
+                  placeholder="Windows 10"
+                />
+                <BaseInput
+                  v-model="localSystemConfig.deviceInfo.deviceId"
+                  label="设备标识"
+                  type="text"
+                  placeholder="DESKTOP-PC<WPC>"
+                />
+                <BaseInput
+                  v-model="localSystemConfig.deviceInfo.memory"
+                  label="内存 (MB)"
+                  type="text"
+                  placeholder="16384"
+                />
+                <BaseInput
+                  v-model="localSystemConfig.deviceInfo.network"
+                  label="网络"
+                  type="text"
+                  placeholder="wifi"
+                />
+                <BaseInput
+                  v-model="localSystemConfig.deviceInfo.userAgent"
+                  label="User-Agent"
+                  type="text"
+                  placeholder="Mozilla/5.0 ..."
+                />
+              </div>
 
-                <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  <div class="border border-gray-200 rounded-lg bg-gray-50/70 p-3 dark:border-gray-700 dark:bg-gray-900/30">
-                    <BaseSwitch v-model="localLoginSettings.wechatQrLogin" label="微信扫码登录" />
-                  </div>
-                  <div class="border border-gray-200 rounded-lg bg-gray-50/70 p-3 dark:border-gray-700 dark:bg-gray-900/30">
-                    <BaseSwitch v-model="localLoginSettings.qqQrLogin" label="QQ扫码登录" />
-                  </div>
-                </div>
-
-                <div
-                  v-if="localLoginSettings.qqQrLogin"
-                  class="grid grid-cols-1 mt-4 gap-3 border border-gray-200 rounded-lg bg-gray-50/70 p-4 sm:grid-cols-2 dark:border-gray-700 dark:bg-gray-900/30"
-                >
-                  <BaseInput
-                    v-model="localLoginSettings.napCatEndpoint"
-                    label="NapCat接口地址"
-                    type="text"
-                    placeholder="http://127.0.0.1:6099"
-                  />
-                  <BaseInput
-                    v-model="localLoginSettings.napCatSignature"
-                    label="NapCat接口签名"
-                    type="password"
-                    placeholder="请输入 NapCat 接口签名"
-                  />
-                </div>
-
-                <div class="mt-3 flex justify-end border-t pt-3 dark:border-gray-700">
-                  <BaseButton
-                    variant="primary"
-                    size="sm"
-                    :loading="loginSettingsSaving"
-                    @click="handleSaveLoginSettings"
-                  >
-                    保存登录设置
-                  </BaseButton>
-                </div>
-              </section>
-
-              <section class="farm-card rounded-lg p-4">
-                <div class="mb-4 flex items-start gap-3">
-                  <div class="h-9 w-9 flex shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600 dark:bg-amber-900/25 dark:text-amber-400">
-                    <span class="i-carbon-password text-xl" />
-                  </div>
-                  <div>
-                    <h4 class="text-base text-gray-900 font-bold dark:text-gray-100">
-                      修改管理员密码
-                    </h4>
-                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                      更新后台管理登录凭据
-                    </p>
-                  </div>
-                </div>
-
-                <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <BaseInput
-                    v-model="passwordForm.old"
-                    label="当前密码"
-                    type="password"
-                    placeholder="当前管理员密码"
-                  />
-                  <BaseInput
-                    v-model="passwordForm.new"
-                    label="新密码"
-                    type="password"
-                    placeholder="至少 6 位"
-                  />
-                  <BaseInput
-                    v-model="passwordForm.confirm"
-                    label="确认新密码"
-                    type="password"
-                    placeholder="再次输入新密码"
-                  />
-                </div>
-
-                <div class="mt-3 flex items-center justify-end border-t pt-3 dark:border-gray-700">
-                  <BaseButton
-                    variant="primary"
-                    size="sm"
-                    :loading="passwordSaving"
-                    @click="handleChangePassword"
-                  >
-                    修改管理员密码
-                  </BaseButton>
-                </div>
-              </section>
-
-              <section class="farm-card rounded-lg p-4">
-                <div class="mb-4 flex items-start gap-3">
-                  <div class="h-9 w-9 flex shrink-0 items-center justify-center rounded-lg bg-green-50 text-green-600 dark:bg-green-900/25 dark:text-green-400">
-                    <span class="i-carbon-notification text-xl" />
-                  </div>
-                  <div>
-                    <h4 class="text-base text-gray-900 font-bold dark:text-gray-100">
-                      下线提醒
-                    </h4>
-                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                      配置账号离线后的通知与清理
-                    </p>
-                  </div>
-                </div>
-
-                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div class="min-w-0 flex flex-col gap-1.5">
-                    <div class="min-h-6 flex items-center justify-between gap-2">
-                      <span class="text-sm text-gray-700 font-medium dark:text-gray-300">推送渠道</span>
-                      <BaseButton
-                        variant="text"
-                        size="sm"
-                        :disabled="!currentChannelDocUrl"
-                        @click="openChannelDocs"
-                      >
-                        官方文档
-                      </BaseButton>
-                    </div>
-                    <BaseSelect
-                      v-model="localOffline.channel"
-                      :options="channelOptions"
-                    />
-                  </div>
-
-                  <BaseInput
-                    v-if="offlineChannelUsesEndpoint"
-                    v-model="localOffline.endpoint"
-                    :label="offlineEndpointLabel"
-                    type="text"
-                    :placeholder="offlineEndpointPlaceholder"
-                  />
-
-                  <BaseInput
-                    v-if="!isDingTalkChannel"
-                    v-model="localOffline.token"
-                    :label="offlineTokenLabel"
-                    type="text"
-                    :placeholder="offlineTokenPlaceholder"
-                  />
-
-                  <template v-else>
-                    <BaseInput
-                      v-model="localOffline.secret"
-                      label="加签密钥（可选）"
-                      type="password"
-                      placeholder="仅在机器人开启加签时填写 SEC..."
-                    />
-                    <p class="text-xs text-gray-500 leading-relaxed sm:col-span-2 dark:text-gray-400">
-                      从群机器人的设置页复制完整 Webhook；只有开启“加签”时才需要填写加签密钥。
-                    </p>
-                  </template>
-
-                  <BaseInput
-                    v-model="localOffline.title"
-                    label="标题"
-                    type="text"
-                    placeholder="提醒标题"
-                  />
-                  <BaseInput
-                    v-model.number="localOffline.offlineDeleteSec"
-                    label="离线删除账号 (秒)"
-                    type="number"
-                    min="0"
-                    placeholder="0 表示不删除"
-                  />
-                  <BaseInput
-                    v-model="localOffline.msg"
-                    label="内容"
-                    type="text"
-                    placeholder="提醒内容"
-                    class="sm:col-span-2"
-                  />
-                </div>
-
-                <div class="mt-3 flex justify-end gap-2 border-t pt-3 dark:border-gray-700">
-                  <BaseButton
-                    variant="secondary"
-                    size="sm"
-                    :loading="offlineTesting"
-                    :disabled="offlineSaving"
-                    @click="handleTestOffline"
-                  >
-                    测试通知
-                  </BaseButton>
-                  <BaseButton
-                    variant="primary"
-                    size="sm"
-                    :loading="offlineSaving"
-                    :disabled="offlineTesting"
-                    @click="handleSaveOffline"
-                  >
-                    保存下线提醒设置
-                  </BaseButton>
-                </div>
-              </section>
+              <div class="flex justify-end gap-2 border-t pt-3 dark:border-gray-700">
+                <BaseButton variant="secondary" size="sm" :loading="systemConfigSaving" @click="handleResetSystemConfig">
+                  重置
+                </BaseButton>
+                <BaseButton variant="primary" size="sm" :loading="systemConfigSaving" @click="handleSaveSystemConfig">
+                  保存运行环境
+                </BaseButton>
+              </div>
             </div>
-          </div>
+          </section>
+
+          <section class="farm-card rounded-lg p-4">
+            <div class="mb-4 flex items-start gap-3">
+              <div class="h-9 w-9 flex shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600 dark:bg-amber-900/25 dark:text-amber-400">
+                <span class="i-carbon-password text-xl" />
+              </div>
+              <div>
+                <h4 class="text-base text-gray-900 font-bold dark:text-gray-100">
+                  修改管理员密码
+                </h4>
+                <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                  更新后台管理登录凭据
+                </p>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <BaseInput
+                v-model="passwordForm.old"
+                label="当前密码"
+                type="password"
+                placeholder="当前管理员密码"
+              />
+              <BaseInput
+                v-model="passwordForm.new"
+                label="新密码"
+                type="password"
+                placeholder="至少 6 位"
+              />
+              <BaseInput
+                v-model="passwordForm.confirm"
+                label="确认新密码"
+                type="password"
+                placeholder="再次输入新密码"
+              />
+            </div>
+
+            <div class="mt-3 flex items-center justify-end border-t pt-3 dark:border-gray-700">
+              <BaseButton
+                variant="primary"
+                size="sm"
+                :loading="passwordSaving"
+                @click="handleChangePassword"
+              >
+                修改管理员密码
+              </BaseButton>
+            </div>
+          </section>
+        </div>
+
+        <!-- 连接与设备 -->
+        <div v-else-if="activeTab === 'system'" class="space-y-4">
+          <h3 class="text-lg text-gray-900 font-bold dark:text-gray-100">
+            连接与设备
+          </h3>
+          <p class="text-xs text-gray-500 -mt-2 dark:text-gray-400">
+            添加账号时可用的扫码登录方式与 NapCat 接口参数
+          </p>
+
+          <section class="farm-card rounded-lg p-4">
+            <div class="mb-4 flex items-start gap-3">
+              <div class="h-9 w-9 flex shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-600 dark:bg-violet-900/25 dark:text-violet-400">
+                <span class="i-carbon-login text-xl" />
+              </div>
+              <div>
+                <h4 class="text-base text-gray-900 font-bold dark:text-gray-100">
+                  登录设置
+                </h4>
+                <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                  控制添加账号时可用的扫码登录方式
+                </p>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div class="border border-gray-200 rounded-lg bg-gray-50/70 p-3 dark:border-gray-700 dark:bg-gray-900/30">
+                <BaseSwitch v-model="localLoginSettings.wechatQrLogin" label="微信扫码登录" />
+              </div>
+              <div class="border border-gray-200 rounded-lg bg-gray-50/70 p-3 dark:border-gray-700 dark:bg-gray-900/30">
+                <BaseSwitch v-model="localLoginSettings.qqQrLogin" label="QQ扫码登录" />
+              </div>
+            </div>
+
+            <div
+              v-if="localLoginSettings.qqQrLogin"
+              class="grid grid-cols-1 mt-4 gap-3 border border-gray-200 rounded-lg bg-gray-50/70 p-4 sm:grid-cols-2 dark:border-gray-700 dark:bg-gray-900/30"
+            >
+              <BaseInput
+                v-model="localLoginSettings.napCatEndpoint"
+                label="NapCat接口地址"
+                type="text"
+                placeholder="http://127.0.0.1:6099"
+              />
+              <BaseInput
+                v-model="localLoginSettings.napCatSignature"
+                label="NapCat接口签名"
+                type="password"
+                placeholder="请输入 NapCat 接口签名"
+              />
+            </div>
+
+            <div class="mt-3 flex justify-end border-t pt-3 dark:border-gray-700">
+              <BaseButton
+                variant="primary"
+                size="sm"
+                :loading="loginSettingsSaving"
+                @click="handleSaveLoginSettings"
+              >
+                保存登录设置
+              </BaseButton>
+            </div>
+          </section>
         </div>
       </div>
     </div>
@@ -2323,3 +1573,105 @@ async function handleResetSystemConfig() {
     />
   </div>
 </template>
+
+<style scoped>
+.settings-workspace {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.settings-navigation {
+  position: sticky;
+  top: 12px;
+  padding: 12px 8px;
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  background: var(--surface-1);
+}
+.settings-navigation-label {
+  padding: 3px 12px 10px;
+  color: var(--muted-text);
+  font-size: 12px;
+  letter-spacing: 0;
+}
+.settings-categories {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.settings-category {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  text-align: left;
+  color: var(--muted-text);
+  font-size: 13px;
+  transition:
+    background 150ms,
+    color 150ms,
+    border-color 150ms;
+}
+.settings-category > div {
+  flex-shrink: 0;
+  font-size: 18px;
+}
+.settings-category:hover {
+  background: var(--surface-2);
+  color: var(--theme-primary);
+}
+.settings-category[aria-pressed='true'] {
+  border-color: #e0e9d4;
+  background: #edf3e4;
+  color: var(--theme-primary);
+  font-weight: 650;
+}
+.settings-body {
+  min-width: 0;
+}
+.settings-body :deep(.rounded-lg.bg-white),
+.settings-body :deep(.rounded-xl.bg-white) {
+  border-color: var(--surface-border);
+  border-radius: 8px;
+  background: var(--surface-1);
+  box-shadow: var(--surface-shadow-soft);
+}
+@media (max-width: 1100px) {
+  .settings-workspace {
+    grid-template-columns: 160px minmax(0, 1fr);
+    gap: 16px;
+  }
+}
+@media (max-width: 767px) {
+  .settings-workspace {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+  .settings-navigation {
+    position: static;
+    padding: 7px;
+  }
+  .settings-navigation-label {
+    display: none;
+  }
+  .settings-categories {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 4px;
+    overflow-x: auto;
+  }
+  .settings-category {
+    flex: 1 0 auto;
+    flex-shrink: 0;
+    justify-content: center;
+    gap: 6px;
+    min-height: 40px;
+    padding: 8px 10px;
+    white-space: nowrap;
+  }
+}
+</style>

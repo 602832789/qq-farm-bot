@@ -26,24 +26,25 @@ textarea * {
 
 :root {
   color-scheme: light;
-  --ui-bg: #f3f5ef;
-  --ui-bg-soft: #eef2eb;
-  --ui-surface: rgba(255, 255, 255, 0.86);
-  --ui-surface-strong: rgba(255, 255, 255, 0.92);
-  --ui-surface-solid: #fff;
-  --ui-surface-soft: rgba(239, 245, 238, 0.8);
-  --ui-border: rgba(58, 86, 68, 0.1);
-  --ui-border-strong: rgba(58, 86, 68, 0.2);
-  --ui-ink: #243028;
-  --ui-muted: #6d776f;
-  --ui-subtle: #929b94;
-  --ui-primary: #438d63;
-  --ui-primary-soft: #e4f1e7;
+  /* 配色回到老版农场主题：浅黄绿底 + 纯白卡片 + 深墨绿主色。 */
+  --ui-bg: #edf3e5;
+  --ui-bg-soft: #e9f0e0;
+  --ui-surface: #ffffff;
+  --ui-surface-strong: #ffffff;
+  --ui-surface-solid: #ffffff;
+  --ui-surface-soft: #f4f7f5;
+  --ui-border: #dfe7e2;
+  --ui-border-strong: #c9d7ce;
+  --ui-ink: #203d31;
+  --ui-muted: #586b62;
+  --ui-subtle: #8a9a91;
+  --ui-primary: #238452;
+  --ui-primary-soft: #e6f2e8;
   /* 主色作为填充（上面放白字）时使用；深色模式下比文字用的主色更深。 */
   --ui-primary-fill: var(--ui-primary);
   --ui-warning-fill: var(--ui-warning);
   --ui-danger-fill: var(--ui-danger);
-  --ui-teal: #5ba495;
+  --ui-teal: #216c43;
   --ui-warning: #c58b3f;
   --ui-warning-soft: #fbf2e3;
   --ui-danger: #c95f66;
@@ -52,26 +53,42 @@ textarea * {
   --ui-violet-soft: #f0edf8;
   --ui-blue: #5c8fa8;
   --ui-blue-soft: #eaf2f5;
-  --ui-bg-glow: rgba(214, 236, 214, 0.75);
-  --ui-bg-glow-2: rgba(222, 236, 240, 0.6);
+  --ui-bg-glow: rgba(207, 231, 190, 0.7);
+  --ui-bg-glow-2: rgba(216, 234, 214, 0.55);
   --chrome-bg: color-mix(in srgb, var(--ui-bg) 96%, transparent);
-  --ui-table-head: #edf2eb;
-  --ui-radius-control: 10px;
-  --ui-radius-card: 14px;
-  --ui-shadow-sm: 0 1px 2px rgba(45, 66, 52, 0.04), 0 6px 20px rgba(45, 66, 52, 0.05);
-  --ui-shadow-md: 0 12px 32px rgba(55, 75, 61, 0.1);
-  --ui-shadow-lg: 0 24px 64px rgba(55, 75, 61, 0.15);
+  --ui-table-head: #eef4e8;
+  --ui-radius-control: 8px;
+  --ui-radius-card: 8px;
+  --ui-shadow-sm: 0 4px 18px rgb(45 70 31 / 4%);
+  --ui-shadow-md: 0 12px 32px rgb(45 70 31 / 7%);
+  --ui-shadow-lg: 0 18px 44px rgb(45 70 31 / 12%);
 
   /* Compatibility aliases for existing business components. */
   --theme-bg: var(--ui-bg);
   --theme-text: var(--ui-ink);
   --theme-primary: var(--ui-primary);
   --theme-secondary: var(--ui-teal);
-  --theme-primary-rgb: 67, 141, 99;
+  --theme-gradient: linear-gradient(135deg, #40975c, #238452);
+  --theme-primary-rgb: 35, 132, 82;
   --theme-radius-sm: 6px;
   --theme-radius-md: 10px;
   --theme-radius-lg: var(--ui-radius-card);
   --theme-radius-xl: var(--ui-radius-card);
+  /* 老版组件仍在用的变量名，统一指向新令牌，避免样式落空。 */
+  --app-bg: var(--ui-bg);
+  --surface-1: var(--ui-surface);
+  --surface-2: var(--ui-surface-soft);
+  --surface-3: #e8efea;
+  --surface-border: var(--ui-border);
+  --surface-border-strong: var(--ui-border-strong);
+  --surface-shadow: var(--ui-shadow-md);
+  --surface-shadow-soft: var(--ui-shadow-sm);
+  --muted-text: var(--ui-muted);
+  --input-bg: var(--ui-surface-solid);
+  --farm-radius: var(--ui-radius-card);
+  --farm-accent: #f9c75a;
+  --farm-sidebar: #fffef8;
+  --farm-header: rgb(255 254 248 / 95%);
   --theme-shadow-sm: var(--ui-shadow-sm);
   --theme-shadow-md: var(--ui-shadow-md);
   --theme-shadow-lg: var(--ui-shadow-lg);
@@ -90,7 +107,7 @@ textarea * {
   --theme-sun: #f0c040;
   --theme-gold: #f0c040;
   --theme-wheat: #deb887;
-  --glass-panel: rgba(250, 251, 247, 0.78);
+  --glass-panel: rgba(255, 254, 248, 0.92);
   --glass-card: var(--ui-surface);
   --glass-elevated: var(--ui-surface-strong);
   --glass-input: rgba(255, 255, 255, 0.7);
