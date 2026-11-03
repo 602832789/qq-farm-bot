@@ -4,9 +4,9 @@ import { NButton } from 'naive-ui/es/button'
 import { storeToRefs } from 'pinia'
 import { computed, ref } from 'vue'
 import { activityHasGameplay } from '@/components/activity/gameplays'
+import FarmPageHeader from '@/components/ui/FarmPageHeader.vue'
 import { useAccountStore } from '@/stores/account'
 import { useActivityCenterStore } from '@/stores/activity-center'
-import PetMascot from './PetMascot.vue'
 import { useActivityClock } from './useActivityClock'
 
 const emit = defineEmits<{
@@ -16,17 +16,26 @@ const emit = defineEmits<{
 
 const accountStore = useAccountStore()
 const activityStore = useActivityCenterStore()
-const { currentAccountId } = storeToRefs(accountStore)
+const { currentAccountId, currentAccount } = storeToRefs(accountStore)
 const { activities, season, shop, solarTerms, constellation, qixi, qingMei, charity, weather, loading, error, loadedAccountId } = storeToRefs(activityStore)
 const { serverNow } = useActivityClock()
 
 type ActivityStatus = 'active' | 'upcoming' | 'ended'
+type StatusFilter = 'all' | ActivityStatus
 
 const dateFormatter = new Intl.DateTimeFormat('zh-CN', {
   year: 'numeric',
   month: '2-digit',
   day: '2-digit',
 })
+
+const statusFilter = ref<StatusFilter>('all')
+const statusFilters: Array<{ key: StatusFilter, label: string }> = [
+  { key: 'all', label: '全部' },
+  { key: 'active', label: '进行中' },
+  { key: 'upcoming', label: '未开始' },
+  { key: 'ended', label: '已结束' },
+]
 
 const accountDataLoaded = computed(() => !!currentAccountId.value && loadedAccountId.value === String(currentAccountId.value))
 const stellarDetailsAvailable = computed(() => !!(season.value || shop.value || constellation.value || solarTerms.value))
@@ -200,6 +209,16 @@ const editionCounts = computed(() => {
   return new Map([...periods].map(([name, set]) => [name, set.size]))
 })
 const pastOpen = ref(false)
+
+/** 卡片列表：进行中的限时活动按状态筛选，已结束的走往期折叠区。 */
+const cardActivities = computed(() => {
+  return currentActivities.value.filter((activity) => {
+    if (statusFilter.value === 'all')
+      return true
+    return activityStatus(activity) === statusFilter.value
+  })
+})
+
 const pickerSummary = computed(() => {
   if (!hasActivities.value)
     return '按当前账号读取活动'
@@ -209,6 +228,13 @@ const pickerSummary = computed(() => {
   if (pastActivities.value.length)
     parts.push(`${pastActivities.value.length} 个往期`)
   return parts.join(' · ')
+})
+const closedCardCount = computed(() => currentActivities.value.filter(activity => !activityCanOpen(activity)).length)
+const headerDescription = computed(() => {
+  const registered = displayActivities.value.length
+  const accountName = currentAccount.value?.name || currentAccount.value?.nick || ''
+  const base = `${registered} 个已登记活动 · ${pickerSummary.value}`
+  return accountName ? `${base} · 当前账号 ${accountName}` : base
 })
 function activityDisplayName(activity: ActivityDirectoryItemDto) {
   return activity.gameplayKey === 'pet' ? '萌宠日记' : activity.name
@@ -222,6 +248,44 @@ function activityIconSrc(activity: ActivityDirectoryItemDto) {
     return `/activity-assets/autumn/${activity.gameplayKey}.png`
   return ''
 }
+function activityIcon(activity: ActivityDirectoryItemDto) {
+  if (activityIconSrc(activity))
+    return ''
+  const map: Record<string, string> = {
+    stellar: 'i-carbon-star',
+    qixi: 'i-carbon-favorite',
+    qingmei: 'i-carbon-drink',
+    charity: 'i-carbon-plant',
+    weather: 'i-carbon-cloud-rain',
+    milk: 'i-carbon-cafe',
+    wish: 'i-carbon-idea',
+    happy: 'i-carbon-gift',
+    pet: 'i-carbon-dog-walker',
+  }
+  return map[activity.gameplayKey || ''] || 'i-carbon-calendar'
+}
+/** 无活动主图时按玩法给出渐变底，保持老版卡片的深色海报观感。 */
+function activityBackgroundStyle(activity: ActivityDirectoryItemDto) {
+  const palettes: Record<string, [string, string]> = {
+    stellar: ['#0b2e61', '#071b43'],
+    qixi: ['#7c2d55', '#3b1026'],
+    qingmei: ['#1f5c3d', '#0c2a1b'],
+    charity: ['#8a3b1f', '#3d1a0c'],
+    weather: ['#1c4d63', '#08222d'],
+    milk: ['#8a5a1a', '#3a2408'],
+    wish: ['#5b3a8a', '#241338'],
+    happy: ['#8a4a12', '#3d1f06'],
+    pet: ['#2d5a3a', '#0f2a1a'],
+  }
+  const [from, to] = palettes[activity.gameplayKey || ''] || ['#2f4a3d', '#16241d']
+  return { backgroundImage: `linear-gradient(150deg, ${from}, ${to})` }
+}
+function activityDescription(activity: ActivityDirectoryItemDto) {
+  if (isNewbieActivity(activity))
+    return '新手开园福利：签到、开园特权与引导奖励'
+  return `${activity.gameplayKey ? '已接入玩法' : '按目录读取'} · 编号 ${activity.id}`
+}
+
 const shortDateFormatter = new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit' })
 function formatShortPeriod(activity: ActivityDirectoryItemDto) {
   const startTime = validActivityTime(activity.startTime)
@@ -262,16 +326,16 @@ function openActivity(activity: ActivityDirectoryItemDto) {
 </script>
 
 <template>
-  <section class="activity-picker page-stack">
-    <div class="page-toolbar">
-      <span class="text-sm text-gray-500">{{ pickerSummary }}</span>
+  <section class="activity-page space-y-4">
+    <FarmPageHeader scene title="活动中心" :description="headerDescription" icon="i-carbon-gift">
       <NButton :loading="loading" :disabled="!currentAccountId" @click="load(true)">
         <template #icon>
           <span class="i-carbon-renew" />
         </template>
         刷新
       </NButton>
-    </div>
+    </FarmPageHeader>
+
     <div v-if="!currentAccountId" class="picker-state">
       <div class="i-carbon-user-avatar" />
       <strong>请先选择账号</strong>
@@ -297,40 +361,75 @@ function openActivity(activity: ActivityDirectoryItemDto) {
         刷新活动
       </button>
     </div>
-    <div v-else class="picker-sections">
-      <section class="picker-section" aria-labelledby="current-activities-title">
-        <h3 id="current-activities-title" class="picker-section__title">
-          进行中<small>{{ currentActivities.length }}</small>
-        </h3>
-        <div v-if="currentActivities.length" class="picker-list">
+
+    <template v-else>
+      <section class="space-y-4" aria-labelledby="all-activities-title">
+        <header class="flex flex-wrap items-center justify-between gap-3">
+          <div class="flex flex-wrap items-center gap-3">
+            <h2 id="all-activities-title" class="text-base font-semibold">
+              全部活动 <span class="text-xs text-gray-500 font-normal">{{ displayActivities.length }} 个已登记</span>
+            </h2>
+            <div class="inline-flex rounded-lg bg-gray-100 p-0.5 dark:bg-gray-800" role="group" aria-label="活动状态筛选">
+              <button
+                v-for="filter in statusFilters"
+                :key="filter.key"
+                class="rounded-md px-2.5 py-1 text-xs transition"
+                :class="statusFilter === filter.key ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white' : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'"
+                :aria-pressed="statusFilter === filter.key"
+                @click="statusFilter = filter.key"
+              >
+                {{ filter.label }}
+              </button>
+            </div>
+          </div>
+          <span v-if="closedCardCount" class="text-xs text-gray-500">{{ closedCardCount }} 项暂未接入玩法</span>
+        </header>
+
+        <div v-if="cardActivities.length" class="activity-card-grid">
           <button
-            v-for="activity in currentActivities"
+            v-for="activity in cardActivities"
             :key="activity.id"
             type="button"
-            class="activity-entry"
-            :class="[`activity-entry--${activityStatus(activity)}`, { 'activity-entry--supported': activityCanOpen(activity) }]"
+            class="activity-card group"
+            :class="activityCanOpen(activity) ? 'is-openable' : 'is-locked'"
             :disabled="!activityCanOpen(activity)"
             @click="openActivity(activity)"
           >
-            <span class="activity-entry__topline">
-              <span class="activity-entry__icon"><PetMascot v-if="activity.gameplayKey === 'pet'" stage="puppy" class="activity-entry__pet" /><img v-else-if="activityIconSrc(activity)" :src="activityIconSrc(activity)" alt="" width="36" height="36" style="object-fit: contain"><span v-else class="i-carbon-calendar" /></span>
-              <span class="activity-entry__status">{{ activityStatusLabel(activity) }}</span>
+            <span class="activity-card__art" :style="activityBackgroundStyle(activity)">
+              <span class="activity-card__orb activity-card__orb--lg" />
+              <span class="activity-card__orb activity-card__orb--sm" />
+              <span class="activity-card__glyph" :class="activityIcon(activity)" aria-hidden="true" />
+              <img v-if="activityIconSrc(activity)" :src="activityIconSrc(activity)" alt="" class="activity-card__image">
             </span>
-            <strong>{{ activityDisplayName(activity) }}</strong>
-            <span class="activity-entry__period">{{ formatActivityPeriod(activity) }}</span>
-            <span class="activity-entry__footer">
-              <small>{{ activity.id }}</small>
-              <span v-if="activityCanOpen(activity)">查看详情 <span class="i-carbon-arrow-right" /></span>
-              <span v-else-if="activityStatus(activity) === 'upcoming'">活动未开始 <span class="i-carbon-locked" /></span>
-              <span v-else>暂未支持详情 <span class="i-carbon-locked" /></span>
+            <span class="activity-card__shade" />
+            <span class="activity-card__body">
+              <span class="activity-card__topline">
+                <span class="activity-card__status" :class="`is-${activityStatus(activity)}`">
+                  <span
+                    :class="activityStatus(activity) === 'active' ? activityIcon(activity) : activityStatus(activity) === 'upcoming' ? 'i-carbon-time' : 'i-carbon-checkmark'"
+                    aria-hidden="true"
+                  />
+                  {{ activityStatusLabel(activity) }}
+                </span>
+                <span v-if="!activity.gameplayKey" class="activity-card__pending">待适配</span>
+                <span v-else-if="activityCanOpen(activity)" class="activity-card__arrow i-carbon-arrow-up-right" aria-hidden="true" />
+              </span>
+              <span class="activity-card__bottom">
+                <strong>{{ activityDisplayName(activity) }}</strong>
+                <span class="activity-card__period">{{ formatActivityPeriod(activity) }}</span>
+                <span class="activity-card__desc">
+                  <span :class="activityIcon(activity)" class="shrink-0" aria-hidden="true" />
+                  {{ activityDescription(activity) }}
+                </span>
+              </span>
             </span>
           </button>
         </div>
-        <p v-else class="picker-section__empty">
-          当前没有进行中的限时活动
+        <p v-else class="activity-empty">
+          当前筛选条件下暂无活动
         </p>
 
-        <!-- 常驻条目不是限时活动：用一条窄提示带挂在进行中下方，按内容宽度排列。 -->
+        <!-- 常驻条目不是限时活动：用一条窄提示带挂在卡片下方，按内容宽度排列。 -->
         <div v-if="standingActivities.length" class="standing-strip" aria-label="常驻与福利">
           <span class="standing-strip__label">常驻</span>
           <component
@@ -380,53 +479,204 @@ function openActivity(activity: ActivityDirectoryItemDto) {
           </div>
         </div>
       </section>
-    </div>
+    </template>
   </section>
 </template>
 
 <style scoped>
-.activity-picker {
+.activity-page {
   width: 100%;
   min-width: 0;
   color: var(--ui-ink);
 }
 
-.picker-sections {
-  display: flex;
-  width: 100%;
-  flex-direction: column;
-  gap: 24px;
+/* 老版活动海报卡：深色渐变底 + 状态胶囊 + 大标题，整卡可点。 */
+.activity-card-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
 }
 
-.picker-section {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+@media (min-width: 768px) {
+  .activity-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
-.picker-section__title {
+@media (min-width: 1280px) {
+  .activity-card-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.activity-card {
+  position: relative;
+  min-height: 208px;
+  display: block;
+  overflow: hidden;
+  border: 0;
+  border-radius: 10px;
+  color: #fff;
+  text-align: left;
+  box-shadow: 0 1px 3px rgb(16 34 24 / 12%);
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    filter 180ms ease;
+  appearance: none;
+}
+
+.activity-card.is-openable:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 26px rgb(16 34 24 / 20%);
+}
+
+.activity-card.is-locked {
+  cursor: not-allowed;
+  filter: grayscale(0.75) saturate(0.4);
+}
+
+.activity-card__art {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+.activity-card__orb {
+  position: absolute;
+  border: 1px solid rgb(255 255 255 / 15%);
+  border-radius: 999px;
+}
+
+.activity-card__orb--lg {
+  top: -40px;
+  right: -32px;
+  width: 160px;
+  height: 160px;
+}
+
+.activity-card__orb--sm {
+  top: 48px;
+  right: -8px;
+  width: 96px;
+  height: 96px;
+  border-color: rgb(255 255 255 / 10%);
+}
+
+.activity-card__glyph {
+  position: absolute;
+  right: 20px;
+  bottom: 8px;
+  color: rgb(255 255 255 / 8%);
+  font-size: 68px;
+}
+
+.activity-card__image {
+  width: 96px;
+  height: 96px;
+  margin-bottom: 26px;
+  object-fit: contain;
+  filter: drop-shadow(0 6px 14px rgb(0 0 0 / 35%));
+}
+
+.activity-card__shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgb(7 22 33 / 90%), rgb(16 43 60 / 30%) 55%, transparent);
+}
+
+.activity-card__body {
+  position: relative;
+  min-height: 208px;
   display: flex;
-  align-items: baseline;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 18px 20px;
+}
+
+.activity-card__topline {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.activity-card__status {
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
-  margin: 0;
-  color: var(--ui-ink);
-  font-size: 14px;
-  font-weight: var(--fw-650);
-}
-
-.picker-section__title small {
-  color: var(--ui-subtle);
+  padding: 4px 10px;
+  border-radius: 999px;
+  color: #164e63;
+  background: rgb(207 250 254 / 92%);
   font-size: 12px;
-  font-weight: var(--fw-400);
-  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
 }
 
-.picker-section__empty {
-  margin: 0;
-  padding: 18px 16px;
-  border: 1px dashed var(--ui-border-strong);
-  border-radius: var(--ui-radius-card);
-  color: var(--ui-muted);
+.activity-card__status.is-upcoming,
+.activity-card__status.is-ended {
+  color: #374151;
+  background: rgb(243 244 246 / 88%);
+}
+
+.activity-card__pending {
+  padding: 4px 10px;
+  border-radius: 999px;
+  color: #78350f;
+  background: rgb(254 243 199 / 92%);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.activity-card__arrow {
+  color: rgb(255 255 255 / 80%);
+  font-size: 20px;
+  transition: transform 160ms ease;
+}
+
+.activity-card.is-openable:hover .activity-card__arrow {
+  transform: translate(2px, -2px);
+}
+
+.activity-card__bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.activity-card__bottom strong {
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.activity-card__period {
+  color: rgb(207 250 254 / 80%);
+  font-size: 13px;
+}
+
+.activity-card__desc {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  color: rgb(255 255 255 / 65%);
+  font-size: 12px;
+}
+
+.activity-card__desc > span:first-child {
+  color: #a5f3fc;
+  font-size: 15px;
+}
+
+.activity-empty {
+  padding: 32px;
+  border: 1px dashed var(--surface-border);
+  border-radius: 8px;
+  color: var(--muted-text);
   font-size: 13px;
   text-align: center;
 }
@@ -498,6 +748,29 @@ function openActivity(activity: ActivityDirectoryItemDto) {
   white-space: nowrap;
 }
 
+.picker-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.picker-section__title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0;
+  color: var(--ui-ink);
+  font-size: 14px;
+  font-weight: var(--fw-650);
+}
+
+.picker-section__title small {
+  color: var(--ui-subtle);
+  font-size: 12px;
+  font-weight: var(--fw-400);
+  font-variant-numeric: tabular-nums;
+}
+
 .picker-section__toggle {
   align-self: flex-start;
   align-items: center;
@@ -520,7 +793,7 @@ function openActivity(activity: ActivityDirectoryItemDto) {
 .picker-section__chevron {
   color: var(--ui-subtle);
   font-size: 14px;
-  transition: transform var(--spring-drag-duration) var(--spring-drag);
+  transition: transform 160ms ease;
 }
 
 .picker-section__chevron.is-open {
@@ -624,14 +897,6 @@ function openActivity(activity: ActivityDirectoryItemDto) {
   text-overflow: ellipsis;
 }
 
-.picker-list {
-  width: 100%;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin: 0;
-}
-
 .picker-state {
   width: 100%;
   min-height: 300px;
@@ -684,141 +949,16 @@ function openActivity(activity: ActivityDirectoryItemDto) {
   font-size: 0;
 }
 
-.activity-entry {
-  position: relative;
-  min-height: 168px;
-  display: flex;
-  overflow: hidden;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: flex-start;
-  gap: 0;
-  padding: 16px;
-  border: 1px solid var(--ui-border);
-  border-radius: 8px;
-  color: var(--ui-ink);
-  text-align: left;
-  background: var(--ui-surface);
-  box-shadow: var(--ui-shadow-sm);
-  cursor: pointer;
-  appearance: none;
+.activity-spinner {
+  border: 3px solid rgba(67, 141, 99, 0.18);
+  border-top-color: var(--ui-primary);
+  border-radius: 50%;
+  animation: spin 0.85s linear infinite;
 }
 
-.activity-entry--supported:hover {
-  border-color: rgba(67, 141, 99, 0.3);
-  box-shadow: var(--ui-shadow-md);
-  transform: translateY(-1px);
-}
-
-.activity-entry--upcoming {
-  border-color: rgba(186, 125, 27, 0.3);
-}
-
-.activity-entry--ended {
-  border-color: rgba(89, 102, 97, 0.18);
-  background: color-mix(in srgb, var(--ui-surface-soft) 70%, transparent);
-}
-
-.activity-entry:disabled {
-  cursor: default;
-  opacity: 1;
-}
-
-.activity-entry__topline,
-.activity-entry__footer {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.activity-entry__topline {
-  margin-bottom: 17px;
-}
-
-.activity-entry__icon {
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  border-radius: 7px;
-  color: var(--ui-primary);
-  background: var(--ui-primary-soft);
-}
-
-.activity-entry__icon > span {
-  font-size: 16px;
-}
-
-.activity-entry__status {
-  padding: 3px 8px;
-  border: 1px solid rgba(67, 141, 99, 0.18);
-  border-radius: 999px;
-  color: var(--ui-primary);
-  background: var(--ui-primary-soft);
-  font-size: 10px;
-  font-weight: var(--fw-700);
-}
-
-.activity-entry--upcoming .activity-entry__icon,
-.activity-entry--upcoming .activity-entry__status {
-  color: var(--ui-warning);
-  background: var(--ui-warning-soft);
-}
-
-.activity-entry--ended .activity-entry__icon,
-.activity-entry--ended .activity-entry__status {
-  color: var(--ui-muted);
-  background: var(--ui-bg-soft);
-}
-
-.activity-entry > strong {
-  width: 100%;
-  overflow: hidden;
-  color: var(--ui-ink);
-  font-size: 17px;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.activity-entry__period {
-  margin-top: 5px;
-  color: var(--ui-muted);
-  font-size: 11px;
-}
-
-.activity-entry__footer {
-  margin-top: auto;
-  padding-top: 15px;
-  color: var(--ui-muted);
-}
-
-.activity-entry__footer > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 10px;
-  font-weight: var(--fw-700);
-}
-
-.activity-entry--supported .activity-entry__footer > span {
-  color: var(--ui-primary);
-}
-
-.activity-entry__footer small {
-  color: var(--ui-muted);
-  font-size: 10px;
-}
-
-.activity-entry__footer .i-carbon-arrow-right,
-.activity-entry__footer .i-carbon-locked {
-  font-size: 13px;
-}
-
-@media (max-width: 1100px) and (min-width: 621px) {
-  .picker-list {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 
@@ -842,16 +982,16 @@ function openActivity(activity: ActivityDirectoryItemDto) {
     white-space: normal;
   }
 
-  .picker-list {
-    grid-template-columns: 1fr;
+  .activity-card {
+    min-height: 188px;
   }
 
-  .activity-entry {
-    min-height: 164px;
+  .activity-card__body {
+    min-height: 188px;
   }
-}
-.activity-entry__icon .activity-entry__pet {
-  width: 26px;
-  height: 26px;
+
+  .activity-card__bottom strong {
+    font-size: 20px;
+  }
 }
 </style>
