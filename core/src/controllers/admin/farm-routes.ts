@@ -612,6 +612,31 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
         }
     });
 
+    // API: 催熟全部（老版方案）：先预览普通/有机化肥消耗，确认后逐批执行。
+    app.post('/api/farm/ripen-all/preview', async (req: Request, res: Response) => {
+        const id = getAccId(ctx, req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+
+        try {
+            const data = await ctx.provider.previewRipenAll(id);
+            res.json({ ok: true, data });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    });
+
+    app.post('/api/farm/ripen-all/step', async (req: Request, res: Response) => {
+        const id = getAccId(ctx, req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+
+        try {
+            const data = await ctx.provider.ripenAllStep(id, req.body?.token, req.body?.cursor);
+            res.json({ ok: true, data });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    });
+
     app.post('/api/farm/fertilize-all', async (req: Request, res: Response) => {
         const id = getAccId(ctx, req);
         if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });

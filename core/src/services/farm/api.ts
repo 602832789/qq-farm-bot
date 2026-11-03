@@ -105,7 +105,9 @@ async function fertilizeOne(landId: number, fertilizerId: number = NORMAL_FERTIL
 }
 
 // 官方一键施肥：一条请求提交多个地块，每个地块只施一次。
-async function fertilizeBatch(landIds: number[], fertilizerId: number): Promise<any> {
+async function fertilizeBatch(landIds: number[], fertilizerId: number, options: { validateBeforeSend?: () => void } = {}): Promise<any> {
+    if (typeof options?.validateBeforeSend === 'function')
+        options.validateBeforeSend();
     const body = types.FertilizeRequest.encode(types.FertilizeRequest.create({
         land_ids: landIds.map((landId: number) => toLong(landId)),
         fertilizer_id: toLong(fertilizerId),
@@ -283,6 +285,8 @@ module.exports = {
     fertilizeOne,
     fertilizeBatch,
     fertilize,
+    NORMAL_FERTILIZER_ID,
+    ORGANIC_FERTILIZER_ID,
     isSkippableFertilizeLandError,
     fertilizeOrganicLoop,
     removePlant,

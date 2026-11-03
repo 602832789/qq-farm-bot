@@ -41,6 +41,32 @@ export interface FertilizeAllResult {
   updatedLands: Land[]
 }
 
+/** 催熟全部预览（老版口径）：普通肥+有机肥按生长阶段秒数计消耗。 */
+export interface RipenAllPreview {
+  token: string
+  expiresAt: number
+  targetCount: number
+  actionCount: number
+  applicationCount: number
+  cost: Record<FertilizerType, number>
+  inventory: Record<FertilizerType, number>
+  sufficient: boolean
+  skipped: { landId: number, reason: string }[]
+}
+
+export interface RipenAllStepResult {
+  success: boolean
+  landIds: number[]
+  updatedLands: Land[]
+  fertilizerType: FertilizerType
+  stopped: string
+  cursor: number
+  done: boolean
+  completed: number
+  total: number
+  used: Record<FertilizerType, number>
+}
+
 function userFacingFertilizeError(raw: unknown, fallback = '施肥失败') {
   return getApiErrorMessage(raw, fallback)
 }
@@ -390,6 +416,39 @@ export const useFarmStore = defineStore('farm', () => {
     }
   }
 
+  /** 催熟全部预览：读取可催熟地块数与普通/有机化肥预计消耗。 */
+  async function previewRipenAll(accountId: string): Promise<RipenAllPreview> {
+    const res = await api.post('/api/farm/ripen-all/preview', {}, {
+      headers: { 'x-account-id': accountId },
+      skipErrorToast: true,
+    } as any)
+    if (!res.data?.ok)
+      throw new Error(getApiErrorMessage(res.data, '催熟预览读取失败'))
+    return res.data.data
+  }
+
+  /** 催熟全部执行一步：服务端按预览计划批量施肥，返回最新土地状态。 */
+  async function ripenAllStep(accountId: string, token: string, cursor: number): Promise<RipenAllStepResult> {
+    if (!accountId || fertilizePending.value)
+      throw new Error('施肥操作正在执行')
+    fertilizePending.value = true
+    try {
+      const res = await api.post('/api/farm/ripen-all/step', { token, cursor }, {
+        headers: { 'x-account-id': accountId },
+        skipErrorToast: true,
+      } as any)
+      if (!res.data?.ok || !res.data.data?.success || !Array.isArray(res.data.data.updatedLands))
+        throw new Error(getApiErrorMessage(res.data, '催熟已停止'))
+      const result = res.data.data as RipenAllStepResult
+      if (result.updatedLands.length)
+        recordLandUpdates(result.updatedLands)
+      return result
+    }
+    finally {
+      fertilizePending.value = false
+    }
+  }
+
   async function operate(accountId: string, opType: string, landId: number | null = null) {
     if (!accountId)
       return false
@@ -449,5 +508,7 @@ export const useFarmStore = defineStore('farm', () => {
     fertilizeLand,
     fertilizeAll,
     removePlant,
+    previewRipenAll,
+    ripenAllStep,
   }
 })

@@ -280,6 +280,12 @@ function createDataProvider(options: DataProviderOptions) {
         removePlant: (accountRef: string, landId: unknown) => (
             callWorkerApi(resolveAccountRefId(accountRef), 'removePlant', landId)
         ),
+        previewRipenAll: (accountRef: string) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'previewRipenAll')
+        ),
+        ripenAllStep: (accountRef: string, token: unknown, cursor: unknown) => (
+            callWorkerApi(resolveAccountRefId(accountRef), 'ripenAllStep', token, cursor)
+        ),
         fertilizeAllOwnLands: (accountRef: string, fertilizerType: unknown, landIds?: unknown) => (
             callWorkerApi(resolveAccountRefId(accountRef), 'fertilizeAllOwnLands', fertilizerType, landIds)
         ),

@@ -3,6 +3,7 @@ import { NButton } from 'naive-ui/es/button'
 import { NCard } from 'naive-ui/es/card'
 import { NModal } from 'naive-ui/es/modal'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { canRipenLand } from '@/utils/ripen-land'
 
 const props = defineProps<{ land: any, player: any, connected: boolean }>()
 const emit = defineEmits<{ close: [], fertilize: [], remove: [] }>()
@@ -91,10 +92,8 @@ function formatTime(sec: number) {
   return `${h > 0 ? `${h}:` : ''}${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
 }
 
-/** 催熟：仅对未成熟的在种作物可用（老版气泡同口径，施一次普通肥）。 */
-const canFertilize = computed(() =>
-  Number(land.value?.matureInSec) > 0
-  && !['locked', 'empty'].includes(String(land.value?.status || '')))
+/** 催熟（老版 ripenLand 口径）：生长中的未成熟作物才可催熟。 */
+const canRipen = computed(() => canRipenLand(land.value))
 
 /** 铲除：有作物的非锁定地块可用。 */
 const canRemove = computed(() => hasCrop.value && !['locked', 'empty'].includes(String(land.value?.status || '')))
@@ -210,7 +209,7 @@ function format(value: unknown) {
         </div>
 
         <div class="land-crop-actions">
-          <NButton size="small" type="primary" ghost :disabled="!canFertilize" @click="emit('fertilize')">
+          <NButton size="small" type="primary" ghost :disabled="!canRipen" title="仅催熟该地块：普通肥一次，再连续施有机肥至成熟或无法继续" @click="emit('fertilize')">
             <template #icon>
               <span class="i-carbon-growth" />
             </template>

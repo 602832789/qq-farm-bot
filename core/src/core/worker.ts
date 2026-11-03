@@ -1001,6 +1001,12 @@ async function handleApiCall(msg: any): Promise<void> {
             case 'removePlant':
                 result = await require('../services/farm/api').removePlant([Number(args[0]) || 0]);
                 break;
+            case 'previewRipenAll':
+                result = await require('../services/farm/ripen-all').previewRipenAll();
+                break;
+            case 'ripenAllStep':
+                result = await require('../services/farm/ripen-all').ripenAllStep(args[0], Number(args[1]) || 0);
+                break;
             case 'fertilizeAllOwnLands':
                 result = await require('../services/farm').fertilizeAllOwnLands(args[0], args[1]);
                 break;
