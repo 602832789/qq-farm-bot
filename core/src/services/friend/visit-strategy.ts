@@ -674,7 +674,7 @@ export async function doFriendOperation(friendGid: any, opType: string, propagat
             if (!landIds.length) return { ok: true, opType, count: 0, message: '没有需要照顾的土地' };
             const outcome: FarmingOutcome = await runFarmingWithFallback(gid, landIds, false, getHelpSnapshotKey(lands), propagateErrors);
             count = outcome.landCount;
-            if (outcome.operationCount > 0) recordOperation('helpFarming', outcome.operationCount);
+            if (outcome.operationCount > 0) recordHelpFarmingSplit(status, outcome);
             return {
                 ok: true,
                 opType,
@@ -762,6 +762,21 @@ export interface VisitFriendOptions {
  * 进一次好友农场，把 帮助（除草/除虫/浇水）+ 偷菜 + 捣乱（放草/放虫）一次做完。
  * 三件事都不需要做时连 Enter 都不发——省下的就是以前那一屏 Enter/Leave 超时日志。
  */
+/**
+ * 把一次合并务农（Farming）的确认地块按需求类别拆分记账。
+ * 老版本按帮浇水/帮除草/帮除虫分项统计，现版本协议是三者合一，按确认地块与需求集合作交集归账。
+ */
+function recordHelpFarmingSplit(status: AnalyzeResult, outcome: { landIds: any[] }): void {
+    const confirmed = new Set((outcome.landIds || []).map((id: any) => toNum(id)).filter((id: number) => id > 0));
+    const countMatched = (ids: number[] = []) => ids.filter(id => confirmed.has(toNum(id))).length;
+    const helpWater: number = countMatched(status.needWater);
+    const helpWeed: number = countMatched(status.needWeed);
+    const helpBug: number = countMatched(status.needBug);
+    if (helpWater > 0) recordOperation('helpWater', helpWater);
+    if (helpWeed > 0) recordOperation('helpWeed', helpWeed);
+    if (helpBug > 0) recordOperation('helpBug', helpBug);
+}
+
 export async function visitFriend(
     friend: any,
     totalActions: any,
@@ -851,7 +866,7 @@ export async function visitFriend(
                 actions.push(`一键务农${outcome.landCount}块/${outcome.operationCount}项(${parts.join('/')})`);
                 if (outcome.dogSkillGiftCount > 0) actions.push(`同气连枝礼包x${outcome.dogSkillGiftCount}(自动获得)`);
                 totalActions.farming += outcome.landCount;
-                recordOperation('helpFarming', outcome.operationCount);
+                recordHelpFarmingSplit(status, outcome);
             }
         }
     }

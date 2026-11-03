@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import type { RuntimeLogEntry } from '@/utils/runtime-log'
 import { useIntervalFn } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import api, { getApiErrorMessage } from '@/api'
 import LevelForecast from '@/components/LevelForecast.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
@@ -14,6 +15,7 @@ import { useStatusStore } from '@/stores/status'
 import { useToastStore } from '@/stores/toast'
 import { milkTeaCountdown } from '@/utils/dashboard-activity-check'
 import { partitionOperations } from '@/utils/dashboard-operations'
+import { compactRuntimeLogs, matchesRuntimeLog, normalizeRuntimeLog } from '@/utils/runtime-log'
 
 const statusStore = useStatusStore()
 const accountStore = useAccountStore()
@@ -32,55 +34,40 @@ const logContainer = ref<HTMLElement | null>(null)
 const autoScroll = ref(true)
 const lastBagFetchAt = ref(0)
 const clearingLogs = ref(false)
+const refreshingLogs = ref(false)
+const pendingLogCount = ref(0)
 
-const allLogs = computed(() => {
-  return [...(statusLogs.value || [])]
-    .slice(-200)
-    .sort((a: any, b: any) => a.ts - b.ts)
-})
-
-type LogLevel = 'error' | 'warn' | 'success' | 'info'
-
-function getLogLevel(log: any): LogLevel {
-  const result = String(log?.meta?.result || '')
-  if (log?.tag === '错误' || result === 'error' || result === 'failed')
-    return 'error'
-  if (log?.isWarn || log?.tag === '警告' || result === 'defer' || result === 'skip')
-    return 'warn'
-  if (['ok', 'success', 'done', 'resume', 'resumed'].includes(result))
-    return 'success'
-  return 'info'
-}
-
-/**
- * 连续出现、仅数字不同的同类日志合并为一行（×N + 时间范围），保留最新一条的内容，
- * 避免巡查类日志刷屏。
- */
-const logGroups = computed(() => {
-  const groups: Array<{ key: string, log: any, level: LogLevel, count: number, firstTime: string }> = []
-  for (const log of allLogs.value) {
-    const signature = `${log.tag}|${log.meta?.event || ''}|${String(log.msg || '').replace(/\d+/g, '#')}`
-    const last = groups[groups.length - 1]
-    if (last && last.key === signature) {
-      last.count += 1
-      last.log = log
-      continue
-    }
-    groups.push({ key: signature, log, level: getLogLevel(log), count: 1, firstTime: log.time })
-  }
-  return groups
+const allLogs = computed<RuntimeLogEntry[]>(() => {
+  const merged = (statusLogs.value || []).map((log: any) => normalizeRuntimeLog(log))
+  const unique = new Map<string, RuntimeLogEntry>()
+  for (const log of merged)
+    unique.set(log.id, log)
+  return [...unique.values()].sort((a, b) => a.ts - b.ts)
 })
 
 const filter = reactive({
   module: '',
   event: '',
   keyword: '',
-  isWarn: '',
 })
 
 const hasActiveLogFilter = computed(() =>
-  !!(filter.module || filter.event || filter.keyword || filter.isWarn),
+  !!(filter.module || filter.event || filter.keyword),
 )
+
+const filteredLogs = computed(() => allLogs.value.filter(log => matchesRuntimeLog(log, filter)))
+
+// 老版本日志面板：同类日志 2 分钟窗口内合并为一条（×N + 时间区间）。
+const visibleLogs = computed(() => compactRuntimeLogs(filteredLogs.value))
+
+const logSummary = computed(() => {
+  const counts = { info: 0, warn: 0, error: 0 }
+  if (currentAccountId.value) {
+    for (const log of filteredLogs.value)
+      counts[log.level]++
+  }
+  return counts
+})
 
 const modules = [
   { label: '所有模块', value: '' },
@@ -125,12 +112,6 @@ const eventLabelMap: Record<string, string> = Object.fromEntries(
 function getEventLabel(event: string) {
   return eventLabelMap[event] || event
 }
-
-const logs = [
-  { label: '所有等级', value: '' },
-  { label: '普通', value: 'info' },
-  { label: '警告', value: 'warn' },
-]
 
 const displayName = computed(() => {
   const account = accountStore.currentAccount
@@ -370,12 +351,53 @@ function formatDuration(seconds: number) {
   return `${pad(h)}:${pad(m)}:${pad(s)}`
 }
 
-function formatLogTime(timeStr: string) {
+function formatLogTime(timeStr: string, ts?: number) {
+  // 优先用数字时间戳在浏览器本地时区格式化；服务端格式化的 time 字符串是服务器时区。
+  if (ts && Number.isFinite(ts) && ts > 0) {
+    const d = new Date(ts)
+    const pad = (v: number) => String(v).padStart(2, '0')
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+  }
   // 2024/5/20 12:34:56 -> 12:34:56
   if (!timeStr)
     return ''
   const parts = timeStr.split(' ')
   return parts.length > 1 ? parts[1] : timeStr
+}
+
+function formatLogTimeRange(log: RuntimeLogEntry) {
+  const start = formatLogTime(log.time, log.ts)
+  if (!log.lastTs || log.lastTs === log.ts)
+    return start
+  return `${start}–${new Date(log.lastTs).toLocaleTimeString('zh-CN', { hour12: false })}`
+}
+
+function getLogTagClass(tag: string) {
+  if (tag === '错误')
+    return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+  if (tag === '系统')
+    return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+  if (tag === '活动')
+    return 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300'
+  if (tag === '宠物')
+    return 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300'
+  if (tag === '警告')
+    return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
+  return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+}
+
+function getLogRowClass(log: RuntimeLogEntry) {
+  if (log.level === 'error')
+    return 'border-red-200 bg-red-50/70 dark:border-red-900/60 dark:bg-red-950/20'
+  if (log.level === 'warn')
+    return 'border-amber-200 bg-amber-50/60 dark:border-amber-900/60 dark:bg-amber-950/20'
+  return 'border-transparent hover:bg-white/55 dark:hover:bg-gray-800/45'
+}
+
+function getLogMsgClass(tag: string) {
+  if (tag === '错误')
+    return 'text-red-600 dark:text-red-400'
+  return 'text-gray-700 dark:text-gray-300'
 }
 
 // 动作统计元信息按老版本全量恢复（今日统计面板）。
@@ -393,7 +415,6 @@ const OP_META: Record<string, { label: string, icon: string, color: string }> = 
   goldenBugPut: { label: '放黄金虫', icon: 'i-carbon-pest', color: 'text-yellow-500' },
   helpWeed: { label: '帮除草', icon: 'i-carbon-cut', color: 'text-yellow-400' },
   helpBug: { label: '帮除虫', icon: 'i-carbon-pest', color: 'text-red-300' },
-  helpFarming: { label: '帮务农', icon: 'i-carbon-collaborate', color: 'text-yellow-400' },
   taskClaim: { label: '任务', icon: 'i-carbon-task-complete', color: 'text-indigo-500' },
   sell: { label: '出售', icon: 'i-carbon-shopping-cart', color: 'text-pink-500' },
   tongQiGift: { label: '同气礼包', icon: 'i-carbon-gift', color: 'text-rose-500' },
@@ -500,7 +521,6 @@ async function refresh(forceReloadLogs = false) {
         module: filter.module || undefined,
         event: filter.event || undefined,
         keyword: filter.keyword || undefined,
-        isWarn: filter.isWarn === 'warn' ? true : filter.isWarn === 'info' ? false : undefined,
       })
     }
 
@@ -510,11 +530,26 @@ async function refresh(forceReloadLogs = false) {
 }
 
 function onLogFilterChange() {
+  pendingLogCount.value = 0
   refresh(true)
 }
 
 function onLogSearchTrigger() {
+  pendingLogCount.value = 0
   refresh(true)
+}
+
+async function refreshRuntimeLogs() {
+  if (!currentAccountId.value || refreshingLogs.value)
+    return
+  refreshingLogs.value = true
+  try {
+    await statusStore.fetchLogs(currentAccountId.value, { limit: 300 })
+    toastStore.success('日志已刷新')
+  }
+  finally {
+    refreshingLogs.value = false
+  }
 }
 
 watch(currentAccountId, async () => {
@@ -556,6 +591,8 @@ function onLogScroll(e: Event) {
     return
   const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50
   autoScroll.value = isNearBottom
+  if (autoScroll.value)
+    pendingLogCount.value = 0
 }
 
 async function clearLogs() {
@@ -581,38 +618,32 @@ async function clearLogs() {
   }
 }
 
-let logScrollFrame: number | undefined
-
-function scheduleLogScroll(force = false) {
+function scrollToBottom() {
   nextTick(() => {
-    if (!logContainer.value || (!force && !autoScroll.value) || logScrollFrame !== undefined)
-      return
-    logScrollFrame = window.requestAnimationFrame(() => {
-      if (logContainer.value)
-        logContainer.value.scrollTop = logContainer.value.scrollHeight
-      logScrollFrame = undefined
-    })
+    if (logContainer.value)
+      logContainer.value.scrollTop = logContainer.value.scrollHeight
+    autoScroll.value = true
+    pendingLogCount.value = 0
   })
 }
 
-watch(allLogs, () => {
-  scheduleLogScroll()
-})
-
-function scrollToBottom() {
-  scheduleLogScroll(true)
-}
+watch(filteredLogs, (next, previous) => {
+  nextTick(() => {
+    if (logContainer.value && autoScroll.value) {
+      logContainer.value.scrollTop = logContainer.value.scrollHeight
+      pendingLogCount.value = 0
+    }
+    else if (next.length > (previous?.length || 0)) {
+      pendingLogCount.value += next.length - (previous?.length || 0)
+    }
+  })
+}, { deep: true })
 
 onMounted(async () => {
   statusStore.setRealtimeLogsEnabled(!hasActiveLogFilter.value)
   await refresh()
   await refreshDiamond()
   scrollToBottom()
-})
-
-onBeforeUnmount(() => {
-  if (logScrollFrame !== undefined)
-    window.cancelAnimationFrame(logScrollFrame)
 })
 
 // Auto refresh fallback every 10s (WS 断开或筛选条件启用时会回退 HTTP)
@@ -726,91 +757,125 @@ useIntervalFn(updateCountdowns, 1000)
     <div class="flex flex-1 flex-col items-stretch gap-6 md:flex-row">
       <!-- Logs (Left Column) -->
       <div class="flex flex-1 flex-col gap-6 md:w-3/4">
-        <!-- Logs -->
-        <div class="flex flex-1 flex-col farm-card rounded-2xl bg-white p-5 shadow-md md:overflow-hidden dark:bg-gray-800">
-          <div class="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-            <h3 class="flex shrink-0 items-center gap-2 whitespace-nowrap text-lg font-bold">
-              <span class="i-carbon-document" /> <span>运行日志</span>
-            </h3>
+        <!-- Logs（老版本运行日志面板移植） -->
+        <section class="dashboard-logs farm-card" aria-label="运行日志">
+          <header class="dashboard-log-header">
+            <div class="dashboard-log-heading">
+              <span class="i-carbon-terminal" aria-hidden="true" />
+              <h3>运行日志</h3>
+              <span class="dashboard-log-sync">{{ syncLabel }}</span>
+            </div>
+            <div class="dashboard-log-tools">
+              <BaseButton
+                variant="ghost"
+                size="sm"
+                title="刷新日志"
+                aria-label="刷新日志"
+                :loading="refreshingLogs"
+                @click="refreshRuntimeLogs"
+              >
+                <span class="i-carbon-renew" aria-hidden="true" />
+              </BaseButton>
+              <BaseButton
+                variant="ghost"
+                size="sm"
+                title="清空当前账号运行日志"
+                aria-label="清空当前账号运行日志"
+                :loading="clearingLogs"
+                @click="clearLogs"
+              >
+                <span class="i-carbon-trash-can" aria-hidden="true" />
+              </BaseButton>
+            </div>
+          </header>
+          <div class="dashboard-log-toolbar">
+            <BaseInput
+              v-model="filter.keyword"
+              placeholder="搜索日志内容"
+              aria-label="搜索日志内容"
+              class="dashboard-log-search"
+              clearable
+              @keyup.enter="onLogSearchTrigger"
+              @clear="onLogSearchTrigger"
+            />
 
-            <div class="log-filters">
-              <BaseSelect
-                v-model="filter.module"
-                :options="modules"
-                @change="onLogFilterChange"
-              />
+            <BaseSelect
+              v-model="filter.module"
+              :options="modules"
+              placeholder="筛选模块"
+              @change="onLogFilterChange"
+            />
 
-              <BaseSelect
-                v-model="filter.event"
-                :options="events"
-                @change="onLogFilterChange"
-              />
+            <BaseSelect
+              v-model="filter.event"
+              :options="events"
+              placeholder="筛选事件"
+              @change="onLogFilterChange"
+            />
 
-              <BaseSelect
-                v-model="filter.isWarn"
-                :options="logs"
-                @change="onLogFilterChange"
-              />
-
-              <BaseInput
-                v-model="filter.keyword"
-                placeholder="关键词"
-                clearable
-                @keyup.enter="onLogSearchTrigger"
-                @clear="onLogSearchTrigger"
-              />
-
-              <div class="log-filters__buttons">
-                <BaseButton
-                  variant="primary"
-                  class="log-filters__icon"
-                  title="搜索日志"
-                  aria-label="搜索日志"
-                  @click="onLogSearchTrigger"
-                >
-                  <span class="i-carbon-search" />
-                </BaseButton>
-
-                <BaseButton
-                  variant="secondary"
-                  class="log-filters__icon"
-                  title="清空日志"
-                  aria-label="清空日志"
-                  :loading="clearingLogs"
-                  @click="clearLogs"
-                >
-                  <template #icon>
-                    <span class="i-carbon-trash-can" />
-                  </template>
-                </BaseButton>
-              </div>
+            <BaseButton
+              v-if="hasActiveLogFilter"
+              variant="ghost"
+              size="sm"
+              title="重置筛选"
+              aria-label="重置筛选"
+              @click="Object.assign(filter, { module: '', event: '', keyword: '' }); onLogFilterChange()"
+            >
+              <span class="i-carbon-filter-remove" aria-hidden="true" />
+            </BaseButton>
+          </div>
+          <div class="dashboard-log-summary">
+            <span>匹配记录 <strong>{{ logSummary.info + logSummary.warn + logSummary.error }}</strong></span>
+            <div class="dashboard-log-levels">
+              <span class="dashboard-log-level--info"><i />常规 <b>{{ logSummary.info }}</b></span>
+              <span class="dashboard-log-level--warn"><i />警告 <b>{{ logSummary.warn }}</b></span>
+              <span class="dashboard-log-level--error"><i />错误 <b>{{ logSummary.error }}</b></span>
             </div>
           </div>
-
-          <div ref="logContainer" class="log-list max-h-[50vh] min-h-0 flex-1 overflow-y-auto" @scroll="onLogScroll">
-            <div v-if="!allLogs.length" class="py-8 text-center text-gray-400">
-              暂无日志
+          <div class="dashboard-log-columns" aria-hidden="true">
+            <span>时间</span><span>模块与事件</span><span>运行记录</span>
+          </div>
+          <div ref="logContainer" class="dashboard-log-scroll" tabindex="0" aria-label="运行日志列表" @scroll="onLogScroll">
+            <div v-if="!currentAccountId || !visibleLogs.length" class="dashboard-log-empty">
+              <span class="i-carbon-document-blank" aria-hidden="true" />
+              <p>{{ !currentAccountId ? '尚未选择账号' : hasActiveLogFilter ? '没有符合条件的日志' : '暂无日志' }}</p>
             </div>
             <div
-              v-for="group in logGroups"
-              :key="group.log.ts + group.key"
-              class="log-row"
-              :class="`log-row--${group.level}`"
+              v-for="log in visibleLogs"
+              :key="log.id"
+              class="dashboard-log-row"
+              :data-level="log.level"
+              :class="getLogRowClass(log)"
             >
-              <span class="log-row__time">
-                {{ formatLogTime(group.log.time) }}
-              </span>
-              <span class="log-row__tag">{{ group.log.tag }}</span>
-              <span class="log-row__body">
-                <span v-if="group.log.meta?.event" class="log-row__event">{{ getEventLabel(group.log.meta.event) }}</span>
-                <span class="log-row__msg">{{ group.log.msg }}</span>
-                <span v-if="group.count > 1" class="log-row__repeat" :title="`${formatLogTime(group.firstTime)} 起重复 ${group.count} 次`">
-                  ×{{ group.count }} · {{ formatLogTime(group.firstTime) }} 起
-                </span>
-              </span>
+              <span class="dashboard-log-time">{{ formatLogTimeRange(log) }}</span>
+              <div class="dashboard-log-meta">
+                <span class="dashboard-log-tag" :class="getLogTagClass(log.tag)">{{ log.tag }}</span>
+                <span v-if="log.event && log.source !== 'account'" class="dashboard-log-event">{{ getEventLabel(log.event) }}</span>
+              </div>
+              <p class="dashboard-log-message" :class="getLogMsgClass(log.tag)">
+                <span v-if="log.level === 'error' || log.level === 'warn'" class="dashboard-log-severity" :title="log.level === 'error' ? '错误' : '警告'" :aria-label="log.level === 'error' ? '错误' : '警告'"><span :class="log.level === 'error' ? 'i-carbon-error-filled' : 'i-carbon-warning-filled'" aria-hidden="true" /></span>
+                {{ log.msg }}
+                <span v-if="(log.repeatCount || 1) > 1" class="dashboard-log-repeat" :title="`连续重复 ${log.repeatCount} 次`">×{{ log.repeatCount }}</span>
+              </p>
             </div>
+
+            <button
+              v-if="pendingLogCount"
+              type="button"
+              class="dashboard-log-new"
+              @click="scrollToBottom"
+            >
+              <div class="i-carbon-arrow-down" />
+              {{ pendingLogCount }} 条新日志
+            </button>
           </div>
-        </div>
+          <footer class="dashboard-log-footer">
+            <span class="dashboard-log-follow" :class="{ 'is-following': autoScroll }"><i />{{ autoScroll ? '跟随最新记录' : '正在查看历史记录' }}</span>
+            <button type="button" :disabled="!currentAccountId || !visibleLogs.length" title="跳到最新日志" @click="scrollToBottom">
+              <span class="i-carbon-arrow-down" aria-hidden="true" />最新记录
+            </button>
+          </footer>
+        </section>
       </div>
 
       <!-- Right Column Stack -->
@@ -1319,138 +1384,377 @@ useIntervalFn(updateCountdowns, 1000)
   }
 }
 
-.log-filters {
-  display: grid;
+.dashboard-logs {
+  container-name: runtime-log;
+  container-type: inline-size;
   min-width: 0;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.log-filters__buttons {
   display: flex;
-  grid-column: 1 / -1;
-  justify-content: flex-end;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.dashboard-log-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 10px 14px;
+}
+
+.dashboard-log-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
 }
 
-.log-filters__icon {
-  width: 38px;
-  min-width: 38px;
-  height: 38px;
-  padding: 0 !important;
+.dashboard-log-heading > span:first-child {
+  color: var(--theme-primary);
+  font-size: 19px;
 }
 
-@media (min-width: 640px) {
-  .log-filters {
-    grid-template-columns: repeat(4, minmax(0, 8.5rem)) auto;
-    align-items: center;
+.dashboard-log-heading h3 {
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.dashboard-log-sync {
+  margin-left: 3px;
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+
+.dashboard-log-tools {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.dashboard-log-tools :deep(button) {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 5px;
+}
+
+.dashboard-log-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 32px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 14px 10px;
+}
+
+.dashboard-log-search {
+  grid-column: 1 / -1;
+}
+
+.dashboard-log-toolbar > * {
+  min-width: 0;
+}
+
+.dashboard-log-toolbar :deep(.base-input),
+.dashboard-log-toolbar :deep(.base-select-trigger) {
+  border-radius: 5px;
+  min-height: 36px;
+  font-size: 13px;
+}
+
+.dashboard-log-toolbar > :deep(button) {
+  padding: 0;
+  width: 32px;
+  height: 32px;
+}
+
+.dashboard-log-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 7px 14px;
+  border-top: 1px solid var(--surface-border);
+  background: var(--surface-2);
+  font-size: 12px;
+  color: var(--ui-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-log-summary strong {
+  margin-left: 5px;
+  color: var(--ui-ink);
+  font-weight: 600;
+}
+
+.dashboard-log-levels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.dashboard-log-levels > span,
+.dashboard-log-follow {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.dashboard-log-levels b {
+  font-weight: 500;
+}
+
+.dashboard-log-levels i,
+.dashboard-log-follow i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #8d9a8a;
+}
+
+.dashboard-log-level--warn i {
+  background: #c48a27;
+}
+
+.dashboard-log-level--error i {
+  background: #cc6262;
+}
+
+.dashboard-log-columns,
+.dashboard-log-row {
+  display: grid;
+  grid-template-columns: 78px minmax(75px, 100px) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.dashboard-log-columns {
+  padding: 5px 14px 5px 17px;
+  border-block: 1px solid var(--surface-border);
+  font-size: 12px;
+  color: var(--ui-muted);
+}
+
+.dashboard-log-scroll {
+  position: relative;
+  max-height: 420px;
+  min-height: 160px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  background: var(--surface-1);
+}
+
+.dashboard-log-row {
+  align-items: baseline;
+  padding: 6px 14px;
+  border-bottom: 1px solid #eaf0e4;
+  border-left: 3px solid transparent;
+  font-size: 13px;
+}
+
+.dark .dashboard-log-row {
+  border-bottom-color: rgb(255 255 255 / 6%);
+}
+
+.dashboard-log-row:nth-child(even) {
+  background: #f6f9f24d;
+}
+
+.dashboard-log-row:hover {
+  background: #f0f6eb;
+}
+
+.dashboard-log-row[data-level='warn'] {
+  border-left-color: #d4a349;
+  background: #fff9ea;
+}
+
+.dashboard-log-row[data-level='error'] {
+  border-left-color: #d67878;
+  background: #fff2ef;
+}
+
+.dashboard-log-time {
+  color: var(--ui-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  line-height: 1.8;
+}
+
+.dashboard-log-meta {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.dashboard-log-tag {
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-log-event {
+  color: var(--ui-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-log-message {
+  min-width: 0;
+  margin: 0;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.dashboard-log-severity {
+  display: inline-flex;
+  vertical-align: -2px;
+  color: #b68027;
+  margin-right: 2px;
+}
+
+.dashboard-log-row[data-level='error'] .dashboard-log-severity {
+  color: #c45d58;
+}
+
+.dashboard-log-repeat {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--surface-border);
+  border-radius: 3px;
+  color: var(--ui-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dashboard-log-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 160px;
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+
+.dashboard-log-empty > span {
+  font-size: 30px;
+  opacity: 0.5;
+}
+
+.dashboard-log-new {
+  position: sticky;
+  bottom: 12px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: max-content;
+  max-width: calc(100% - 24px);
+  margin: 8px auto;
+  padding: 8px 14px;
+  border-radius: 6px;
+  background: var(--theme-primary);
+  color: white;
+  font-size: 12px;
+  box-shadow: 0 3px 10px rgb(35 85 46 / 18%);
+}
+
+.dashboard-log-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 14px;
+  border-top: 1px solid var(--surface-border);
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+
+.dashboard-log-follow.is-following i {
+  background: var(--theme-primary);
+}
+
+.dashboard-log-footer button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  color: var(--theme-primary);
+}
+
+.dashboard-log-footer button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dashboard-log-scroll:focus-visible {
+  outline: 2px solid var(--theme-primary);
+  outline-offset: -2px;
+}
+
+@container runtime-log (min-width: 640px) {
+  .dashboard-log-toolbar {
+    grid-template-columns: minmax(160px, 1fr) 120px 140px 32px;
   }
 
-  .log-filters__buttons {
+  .dashboard-log-search {
     grid-column: auto;
   }
 }
 
-.log-list {
-  padding: 6px;
-  border-radius: var(--ui-radius-control);
-  background: var(--ui-surface-soft);
-  font-size: 13px;
-  line-height: 1.55;
-}
-
-.log-row {
-  display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr);
-  align-items: baseline;
-  gap: 10px;
-  padding: 5px 8px 5px 10px;
-  border-left: 3px solid transparent;
-  border-radius: 6px;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 28px;
-}
-
-.log-row + .log-row {
-  margin-top: 2px;
-}
-
-.log-row__time {
-  color: var(--ui-subtle);
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 12px;
-  white-space: nowrap;
-  user-select: none;
-}
-
-.log-row__tag {
-  min-width: 2.5em;
-  color: var(--ui-muted);
-  font-size: 12px;
-  font-weight: var(--fw-600);
-  white-space: nowrap;
-}
-
-.log-row__body {
-  min-width: 0;
-  color: var(--ui-ink);
-  overflow-wrap: anywhere;
-}
-
-.log-row__event {
-  margin-right: 6px;
-  color: var(--ui-muted);
-  font-size: 12px;
-}
-
-.log-row__event::after {
-  margin-left: 6px;
-  color: var(--ui-subtle);
-  content: '·';
-}
-
-.log-row__repeat {
-  display: inline-block;
-  margin-left: 8px;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: var(--ui-surface-strong);
-  color: var(--ui-muted);
-  font-size: 11px;
-  white-space: nowrap;
-}
-
-.log-row--success {
-  border-left-color: var(--ui-primary);
-}
-
-.log-row--warn {
-  border-left-color: var(--ui-warning);
-  background: color-mix(in srgb, var(--ui-warning-soft) 70%, transparent);
-}
-
-.log-row--warn .log-row__tag {
-  color: var(--ui-warning);
-}
-
-.log-row--error {
-  border-left-color: var(--ui-danger);
-  background: color-mix(in srgb, var(--ui-danger-soft) 80%, transparent);
-}
-
-.log-row--error .log-row__tag,
-.log-row--error .log-row__msg {
-  color: var(--ui-danger);
-}
-
-@media (max-width: 640px) {
-  .log-row {
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: 2px 8px;
+@media (max-width: 639px) {
+  .dashboard-log-scroll {
+    height: 430px;
+    max-height: 430px;
   }
 
-  .log-row__body {
+  .dashboard-log-header {
+    padding: 12px;
+  }
+
+  .dashboard-log-toolbar {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 32px;
+    padding: 0 12px 12px;
+  }
+
+  .dashboard-log-search {
     grid-column: 1 / -1;
+  }
+
+  .dashboard-log-summary {
+    padding: 9px 12px;
+  }
+
+  .dashboard-log-columns {
+    display: none;
+  }
+
+  .dashboard-log-row {
+    grid-template-columns: 94px minmax(0, 1fr);
+    gap: 6px 10px;
+    padding: 12px;
+  }
+
+  .dashboard-log-message {
+    grid-column: 1 / -1;
+  }
+
+  .dashboard-log-footer {
+    padding: 8px 12px;
   }
 }
 </style>

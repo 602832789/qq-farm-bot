@@ -41,28 +41,45 @@ function savePersistedStats(accountId: string, data: any): void {
 interface OperationsMap {
     [key: string]: number;
     harvest: number;
+    water: number;
+    weed: number;
+    bug: number;
     farming: number;
     fertilize: number;
     plant: number;
     steal: number;
-    helpFarming: number;
+    helpWater: number;
+    helpWeed: number;
+    helpBug: number;
+    goldenBugClear: number;
+    goldenBugPut: number;
     taskClaim: number;
     sell: number;
     upgrade: number;
     levelUp: number;
+    tongQiGift: number;
 }
 
+// 键顺序与老版本一致：决定首页今日统计无记录折叠区的展示顺序。
 const operations: OperationsMap = {
     harvest: 0,
+    water: 0,
+    weed: 0,
+    bug: 0,
     farming: 0,
     fertilize: 0,
     plant: 0,
     steal: 0,
-    helpFarming: 0,
+    helpWater: 0,
+    helpWeed: 0,
+    helpBug: 0,
+    goldenBugClear: 0,
+    goldenBugPut: 0,
     taskClaim: 0,
     sell: 0,
     upgrade: 0,
     levelUp: 0,
+    tongQiGift: 0,
 };
 
 let currentDateKey: string | null = null;

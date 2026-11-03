@@ -7,6 +7,7 @@ const { sendMsgAsync, getUserState, GatewayError } = require('../../utils/networ
 const { types } = require('../../utils/proto');
 const { toLong, toNum, log, logWarn, sleep, randomDelay } = require('../../utils/utils');
 const { getFarmingSkillGiftCount } = require('../dog-skill-gifts');
+const { recordOperation } = require('../stats');
 const { recordFriendDogFromEnterReply } = require('./pet-cache');
 const {
     syncKnownFriendGidsFromRecentVisitors,
@@ -195,6 +196,7 @@ export async function helpFarming(friendGid: number, landIds: number[], stopWhen
             if (afterExp <= beforeExp) schedulerRef().autoDisableHelpByExpLimit();
         }
         if (dogSkillGiftCount > 0) {
+            recordOperation('tongQiGift', dogSkillGiftCount);
             log('好友', `帮助好友触发护主犬“同气连枝”，自动获得礼包 x${dogSkillGiftCount}`, {
                 module: 'friend',
                 event: '同气连枝礼包',
