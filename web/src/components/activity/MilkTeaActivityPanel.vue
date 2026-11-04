@@ -321,6 +321,9 @@ onUnmounted(() => {
         </p>
       </div>
       <div class="tea-header-tools">
+        <button type="button" class="tea-icon-button" aria-label="返回活动中心" title="返回活动中心" @click="emit('back')">
+          <span class="i-carbon-arrow-left" aria-hidden="true" />
+        </button>
         <span>剩余 {{ remaining }}</span>
         <button type="button" class="tea-icon-button" aria-label="活动时间与规则" title="活动时间与规则" :disabled="blocked || !state" @click="open('rules')">
           <span class="i-carbon-information" aria-hidden="true" />
@@ -349,6 +352,9 @@ onUnmounted(() => {
       </p>
       <button v-if="!loading" type="button" class="tea-button" @click="refresh">
         <span class="i-carbon-renew" aria-hidden="true" />重新读取
+      </button>
+      <button type="button" class="tea-button" @click="emit('back')">
+        <span class="i-carbon-arrow-left" aria-hidden="true" />返回活动中心
       </button>
     </div>
     <template v-else>

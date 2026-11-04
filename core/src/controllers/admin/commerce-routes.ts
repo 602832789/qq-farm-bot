@@ -47,6 +47,21 @@ function mountCommerceRoutes(app: Application, ctx: AdminContext): void {
         };
     };
 
+    // 老版形状路由专用：直接以 handler 返回值作为响应体（{ok, activity} / 平铺字段），
+    // 不套 {ok, data} 外壳——老版 MilkTeaActivityPanel 读的是顶层形状。
+    const withAccountRaw = (handler: (accountId: string, req: Request) => Promise<any>) => {
+        return async (req: Request, res: Response) => {
+            const accountId = getAccId(ctx, req);
+            if (!accountId) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+            try {
+                return res.json(await handler(accountId, req));
+            } catch (error: any) {
+                const result = friendlyError(error);
+                return res.json({ ok: false, error: result.message, errorMessage: result.message, errorCode: result.code });
+            }
+        };
+    };
+
     app.get('/api/solar-calendar', withAccount((accountId: string) => ctx.provider.getSolarCalendar(accountId)));
     app.post('/api/solar-calendar/:action', withAccount((accountId: string, req: Request) => ctx.provider.operateSolarCalendar(accountId, req.params.action, req.body)));
     app.post('/api/illustrated/claim', withAccount((accountId: string, req: Request) => ctx.provider.claimIllustratedRewards(accountId, req.body?.type)));
@@ -55,33 +70,22 @@ function mountCommerceRoutes(app: Application, ctx: AdminContext): void {
     app.post('/api/activities/milk-tea/:action', withAccount((accountId: string, req: Request) => ctx.provider.operateMilkTeaActivity(accountId, req.params.action, req.body)));
 
     // 老版奶茶热销页面（MilkTeaActivityPanel）专用：TeaState 形状快照 + 操作 + 显式查询。
-    app.get('/api/activity/milk-tea', withAccount(async (accountId: string) => {
-        try {
-            return { ok: true, activity: await ctx.provider.getMilkTeaLegacy(accountId) };
-        } catch (error: any) {
-            return { ok: false, error: String(error?.message || error || '活动数据读取失败') };
-        }
-    }));
-    app.post('/api/activity/milk-tea/operate', withAccount(async (accountId: string, req: Request) => {
+    // 响应体保持老版形状（{ok, activity} / 平铺字段），走 withAccountRaw 不套外壳。
+    app.get('/api/activity/milk-tea', withAccountRaw(async (accountId: string) => (
+        { ok: true, activity: await ctx.provider.getMilkTeaLegacy(accountId) }
+    )));
+    app.post('/api/activity/milk-tea/operate', withAccountRaw(async (accountId: string, req: Request) => {
         const action = String(req.body?.action || '').trim();
         const params = req.body?.params && typeof req.body.params === 'object' ? req.body.params : {};
-        try {
-            const result = await ctx.provider.operateMilkTeaLegacy(accountId, action, params);
-            return { ok: true, ...(result || {}) };
-        } catch (error: any) {
-            return { ok: false, error: String(error?.message || error || '操作失败') };
-        }
+        const result = await ctx.provider.operateMilkTeaLegacy(accountId, action, params);
+        return { ok: true, ...(result || {}) };
     }));
-    app.post('/api/activity/milk-tea/records', withAccount(async (accountId: string, req: Request) => {
+    app.post('/api/activity/milk-tea/records', withAccountRaw(async (accountId: string, req: Request) => {
         const kind = String(req.body?.kind || '').trim();
         const params = req.body?.params && typeof req.body.params === 'object' ? req.body.params : {};
-        try {
-            const records = await ctx.provider.milkTeaRecordsLegacy(accountId, kind, params);
-            // 老版形状：字段平铺在响应体上（friends/robots/rank/sales…）。
-            return { ok: true, ...(records && typeof records === 'object' ? records : {}) };
-        } catch (error: any) {
-            return { ok: false, error: String(error?.message || error || '记录读取失败') };
-        }
+        const records = await ctx.provider.milkTeaRecordsLegacy(accountId, kind, params);
+        // 老版形状：字段平铺在响应体上（friends/robots/rank/sales…）。
+        return { ok: true, ...(records && typeof records === 'object' ? records : {}) };
     }));
 
     app.get('/api/activities/share-reward/:activityId', withAccount((accountId: string, req: Request) => (
