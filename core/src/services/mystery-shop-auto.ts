@@ -25,7 +25,8 @@ const MYSTERY_SHOP_AUTOMATION_KEYS = [
     'mystery_shop_purchase_notify',
 ] as const;
 
-const AUTO_BUY_CHECK_INTERVAL_MS = 2 * 60 * 60 * 1000;
+/** 对齐老版 mystery-shop.js：神秘商店每 10 分钟巡查一次（刷新/购买共用节奏）。 */
+const AUTO_BUY_CHECK_INTERVAL_MS = 10 * 60 * 1000;
 
 interface MysteryShopAutoState {
     lastArrivalKey: string;

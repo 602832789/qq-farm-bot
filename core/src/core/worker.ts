@@ -568,6 +568,18 @@ function applyRuntimeConfig(snapshot: any, syncNow: boolean = false): number {
             startMysteryShopTimer();
             startActivityAutomationTimer();
             startPetFeedCheckTimer();
+
+            // 对齐老版 star_activity_claim_after_save：保存自动化配置后 2 秒立即跑一轮，
+            // 新开启的开关清掉冷却，本轮即可生效，不用等下一个 5 分钟周期。
+            try {
+                const { scheduleActivityAutomationAfterSave, resetCooldownsForEnabledKeys } = require('../services/activity-automation');
+                const nextAutoAll = getAutomation();
+                resetCooldownsForEnabledKeys(Object.keys(nextAutoAll)
+                    .filter(key => nextAutoAll[key] === true && !(prevAuto && prevAuto[key] === true)));
+                scheduleActivityAutomationAfterSave(workerScheduler);
+            } catch (_e: any) {
+                // 活动自动化未初始化时忽略
+            }
         }
     }
 

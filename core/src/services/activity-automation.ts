@@ -9,8 +9,8 @@ export {};
 
 const { log, logWarn, toNum } = require('../utils/utils');
 
-/** 单个操作的最小重试间隔，避免把「不可领取」类错误刷成请求风暴。 */
-const OP_COOLDOWN_MS = 10 * 60 * 1000;
+/** 单个操作的最小重试间隔；对齐老版 5 分钟轮询节奏（老版无冷却，靠状态守卫，这里用 5 分钟上限兑底）。 */
+const OP_COOLDOWN_MS = 5 * 60 * 1000;
 /** 每轮最多执行的操作数，防止一轮里串太久。奶茶/活动开关较多时按单键预留。 */
 const MAX_OPS_PER_ROUND = 24;
 
@@ -27,7 +27,7 @@ interface AutomationOp {
     label: string;
     /** 执行体；返回 true 表示确实做了操作（用于日志），返回 false / 抛错都只记录 */
     run: (automation: any) => Promise<boolean>;
-    /** 覆盖默认冷却间隔；奶茶动作与老版节奏一致用 5 分钟。 */
+    /** 覆盖默认冷却间隔；默认已是老版 5 分钟节奏，保留字段供个别操作单独调速。 */
     cooldownMs?: number;
 }
 
@@ -67,11 +67,9 @@ function buildMilkTeaOps(): AutomationOp[] {
     const milkTea = require('./milk-tea');
     const shareReward = require('./share-reward-activity');
     const MILK_SHARE_ID = '2026110104';
-    /** 奶茶动作统一 5 分钟冷却，与老版轮询节奏一致。 */
-    const cooldown = 5 * 60 * 1000;
     const shopOps: AutomationOp[] = [
         {
-            key: 'milk_tea_cashier', label: '奶茶热销中-领取收益', cooldownMs: cooldown,
+            key: 'milk_tea_cashier', label: '奶茶热销中-领取收益',
             run: async () => {
                 const state = await milkTea.getMilkTeaActivity('shop');
                 if (!state.active || !(state.shop?.pending_rewards || []).some((v: any) => toNum(v.count) > 0)) return false;
@@ -80,7 +78,7 @@ function buildMilkTeaOps(): AutomationOp[] {
             },
         },
         {
-            key: 'milk_tea_wages', label: '奶茶热销中-领取工资', cooldownMs: cooldown,
+            key: 'milk_tea_wages', label: '奶茶热销中-领取工资',
             run: async () => {
                 const state = await milkTea.getMilkTeaActivity('work');
                 if (!state.active || !(state.work?.slips || []).some((v: any) => toNum(v.wage_status) === 1)) return false;
@@ -89,7 +87,7 @@ function buildMilkTeaOps(): AutomationOp[] {
             },
         },
         {
-            key: 'milk_tea_upgrade', label: '奶茶热销中-升级店铺', cooldownMs: cooldown,
+            key: 'milk_tea_upgrade', label: '奶茶热销中-升级店铺',
             run: async () => {
                 const state = await milkTea.getMilkTeaActivity('upgrade');
                 if (!state.active || !state.summary?.can_upgrade) return false;
@@ -98,7 +96,7 @@ function buildMilkTeaOps(): AutomationOp[] {
             },
         },
         {
-            key: 'milk_tea_craft', label: '奶茶热销中-制作奶茶', cooldownMs: cooldown,
+            key: 'milk_tea_craft', label: '奶茶热销中-制作奶茶',
             run: async () => {
                 const state = await milkTea.getMilkTeaActivity('workshop');
                 if (!state.active || state.settling) return false;
@@ -111,7 +109,7 @@ function buildMilkTeaOps(): AutomationOp[] {
             },
         },
         {
-            key: 'milk_tea_boost', label: '奶茶热销中-使用宣传喇叭', cooldownMs: cooldown,
+            key: 'milk_tea_boost', label: '奶茶热销中-使用宣传喇叭',
             run: async () => {
                 const state = await milkTea.getMilkTeaActivity('shop');
                 const salesItemId = toNum(state.shop?.sales_item_id);
@@ -121,7 +119,7 @@ function buildMilkTeaOps(): AutomationOp[] {
             },
         },
         {
-            key: 'milk_tea_hire', label: '奶茶热销中-雇佣员工', cooldownMs: cooldown,
+            key: 'milk_tea_hire', label: '奶茶热销中-雇佣员工',
             run: async (automation: any) => {
                 // 班次时长读设置里的 milk_tea_hire_duration（1=4h/2=12h/3=24h），不传时用 1。
                 const durationInput = Number(automation.milk_tea_hire_duration);
@@ -150,7 +148,7 @@ function buildMilkTeaOps(): AutomationOp[] {
             },
         },
         {
-            key: 'milk_tea_interact', label: '奶茶热销中-打工互动', cooldownMs: cooldown,
+            key: 'milk_tea_interact', label: '奶茶热销中-打工互动',
             run: async (automation: any) => {
                 const state = await milkTea.getMilkTeaActivity('work');
                 const shift = state.work?.my_shift;
@@ -164,7 +162,7 @@ function buildMilkTeaOps(): AutomationOp[] {
             },
         },
         {
-            key: 'milk_tea_seed_buy', label: '奶茶热销中-购买活动种子', cooldownMs: cooldown,
+            key: 'milk_tea_seed_buy', label: '奶茶热销中-购买活动种子',
             run: async () => {
                 const state = await milkTea.getMilkTeaActivity('exchange');
                 if (!state.active || state.settling) return false;
@@ -181,7 +179,7 @@ function buildMilkTeaOps(): AutomationOp[] {
             },
         },
         {
-            key: 'milk_tea_fund_rewards', label: '奶茶热销中-领取成长基金奖励', cooldownMs: cooldown,
+            key: 'milk_tea_fund_rewards', label: '奶茶热销中-领取成长基金奖励',
             run: async () => {
                 const state = await milkTea.getMilkTeaActivity('fund');
                 if (!state.active || !state.fund?.unlocked) return false;
@@ -197,7 +195,7 @@ function buildMilkTeaOps(): AutomationOp[] {
         { key: 'milk_tea_share_daily', label: '奶茶热销中-领取每日快乐值', gate: (s: any) => s.canClaimDaily, action: 'daily' },
         { key: 'milk_tea_share_rewards', label: '奶茶热销中-领取快乐值奖励', gate: (s: any) => s.canClaimMilestones, action: 'milestones' },
     ] as Array<{ key: string, label: string, gate: (s: any) => boolean, action: string }>).map(({ key, label, gate, action }) => ({
-        key, label, cooldownMs: cooldown,
+        key, label,
         run: async () => {
             const state = await shareReward.getShareRewardActivity(MILK_SHARE_ID).catch(() => null);
             if (!state?.active || !gate(state)) return false;
@@ -488,11 +486,14 @@ function startActivityAutomation(workerScheduler: any, intervalMs: number = 5 * 
     };
     if (workerScheduler && typeof workerScheduler.setIntervalTask === 'function') {
         workerScheduler.setIntervalTask('activity_automation_interval', intervalMs, tick, { preventOverlap: true });
+        // 对齐老版 star_activity_claim_initial：启动后 10 秒先跑一轮，不等第一个 5 分钟。
+        workerScheduler.setTimeoutTask('activity_automation_initial', 10 * 1000, tick);
         timer = true;
         return;
     }
     timer = setInterval(tick, intervalMs);
     if (typeof timer.unref === 'function') timer.unref();
+    setTimeout(tick, 10 * 1000);
 }
 
 function stopActivityAutomation(): void {
@@ -500,11 +501,46 @@ function stopActivityAutomation(): void {
         clearInterval(timer);
     }
     timer = null;
+    if (typeof workerSchedulerRef?.clear === 'function') {
+        workerSchedulerRef.clear('activity_automation_initial');
+        workerSchedulerRef.clear('activity_automation_after_save');
+    }
+}
+
+/** 启动/停止之间记住 scheduler，便于 stop 时清理一次性任务。 */
+let workerSchedulerRef: any = null;
+
+/**
+ * 保存自动化配置后延迟跑一轮（对齐老版 star_activity_claim_after_save 的 2 秒节奏）。
+ * 新开启的开关由 resetCooldownsForEnabledKeys 清掉冷却后，这一轮即可立即生效。
+ */
+function scheduleActivityAutomationAfterSave(workerScheduler: any, delayMs: number = 2000): void {
+    if (workerScheduler && typeof workerScheduler.setTimeoutTask === 'function') {
+        workerSchedulerRef = workerScheduler;
+        workerScheduler.setTimeoutTask('activity_automation_after_save', delayMs, () => {
+            const { runExclusiveAutomationTask } = require('./automation-lock');
+            return runExclusiveAutomationTask('activity_automation', () => runActivityAutomationOnce())
+                .catch((error: any) => {
+                    logWarn('活动', `活动自动化执行异常：${String(error?.message || error || '')}`, { event: 'activity_automation' });
+                });
+        });
+        return;
+    }
+    setTimeout(() => {
+        runActivityAutomationOnce().catch(() => null);
+    }, delayMs);
+}
+
+/** 新开启的开关立即生效：清除这些 key 的冷却记录。 */
+function resetCooldownsForEnabledKeys(enabledKeys: string[]): void {
+    for (const key of enabledKeys) lastRunAt.delete(key);
 }
 
 module.exports = {
     runActivityAutomationOnce,
     startActivityAutomation,
     stopActivityAutomation,
+    scheduleActivityAutomationAfterSave,
+    resetCooldownsForEnabledKeys,
     buildOps,
 };
