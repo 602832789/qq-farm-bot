@@ -173,23 +173,31 @@ function remainSec(land: any) {
   return Math.max(0, base - elapsed)
 }
 
+type BubbleTone = 'muted' | 'ripe' | 'steal' | 'dead' | 'growing'
+interface LandBubble {
+  text: string
+  tone: BubbleTone
+  /** 文本是否为成熟倒计时；窄屏下只有这种气泡值得保留。 */
+  countdown: boolean
+}
+
 /** 气泡：优先展示可操作状态，其次倒计时，最后是作物阶段。 */
-function bubble(land: any) {
+function bubble(land: any): LandBubble {
   if (isLocked(land))
-    return { text: '未解锁', tone: 'muted' }
+    return { text: '未解锁', tone: 'muted', countdown: false }
   if (isEmpty(land))
-    return { text: '空地', tone: 'muted' }
+    return { text: '空地', tone: 'muted', countdown: false }
   const status = String(land?.status || '')
   if (status === 'harvestable')
-    return { text: '可收获', tone: 'ripe' }
+    return { text: '可收获', tone: 'ripe', countdown: false }
   if (status === 'stealable')
-    return { text: '可偷', tone: 'steal' }
+    return { text: '可偷', tone: 'steal', countdown: false }
   if (status === 'dead')
-    return { text: '已枯萎', tone: 'dead' }
+    return { text: '已枯萎', tone: 'dead', countdown: false }
   const remain = remainSec(land)
   if (remain > 0)
-    return { text: formatTime(remain), tone: 'growing' }
-  return { text: String(land?.phaseName || '生长中'), tone: 'growing' }
+    return { text: formatTime(remain), tone: 'growing', countdown: true }
+  return { text: String(land?.phaseName || '生长中'), tone: 'growing', countdown: false }
 }
 
 const failedMutantIcons = ref(new Set<string>())
@@ -285,9 +293,13 @@ onUnmounted(() => {
         @click="emit('open', land)"
       >
         <img v-if="!isLocked(land) && !isEmpty(land) && land.seedImage" class="scene-plot__crop" :src="safeImage(land.seedImage)" :style="cropStyle(land)" alt="" loading="lazy" referrerpolicy="no-referrer">
-        <span class="scene-plot__bubble" :class="`is-${bubble(land).tone}`">
-          <span v-for="item in mutantsOf(land)" :key="item.key" class="scene-plot__mutant" :title="item.label"><img v-if="item.image" :src="item.image" alt="" @error="markMutantFailed(item.key)"><span v-else :class="item.icon" /></span>
-          {{ bubble(land).text }}
+        <span class="scene-plot__stack">
+          <span v-if="mutantsOf(land).length" class="scene-plot__badges">
+            <span v-for="item in mutantsOf(land)" :key="item.key" class="scene-plot__mutant" :title="item.label"><img v-if="item.image" :src="item.image" alt="" @error="markMutantFailed(item.key)"><span v-else :class="item.icon" /></span>
+          </span>
+          <span class="scene-plot__bubble" :class="[`is-${bubble(land).tone}`, { 'is-countdown': bubble(land).countdown }]">
+            {{ bubble(land).text }}
+          </span>
         </span>
       </button>
     </div>
@@ -364,10 +376,27 @@ onUnmounted(() => {
   filter: grayscale(0.85) drop-shadow(0 3px 3px rgb(48 39 22 / 25%));
 }
 
-.scene-plot__bubble {
+/* 气泡与变异图标同处一层定位容器：图标独立于气泡显隐，
+   窄屏收起气泡时仍能看到变异标记。 */
+.scene-plot__stack {
   position: absolute;
   left: 50%;
   top: 4%;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.scene-plot__badges {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 1px;
+}
+
+.scene-plot__bubble {
   display: inline-flex;
   align-items: center;
   gap: 2px;
@@ -380,8 +409,6 @@ onUnmounted(() => {
   font-weight: 650;
   line-height: 1.45;
   white-space: nowrap;
-  transform: translate(-50%, -50%);
-  pointer-events: none;
 }
 
 .scene-plot__bubble.is-ripe {
@@ -455,14 +482,20 @@ onUnmounted(() => {
   text-align: center;
 }
 
-/* 窄屏：地块小、气泡容易叠在一起，只保留「需要马上处理」的状态 */
+/* 窄屏：地块小、气泡容易叠在一起，收起「纯阶段名」与空地标签，
+   但成熟倒计时必须保留（否则看不到还要等多久），只缩小字号。 */
 @container (max-width: 560px) {
   .scene-plot__bubble {
     padding: 0 5px;
     font-size: 9px;
   }
 
-  .scene-plot__bubble.is-growing,
+  .scene-plot__bubble.is-countdown {
+    padding: 0 4px;
+    font-size: 8px;
+  }
+
+  .scene-plot__bubble.is-growing:not(.is-countdown),
   .scene-plot__bubble.is-muted {
     display: none;
   }
