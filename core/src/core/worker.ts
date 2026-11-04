@@ -1163,6 +1163,15 @@ async function handleApiCall(msg: any): Promise<void> {
             case 'operateMilkTeaActivity':
                 result = await require('../services/milk-tea').operateMilkTeaActivity(args[0], args[1]);
                 break;
+            case 'getMilkTeaLegacy':
+                result = await require('../services/milk-tea-legacy').getMilkTea();
+                break;
+            case 'operateMilkTeaLegacy':
+                result = await require('../services/milk-tea-legacy').operateMilkTea(args[0], args[1]);
+                break;
+            case 'milkTeaRecordsLegacy':
+                result = await require('../services/milk-tea-legacy').milkTeaRecords(args[0], args[1]);
+                break;
             case 'getShareRewardActivity':
                 result = await require('../services/share-reward-activity').getShareRewardActivity(args[0]);
                 break;

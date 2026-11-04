@@ -238,7 +238,9 @@ async function perform(action: string, input: any) {
         if (!candidate || toNum(candidate.state) !== 0 || toNum(candidate.rehire_available_at) > getServerTimeSec()) fail('该员工当前不可雇佣');
         if (state.settleStartTime - getServerTimeSec() < toNum(state.hire.min_remain_biz_sec)) fail('剩余营业时间不足');
         checkCost([{ id: 1041, count: toNum(state.hire.wage_total) }], input.expectedCosts, state.balances);
-        params = { hires: [{ slot_index: index, duration_id: toNum(state.hire.duration_id), target_gid: target }] };
+        // 班次时长用入参（1/2/3）；hireList 查询已按同一 durationId 拉取，wage_total 与之一致。
+        const durationId = integer(input.durationId ?? 1, 1, 3);
+        params = { hires: [{ slot_index: index, duration_id: durationId, target_gid: target }] };
     } else if (action === 'exchange') {
         const goods = state.goods.find((v: any) => v.id === String(input.goodsId));
         const count = integer(input.count, 1, 9999);

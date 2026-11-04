@@ -54,6 +54,36 @@ function mountCommerceRoutes(app: Application, ctx: AdminContext): void {
     app.get('/api/activities/milk-tea', withAccount((accountId: string, req: Request) => ctx.provider.getMilkTeaActivity(accountId, req.query.page || 'shop', req.query)));
     app.post('/api/activities/milk-tea/:action', withAccount((accountId: string, req: Request) => ctx.provider.operateMilkTeaActivity(accountId, req.params.action, req.body)));
 
+    // 老版奶茶热销页面（MilkTeaActivityPanel）专用：TeaState 形状快照 + 操作 + 显式查询。
+    app.get('/api/activity/milk-tea', withAccount(async (accountId: string) => {
+        try {
+            return { ok: true, activity: await ctx.provider.getMilkTeaLegacy(accountId) };
+        } catch (error: any) {
+            return { ok: false, error: String(error?.message || error || '活动数据读取失败') };
+        }
+    }));
+    app.post('/api/activity/milk-tea/operate', withAccount(async (accountId: string, req: Request) => {
+        const action = String(req.body?.action || '').trim();
+        const params = req.body?.params && typeof req.body.params === 'object' ? req.body.params : {};
+        try {
+            const result = await ctx.provider.operateMilkTeaLegacy(accountId, action, params);
+            return { ok: true, ...(result || {}) };
+        } catch (error: any) {
+            return { ok: false, error: String(error?.message || error || '操作失败') };
+        }
+    }));
+    app.post('/api/activity/milk-tea/records', withAccount(async (accountId: string, req: Request) => {
+        const kind = String(req.body?.kind || '').trim();
+        const params = req.body?.params && typeof req.body.params === 'object' ? req.body.params : {};
+        try {
+            const records = await ctx.provider.milkTeaRecordsLegacy(accountId, kind, params);
+            // 老版形状：字段平铺在响应体上（friends/robots/rank/sales…）。
+            return { ok: true, ...(records && typeof records === 'object' ? records : {}) };
+        } catch (error: any) {
+            return { ok: false, error: String(error?.message || error || '记录读取失败') };
+        }
+    }));
+
     app.get('/api/activities/share-reward/:activityId', withAccount((accountId: string, req: Request) => (
         ctx.provider.getShareRewardActivity(accountId, req.params.activityId)
     )));

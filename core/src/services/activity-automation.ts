@@ -123,7 +123,10 @@ function buildMilkTeaOps(): AutomationOp[] {
         {
             key: 'milk_tea_hire', label: '奶茶热销中-雇佣员工', cooldownMs: cooldown,
             run: async (automation: any) => {
-                const state = await milkTea.getMilkTeaActivity('hireList');
+                // 班次时长读设置里的 milk_tea_hire_duration（1=4h/2=12h/3=24h），不传时用 1。
+                const durationInput = Number(automation.milk_tea_hire_duration);
+                const durationId = [1, 2, 3].includes(durationInput) ? durationInput : 1;
+                const state = await milkTea.getMilkTeaActivity('hireList', { durationId });
                 const now = toNum(state.serverTime);
                 const hire = state.hire;
                 if (!state.active || state.settling || !hire) return false;
@@ -140,6 +143,7 @@ function buildMilkTeaOps(): AutomationOp[] {
                 if (!target) return false;
                 await milkTea.operateMilkTeaActivity('hire', {
                     targetGid: String(target.friend.gid),
+                    durationId,
                     expectedCosts: [{ id: 1041, count: toNum(hire.wage_total) }],
                 });
                 return true;

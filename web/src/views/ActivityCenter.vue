@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import type { ActivityTab } from '@/components/activity/BottomNav.vue'
 import type { ActivityDirectoryItemDto, ActivityGameplayKey } from '@/stores/activity-center'
-type CenterActivity = ActivityGameplayKey | 'solar'
 import { useNotification } from 'naive-ui/es/notification'
 import { storeToRefs } from 'pinia'
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { resolveActivityGameplay } from '@/components/activity/gameplays'
 import ShareRewardActivity from '@/components/activity/ShareRewardActivity.vue'
@@ -15,13 +14,16 @@ import { useFriendStore } from '@/stores/friend'
 import ActivityDirectoryPage from './activity-center/ActivityDirectoryPage.vue'
 import AutumnActivityPage from './activity-center/AutumnActivityPage.vue'
 import CharityActivityPage from './activity-center/CharityActivityPage.vue'
-import MilkTeaPage from './activity-center/MilkTeaPage.vue'
 import PetDiaryPage from './activity-center/PetDiaryPage.vue'
 import QingMeiActivityPage from './activity-center/QingMeiActivityPage.vue'
 import QixiActivityPage from './activity-center/QixiActivityPage.vue'
 import StellarActivityPage from './activity-center/StellarActivityPage.vue'
 import WeatherActivityPage from './activity-center/WeatherActivityPage.vue'
 import SolarCalendarPage from './SolarCalendar.vue'
+
+const MilkTeaPage = defineAsyncComponent(() => import('@/components/activity/MilkTeaActivityPanel.vue'))
+
+type CenterActivity = ActivityGameplayKey | 'solar'
 
 const router = useRouter()
 const notification = useNotification()
