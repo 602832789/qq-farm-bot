@@ -9,10 +9,12 @@ dist
 *.tgz
 .DS_Store
 Thumbs.db
-core/data/logs/*
-!core/data/logs/.gitkeep
-core/data/*.json
-!core/data/.gitkeep
+# 运行期数据整目录排除：accounts.json（账号/Code/token）、admin.json、store.json、
+# account-configs/、stats/、known_friend_gids/、tsdk/、logs/ 都是本机跑出来的真实数据。
+# 旧规则只排了顶层 *.json 和 logs/*，子目录仍会随 `COPY core ./core` 落进
+# core-builder 层，镜像缓存/中间层里可被翻出；这里改成排除整个 core/data。
+# Dockerfile 的 runner 阶段有 `RUN mkdir -p src/utils data/logs`，不依赖 .gitkeep。
+core/data
 web/dist
 web/node_modules
 coverage
