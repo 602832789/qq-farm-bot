@@ -12,7 +12,7 @@
   line-height: 1.6;
   letter-spacing: 0;
 }
-.milk-workbench { width: 100%; min-width: 0; border: 1px solid var(--tea-border); background: var(--tea-surface); }
+.milk-workbench { width: 100%; min-width: 0; border: 1px solid var(--tea-border); background: var(--tea-surface); overflow-y: auto; }
 .milk-workbench :where(h2, h3, h4, p),
 .milk-dialog :where(h2, h3, h4, p) { margin: 0; letter-spacing: 0; }
 .milk-workbench :where(h3),

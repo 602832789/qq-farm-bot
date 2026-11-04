@@ -201,6 +201,15 @@ function logWarn(arg1: string, arg2: string | object | null, arg3: any = null): 
     }
 }
 
+// 只写日志文件、不进前端日志面板（对齐老版：「无可领取/未开放」类常态跳过不显示）。
+function logFileOnly(arg1: string, arg2: string | object | null, arg3: any = null): void {
+    const { tag, msg, meta } = normalizeLogArgs(arg1, arg2, arg3);
+    const safeMeta = normalizeMeta(meta);
+    if (!safeMeta.module) safeMeta.module = inferModuleFromTag(tag);
+    const displayTag = resolveModuleTag(safeMeta.module);
+    coreLogger.info(msg, { tag: displayTag, ...safeMeta });
+}
+
 // ============ 异步工具 ============
 function sleep(ms: number): Promise<void> {
     return new Promise(r => setTimeout(r, ms));
@@ -218,5 +227,5 @@ module.exports = {
     setLogHook,
     getServerTimeSec, syncServerTime, getSystemDateKey, getSystemClockMinutes,
     formatDateKeyInTimeZone, formatSystemDateTime24, toTimeSec,
-    log, logWarn, sleep, randomDelay,
+    log, logWarn, logFileOnly, sleep, randomDelay,
 };

@@ -7,7 +7,7 @@
  */
 export {};
 
-const { log, logWarn, toNum } = require('../utils/utils');
+const { log, logWarn, logFileOnly, toNum } = require('../utils/utils');
 
 /** 单个操作的最小重试间隔；对齐老版 5 分钟轮询节奏（老版无冷却，靠状态守卫，这里用 5 分钟上限兑底）。 */
 const OP_COOLDOWN_MS = 5 * 60 * 1000;
@@ -435,8 +435,8 @@ async function runActivityAutomationOnce(): Promise<string[]> {
                     executed.push(op.label);
                     log('活动', `活动自动化：${op.label} 执行完成`, { event: 'activity_automation' });
                 } else {
-                    // 无可领取 / 未开放也是常态，但要让用户在日志里能看到开关确实在跑。
-                    log('活动', `活动自动化：${op.label} 本轮无可领取或活动未开放`, { event: 'activity_automation' });
+                    // 无可领取 / 未开放是常态；对齐老版：这类跳过只写日志文件，不在前端日志面板显示。
+                    logFileOnly('活动', `活动自动化：${op.label} 本轮无可领取或活动未开放`, { event: 'activity_automation' });
                 }
             } catch (error: any) {
                 // 活动未开启 / 无奖励 + 冷却未到都是常态，但保持可见，让用户看得到跳过原因。
