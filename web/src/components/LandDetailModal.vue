@@ -77,7 +77,7 @@ const mutantEffects = computed(() => {
 
 /** 官方 actions 字段（"类型:倍数"）：2=数量，3=售价，4=变身果实，其它类型不展示倍数。 */
 function mutantMultiplierText(actions: string, fruitName: string) {
-  const [type, mult] = actions.split(':').map(part => Number(part) || 0)
+  const [type, mult = 0] = actions.split(':').map(part => Number(part) || 0)
   if (type === 2 && mult > 0)
     return `数量*${mult}倍`
   if (type === 3 && mult > 0)
@@ -224,7 +224,7 @@ function format(value: unknown) {
               <span v-if="effect.tag && effect.tag !== '无'" class="text-[10px] text-pink-400">· {{ effect.tag }}</span>
             </span>
           </div>
-          <div v-if="mutantEffects.some(effect => effect.detail)" class="land-mutant-desc">
+          <div v-if="mutantEffects.some((effect: any) => effect.detail)" class="land-mutant-desc">
             <div v-for="effect in mutantEffects" :key="`mut-desc-${effect.id}-${effect.icon}`">
               {{ effect.detail || effect.name }}
             </div>

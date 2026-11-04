@@ -207,6 +207,8 @@ const interactionConfirmMessage = ref('')
 const selecting = ref(!!route.query.interactionItem)
 const selectedIds = ref<string[]>([])
 const batchPending = ref(false)
+/** 施肥请求序号：用于丢弃过期响应（同一按钮连点时只认最后一次）。 */
+let fertilizerUiSequence = 0
 
 /** 催熟全部预览：读取可催熟地块数与普通/有机化肥预计消耗。 */
 async function requestRipenAll() {
