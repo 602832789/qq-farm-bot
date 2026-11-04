@@ -424,12 +424,16 @@ async function runFarmOperation(
                 if (propagateErrors) throw e;
             }
         }
-        if (fertilizerConfig === 'smart') {
+        // 巡田施肥（老版口径）：smart 策略照常；另外只要开了「2x2催熟」，即使策略为
+        // 不施肥/普通肥，也要进入施肥流程 —— runFertilizerByConfig 内部会单独催熟 2×2 作物。
+        if (fertilizerConfig === 'smart' || isAutomationOn('fertilizer_2x2_ripen')) {
             try {
                 const result = await runFertilizerByConfig([], { skipNormal: true, propagateErrors });
                 if (result.organic > 0) {
                     actions.push(`有机肥${result.organic}`);
                     await harvestMatureOwnLandsOnce(actions, propagateErrors);
+                } else if (result.normal > 0) {
+                    actions.push(`2x2催熟${result.normal}`);
                 }
             } catch (e: any) {
                 logWarn('施肥', `巡田时施肥失败: ${e.message}`);

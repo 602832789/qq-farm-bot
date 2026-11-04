@@ -4,8 +4,9 @@ export {};
  */
 
 const protobuf = require('protobufjs');
-const { getPlantNameBySeedId, formatGrowTime, getPlantGrowTime, getAllSeeds, getPlantBySeedId } = require('../../config/gameConfig');
+const { getPlantNameBySeedId, formatGrowTime, getPlantGrowTime, getAllSeeds, getPlantBySeedId, getPlantById } = require('../../config/gameConfig');
 const { getPreferredSeed, getAutomation, getPlantingStrategy, getBagSeedPriority, getBagSeedMultiLandReservationEnabled, getBagSeedLandTypes, getBagSeedFallbackStrategy, getPrioritize2x2Crops } = require('../../models/store');
+const { PlantPhase } = require('../../config/config');
 const { getUserState, getWsErrorState, sendMsgAsync } = require('../../utils/network');
 const { toNum, getServerTimeSec, log, logWarn, sleep } = require('../../utils/utils');
 const { types } = require('../../utils/proto');
@@ -30,6 +31,8 @@ const {
     getOrganicFertilizerTargetsFromLands,
     filterLandIdsForNormalFertilizer,
     getFastMatureLands,
+    getCurrentPhase,
+    pickRipen2x2Lands,
     normalizeFertilizerLandTypes,
     formatFertilizerLandTypes,
     filterLandIdsByTypes,
@@ -968,6 +971,9 @@ async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNo
     const { fertilize, fertilizeOrganicLoop } = require('./api');
     const automation = getAutomation() || {};
     const fertilizerConfig = automation.fertilizer || 'none';
+    // 老版 2x2 催熟：开启后与施肥策略独立 —— 即使策略为「不施肥」，也会对生长中的
+    // 2×2 作物先施一次普通肥、再连续施有机肥直至成熟。
+    const ripenSize2 = automation.fertilizer_2x2_ripen === true;
     const reason = String(options.reason || '').trim().toLowerCase() === 'multi_season' ? 'multi_season' : 'normal';
     const reasonLabel = reason === 'multi_season' ? '多季补肥' : '常规施肥';
     const eventName = reason === 'multi_season' ? '多季节施肥' : '常规施肥';
@@ -988,7 +994,7 @@ async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNo
 
     const { skipNormal = false } = options;
 
-    if (fertilizerConfig === 'none') {
+    if (fertilizerConfig === 'none' && !ripenSize2) {
         log('施肥', `${reasonLabel}：当前施肥策略为不施肥，跳过`, {
             module: 'farm',
             event: eventName,
@@ -999,7 +1005,7 @@ async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNo
         return { normal: 0, organic: 0 };
     }
 
-    if (planted.length === 0 && fertilizerConfig !== 'organic' && fertilizerConfig !== 'both' && fertilizerConfig !== 'smart') {
+    if (!ripenSize2 && planted.length === 0 && fertilizerConfig !== 'organic' && fertilizerConfig !== 'both' && fertilizerConfig !== 'smart') {
         log('施肥', `${reasonLabel}：没有可施肥地块，跳过`, {
             module: 'farm',
             event: eventName,
@@ -1047,6 +1053,60 @@ async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNo
     let normalTargets: number[] = planted;
     if (landTypeById.size > 0) {
         normalTargets = filterLandIdsByTypes(planted, landTypeById, selectedLandTypes);
+    }
+
+    // ── 2x2 催熟（老版 farm-fertilizer 移植）──
+    // 识别 2×2 作物主地块（排除从属地块），从常规施肥目标中剔除后单独催熟，
+    // 避免普通肥只落在合种作物的其中一个地块上。
+    let size2NormalCount: number = 0;
+    let size2OrganicCount: number = 0;
+    let size2Targets: number[] = [];
+    let excludedIds = new Set<number>();
+    if (ripenSize2) {
+        const { size2LandIds, excludedIds: ripenExcluded } = pickRipen2x2Lands(latestLands);
+        excludedIds = ripenExcluded;
+        normalTargets = normalTargets.filter((id: number) => !excludedIds.has(id));
+
+        const explicitSet = new Set(planted);
+        const landsMap = buildLandMap(latestLands);
+        size2Targets = filterLandIdsByTypes(size2LandIds
+            .filter((landId: number) => {
+                if (explicitSet.size > 0 && !explicitSet.has(landId)) return false;
+                const land = landsMap.get(landId);
+                const plant = land && land.plant;
+                const phase = plant && getCurrentPhase(plant.phases, false, '', toNum(plant.id));
+                return phase && phase.phase >= PlantPhase.SEED && phase.phase < PlantPhase.MATURE;
+            }), landTypeById, selectedLandTypes);
+
+        if (size2Targets.length > 0) {
+            try {
+                const normalCandidates = size2Targets.filter((id: number) => {
+                    const land = landsMap.get(id);
+                    const plant = land && land.plant;
+                    if (!plant) return true;
+                    return !Object.prototype.hasOwnProperty.call(plant, 'left_inorc_fert_times') || toNum(plant.left_inorc_fert_times) > 0;
+                });
+                size2NormalCount = normalCandidates.length > 0
+                    ? await fertilize(normalCandidates, NORMAL_FERTILIZER_ID, options.propagateErrors)
+                    : 0;
+                // 逐块循环，避免某块地成熟或失败后打断其余 2x2 作物的催熟。
+                for (const landId of size2Targets) {
+                    size2OrganicCount += await fertilizeOrganicLoop([landId], { ripenSize2: true });
+                }
+                const count = size2NormalCount + size2OrganicCount;
+                if (count > 0) {
+                    recordOperation('fertilize', count);
+                    log('施肥', `2x2催熟：普通肥 ${size2NormalCount} 次，有机肥 ${size2OrganicCount} 次`, {
+                        module: 'farm', event: '2x2催熟', result: 'ok', reason, count, landIds: size2Targets, landTypes: selectedLandTypes,
+                    });
+                }
+            } catch (e: any) {
+                logWarn('施肥', `2x2催熟失败: ${e && e.message ? e.message : e}`, {
+                    module: 'farm', event: '2x2催熟', result: 'error', landIds: size2Targets,
+                });
+                if (options.propagateErrors) throw e;
+            }
+        }
     }
     if (latestLands.length > 0 && normalTargets.length > 0) {
         const filtered = filterLandIdsForNormalFertilizer(normalTargets, latestLands);
@@ -1115,6 +1175,8 @@ async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNo
             const plantedSet = new Set(planted);
             organicTargets = organicTargets.filter(id => plantedSet.has(id));
         }
+        // 2×2 作物已由催熟流程单独处理，这里不再重复施有机肥。
+        organicTargets = organicTargets.filter(id => !excludedIds.has(id));
         if (landTypeById.size > 0) {
             organicTargets = filterLandIdsByTypes(organicTargets, landTypeById, selectedLandTypes);
             }
@@ -1158,6 +1220,11 @@ async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNo
                 recordOperation('fertilize', fertilizedOrganic);
             }
         }
+    }
+
+    if (reason === 'multi_season' && fertilizerConfig === 'none') {
+        // 多季补肥只在有施肥策略时生效；开启 2x2 催熟时上一段已单独处理，直接返回。
+        return { normal: size2NormalCount, organic: size2OrganicCount };
     }
 
     return { normal: fertilizedNormal, organic: fertilizedOrganic };

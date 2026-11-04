@@ -600,7 +600,9 @@ function applyRuntimeConfig(snapshot: any, syncNow: boolean = false): number {
             const prevFertilizerMode = String(prevAuto && prevAuto.fertilizer ? prevAuto.fertilizer : '').toLowerCase();
             const nextFertilizerMode = String(nextAuto && nextAuto.fertilizer ? nextAuto.fertilizer : '').toLowerCase();
             const fertilizerChanged = prevFertilizerMode !== nextFertilizerMode;
-            if (fertilizerChanged && (nextFertilizerMode === 'both' || nextFertilizerMode === 'organic' || nextFertilizerMode === 'smart')) {
+            // 老版口径：2×2 催熟从关变开也立即触发一轮施肥（skipNormal，由内部单独催熟）。
+            const size2RipenEnabled = !(prevAuto && prevAuto.fertilizer_2x2_ripen === true) && nextAuto && nextAuto.fertilizer_2x2_ripen === true;
+            if (size2RipenEnabled || (fertilizerChanged && (nextFertilizerMode === 'both' || nextFertilizerMode === 'organic' || nextFertilizerMode === 'smart'))) {
                 workerScheduler.setTimeoutTask('fertilizer_immediate_after_save', 600, async () => {
                     if (!loginReady) return;
                     try {

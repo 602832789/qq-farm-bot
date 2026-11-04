@@ -806,6 +806,11 @@ useIntervalFn(loadBag, 60000)
 
               <!-- 数量以角标形式贴在图标右下角，与游戏背包的习惯一致 -->
               <div class="bag-item__thumb thumb-wrap" :data-fallback="(item.name || '物').slice(0, 1)">
+                <span
+                  v-if="getItemCategory(item) === 'seed' && Number(item.plantSize) > 1"
+                  class="bag-item__size"
+                  :title="`多格作物，占用 ${item.plantSize}×${item.plantSize} 块地`"
+                >{{ item.plantSize }}×{{ item.plantSize }}</span>
                 <img
                   v-if="item.image && !imageErrors[itemKey(item)]"
                   :src="item.image"
@@ -1049,6 +1054,30 @@ useIntervalFn(loadBag, 60000)
   background: var(--ui-warning-fill);
   box-shadow: 0 0 0 2px var(--ui-surface-strong);
   font-size: 12px;
+}
+
+/* 多格种子左上角角标：与锁标同位置体系，锁标存在时让位到其下方 */
+.bag-item__size {
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  z-index: 1;
+  padding: 1px 5px;
+  border-radius: 8px;
+  color: #fff;
+  background: var(--theme-primary, #438d63);
+  box-shadow: 0 0 0 2px var(--ui-surface-strong);
+  font-size: 10px;
+  font-weight: var(--fw-700);
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.bag-item__size ~ .bag-item__lock {
+  top: 14px;
+  left: -6px;
 }
 
 .bag-item__name {

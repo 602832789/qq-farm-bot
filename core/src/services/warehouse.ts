@@ -587,6 +587,9 @@ async function getBagDetail(): Promise<any> {
             category = 'seed';
         }
         if (!name) name = `物品${id}`;
+        // 2×2 多格种子角标：种子类物品附带作物尺寸，前端据此显示左上角「2×2」徽标。
+        const seedPlant: any = category === 'seed' ? getPlantBySeedId(id) : null;
+        const plantSize: number = seedPlant ? Math.max(1, toNum(seedPlant.size) || 1) : 1;
         const interactionType: string = info && info.interaction_type ? String(info.interaction_type) : '';
         const expireTime: number = getItemExpireTime(it);
         const sourceInfo: any | null = getItemSourceInfo(it);
@@ -620,6 +623,7 @@ async function getBagDetail(): Promise<any> {
                 price,
                 priceUnit,
                 level: info ? (Number(info.level) || 0) : 0,
+                plantSize,
                 interactionType,
                 description: info?.desc ? String(info.desc) : '',
                 viewable: Number(info?.to_see || 0) > 0,
