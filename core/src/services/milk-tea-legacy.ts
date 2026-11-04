@@ -188,7 +188,10 @@ async function op(action: string, params: any = {}) {
     if (String(decoded.activity_id) !== MAIN || toNum(decoded.operate_type) !== cmd || !decoded[field]) {
         fail('活动响应不匹配，请刷新后查看');
     }
-    return plain(types.MilkTeaOperateReply, { [field]: decoded[field] })[field];
+    // 老版 rpc() 统一对整个应答套 normalizeWireMaps：protobufjs map<int64,…> 字段
+    // （如营业记录 cups_by_recipe）的 hash 键必须还原成十进制字符串，
+    // 否则前端拿到的键是乱码、配方查找失败，营业记录表格数据残缺。
+    return normalizeWireMaps(plain(types.MilkTeaOperateReply, { [field]: decoded[field] }))[field];
 }
 /** 快乐不独享（2026110104）的分享类请求走通用 ActivityOperate。 */
 async function shareOp(action: string) {
@@ -199,7 +202,7 @@ async function shareOp(action: string) {
     if (String(decoded.activity_id) !== HAPPY || toNum(decoded.operate_type) !== entry.cmd || !decoded[entry.field]) {
         fail('活动响应不匹配，请刷新后查看');
     }
-    return plain(types.ActivityOperateReply, { [entry.field]: decoded[entry.field] })[entry.field];
+    return normalizeWireMaps(plain(types.ActivityOperateReply, { [entry.field]: decoded[entry.field] }))[entry.field];
 }
 async function bag() {
     const inventory = [...list(warehouse.getBagItems(await warehouse.getBag()))];
@@ -498,7 +501,7 @@ async function opWith(id: string, cmd: number, field: string, params: any) {
     if (String(decoded.activity_id) !== id || toNum(decoded.operate_type) !== cmd || !decoded[field]) {
         fail('活动响应不匹配，请刷新后查看');
     }
-    return plain(types.MilkTeaOperateReply, { [field]: decoded[field] })[field];
+    return normalizeWireMaps(plain(types.MilkTeaOperateReply, { [field]: decoded[field] }))[field];
 }
 
 const { log } = require('../utils/utils');

@@ -30,6 +30,12 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-05 · 营业记录数据链路对齐老版（补回 normalizeWireMaps）
+
+- 移植缺口：老版 `rpc()` 对所有应答统一 `normalizeWireMaps(plain(...))`，现版定义了该函数却没有调用点。protobufjs `map<int64,…>` 字段（营业记录 `cups_by_recipe` 等）的 hash 键未还原成十进制字符串，导致配方查找失败、名称为空、图标破图，营业记录数据残缺。
+- 修复：`milkTeaRecords/op`、`shareOp`、`opWith` 三条应答路径统一补回 `normalizeWireMaps(plain(...))` 包装，与老版行为一致；营业记录（含雇员记录、收益、各款售出）数据链路完整对齐老版。
+- 核对结论：前端营业记录四块结构（日期+总杯数、奶茶销售表、营业收益、雇员记录）与老版生产组件逐行一致，仅图标渲染为此前修复的增强；后端 records 组装逻辑与老版逐行相同。后端 328 项测试通过，类型检查通过。
+
 ### 2026-11-05 · 再次恢复 milk_tea_work_interaction_type / milk_tea_hire_policy 接线
 
 - 撤销 `bda84a6`，恢复 `8c8385d` 的接线方案：`milk_tea_interact` op 以 `milk_tea_work_interaction_type` 覆盖打工互动类型（未设置回退 `milk_tea_interaction_type`）；`milk_tea_hire` op 以 `milk_tea_hire_policy.talent`（0/9001~9004）覆盖首选人才（未设置回退 `milk_tea_hire_primary_talent ?? milk_tea_hire_talent`）。
