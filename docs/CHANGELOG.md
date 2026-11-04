@@ -30,6 +30,17 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-05 · 15 项功能开关失效修复（老版方案移植）
+
+- 审计 `AutomationConfig` 全部开关，发现 15 个「开关打开却无任何效果」的功能缺口，已全部修复（参考老版 `golden-bug-service.js` / `mall-gift-auto-buy.js` / `farming-orchestrator.js` / `worker.js` 口径）：
+  - **`task_after_farm`**（带 UI）：把「日常任务领取」绑定到农场循环之后立即跑一轮，不必等独立任务定时器；与 `task` 互不冲突（领取幂等）。
+  - **`friend_golden_bug` + `golden_bug_clear`**（带 UI）：新增 `golden-bug.ts` 按老版口径向好友地块投放黄金虫（物品 301101，每日上限 100、单轮上限可配、最低 10 分钟一轮），由 `friend` + `friend_golden_bug` 两个开关联合控制；`golden_bug_clear` 关闭时自家地块的黄金虫不进一键务农集合、不被自动清理。`land-analysis` 新增 `goldenBugLandIds`、`visit-strategy` 新增 `canPutGoldenBug` 作为投放/清理的判定字段。开关从关变开时保存后 2 秒立即投放一轮（force）。
+  - **`mall_coupon_gift_buy`**（带 UI）：新增 `mall-coupon-gift.ts`，把老版写死 `goods_id=1061` 与时间窗的硬编码改为通用「点券（currency 1002）计价 + 带限购 + 仍在活动期」的礼包自动买满，避免活动切换而失效。
+  - **`milk_tea_seed_policy` / `milk_tea_hire_policy` / `wish_sign_choice`**（带 UI）：`milk_tea_seed_buy` op 支持 `preferred` 档位覆盖（活动/经验/金币/其它种子优先）；`milk_tea_hire` op 支持 `talent` 覆盖首选人才；新增 `wish_sign_draw` / `wish_sign_claim` 两个 op 接通秋祈良愿抽签与领取（此前 `wish_sign` 在 `unsupported` 待接入清单里，但 autumn-activities 已有 draw/claim 实现，仅缺主循环挂钩）；`milk_tea_interact` op 支持 `milk_tea_work_interaction_type` 覆盖打工互动类型。
+  - **7 个孤立 `milk_tea_auto_*` 僵尸键**（`milk_tea_auto_rewards/seeds/work/upgrade/craft/hire/boost`）：经确认前端实际渲染的是逐项 op 开关（如 `milk_tea_cashier`、`milk_tea_seed_buy`），这些键默认 false、不可见、只混进首页 `MILK_TEA_AUTOMATION_KEYS` 计数，无任何消费点。按「删除冗余、保留真实使用项」原则移除，保留仍被使用的 `milk_tea_auto_open`。
+- 类型与默认值同步清理：`core/src/types/config.ts`、`core/src/models/store/shared-state.ts`、`web/src/stores/setting.ts` 删除孤儿字段；`activity-automation.ts` 的 `unsupported` 待接入清单移除已接线的 `wish_sign_draw` / `wish_sign_claim`。
+- 新增 8 项针对性回归测试（自家黄金虫地块识别、好友可放黄金虫判定、点券礼包可买数、黄金虫计数、种子优先级覆盖）；后端 329 项、前端 19 项全部通过，类型检查与生产构建通过。
+
 ### 2026-11-05 · 2×2 催熟功能修复与背包多格种子角标
 
 - 修复「设置 → 2x2 催熟」开关不生效：该开关此前在 core 中没有任何消费点（只有默认值和类型定义），属于历史恢复 UI 时遗留的功能缺口。现按老版 `farm-fertilizer.js` 口径完整移植：

@@ -283,6 +283,7 @@ interface AnalyzeResult {
     needBug: number[];
     canPutWeed: number[];
     canPutBug: number[];
+    canPutGoldenBug: number[];
 }
 
 interface AnalyzeOptions {
@@ -299,6 +300,7 @@ export function analyzeFriendLands(lands: any[], myGid: number, friendName: stri
         needBug: [],     // 需要除虫
         canPutWeed: [],  // 可以放草
         canPutBug: [],   // 可以放虫
+        canPutGoldenBug: [],  // 可以放黄金虫
     };
     const landsMap: any = buildLandMap(lands);
 
@@ -364,6 +366,13 @@ export function analyzeFriendLands(lands: any[], myGid: number, friendName: stri
             }
             if (insectOwners.length < 2 && !iAlreadyPutBug) {
                 result.canPutBug.push(id);
+            }
+
+            // 黄金虫（301101）通过社交道具投放到好友地块：只要该地块还没放过黄金虫即可。
+            const socialItems: any[] = Array.isArray(plant.social_items) ? plant.social_items : [];
+            const alreadyHasGoldenBug: boolean = socialItems.some((item: any) => toNum(item && item.item_id) === 301101);
+            if (!alreadyHasGoldenBug) {
+                result.canPutGoldenBug.push(id);
             }
         }
     }

@@ -310,8 +310,9 @@ function milkTeaSeedTier(goods: any, fruitIds: Set<string>): number {
     return MILK_TEA_SEED_TIER.other;
 }
 
-/** 按「活动种子 → 经验种子 → 金币种子 → 其它」挑一件当前可兑换的种子商品。 */
-function pickSeedGoods(catalog: any[]): any | null {
+/** 按「活动种子 → 经验种子 → 金币种子 → 其它」挑一件当前可兑换的种子商品。
+ * 若 policyPreferredTier 命中某个档位，该档位优先级提到最高（覆盖默认顺序）。 */
+function pickSeedGoods(catalog: any[], policyPreferredTier?: number): any | null {
     const fruitIds = milkTeaFruitIds();
     let picked: any = null;
     let pickedTier = Number.POSITIVE_INFINITY;
@@ -319,10 +320,11 @@ function pickSeedGoods(catalog: any[]): any | null {
         if (goods?.category !== 'seed' || !goods.available) continue;
         if (goods.remaining != null && toNum(goods.remaining) <= 0) continue;
         const tier = milkTeaSeedTier(goods, fruitIds);
-        // 同档位保持官方目录顺序（早已按可兑换优先排序），只换更高优先级。
-        if (tier < pickedTier) {
+        // 命中用户偏好档位时优先级提到最高（effectiveTier = -1），其余保持默认排序。
+        const effectiveTier = (policyPreferredTier != null && tier === policyPreferredTier) ? -1 : tier;
+        if (effectiveTier < pickedTier) {
             picked = goods;
-            pickedTier = tier;
+            pickedTier = effectiveTier;
         }
     }
     return picked;
@@ -405,7 +407,12 @@ function buildMilkTeaOps(): AutomationOp[] {
                 const slot = Array.from({ length: capacity }, (_, i) => i)
                     .find(i => !(state.shop?.slots || []).some((v: any) => toNum(v.slot_index) === i && toNum(v.end_at) > now));
                 if (slot == null) return false;
-                const primaryInput = Number(automation.milk_tea_hire_primary_talent ?? automation.milk_tea_hire_talent);
+                // milk_tea_hire_policy.talent 可覆盖首选人才（0/9001~9004）；未设置时回退到现有字段。
+                const hirePolicy: any = automation.milk_tea_hire_policy || {};
+                const policyTalent = Number(hirePolicy.talent);
+                const primaryInput = [0, 9001, 9002, 9003, 9004].includes(policyTalent)
+                    ? policyTalent
+                    : Number(automation.milk_tea_hire_primary_talent ?? automation.milk_tea_hire_talent);
                 const primaryTalentId = [0, 9001, 9002, 9003, 9004].includes(primaryInput) ? primaryInput : 0;
                 const backupInput = Number(automation.milk_tea_hire_backup_talent);
                 const backupTalentId = primaryTalentId === 0 ? 0 : ([0, 9001, 9002, 9003, 9004].includes(backupInput) ? backupInput : 0);
@@ -427,7 +434,8 @@ function buildMilkTeaOps(): AutomationOp[] {
                 if (!state.active || state.settling || !shift) return false;
                 if (toNum(shift.begin_at) > toNum(state.serverTime) || toNum(shift.end_at) <= toNum(state.serverTime)) return false;
                 if (state.work.interact_done || toNum(shift.interact_count) >= toNum(shift.interact_limit)) return false;
-                const type = Number(automation.milk_tea_interaction_type);
+                // milk_tea_work_interaction_type 作为打工互动类型的覆盖项；未设置时回退到 milk_tea_interaction_type。
+                const type = Number(automation.milk_tea_work_interaction_type ?? automation.milk_tea_interaction_type);
                 const kind = [1, 2, 3, 4, 5].includes(type) ? type : 1;
                 await operateMilkTea('interact', { interactionType: kind, expectedShiftId: String(shift.shift_id) });
                 return true;
@@ -435,10 +443,13 @@ function buildMilkTeaOps(): AutomationOp[] {
         },
         {
             key: 'milk_tea_seed_buy', label: '奶茶热销中-购买活动种子', activityIds: WINDOW_IDS.milkTea,
-            run: async () => {
+            run: async (automation: any) => {
                 const state = await milkTea.getMilkTeaActivity('exchange');
                 if (!state.active || state.settling) return false;
-                const goods = pickSeedGoods(state.goods || []);
+                // milk_tea_seed_policy.preferred 可强制某档位（activity/exp/coin/other）优先。
+                const policy: any = automation.milk_tea_seed_policy || {};
+                const preferredTier = MILK_TEA_SEED_TIER[policy.preferred as keyof typeof MILK_TEA_SEED_TIER];
+                const goods = pickSeedGoods(state.goods || [], Number.isInteger(preferredTier) ? preferredTier : undefined);
                 if (!goods) return false;
                 let count = Number(goods.remaining);
                 for (const cost of goods.costs || []) {
@@ -713,6 +724,46 @@ function buildOps(): AutomationOp[] {
                 return claimed;
             },
         },
+        {
+            // 点券限时礼包自动购买：开关 mall_coupon_gift_buy 由 UI 暴露（MILK_TEA_AUTOMATION_OPTIONS），
+            // 之前只混进首页计数、没有对应执行体；这里补上真实购买逻辑（见 mall-coupon-gift.ts）。
+            key: 'mall_coupon_gift_buy',
+            label: '自动购买点券礼包',
+            run: async () => {
+                const bought = await require('./mall-coupon-gift').autoBuyCouponGifts(false);
+                return bought > 0;
+            },
+        },
+        {
+            // 秋祈良愿-祈愿抽签：wish_sign_draw 开关 + wish_sign_choice 指定祈愿方向（默认取第一个）。
+            key: 'wish_sign_draw',
+            label: '秋祈良愿-祈愿抽签',
+            run: async (automation: any) => {
+                const autumn = require('./autumn-activities');
+                const state = await autumn.getAutumnActivity('wish').catch(() => null);
+                if (!state?.active || !state.canDraw) return false;
+                const choices: any[] = Array.isArray(state.choices) ? state.choices : [];
+                if (choices.length === 0) return false;
+                const preferred = toNum(automation.wish_sign_choice);
+                const choiceId = choices.some((v: any) => toNum(v.id) === preferred)
+                    ? preferred
+                    : toNum(choices[0].id);
+                if (!Number.isInteger(choiceId)) return false;
+                await autumn.operateAutumnActivity('wish', 'draw', { chooseId: choiceId });
+                return true;
+            },
+        },
+        {
+            key: 'wish_sign_claim',
+            label: '秋祈良愿-领取祈愿奖励',
+            run: async () => {
+                const autumn = require('./autumn-activities');
+                const state = await autumn.getAutumnActivity('wish').catch(() => null);
+                if (!state?.active || !state.canClaim) return false;
+                await autumn.operateAutumnActivity('wish', 'claim', {});
+                return true;
+            },
+        },
         ...buildMilkTeaOps(),
     ];
 }
@@ -797,8 +848,6 @@ async function runActivityAutomationRound(executed: string[], now: number): Prom
         'charity_flower_reward_claim',
         'charity_flower_public_fund_claim',
         'charity_flower_share_claim',
-        'wish_sign_draw',
-        'wish_sign_claim',
         'pet_diary_story_claim',
         'pet_diary_solar_claim',
         'pet_diary_compensation_claim',

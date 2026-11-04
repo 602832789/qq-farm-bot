@@ -118,13 +118,6 @@ export interface AutomationConfig {
   milk_tea_hire_backup_talent: number;
   milk_tea_seed_buy: boolean;
   milk_tea_auto_open: boolean;
-  milk_tea_auto_rewards: boolean;
-  milk_tea_auto_seeds: boolean;
-  milk_tea_auto_work: boolean;
-  milk_tea_auto_upgrade: boolean;
-  milk_tea_auto_craft: boolean;
-  milk_tea_auto_hire: boolean;
-  milk_tea_auto_boost: boolean;
   milk_tea_work_interaction_type: number;
   milk_tea_seed_policy: Record<string, unknown>;
   milk_tea_hire_policy: Record<string, unknown>;

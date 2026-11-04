@@ -116,6 +116,10 @@ function getPlantCollectionMutations(plant: any, currentPhase: any): any[] {
 // 乌云必须以 interaction_uses / interaction_targets 的实时记录为准；field_40={8,1} 只是清理后仍保留的历史。
 const OWNER_CLEANABLE_INTERACTION_ITEM_IDS = new Set(['301101', '301102', '5006']);
 
+// 黄金虫物品 ID（老版 golden-bug-service.js GOLDEN_BUG_ITEM_ID）。自家地块上的黄金虫
+// 由农场主通过 Farming 清理；golden_bug_clear 开关控制是否自动清理。
+const GOLDEN_BUG_ITEM_ID = '301101';
+
 // 5005 青蛙是农场级事件，不绑定某一块土地；清理时通过 FarmingRequest.field 5 发送。
 const OWNER_CLEANABLE_FARM_SOCIAL_EVENT_ITEM_IDS = new Set(['5005']);
 
@@ -183,6 +187,15 @@ function hasOwnerCleanableInteraction(plant: any): boolean {
     const targets: any[] = Array.isArray(plant?.interaction_targets) ? plant.interaction_targets : [];
     return [...uses, ...targets]
         .some((entry: any) => OWNER_CLEANABLE_INTERACTION_ITEM_IDS.has(normalizePositiveId(entry?.item_id)));
+}
+
+/** 仅黄金虫（301101）是否落在自家地块上、需要农场主通过 Farming 清理。 */
+function hasOwnerCleanableGoldenBug(plant: any): boolean {
+    if (!GOLDEN_BUG_ITEM_ID) return false;
+    const uses: any[] = Array.isArray(plant?.interaction_uses) ? plant.interaction_uses : [];
+    const targets: any[] = Array.isArray(plant?.interaction_targets) ? plant.interaction_targets : [];
+    return [...uses, ...targets]
+        .some((entry: any) => normalizePositiveId(entry?.item_id) === GOLDEN_BUG_ITEM_ID);
 }
 
 function getPlantInteractionEffects(plant: any): any[] {
@@ -782,6 +795,7 @@ function analyzeLands(lands: any[], debug?: boolean, ownGid?: number): {
     needWeed: number[];
     needBug: number[];
     needInteractionCleanup: number[];
+    goldenBugLandIds: number[];
     growing: number[];
     empty: number[];
     dead: number[];
@@ -795,6 +809,7 @@ function analyzeLands(lands: any[], debug?: boolean, ownGid?: number): {
         needWeed: [] as number[],
         needBug: [] as number[],
         needInteractionCleanup: [] as number[],
+        goldenBugLandIds: [] as number[],
         growing: [] as number[],
         empty: [] as number[],
         dead: [] as number[],
@@ -840,6 +855,9 @@ function analyzeLands(lands: any[], debug?: boolean, ownGid?: number): {
 
         if (hasOwnerCleanableInteraction(plant)) {
             result.needInteractionCleanup.push(id);
+        }
+        if (hasOwnerCleanableGoldenBug(plant)) {
+            result.goldenBugLandIds.push(id);
         }
 
         if (phaseVal === PlantPhase.DEAD) {

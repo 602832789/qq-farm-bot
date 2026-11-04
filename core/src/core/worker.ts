@@ -10,7 +10,7 @@ const { getAutomation, getPreferredSeed, getConfigSnapshot, applyConfigSnapshot 
 const { checkAndClaimEmails } = require('../services/email');
 const { getEmailDailyState } = require('../services/email');
 const { checkFarm, startFarmCheckLoop, stopFarmCheckLoop, refreshFarmCheckLoop, getLandsDetail, getAvailableSeeds, purchaseSeed, runFarmOperation, runFertilizerByConfig, fertilizeOwnLand } = require('../services/farm');
-const { checkFriends, startFriendCheckLoop, stopFriendCheckLoop, refreshFriendCheckLoop, getFriendsList, getFriendsListCacheOnly, getFriendLandsDetail, doFriendOperation, deleteFriend, runScheduledStealCheck } = require('../services/friend');
+const { checkFriends, startFriendCheckLoop, stopFriendCheckLoop, refreshFriendCheckLoop, getFriendsList, getFriendsListCacheOnly, getFriendLandsDetail, doFriendOperation, deleteFriend, runScheduledStealCheck, runGoldenBugPlacement } = require('../services/friend');
 const { getInteractRecords } = require('../services/interact');
 const { processInviteCodes } = require('../services/invite');
 const { autoBuyFertilizer, checkAndBuyFertilizerBoth, buyFreeGifts, getFreeGiftDailyState } = require('../services/mall');
@@ -323,6 +323,9 @@ async function runFarmTick(auto: any): Promise<void> {
         // 自己农场的定时任务统一挂在 farm 班次：优先级高于好友任务，低于用户前台操作。
         await runWithRequestClass('farm', async () => {
             if (auto.farm) await checkFarm();
+            // task_after_farm：把「日常任务领取」绑定到农场循环之后立即跑一轮，
+            // 不必等独立的任务定时器；与 auto.task 互不冲突（领取幂等）。
+            if (auto.task_after_farm) await checkAndClaimTasks();
             if (auto.task) await checkAndClaimTasks();
             if (auto.email !== false) await openCharitySettlementGiftPacksSilently();
             if (auto.fertilizer_gift) await openFertilizerGiftPacksSilently();
@@ -372,6 +375,7 @@ async function runFriendTick(auto: any): Promise<void> {
         await runWithRequestClass('friend', async () => {
             if (auto.friend_help) await checkFriends({ onlyHelp: true });
             if (auto.friend_bad) await checkFriends({ onlyBad: true });
+            if (auto.friend_golden_bug) await runGoldenBugPlacement();
         });
     } catch (e: any) {
         log('系统', `好友帮助任务执行失败: ${e.message}`, { module: 'system', event: '好友帮助任务', result: 'error' });
@@ -647,6 +651,16 @@ function applyRuntimeConfig(snapshot: any, syncNow: boolean = false): number {
                 scheduleActivityAutomationAfterSave(workerScheduler);
             } catch (_e: any) {
                 // 活动自动化未初始化时忽略
+            }
+
+            // 对齐老版：放黄金虫开关从关变开时，保存后 2 秒立即投放一轮（force）。
+            const goldenBugEnabled = !!(nextAuto && nextAuto.friend_golden_bug === true)
+                && !(prevAuto && prevAuto.friend_golden_bug === true);
+            if (goldenBugEnabled) {
+                workerScheduler.setTimeoutTask('golden_bug_after_save', 2000, () => {
+                    if (!loginReady) return;
+                    runGoldenBugPlacement({ force: true }).catch(() => null);
+                });
             }
         }
     }
@@ -1409,8 +1423,6 @@ async function getDailyGiftOverview(propagateErrors: boolean = false): Promise<a
  */
 const MILK_TEA_AUTOMATION_KEYS = [
     'milk_tea_auto_open',
-    'milk_tea_auto_rewards',
-    'milk_tea_auto_seeds',
     'milk_tea_share',
     'milk_tea_share_daily',
     'milk_tea_share_rewards',

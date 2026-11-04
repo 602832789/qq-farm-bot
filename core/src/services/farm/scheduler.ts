@@ -219,6 +219,15 @@ async function runFarmOperation(
             ...status.needInteractionCleanup,
         ])];
 
+        // golden_bug_clear：开关关掉时，自家地块上的黄金虫不进务农集合，避免被自动清理。
+        // 开关打开（默认）时行为与之前一致：黄金虫随一键务农一起清掉。
+        if (!isAutomationOn('golden_bug_clear')) {
+            const goldenBugExclude = new Set(status.goldenBugLandIds || []);
+            if (goldenBugExclude.size > 0) {
+                farmingLandIds = farmingLandIds.filter((id: number) => !goldenBugExclude.has(id));
+            }
+        }
+
         const validSingleLandIds = new Set<number>([
             ...status.growing,
             ...status.harvestable,
