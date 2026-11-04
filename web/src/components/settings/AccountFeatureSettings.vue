@@ -611,17 +611,19 @@ function cancel() {
   display: inline-flex;
   align-items: center;
   flex: none;
-  padding: 4px 10px;
-  border: 1px solid color-mix(in srgb, var(--theme-primary) 34%, var(--surface-border));
+  padding: 4px 12px;
+  border: 1px solid color-mix(in srgb, var(--ui-primary) 45%, var(--ui-border));
   border-radius: 999px;
-  background: var(--surface-1);
-  box-shadow: var(--surface-shadow-soft);
-  color: var(--theme-text);
+  background: var(--ui-primary-soft);
+  box-shadow: var(--ui-shadow-sm);
+  color: var(--ui-primary);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: var(--fw-500);
+  letter-spacing: 0.02em;
   line-height: 1.4;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  font-synthesis: none;
 }
 .settings-module-grid {
   display: grid;

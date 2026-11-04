@@ -917,8 +917,8 @@ async function handleBatchAddKnownFriendGids() {
           clearable
           class="friends-search"
         />
-        <NButton
-          secondary
+        <BaseButton
+          variant="secondary"
           :loading="loading"
           :disabled="!currentAccountId || !currentAccountRunning"
           title="刷新好友列表"
@@ -928,7 +928,7 @@ async function handleBatchAddKnownFriendGids() {
           <template #icon>
             <span class="i-carbon-renew" />
           </template>
-        </NButton>
+        </BaseButton>
       </div>
     </div>
 

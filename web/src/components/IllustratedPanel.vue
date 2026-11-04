@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { NButton } from 'naive-ui/es/button'
+import BaseButton from '@/components/ui/BaseButton.vue'
 import { NCard } from 'naive-ui/es/card'
 import { NInputNumber } from 'naive-ui/es/input-number'
 import { NModal } from 'naive-ui/es/modal'
@@ -319,15 +320,15 @@ watch([currentAccountId, isConnected], refresh, { immediate: true })
         :hint="progressHint"
       >
         <template #actions>
-          <NButton v-if="!isMutant" type="primary" ghost :disabled="purchasableCount <= 0" :title="`一键购买 ${purchasableCount} 个未点亮种子`" @click="buyAllDialogOpen = true">
+          <BaseButton v-if="!isMutant" variant="primary" :disabled="purchasableCount <= 0" :title="`一键购买 ${purchasableCount} 个未点亮种子`" @click="buyAllDialogOpen = true">
             一键购买未解锁
-          </NButton>
-          <NButton secondary @click="detailsOpen = true">
+          </BaseButton>
+          <BaseButton variant="secondary" @click="detailsOpen = true">
             {{ isMutant ? '加成详情' : '奖励详情' }}
-          </NButton>
-          <NButton v-if="book.claimable" type="primary" :loading="claiming" :disabled="loading" @click="claimRewards">
+          </BaseButton>
+          <BaseButton v-if="book.claimable" variant="primary" :loading="claiming" :disabled="loading" @click="claimRewards">
             领取奖励
-          </NButton>
+          </BaseButton>
           <NButton secondary :loading="loading" aria-label="刷新图鉴" title="刷新图鉴" @click="refresh">
             <template #icon>
               <span class="i-carbon-renew" />

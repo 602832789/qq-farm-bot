@@ -30,6 +30,14 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-05 · 四页控件显示效果统一（对齐全站 BaseButton 规范）
+
+- 账号设置页：「7 / 7 项开启」计数徽标改为与全站 secondary 按钮一致的主色柔底胶囊（`--ui-primary-soft` 底 + `--ui-primary` 字 + 标准按钮字体处理 `fw-500`/`0.02em` 字距），不再是白底描边孤立样式。
+- 好友农场页：工具条搜索框旁的「刷新好友列表」按钮从裸 `NButton secondary` 改为标准 `BaseButton variant=secondary`（统一 `.base-button` 字体处理），与同页 GID 卡片按钮一致。
+- 农场商城页：搜索框背景由半透明 `--glass-input` 改为实底 `--ui-surface` 并补齐按钮字体处理（字距/禁合成粗体），与同页筛选按钮、货币胶囊一致；信息栏圆形刷新按钮加 `base-button` 类统一字体。
+- 收藏图鉴：「一键购买未解锁」由 `primary ghost` 描边改为标准实底 `BaseButton variant=primary`，同排「奖励详情」「领取奖励」一并改用 `BaseButton`（secondary/primary），整排与全站按钮一致。
+- 前端 `vue-tsc -b` 退出码 0，19 项测试通过。
+
 ### 2026-11-05 · 15 项功能开关失效修复（老版方案移植）
 
 - 审计 `AutomationConfig` 全部开关，发现 15 个「开关打开却无任何效果」的功能缺口，已全部修复（参考老版 `golden-bug-service.js` / `mall-gift-auto-buy.js` / `farming-orchestrator.js` / `worker.js` 口径）：

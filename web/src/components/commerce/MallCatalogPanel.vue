@@ -329,7 +329,7 @@ onUnmounted(() => {
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-radius-control);
   color: var(--ui-subtle);
-  background: var(--glass-input);
+  background: var(--ui-surface);
   transition:
     border-color 0.15s ease,
     box-shadow 0.15s ease;
@@ -348,6 +348,8 @@ onUnmounted(() => {
   color: var(--ui-ink);
   background: transparent;
   font-size: 13px;
+  letter-spacing: 0.02em;
+  font-synthesis: none;
 }
 
 .shop-loading {
