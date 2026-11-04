@@ -964,7 +964,7 @@ async function plantFromShop(landsToPlant: number[], state: any, overrideStrateg
     return { plantedLands: [...new Set(plantedLands)], remainingLandIds, uncertain };
 }
 
-async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNormal?: boolean; reason?: string; propagateErrors?: boolean } = {}): Promise<{ normal: number; organic: number }> {
+async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNormal?: boolean; reason?: string; propagateErrors?: boolean; knownLands?: any[] } = {}): Promise<{ normal: number; organic: number }> {
     const { fertilize, fertilizeOrganicLoop } = require('./api');
     const automation = getAutomation() || {};
     const fertilizerConfig = automation.fertilizer || 'none';
@@ -1009,25 +1009,27 @@ async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNo
         });
         return { normal: 0, organic: 0 };
     }
-    let latestLands: any[] = [];
+    let latestLands: any[] = Array.isArray(options.knownLands) ? options.knownLands : [];
     const landTypeById = new Map<number, string>();
-    try {
-        const latest = await getAllLands();
-        latestLands = Array.isArray(latest && latest.lands) ? latest.lands : [];
-        for (const land of latestLands) {
-            if (!land) continue;
-            const landId = toNum(land.id);
-            if (!landId) continue;
-            landTypeById.set(landId, getLandTypeByLevel(land.level));
+    if (latestLands.length === 0) {
+        try {
+            const latest = await getAllLands();
+            latestLands = Array.isArray(latest && latest.lands) ? latest.lands : [];
+        } catch (e: any) {
+            logWarn('施肥', `${reasonLabel}：获取土地信息失败，按已知地块继续 ${e.message}`, {
+                module: 'farm',
+                event: eventName,
+                result: 'error',
+                reason,
+            });
+            if (options.propagateErrors) throw e;
         }
-    } catch (e: any) {
-        logWarn('施肥', `${reasonLabel}：获取土地信息失败，按已知地块继续 ${e.message}`, {
-            module: 'farm',
-            event: eventName,
-            result: 'error',
-            reason,
-        });
-        if (options.propagateErrors) throw e;
+    }
+    for (const land of latestLands) {
+        if (!land) continue;
+        const landId = toNum(land.id);
+        if (!landId) continue;
+        landTypeById.set(landId, getLandTypeByLevel(land.level));
     }
 
     const isAllLandTypesSelected: boolean = selectedLandTypes.length === ALL_FERTILIZER_LAND_TYPES.length;
@@ -1134,12 +1136,17 @@ async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNo
     else if (fertilizerConfig === 'smart') {
         let organicTargets: number[] = [];
         const smartSeconds = toNum(automation.fertilizer_smart_seconds) || 300;
-        try {
-            const latest = await getAllLands();
-            organicTargets = getFastMatureLands(latest && latest.lands, smartSeconds);
-        } catch (e: any) {
-            logWarn('施肥', `获取全农场地块失败 ${e.message}`);
-            if (options.propagateErrors) throw e;
+        // 本轮已经读过地就复用同一份快照：smart 再读一次只是把同一条请求发两遍。
+        if (latestLands.length > 0) {
+            organicTargets = getFastMatureLands(latestLands, smartSeconds);
+        } else {
+            try {
+                const latest = await getAllLands();
+                organicTargets = getFastMatureLands(latest && latest.lands, smartSeconds);
+            } catch (e: any) {
+                logWarn('施肥', `获取全农场地块失败 ${e.message}`);
+                if (options.propagateErrors) throw e;
+            }
         }
 
         if (organicTargets.length > 0) {

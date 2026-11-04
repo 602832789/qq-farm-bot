@@ -7,7 +7,7 @@ const { CONFIG } = require('../../config/config');
 const { getPlantById, getItemById } = require('../../config/gameConfig');
 const { isAutomationOn, getAutomation, getFertilizerBuyOrganicCount, getFertilizerBuyOrganicThresholdHours, getFertilizerBuyNormalCount, getFertilizerBuyNormalThresholdHours, getFertilizerBuyCheckIntervalMinutes } = require('../../models/store');
 const { getUserState, networkEvents } = require('../../utils/network');
-const { toNum, log, logWarn, randomDelay } = require('../../utils/utils');
+const { toNum, log, logWarn, logFileOnly, isTransientGatewaySkip, randomDelay } = require('../../utils/utils');
 const { createScheduler } = require('../scheduler');
 const { runExclusiveAutomationTask } = require('../automation-lock');
 const { recordOperation } = require('../stats');
@@ -36,6 +36,15 @@ let farmLoopRunning: boolean = false;
 let externalSchedulerMode: boolean = false;
 const farmScheduler = createScheduler('farm');
 let lastPushTime: number = 0;
+/**
+ * 预算让路截止时间：本轮因「网关请求超预算 / 队列已满」被挡下时，下一轮巡田要等
+ * 最早一条请求滑出 60s 窗口再发，而不是 3-5 秒后继续撞同一堵墙。
+ */
+let farmBudgetBackoffUntil: number = 0;
+
+function getFarmBudgetDeferMs(): number {
+    return Math.max(0, farmBudgetBackoffUntil - Date.now());
+}
 
 // ============ 农场循环 ============
 
@@ -51,6 +60,13 @@ async function checkFarm(): Promise<boolean> {
         isFirstFarmCheck = false;
         return !!(result && result.hadWork);
     } catch (err: any) {
+        if (isTransientGatewaySkip(err)) {
+            // 不是业务失败，只是这一轮不占连接：静默等预算腾出名额，不进前端日志。
+            const retryAfterMs = Math.max(1500, Math.min(15000, Number(err?.retryAfterMs) || 3000));
+            farmBudgetBackoffUntil = Date.now() + retryAfterMs;
+            logFileOnly('巡田', `本轮让路 ${Math.round(retryAfterMs / 1000)}s: ${err.message}`);
+            return false;
+        }
         logWarn('巡田', `检查失败: ${err.message}`);
         return false;
     } finally {
@@ -379,10 +395,13 @@ async function runFarmOperation(
         const canApplyNormal = fertilizerConfig === 'normal'
             || fertilizerConfig === 'both'
             || fertilizerConfig === 'smart';
+        // 本轮巡田的土地快照：补肥判断与 smart 施肥共用，避免同一轮读两次 AllLands。
+        let tickLands: any[] = [];
         if (isAutomationOn('fertilizer_multi_season') && canApplyNormal) {
             try {
                 const latest = await getAllLands();
                 const latestLands = Array.isArray(latest && latest.lands) ? latest.lands : [];
+                tickLands = latestLands;
                 let targets = getNormalFertilizerTargetsFromLands(latestLands);
                 // 先按施肥土地范围过滤，避免范围外地块每轮都触发"检测到但目标为空"的无效调用。
                 // 过滤规则与 runFertilizerByConfig 内部一致：勾满全部类型视为不限制；确认不了土地类型时跳过本轮。
@@ -407,7 +426,8 @@ async function runFarmOperation(
                         count: targets.length,
                         landIds: targets,
                     });
-                    const result = await runFertilizerByConfig(targets, { reason: 'multi_season', propagateErrors });
+                    // 复用本轮刚读到的快照：施肥内部再读一次只会多一条 AllLands。
+                    const result = await runFertilizerByConfig(targets, { reason: 'multi_season', propagateErrors, knownLands: latestLands });
                     if (result.normal > 0) actions.push(`补肥${result.normal}`);
                 }
             } catch (e: any) {
@@ -421,7 +441,11 @@ async function runFarmOperation(
         }
         if (fertilizerConfig === 'smart') {
             try {
-                const result = await runFertilizerByConfig([], { skipNormal: true, propagateErrors });
+                const result = await runFertilizerByConfig([], {
+                    skipNormal: true,
+                    propagateErrors,
+                    knownLands: tickLands.length > 0 ? tickLands : undefined,
+                });
                 if (result.organic > 0) {
                     actions.push(`有机肥${result.organic}`);
                     await harvestMatureOwnLandsOnce(actions, propagateErrors);
@@ -445,7 +469,8 @@ async function runFarmOperation(
 function scheduleNextFarmCheck(delayMs: number = CONFIG.farmCheckInterval): void {
     if (externalSchedulerMode) return;
     if (!farmLoopRunning) return;
-    farmScheduler.setTimeoutTask('farm_check_loop', Math.max(0, delayMs), async () => {
+    const waitMs = Math.max(0, delayMs, getFarmBudgetDeferMs());
+    farmScheduler.setTimeoutTask('farm_check_loop', waitMs, async () => {
         if (!farmLoopRunning) return;
         await runExclusiveAutomationTask('farm_check_loop', checkFarm);
         if (!farmLoopRunning) return;
@@ -574,6 +599,7 @@ async function checkFertilizerBuyOnce(): Promise<void> {
 
 module.exports = {
     checkFarm,
+    getFarmBudgetDeferMs,
     runFarmOperation,
     scheduleNextFarmCheck,
     startFarmCheckLoop,

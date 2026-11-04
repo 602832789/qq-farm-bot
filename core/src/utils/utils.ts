@@ -195,6 +195,12 @@ function logWarn(arg1: string, arg2: string | object | null, arg3: any = null): 
     const safeMeta = normalizeMeta(meta);
     if (!safeMeta.module) safeMeta.module = inferModuleFromTag(tag);
     const displayTag = resolveModuleTag(safeMeta.module);
+    // 预算/排队让路不是业务失败：只留文件证据，不进前端日志面板。
+    // 否则「网关请求超预算」会跟着每一轮巡田刷屏，看起来像账号一直报错。
+    if (isTransientGatewaySkip(msg)) {
+        coreLogger.info(msg, { tag: displayTag, ...safeMeta });
+        return;
+    }
     coreLogger.warn(msg, { tag: displayTag, ...safeMeta });
     if (logHook) {
         try { logHook(displayTag, msg, true, safeMeta); } catch {}

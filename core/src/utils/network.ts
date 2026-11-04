@@ -15,7 +15,12 @@ const cryptoWasm = require('./crypto-wasm');
 const { GatewayTokenProvider } = require('./gateway-token');
 const { MAX_HEARTBEAT_MISSES, shouldTerminateForHeartbeat, shouldTerminateForSilence } = require('./keepalive-policy');
 const { countBlockingQueuedRequests, shouldLogRequestPressure } = require('./request-pressure');
-const { checkRequest: checkRequestBudget, recordSent: recordRequestSent, getGovernorStats } = require('./request-governor');
+const {
+    checkRequest: checkRequestBudget,
+    recordSent: recordRequestSent,
+    recordOutcome: recordRequestOutcome,
+    getGovernorStats,
+} = require('./request-governor');
 const {
     LOW_PRIORITY_IDLE_POLL_MS,
     LOW_PRIORITY_IDLE_WAIT_MAX_MS,
@@ -118,9 +123,13 @@ class GatewayError extends Error {
 
 /** background 班次请求让路时抛出的错误：不是业务失败，而是「现在不该占用连接」。 */
 class GatewayBusyError extends Error {
-    constructor(message: string) {
+    /** 预算/排队让路时建议的等待时间，调度器用它给 tick 退避。 */
+    retryAfterMs: number;
+
+    constructor(message: string, retryAfterMs: number = 0) {
         super(message);
         this.name = 'GatewayBusyError';
+        this.retryAfterMs = Math.max(0, Number(retryAfterMs) || 0);
     }
 }
 
@@ -338,6 +347,13 @@ function describeQueuedRequests(): string {
         .join(',');
 }
 
+/** 画像日志里只保留 `PlantService.AllLands` 这种短名，避免整行被包名占满。 */
+function shortMethod(key: string): string {
+    const parts = String(key || '').split('.');
+    if (parts.length < 2) return String(key || '');
+    return `${parts[parts.length - 2]}.${parts[parts.length - 1]}`;
+}
+
 function logRequestPressure(): void {
     const now = performance.now();
     if (!shouldLogRequestPressure(requestQueue, now, lastRequestPressureLogAt)) return;
@@ -470,21 +486,25 @@ function sendMsgAsync(serviceName: string, methodName: string, bodyBytes: Buffer
 
         // 60s 速率预算：拦掉超额的非保命请求，避免把连接压到服务端静默丢包。
         // 被拦的请求按「网关闭塞」处理，让上层既有的退避逻辑接管而不是死等超时。
-        const budget = checkRequestBudget(serviceName, methodName);
+        const budget = checkRequestBudget(serviceName, methodName, Date.now(), { requestClass });
         if (!budget.allowed) {
             const nowMono = performance.now();
             if (nowMono - lastBudgetLogAt >= BUDGET_LOG_INTERVAL_MS) {
                 lastBudgetLogAt = nowMono;
                 const stats = getGovernorStats();
+                const top = Array.isArray(stats.topMethods) && stats.topMethods.length > 0
+                    ? `, 大头: ${stats.topMethods.slice(0, 3).map((item: any) => `${shortMethod(item.method)}×${item.count}`).join(' ')}`
+                    : '';
                 logWarn(
                     '系统',
                     `Gateway 请求已超预算，本轮跳过非关键请求: ${methodName} (${budget.reason}, `
-                    + `60s 内已发 ${stats.sentInWindow}/${stats.totalLimit}, 累计丢弃 ${stats.droppedTotal})`,
+                    + `60s 内已发 ${stats.sentInWindow}/${stats.totalLimit}, 累计丢弃 ${stats.droppedTotal}${top})`,
                 );
             }
             reject(new GatewayBusyError(
                 `网关请求超预算，已跳过: ${methodName} (reason=${budget.reason}, `
                 + `retryAfterMs=${Math.round(budget.retryAfterMs)})`,
+                budget.retryAfterMs,
             ));
             return;
         }
@@ -536,6 +556,7 @@ function sendMsgAsync(serviceName: string, methodName: string, bodyBytes: Buffer
                 settleQueuedRequest(request, new GatewayBusyError(
                     `网关繁忙，后台请求已让路: ${methodName} (waited=${queueWaitMs}ms, `
                     + `pending=${pendingCallbacks.size}, queued=${requestQueue.length}, active=${describePendingRequests()})`,
+                    Math.min(5000, LOW_PRIORITY_QUEUE_WAIT_MS),
                 ));
             });
         }
@@ -582,6 +603,8 @@ function handleMessage(data: Buffer): void {
             if (errorCode !== 0 && !expectedError) {
                 logWarn('错误', `${meta.service_name}.${meta.method_name} code=${errorCode} ${meta.error_message || ''}`);
             }
+            // 画像：失败量与业务错误码无关，只用来定位「谁在吃预算 / 谁在报错」。
+            try { recordRequestOutcome(meta.service_name, meta.method_name, errorCode === 0); } catch {}
 
             if (pending) {
                 pendingCallbacks.delete(clientSeqVal);
@@ -591,6 +614,9 @@ function handleMessage(data: Buffer): void {
                     if ((meta.service_name === 'gamepb.plantpb.PlantService' && meta.method_name !== 'AllLands')
                         || (meta.service_name === 'gamepb.itempb.ItemService' && meta.method_name === 'Use')) {
                         invalidateLandForecast();
+                        // 写操作成功后自家地块快照作废：下一次读取必须是新数据，
+                        // 避免 TTL 快照把「刚收完的地」又读成「还没收」。
+                        networkEvents.emit('landsDirty', meta.method_name);
                     }
                     pending.callback(null, msg.body, meta);
                 }
@@ -1106,6 +1132,7 @@ function clearNetworkRuntime(reason: string): void {
     stopAceRuntime(true);
     gatewayTokens.clear();
     invalidateLandForecast();
+    networkEvents.emit('landsDirty', 'runtime_reset');
     userState.gid = 0;
     userState.openId = '';
 }

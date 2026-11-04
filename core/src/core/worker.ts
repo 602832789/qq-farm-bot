@@ -9,7 +9,7 @@ const { getLevelExpProgress, loadConfigs } = require('../config/gameConfig');
 const { getAutomation, getPreferredSeed, getConfigSnapshot, applyConfigSnapshot } = require('../models/store');
 const { checkAndClaimEmails } = require('../services/email');
 const { getEmailDailyState } = require('../services/email');
-const { checkFarm, startFarmCheckLoop, stopFarmCheckLoop, refreshFarmCheckLoop, getLandsDetail, getAvailableSeeds, purchaseSeed, runFarmOperation, runFertilizerByConfig, fertilizeOwnLand } = require('../services/farm');
+const { checkFarm, getFarmBudgetDeferMs, startFarmCheckLoop, stopFarmCheckLoop, refreshFarmCheckLoop, getLandsDetail, getAvailableSeeds, purchaseSeed, runFarmOperation, runFertilizerByConfig, fertilizeOwnLand } = require('../services/farm');
 const { checkFriends, startFriendCheckLoop, stopFriendCheckLoop, refreshFriendCheckLoop, getFriendsList, getFriendsListCacheOnly, getFriendLandsDetail, doFriendOperation, deleteFriend, runScheduledStealCheck } = require('../services/friend');
 const { getInteractRecords } = require('../services/interact');
 const { processInviteCodes } = require('../services/invite');
@@ -37,7 +37,8 @@ const { isGatewayHealthyForBusiness, nextBusinessBackoffMs } = require('../utils
 const { connect, cleanup, getWs, getUserState, networkEvents, getGatewayLoad } = require('../utils/network');
 const { loadProto } = require('../utils/proto');
 const { runWithRequestClass } = require('../utils/request-context');
-const { setLogHook, log, logWarn, toNum, getSystemDateKey, formatSystemDateTime24 } = require('../utils/utils');
+const { setLogHook, log, logWarn, logFileOnly, toNum, getSystemDateKey, formatSystemDateTime24 } = require('../utils/utils');
+const { getRequestProfile, setUrgentMode } = require('../utils/request-governor');
 
 // Extend CONFIG with the unified friend-task interval used by this worker.
 interface WorkerRuntimeConfig {
@@ -296,7 +297,9 @@ async function runFarmTick(auto: any): Promise<void> {
     } catch {
         // ignore
     } finally {
-        nextFarmRunAt = Date.now() + farmMs;
+        // 本轮若因 60s 预算被挡下，下一轮要等最早一条请求滑出窗口再发，
+        // 否则 2-5 秒的间隔只会反复撞同一堵墙，把「超预算」刷成常态。
+        nextFarmRunAt = Date.now() + farmMs + getFarmBudgetDeferMs();
         farmTaskRunning = false;
     }
 }
@@ -363,6 +366,11 @@ async function runStealTick(auto: any): Promise<void> {
         log('系统', `偷菜巡查执行失败: ${e.message}`, { module: 'system', event: '偷菜巡查', result: 'error' });
     } finally {
         nextStealRunAt = Date.now() + Math.max(1000, Number(nextStealDelayMs) || 15 * 60 * 1000);
+        // 成熟到点前的抢收窗口：进门/读地块/收获这几条链路请求不受 60s 硬预算丢弃，
+        // 否则预算被日常巡查吃满时，恰好在成熟那一刻丢包就是直接丢收益。
+        // 窗口只在「一分钟内就要动手」时打开，且只豁免这四条链路，不放开全局限流。
+        const dueInMs = Math.max(0, Number(nextStealDelayMs) || 0);
+        setUrgentMode(dueInMs > 0 && dueInMs <= 60 * 1000, Date.now() + dueInMs + 45 * 1000);
         stealTaskRunning = false;
     }
 }
@@ -453,7 +461,7 @@ async function runStartupSequence(canContinue: () => boolean = () => loginReady)
 
             if (!loginReady || !canContinue()) return;
             try {
-                await checkAndClaimTasks();
+                await checkAndClaimTasks({ force: true });
             } catch (e: any) {
                 log('系统', `登录后领取任务失败: ${e.message}`, { module: 'system', event: '启动序列', result: 'error' });
             }
@@ -802,6 +810,17 @@ async function startBot(config: any): Promise<void> {
 
     // 启动定时状态同步（对齐老版 resource-policy：默认 10s，可用 FARM_STATUS_SYNC_INTERVAL_MS 覆盖）。
     workerScheduler.setIntervalTask('status_sync', statusSyncIntervalMs(), syncStatus, { preventOverlap: true });
+
+    // 请求画像（只写文件，5 分钟一行）：预算吃紧时能直接看出是哪个接口在吃预算。
+    workerScheduler.setIntervalTask('gateway_profile', 5 * 60 * 1000, () => {
+        try {
+            const profile = getRequestProfile();
+            const top = profile.top.slice(0, 5)
+                .map((item: any) => `${item.method.split('.').slice(-1)[0]}×${item.count}`)
+                .join(' ');
+            logFileOnly('系统', `60s 请求画像: ${profile.windowCount}/${profile.totalLimit} 累计丢弃 ${profile.droppedTotal}${top ? ` | ${top}` : ''}`);
+        } catch {}
+    }, { preventOverlap: true });
 }
 
 /** 老版 runtime/resource-policy.js：statusSyncIntervalMs = env 覆盖，否则 10s（低内存 30s）。 */
