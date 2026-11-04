@@ -91,6 +91,54 @@ Gateway 是一条 WebSocket 长连接，所有业务共用它。这份文档说�
 
 退避期间连接上只剩心跳和 ACE 上报——它们有独立保留槽位，能安静地把连接救回来。
 
+## 流量保险丝（只有自动任务受约束）
+
+并发分层解决了「谁先发」，但没解决「一分钟内总共发多少」。2026-11 之前这里还有一道
+「60s 内最多 80 个请求」的硬预算（`request-governor`），对所有非白名单请求一视同仁：
+一个开着全自动的账号，60s 内光 ACE AntiData（12 次）、心跳（3 次）、农场/好友定时任务、
+活动自动化就能把预算吃满。预算一满，用户在面板上点「我的农场」发起的 `AllLands`
+也会被直接拒绝，前端只看到一句失败——表现为「页面打不开 / 点了没反应」。
+实测日志里 `AllLands` 一天被拒 934 次。
+
+现在的 `core/src/utils/request-governor.ts` 只做一件事：给**自动任务**兜底限速。
+
+- **前台（`foreground`）与保命流量（`critical`：心跳 / Login / ACE / 收菜偷菜）永不因配额被拒。**
+  前台请求连额度都不消耗，只登记「用户最近在操作」的时间戳。
+- 只有 `farm` / `friend` / `background` 会撞这道保险丝，撞上按「网关繁忙」让路，
+  由调用方退避到下一轮，不写错误日志。
+- 上限不是一个写死的数字，而是随网关健康度变化：
+
+| 档位 | 判定 | 自动任务 60s 上限 | 单接口上限 |
+| --- | --- | --- | --- |
+| `healthy` | 无漏心跳、最老在途 < 2s | 180 | 60 |
+| `cautious` | 最老在途 ≥ 2s，或有在途且入站 ≥ 8s | 90 | 60 |
+| `stall` | 心跳漏拍 / 最老在途 ≥ 5s / 有在途且入站 ≥ 20s | 24 | 8 |
+
+`stall` 档下自动任务基本停摆，连接上只剩心跳和 ACE——和「定时任务健康度退避」是同一套思路，
+但这里卡在协议层，连已经排进队列的自动请求也一起收住。
+
+可用环境变量调整：`FARM_AUTO_LIMIT_60S`、`FARM_AUTO_CAUTIOUS_LIMIT_60S`、
+`FARM_AUTO_STALL_LIMIT_60S`、`FARM_AUTO_METHOD_LIMIT_60S`、`FARM_FOREGROUND_ACTIVE_MS`。
+
+### 前台让路
+
+`checkRequest()` 遇到前台请求会刷新「用户正在操作」时间戳。`runFarmTick()` /
+`runFriendTick()` 入口据此短顺延 2 秒（`FOREGROUND_YIELD_MS`）：用户点击时，
+定时任务不会刚好发一个农场/好友请求把业务槽位占住。连续让路最多 5 次（约 10 秒），
+之后照常执行，避免定时任务被无限期饿死。
+
+### 心跳快速补发
+
+心跳仍是 25s 一次、8s 超时，但**首次漏拍不再直接进入 miss 计数**：3 秒后补发一次
+（`HEARTBEAT_RETRY_DELAY`）。抖动型的丢包补一次就恢复，避免一次网络抖动就让
+「心跳漏拍」闸门压住所有自动任务，甚至累计到 3 次直接下线。补发仍失败才按原规则
+（3 次 miss 且 30s 无入站）终止连接。
+
+### 面板请求的超时
+
+后端不再因额度拒绝前台请求，但一条前台请求仍可能排在一条已经在飞的自动请求后面。
+前端 axios 超时从 10s 放宽到 15s，覆盖「我的农场」这类要串几个网关请求的接口。
+
 ## 压力日志
 
 `Gateway 请求压力: ...` 只在队列里有**非 `background`** 请求时才打（`utils/request-pressure.ts`）。队列里只剩后台补数据是正常运行，不算拥塞。
@@ -118,10 +166,10 @@ Gateway 是一条 WebSocket 长连接，所有业务共用它。这份文档说�
 
 - `core/src/utils/request-priority.ts` — 班次、容量、调度选择（纯函数）
 - `core/src/utils/request-context.ts` — 环境班次（`AsyncLocalStorage`）
-- `core/src/utils/network.ts` — 排队、发送、`getGatewayLoad()`、`waitForGatewayIdle()`
+- `core/src/utils/request-governor.ts` — 自动任务流量保险丝、健康度分档、前台活跃信号
+- `core/src/utils/network.ts` — 排队、发送、心跳补发、`getGatewayLoad()`、`waitForGatewayIdle()`
 - `core/src/utils/low-priority-gate.ts` — 后台任务的空闲判定、定时任务的健康度退避、让路错误分类
 - `core/src/utils/request-pressure.ts` — 压力日志节流
 - `core/src/services/automation-lock.ts` — 自动任务全局互斥
 - `core/tests/request-priority.test.js` — 分层与容量的契约测试
-- `core/tests/low-priority-gate.test.js` — 让路闸门与定时任务退避的契约测试
-- `core/tests/low-priority-gate.test.js` — 空闲判定与让路错误分类
+- `core/tests/request-governor.test.js` — 前台豁免、自动任务限额、健康度分档的契约测试

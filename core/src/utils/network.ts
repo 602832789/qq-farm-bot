@@ -289,7 +289,7 @@ function drainRequestQueue(): void {
                 drainRequestQueue();
             },
         } : undefined;
-        sendMsg(request.context, request.serviceName, request.methodName, request.bodyBytes, pending).then((sent) => {
+        sendMsg(request.context, request.serviceName, request.methodName, request.bodyBytes, pending, request.requestClass).then((sent) => {
             if (sent) {
                 if (!request.expectReply) {
                     settleQueuedRequest(request, undefined, { body: Buffer.alloc(0), meta: {} });
@@ -426,7 +426,14 @@ function isCurrentConnection(context: ConnectionContext): boolean {
     return currentConnection === context && ws === context.socket && !context.finalized;
 }
 
-async function sendMsg(context: ConnectionContext, serviceName: string, methodName: string, bodyBytes: Buffer, pending?: PendingRequest): Promise<boolean> {
+async function sendMsg(
+    context: ConnectionContext,
+    serviceName: string,
+    methodName: string,
+    bodyBytes: Buffer,
+    pending?: PendingRequest,
+    requestClass: RequestClass = 'foreground',
+): Promise<boolean> {
     if (!isCurrentConnection(context) || context.socket.readyState !== WebSocket.OPEN) {
         log('系统', '[WS] 连接未打开');
         return false;
@@ -453,8 +460,9 @@ async function sendMsg(context: ConnectionContext, serviceName: string, methodNa
         }
         return false;
     }
-    // 只有真正落到 socket 上的请求才计入 60s 预算；排队中被拒的不算。
-    try { recordRequestSent(serviceName, methodName); } catch {}
+    // 只有真正落到 socket 上的请求才登记；排队中被拒的不算。
+    // 带上班次，前台请求与自动任务在画像里分开统计（前台不计入自动任务额度）。
+    try { recordRequestSent(serviceName, methodName, requestClass); } catch {}
     return true;
 }
 
@@ -504,9 +512,16 @@ function sendMsgAsync(serviceName: string, methodName: string, bodyBytes: Buffer
             return;
         }
 
-        // 60s 速率预算：拦掉超额的非保命请求，避免把连接压到服务端静默丢包。
-        // 被拦的请求按「网关闭塞」处理，让上层既有的退避逻辑接管而不是死等超时。
-        const budget = checkRequestBudget(serviceName, methodName, Date.now(), { requestClass });
+        // 流量保险丝只约束自动任务：前台（用户点击）与心跳/ACE 永远放行。
+        // 自动任务超额时按「网关闭塞」处理，让既有的退避逻辑接管而不是死等超时；
+        // 上限随网关健康度自适应，网关卡住时会自动收紧到几乎停摆。
+        const budget = checkRequestBudget(serviceName, methodName, Date.now(), {
+            requestClass,
+            health: {
+                ...getGatewayLoad(),
+                inboundSilenceMs: getInboundSilenceMs(),
+            },
+        });
         if (!budget.allowed) {
             const nowMono = performance.now();
             if (nowMono - lastBudgetLogAt >= BUDGET_LOG_INTERVAL_MS) {
@@ -517,13 +532,14 @@ function sendMsgAsync(serviceName: string, methodName: string, bodyBytes: Buffer
                     : '';
                 logWarn(
                     '系统',
-                    `Gateway 请求已超预算，本轮跳过非关键请求: ${methodName} (${budget.reason}, `
-                    + `60s 内已发 ${stats.sentInWindow}/${stats.totalLimit}, 累计丢弃 ${stats.droppedTotal}${top})`,
+                    `自动任务请求已达流量上限，本轮让路: ${methodName} (${budget.reason}, `
+                    + `模式=${budget.mode}, 60s 自动请求 ${stats.sentInWindow}/${stats.totalLimit}, `
+                    + `累计让路 ${stats.droppedTotal}${top})`,
                 );
             }
             reject(new GatewayBusyError(
-                `网关请求超预算，已跳过: ${methodName} (reason=${budget.reason}, `
-                + `retryAfterMs=${Math.round(budget.retryAfterMs)})`,
+                `自动任务请求已达流量上限，已让路: ${methodName} (reason=${budget.reason}, `
+                + `mode=${budget.mode}, retryAfterMs=${Math.round(budget.retryAfterMs)})`,
                 budget.retryAfterMs,
             ));
             return;
@@ -1067,7 +1083,7 @@ async function sendLogin(context: ConnectionContext, onLoginSuccess?: () => void
             try { (context.socket as any).terminate(); } catch {}
         }
         },
-    });
+    }, 'critical');
 }
 
 // ============ 心跳 ============
@@ -1077,6 +1093,14 @@ async function sendLogin(context: ConnectionContext, onLoginSuccess?: () => void
  * 收到 8s 仍未回包，基本可以认定这条连接已经不收发了。
  */
 const HEARTBEAT_REQUEST_TIMEOUT = 8000;
+/**
+ * 首次漏拍后的快速补发延迟。
+ *
+ * 原来的节奏：25s tick + 8s 超时 = 一次 miss 要 33s，三次就是 90s+ 才肯下线，
+ * 期间所有自动任务都会被「心跳漏拍」闸门压住。而实际上单次丢包/抖动很常见，
+ * 补发一次就能恢复，不必等到下一个 tick。补发仍失败才进入正常的 miss 计数。
+ */
+const HEARTBEAT_RETRY_DELAY = 3000;
 
 function buildHeartbeatBody(gid: number, clientVersion = getClientVersion()): Buffer {
     return Buffer.from(types.HeartbeatRequest.encode(types.HeartbeatRequest.create({
@@ -1088,15 +1112,18 @@ function buildHeartbeatBody(gid: number, clientVersion = getClientVersion()): Bu
 
 function startHeartbeat(context: ConnectionContext): void {
     networkScheduler.clear('heartbeat_interval');
+    networkScheduler.clear('heartbeat_retry');
     const heartbeat = { attempts: 0, replies: 0, failures: 0 };
     context.heartbeat = heartbeat;
     lastHeartbeatMono = performance.now();
     lastInboundMono = performance.now();
     heartbeatMissCount = 0;
+    let inFlight = false;
 
-    networkScheduler.setIntervalTask('heartbeat_interval', CONFIG.heartbeatInterval, async () => {
+    const beat = async (isRetry: boolean): Promise<void> => {
+        if (inFlight) return;
         if (!isCurrentConnection(context) || context.phase !== 'online' || !userState.gid) return;
-
+        inFlight = true;
         const body = buildHeartbeatBody(userState.gid, context.clientVersion);
         heartbeat.attempts += 1;
         try {
@@ -1110,6 +1137,7 @@ function startHeartbeat(context: ConnectionContext): void {
             heartbeat.replies += 1;
             lastHeartbeatMono = performance.now();
             heartbeatMissCount = 0;
+            networkScheduler.clear('heartbeat_retry');
             try {
                 const reply = types.HeartbeatReply.decode(replyBody);
                 if (reply.server_time) syncServerTime(toNum(reply.server_time));
@@ -1118,6 +1146,14 @@ function startHeartbeat(context: ConnectionContext): void {
             if (!isCurrentConnection(context)) return;
             heartbeat.failures += 1;
             heartbeatMissCount += 1;
+
+            // 第一次漏拍先快速补发：抖动通常补一次就好，补发成功则一切归零。
+            if (heartbeatMissCount === 1 && !isRetry) {
+                logWarn('心跳', `心跳未响应，${Math.round(HEARTBEAT_RETRY_DELAY / 1000)}s 后补发一次`);
+                networkScheduler.setTimeoutTask('heartbeat_retry', HEARTBEAT_RETRY_DELAY, () => { void beat(true); });
+                return;
+            }
+
             const now = performance.now();
             const inboundSilenceMs = Math.max(0, now - lastInboundMono);
             const heartbeatSilenceMs = Math.max(0, now - lastHeartbeatMono);
@@ -1136,8 +1172,12 @@ function startHeartbeat(context: ConnectionContext): void {
                 reason: `${Math.round(inboundSilenceMs / 1000)}s 无入站数据，连续 ${heartbeatMissCount} 次心跳失败`,
             });
             try { (context.socket as any).terminate(); } catch {}
+        } finally {
+            inFlight = false;
         }
-    }, { preventOverlap: true });
+    };
+
+    networkScheduler.setIntervalTask('heartbeat_interval', CONFIG.heartbeatInterval, () => beat(false), { preventOverlap: true });
 }
 
 interface DisconnectDetails {
@@ -1169,7 +1209,10 @@ function getConnectionDiagnostics(context: ConnectionContext | null) {
         lastInboundAgeMs: Math.max(0, performance.now() - lastInboundMono),
         lastHeartbeatAgeMs: Math.max(0, performance.now() - lastHeartbeatMono),
         heartbeatMissCount,
-        requestBudget: getGovernorStats(),
+        requestBudget: getGovernorStats(Date.now(), {
+            ...getGatewayLoad(),
+            inboundSilenceMs: Math.max(0, performance.now() - lastInboundMono),
+        }),
         pendingRequests: describePendingRequests(),
         queuedRequests: describeQueuedRequests(),
         ace: context?.phase === 'online' ? getAceDiagnostics() : null,

@@ -7,7 +7,9 @@ const accountIdRef = useStorage('current_account_id', '')
 
 const api = axios.create({
   baseURL: '/',
-  timeout: 10000,
+  // 前台请求现在不会因为网关自动任务额度被拒，但仍可能排在一条自动请求后面。
+  // 10s 对「我的农场」这类要串几个网关请求的接口偏紧，放宽到 15s。
+  timeout: 15000,
 })
 
 export function normalizeApiErrorMessage(raw: unknown): string {

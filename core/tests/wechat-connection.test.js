@@ -220,6 +220,8 @@ test('session summaries retain heartbeat outcomes and isolate a late completion 
         'node:perf_hooks': { performance: { now: () => now } },
         '../services/scheduler': { createScheduler: () => ({
             setIntervalTask: (key, _ms, fn) => tasks.set(key, fn),
+            // 心跳首次漏拍会安排一次快速补发，这里同样登记到任务表（测试不自动触发）。
+            setTimeoutTask: (key, _ms, fn) => tasks.set(key, fn),
             clear: key => tasks.delete(key), clearAll: () => tasks.clear(),
         }) },
         '../services/ace': { stopAceRuntime() {}, getAceDiagnostics: () => ({ replies: 7 }) },

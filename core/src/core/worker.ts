@@ -38,7 +38,7 @@ const { connect, cleanup, getWs, getUserState, networkEvents, getGatewayLoad } =
 const { loadProto } = require('../utils/proto');
 const { runWithRequestClass } = require('../utils/request-context');
 const { setLogHook, log, logWarn, logFileOnly, toNum, getSystemDateKey, formatSystemDateTime24 } = require('../utils/utils');
-const { getRequestProfile, setUrgentMode } = require('../utils/request-governor');
+const { getRequestProfile, setUrgentMode, isForegroundActive } = require('../utils/request-governor');
 
 // Extend CONFIG with the unified friend-task interval used by this worker.
 interface WorkerRuntimeConfig {
@@ -230,6 +230,33 @@ function resetUnifiedSchedule(): void {
 
 const BUSINESS_TICK_LABEL: Record<string, string> = { farm: '农场定时任务', friend: '好友定时任务' };
 
+/**
+ * 前台让路：用户正在面板上操作时，定时任务本轮短顺延。
+ *
+ * 并发层已经保证「前台请求优先派发、后台业务最多占 1 个槽位」，但已经在飞的那一条
+ * 自动请求仍然会占着连接几百毫秒到几秒。把 tick 往后挪 2 秒，用户点击时基本不会
+ * 撞上一个刚发出去的农场/好友请求，页面响应会明显更跟手。
+ *
+ * 连续让路有上限：用户持续操作时最多顺延 5 次（约 10 秒），之后照常执行，
+ * 避免定时任务被无限期饿死。
+ */
+const FOREGROUND_YIELD_MS = 2000;
+const FOREGROUND_YIELD_MAX_STREAK = 5;
+const foregroundYieldStreak: Record<string, number> = { farm: 0, friend: 0 };
+
+function nextForegroundYieldMs(kind: string): number {
+    const load = getGatewayLoad();
+    const foregroundActive = isForegroundActive(Date.now()) || Number(load.foregroundPending) > 0;
+    if (!foregroundActive) {
+        foregroundYieldStreak[kind] = 0;
+        return 0;
+    }
+    const streak = (foregroundYieldStreak[kind] || 0) + 1;
+    foregroundYieldStreak[kind] = streak;
+    if (streak > FOREGROUND_YIELD_MAX_STREAK) return 0;
+    return FOREGROUND_YIELD_MS;
+}
+
 function describeGatewayStall(load: any): string {
     const parts: string[] = [];
     const misses = Number(load && load.heartbeatMisses) || 0;
@@ -277,6 +304,11 @@ function nextBusinessTickDeferMs(kind: string): number {
 
 async function runFarmTick(auto: any): Promise<void> {
     if (farmTaskRunning) return;
+    const foregroundYieldMs = nextForegroundYieldMs('farm');
+    if (foregroundYieldMs > 0) {
+        nextFarmRunAt = Date.now() + foregroundYieldMs;
+        return;
+    }
     const farmDeferMs = nextBusinessTickDeferMs('farm');
     if (farmDeferMs > 0) {
         nextFarmRunAt = Date.now() + farmDeferMs;
@@ -320,6 +352,12 @@ async function runFriendTick(auto: any): Promise<void> {
     // friend 总开关仍控制好友任务总入口；关闭时也要推进到期时间，避免调度器每秒空转。
     if (!auto.friend) {
         nextFriendRunAt = Date.now() + helpMs;
+        return;
+    }
+
+    const foregroundYieldMs = nextForegroundYieldMs('friend');
+    if (foregroundYieldMs > 0) {
+        nextFriendRunAt = Date.now() + foregroundYieldMs;
         return;
     }
 
@@ -812,14 +850,19 @@ async function startBot(config: any): Promise<void> {
     // 启动定时状态同步（对齐老版 resource-policy：默认 10s，可用 FARM_STATUS_SYNC_INTERVAL_MS 覆盖）。
     workerScheduler.setIntervalTask('status_sync', statusSyncIntervalMs(), syncStatus, { preventOverlap: true });
 
-    // 请求画像（只写文件，5 分钟一行）：预算吃紧时能直接看出是哪个接口在吃预算。
+    // 请求画像（只写文件，5 分钟一行）：额度过紧时能直接看出是哪个接口在吃自动任务额度。
     workerScheduler.setIntervalTask('gateway_profile', 5 * 60 * 1000, () => {
         try {
             const profile = getRequestProfile();
             const top = profile.top.slice(0, 5)
                 .map((item: any) => `${item.method.split('.').slice(-1)[0]}×${item.count}`)
                 .join(' ');
-            logFileOnly('系统', `60s 请求画像: ${profile.windowCount}/${profile.totalLimit} 累计丢弃 ${profile.droppedTotal}${top ? ` | ${top}` : ''}`);
+            logFileOnly(
+                '系统',
+                `60s 流量画像: 自动 ${profile.autoCount}/${profile.totalLimit}, `
+                + `前台 ${profile.foregroundCount}, 保命 ${profile.criticalCount}, `
+                + `累计让路 ${profile.droppedTotal}${top ? ` | ${top}` : ''}`,
+            );
         } catch {}
     }, { preventOverlap: true });
 }

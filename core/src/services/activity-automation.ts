@@ -9,6 +9,7 @@ export {};
 
 const { log, logWarn, logFileOnly, isTransientGatewaySkip, getServerTimeSec, toNum } = require('../utils/utils');
 const { getBudgetPressure } = require('../utils/request-governor');
+const { runWithRequestClass } = require('../utils/request-context');
 const { withActivityRound, readActivityRound, invalidateActivityRound } = require('../utils/activity-round');
 
 /**
@@ -827,12 +828,12 @@ function startActivityAutomation(workerScheduler: any, intervalMs: number = 5 * 
         workerScheduler.setIntervalTask('activity_automation_interval', intervalMs, tick, { preventOverlap: true });
         // 对齐老版 star_activity_claim_initial：启动后 10 秒先跑一轮，不等第一个 5 分钟。
         // 但登录那十几秒里，登录序列 + 巡田 + 好友正在抢连接；活动一轮要发 40 多条请求，
-        // 直接叠上去会把 60s 预算打穿（其余请求全变「超预算」）。所以首轮先看预算余量，
-        // 被占满就顺延 15 秒——「10 秒先跑一轮」的语义不变，只是避开登录洪峰。
+        // 直接叠上去会把自动任务额度吃满。所以首轮先看额度余量，占比超过 90% 就顺延 15 秒
+        // ——「10 秒先跑一轮」的语义不变，只是避开登录洪峰。
         const initialTick = (): void => {
             let pressure: any = null;
             try { pressure = getBudgetPressure(); } catch { pressure = null; }
-            if (pressure && pressure.used >= Math.floor(pressure.limit * 0.9)) {
+            if (pressure && (pressure.ratio >= 0.9 || pressure.full)) {
                 workerScheduler.setTimeoutTask('activity_automation_initial', 15 * 1000, initialTick);
                 return;
             }
@@ -842,9 +843,9 @@ function startActivityAutomation(workerScheduler: any, intervalMs: number = 5 * 
         timer = true;
         return;
     }
-    timer = setInterval(tick, intervalMs);
+    timer = setInterval(() => runWithRequestClass('farm', tick), intervalMs);
     if (typeof timer.unref === 'function') timer.unref();
-    setTimeout(tick, 10 * 1000);
+    setTimeout(() => runWithRequestClass('farm', tick), 10 * 1000);
 }
 
 function stopActivityAutomation(): void {

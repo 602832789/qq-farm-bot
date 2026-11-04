@@ -225,6 +225,7 @@ function isTransientGatewaySkip(error: any): boolean {
     if (String(error.name || '') === 'GatewayBusyError') return true;
     const msg = String(error.message || error || '');
     return msg.includes('网关请求超预算')
+        || msg.includes('自动任务请求已达流量上限')
         || msg.includes('请求等待队列已满')
         || msg.includes('budget_total')
         || msg.includes('reason=queue_full');

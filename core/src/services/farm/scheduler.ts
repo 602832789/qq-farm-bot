@@ -37,8 +37,8 @@ let externalSchedulerMode: boolean = false;
 const farmScheduler = createScheduler('farm');
 let lastPushTime: number = 0;
 /**
- * 预算让路截止时间：本轮因「网关请求超预算 / 队列已满」被挡下时，下一轮巡田要等
- * 最早一条请求滑出 60s 窗口再发，而不是 3-5 秒后继续撞同一堵墙。
+ * 预算让路截止时间：本轮因「自动任务流量上限 / 队列已满」被挡下时，下一轮巡田要等
+ * 最早一条请求滑出窗口再发，而不是 3-5 秒后继续撞同一堵墙。
  */
 let farmBudgetBackoffUntil: number = 0;
 
