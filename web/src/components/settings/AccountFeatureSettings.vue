@@ -298,7 +298,7 @@ function cancel() {
               <span class="h-2 w-2 rounded-full" :class="moduleEnabled(key as ModuleKey) ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'" />
               {{ moduleStateLabel(key as ModuleKey) }}
             </span>
-            <BaseButton variant="secondary" size="sm" @click="openModule(key as ModuleKey)">
+            <BaseButton variant="primary" size="sm" @click="openModule(key as ModuleKey)">
               配置 <span class="i-carbon-arrow-up-right ml-1" aria-hidden="true" />
             </BaseButton>
           </div>

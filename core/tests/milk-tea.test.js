@@ -89,7 +89,7 @@ test('shop retains finite limits and enforces level, price and settlement condit
     h.goods.cond_hints = [];
     await assert.rejects(h.service.operateMilkTeaActivity('exchange', { goodsId: 301, count: 1, expectedCosts: [{ id: 1001, count: 1 }] }), /费用已变化/);
     h.setTime(1794672000);
-    await assert.rejects(h.service.operateMilkTeaActivity('exchange', { goodsId: 301, count: 1, expectedCosts: h.goods.cost }), /条件/);
+    await assert.rejects(h.service.operateMilkTeaActivity('exchange', { goodsId: 301, count: 1, expectedCosts: h.goods.cost }), /结算期/);
     assert.equal(h.calls.length, 0);
 });
 test('fund unlock is serialized and claims require paid unlock without duplicate charges', async () => {

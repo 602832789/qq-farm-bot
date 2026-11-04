@@ -53,7 +53,7 @@ function recommend() {
       </p>
     </div>
 
-    <BaseButton variant="secondary" class="min-h-11" @click="recommend">
+    <BaseButton variant="primary" class="min-h-11" @click="recommend">
       推荐全自动（保留目标与额度）
     </BaseButton>
     <p class="text-sm text-gray-600 dark:text-gray-300">
@@ -130,8 +130,8 @@ function recommend() {
     <p class="text-xs text-gray-500 dark:text-gray-400">
       仅执行当前班次明确提供的所选互动；缺少选项时跳过。雇佣按班次扣券，未确认的费用不会重复消耗。
     </p>
-    <p class="text-xs text-amber-700 dark:text-amber-300">
-      当前版本尚未接入奶茶活动协议：开关会正常保存，但执行器会跳过并打印一次待接入日志。
+    <p class="text-xs text-gray-500 dark:text-gray-400">
+      “自动购买已解锁种子”按优先级兑换：活动奶茶种子（森野系列）→ 经验种子 → 金币种子；额度或余额不足时依次往下让位。
     </p>
   </section>
 </template>

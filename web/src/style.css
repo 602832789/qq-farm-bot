@@ -462,6 +462,16 @@ th {
   background-color: var(--n-color);
 }
 
+/* 按钮文字统一走真实字重，并给中文字距留一点余量：
+   合成粗体会让「添加账号」这类白字绿底按钮的笔画粗细不匀，看起来歪斜。 */
+.base-button .n-button__content {
+  align-items: center;
+  font-weight: var(--fw-500);
+  font-synthesis: none;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+}
+
 .base-field {
   display: flex;
   min-width: 0;

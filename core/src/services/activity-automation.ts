@@ -271,6 +271,64 @@ function selectHireCandidate(candidates: any, primaryTalentId: number, backupTal
 }
 
 /**
+ * 奶茶兑换商店种子的购买优先级。
+ *
+ * 奶茶券/金币额度有限，先买活动（奶茶）种子，保证当天能做奶茶；其次买经验种子
+ * 补等级；最后才是金币种子。识别方式按「数据优先、命名兜底」：
+ * 活动种子用配方果实表（MilkTeaRecipeConfig 的 fruit_item_id，种子 ID = 果实 ID - 20000）
+ * 判定，经验/金币种子用商品名兜底，识别不出来的排在最后。
+ */
+const MILK_TEA_SEED_TIER = { activity: 0, exp: 1, coin: 2, other: 3 } as const;
+
+function milkTeaFruitIds(): Set<string> {
+    try {
+        const rows = require('../activity-data/milk-tea-20261015.json').MilkTeaRecipeConfig || [];
+        const ids = new Set<string>();
+        for (const row of rows) {
+            const fruitId = String(row?.fruit_item_id || '').split(':')[0];
+            if (fruitId && fruitId !== '0') ids.add(fruitId);
+        }
+        return ids;
+    } catch {
+        return new Set<string>();
+    }
+}
+
+function milkTeaSeedTier(goods: any, fruitIds: Set<string>): number {
+    const rewardItems = [...(goods?.rewards || []), ...(goods?.items || [])];
+    const label = [goods?.name, ...rewardItems.map((entry: any) => entry?.name)].filter(Boolean).join(' ');
+    const rewardIds = rewardItems
+        .map((entry: any) => String(toNum(entry?.id)))
+        .filter((id: string) => id && id !== '0');
+    const isActivitySeed = fruitIds.size > 0 && rewardIds.some((id: string) => fruitIds.has(id) || fruitIds.has(String(Number(id) + 20000)));
+    if (isActivitySeed || label.includes('森野') || label.includes('奶茶'))
+        return MILK_TEA_SEED_TIER.activity;
+    if (label.includes('经验'))
+        return MILK_TEA_SEED_TIER.exp;
+    if (label.includes('金币'))
+        return MILK_TEA_SEED_TIER.coin;
+    return MILK_TEA_SEED_TIER.other;
+}
+
+/** 按「活动种子 → 经验种子 → 金币种子 → 其它」挑一件当前可兑换的种子商品。 */
+function pickSeedGoods(catalog: any[]): any | null {
+    const fruitIds = milkTeaFruitIds();
+    let picked: any = null;
+    let pickedTier = Number.POSITIVE_INFINITY;
+    for (const goods of catalog) {
+        if (goods?.category !== 'seed' || !goods.available) continue;
+        if (goods.remaining != null && toNum(goods.remaining) <= 0) continue;
+        const tier = milkTeaSeedTier(goods, fruitIds);
+        // 同档位保持官方目录顺序（早已按可兑换优先排序），只换更高优先级。
+        if (tier < pickedTier) {
+            picked = goods;
+            pickedTier = tier;
+        }
+    }
+    return picked;
+}
+
+/**
  * 奶茶热销中自动操作（老版 runStarActivityAutoClaims 的 milkTea 分支移植）。
  * 基于本版 milk-tea.ts 协议实现；每个操作先查状态、无可做时静默返回 false。
  */
@@ -380,7 +438,7 @@ function buildMilkTeaOps(): AutomationOp[] {
             run: async () => {
                 const state = await milkTea.getMilkTeaActivity('exchange');
                 if (!state.active || state.settling) return false;
-                const goods = (state.goods || []).find((g: any) => g.category === 'seed' && g.available && g.remaining !== null && g.remaining > 0);
+                const goods = pickSeedGoods(state.goods || []);
                 if (!goods) return false;
                 let count = Number(goods.remaining);
                 for (const cost of goods.costs || []) {
@@ -857,4 +915,6 @@ module.exports = {
     buildOps,
     // 导出供协议状态回归测试直接校验三个事件唤醒的排定条件与延迟。
     rescheduleActivityEventTimers,
+    // 奶茶兑换商店的种子购买优先级（活动种子 → 经验种子 → 金币种子）。
+    pickSeedGoods,
 };

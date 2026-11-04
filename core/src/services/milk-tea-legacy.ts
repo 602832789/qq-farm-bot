@@ -424,8 +424,21 @@ async function mutate(action: string, input: any = {}) {
     } else if (action === 'buy') {
         const goods = state.goods.find((x: any) => String(x.id) === String(input.goodsId));
         const count = Number(input.count ?? 1);
-        if (!goods || !Number.isSafeInteger(count) || count < 1 || count > goods.remaining || !goods.unlocked || goods.paid || !available(goods.cost, inventory, count))
-            fail('商品未解锁、限购已用完或资源不足（不支持钻石购买）');
+        // 逐项给出原因：合成一句「商品未解锁、限购已用完或资源不足」时，
+        // 用户无法判断到底卡在哪一条，也不知道该刷新、攒券还是放弃。
+        if (!goods) fail('商品不存在或已下架，请刷新兑换商店');
+        if (!Number.isSafeInteger(count) || count < 1) fail('兑换数量无效');
+        if (goods.paid) fail('该商品不支持钻石购买');
+        if (!goods.unlocked) {
+            const unmet = list(goods.cond_hints).find((x: any) => !x.satisfied);
+            fail(unmet?.cond_type === 'milk_tea_store_level' && toNum(unmet?.target) > 0
+                ? `店铺 ${toNum(unmet.target)} 级解锁`
+                : '商品解锁条件未达成');
+        }
+        const remaining = toNum(goods.remaining);
+        if (remaining <= 0) fail('该商品限购已用完');
+        if (count > remaining) fail(`购买数量超过剩余限购（剩余 ${remaining}）`);
+        if (!available(goods.cost, inventory, count)) fail('奶茶券或道具数量不足');
         if (state.phase !== 'business' && goods.category_tag === 'seed') fail('结算期不能购买活动种子');
         await opWith(SHOP, 1, 'shop_buy', { goods_id: goods.id, count });
     } else {

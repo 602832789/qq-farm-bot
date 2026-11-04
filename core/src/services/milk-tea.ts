@@ -266,7 +266,18 @@ async function perform(action: string, input: any, options: { skipRefresh?: bool
     } else if (action === 'exchange') {
         const goods = state.goods.find((v: any) => v.id === String(input.goodsId));
         const count = integer(input.count, 1, 9999);
-        if (!goods?.available || (goods.remaining !== null && count > goods.remaining)) fail('商品条件或限购数量不满足');
+        // 分开报错：合并成一句「条件或限购不满足」时用户判断不出该刷新还是攒券。
+        if (!goods) fail('商品不存在或已下架，请刷新兑换商店');
+        if (goods.costs?.some((cost: any) => String(cost.id) === '1004')) fail('该商品不支持钻石购买');
+        const unmet = (goods.conditions || []).find((condition: any) => !condition.satisfied);
+        if (unmet) {
+            fail(unmet.type === 'milk_tea_store_level' && toNum(unmet.target) > 0
+                ? `店铺 ${toNum(unmet.target)} 级解锁`
+                : '商品解锁条件未达成');
+        }
+        if (goods.remaining !== null && toNum(goods.remaining) <= 0) fail('该商品限购已用完');
+        if (goods.remaining !== null && count > toNum(goods.remaining)) fail(`购买数量超过剩余限购（剩余 ${toNum(goods.remaining)}）`);
+        if (!goods.available) fail(goods.category === 'seed' ? '结算期不能购买活动种子' : '当前不可兑换');
         checkCost(goods.costs, input.expectedCosts, state.balances, count);
         params = { goods_id: goods.id, count };
     } else if (action === 'unlock') {

@@ -694,7 +694,7 @@ useIntervalFn(updateCountdowns, 1000)
               <span v-if="platformLabel" class="ov-presence__item">{{ platformLabel }}</span>
             </div>
           </div>
-          <BaseButton to="/personal" variant="secondary" size="sm" class="ov-farm-entry" aria-label="进入我的农场">
+          <BaseButton to="/personal" variant="primary" size="sm" class="ov-farm-entry" aria-label="进入我的农场">
             我的农场 <span class="i-carbon-arrow-up-right ml-1" aria-hidden="true" />
           </BaseButton>
         </div>

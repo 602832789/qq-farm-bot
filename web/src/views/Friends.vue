@@ -965,7 +965,7 @@ async function handleBatchAddKnownFriendGids() {
             </div>
             <div class="flex shrink-0 gap-2">
               <BaseButton
-                variant="secondary"
+                variant="primary"
                 size="sm"
                 :loading="knownFriendSettingsLoading"
                 @click="currentAccountId && friendStore.fetchKnownFriendSettings(currentAccountId)"
@@ -981,7 +981,7 @@ async function handleBatchAddKnownFriendGids() {
                 保存设置
               </BaseButton>
               <BaseButton
-                variant="secondary"
+                variant="primary"
                 size="sm"
                 @click="showBatchAddGidModal = true"
               >
@@ -1304,7 +1304,7 @@ async function handleBatchAddKnownFriendGids() {
             </NButton>
           </NButtonGroup>
           <BaseButton
-            variant="secondary"
+            variant="primary"
             size="sm"
             :loading="interactLoading"
             @click="refreshInteractRecords"

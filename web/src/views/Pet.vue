@@ -124,7 +124,7 @@ onMounted(load)
 <template>
   <section class="pet-page flex flex-col gap-3 lg:h-full lg:min-h-0 lg:flex-1 lg:overflow-hidden">
     <FarmPageHeader scene title="宠物小屋" description="照顾守护伙伴，备好每一天的补给。" icon="i-fas-paw">
-      <BaseButton variant="secondary" size="sm" :loading="loading" :disabled="usingFood || operatingDogId > 0 || !currentAccountId" aria-label="刷新宠物数据" @click="load">
+      <BaseButton variant="primary" size="sm" :loading="loading" :disabled="usingFood || operatingDogId > 0 || !currentAccountId" aria-label="刷新宠物数据" @click="load">
         <span v-if="!loading" class="i-carbon-renew mr-1" />刷新
       </BaseButton>
     </FarmPageHeader>
@@ -183,7 +183,7 @@ onMounted(load)
                 {{ deployed?.skillDescription || `已拥有 ${ownedCount} 只宠物` }}
               </p>
             </div>
-            <BaseButton v-if="deployed" variant="secondary" size="sm" :disabled="operatingDogId > 0" @click="action(() => petStore.withdrawDog(String(currentAccountId), deployed?.id || 0), '宠物已召回')">
+            <BaseButton v-if="deployed" variant="primary" size="sm" :disabled="operatingDogId > 0" @click="action(() => petStore.withdrawDog(String(currentAccountId), deployed?.id || 0), '宠物已召回')">
               <span class="i-carbon-pause mr-1" />召回
             </BaseButton>
           </div>
@@ -341,7 +341,7 @@ onMounted(load)
             最近 {{ protectLogs.length }} 条守护结果
           </p>
         </div>
-        <BaseButton variant="secondary" size="sm" :loading="protectLogsLoading" :disabled="!currentAccountId" @click="petStore.fetchProtectLogs(String(currentAccountId))">
+        <BaseButton variant="primary" size="sm" :loading="protectLogsLoading" :disabled="!currentAccountId" @click="petStore.fetchProtectLogs(String(currentAccountId))">
           刷新
         </BaseButton>
       </div>

@@ -38,7 +38,7 @@ const emit = defineEmits<{ toggle: [enabled: boolean], configure: [] }>()
         <span class="h-2 w-2 shrink-0 rounded-full" :class="enabled ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'" />
         {{ status }}
       </span>
-      <BaseButton variant="secondary" size="sm" :disabled="disabled" @click="emit('configure')">
+      <BaseButton variant="primary" size="sm" :disabled="disabled" @click="emit('configure')">
         配置
       </BaseButton>
     </div>

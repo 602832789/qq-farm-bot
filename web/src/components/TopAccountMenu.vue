@@ -377,9 +377,9 @@ async function handleAccountSaved() {
 }
 @media (max-width: 639px) {
   .top-account-trigger {
-    max-width: min(36vw, 160px);
-    padding-right: 2px;
-    gap: 0;
+    max-width: min(46vw, 190px);
+    gap: 8px;
+    padding: 2px 8px 2px 2px;
   }
   .top-account-subtitle {
     display: none;

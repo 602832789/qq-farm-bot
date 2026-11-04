@@ -140,7 +140,9 @@ function createLightOverrides(): GlobalThemeOverrides {
       fontSizeSmall: '13px',
       fontSizeMedium: '14px',
       fontSizeLarge: '15px',
-      fontWeight: '600',
+      // 500 而不是 600：中文字体（微软雅黑/思源）没有 600 字重，浏览器会走合成粗体，
+      // 笔画粗细不匀看起来「歪歪扭扭」；500 交给真实字重渲染，边缘干净。
+      fontWeight: '500',
     },
     Input: {
       heightSmall: '32px',

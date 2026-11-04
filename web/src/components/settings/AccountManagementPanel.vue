@@ -225,7 +225,7 @@ async function refreshWxCredentials() {
       </div>
       <div class="flex flex-wrap gap-2">
         <BaseButton
-          variant="outline"
+          variant="primary"
           size="sm"
           :loading="refreshWxCredentialsLoading"
           :disabled="accountsLoading || accounts.length === 0"
@@ -236,7 +236,7 @@ async function refreshWxCredentials() {
           <span class="sm:hidden">授权续期</span>
         </BaseButton>
         <BaseButton
-          variant="secondary"
+          variant="primary"
           size="sm"
           :disabled="stoppedAccountsCount === 0"
           @click="openClearStoppedConfirm"

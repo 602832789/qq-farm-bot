@@ -991,7 +991,7 @@ async function handleResetSystemConfig() {
 
             <div class="mt-3 flex justify-end gap-2 border-t pt-3 dark:border-gray-700">
               <BaseButton
-                variant="secondary"
+                variant="primary"
                 size="sm"
                 :loading="offlineTesting"
                 :disabled="offlineSaving"
@@ -1155,7 +1155,7 @@ async function handleResetSystemConfig() {
               </div>
 
               <div class="flex justify-end gap-2 border-t pt-3 dark:border-gray-700">
-                <BaseButton variant="secondary" size="sm" :loading="systemConfigSaving" @click="handleResetSystemConfig">
+                <BaseButton variant="primary" size="sm" :loading="systemConfigSaving" @click="handleResetSystemConfig">
                   重置
                 </BaseButton>
                 <BaseButton variant="primary" size="sm" :loading="systemConfigSaving" @click="handleSaveSystemConfig">
