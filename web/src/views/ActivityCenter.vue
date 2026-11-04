@@ -78,7 +78,9 @@ function goBack() {
 }
 
 watch(currentAccountId, () => {
-  selectedActivity.value = null
+  // 切换账号后保持在奶茶热销中页面；其它活动页仍回到活动目录。
+  if (selectedActivity.value !== 'milk')
+    selectedActivity.value = null
   activityStore.refresh(accountId())
 }, { flush: 'post' })
 
