@@ -56,18 +56,47 @@ const mutantEffects = computed(() => {
   const effects = Array.isArray(land.value?.mutantEffects) ? land.value.mutantEffects : []
   return effects.map((effect: any) => {
     const icon = String(effect?.icon || '').trim()
+    const name = String(effect?.name || effect?.effect_name || icon || '变异').trim()
+    const collections = Array.isArray(effect?.collections) ? effect.collections : []
+    const description = String(effect?.description || effect?.desc || effect?.tips || '').trim()
+    const actions = String(effect?.actions || '').trim()
+    const fruitName = String(effect?.fruit_name || '').trim()
     return {
       id: Number(effect?.id) || 0,
-      name: String(effect?.name || effect?.effect_name || icon || '变异').trim(),
+      name,
       icon,
       image: icon === 'lightning'
         ? '/game-config/effect_images/rain-poem/lightning-sense.png?v=2'
         : (icon ? `/game-config/seed_images_named/mutant/${icon}.png` : ''),
       tag: String(effect?.tag || '').trim(),
-      description: String(effect?.description || effect?.desc || effect?.tips || '').trim(),
+      description,
+      detail: buildMutantDetail(name, actions, fruitName, description, collections),
     }
   }).filter((effect: any) => effect.icon || effect.name)
 })
+
+/** 官方 actions 字段（"类型:倍数"）：2=数量，3=售价，4=变身果实，其它类型不展示倍数。 */
+function mutantMultiplierText(actions: string, fruitName: string) {
+  const [type, mult] = actions.split(':').map(part => Number(part) || 0)
+  if (type === 2 && mult > 0)
+    return `数量*${mult}倍`
+  if (type === 3 && mult > 0)
+    return `售价*${mult}倍`
+  if (type === 4)
+    return fruitName ? `变身·${fruitName}` : '变身果实'
+  return ''
+}
+
+/** 详情行：名称 · 效果倍数 · 触发条件（藏品变异追加藏品名）。 */
+function buildMutantDetail(name: string, actions: string, fruitName: string, description: string, collections: any[]) {
+  const parts = [name, mutantMultiplierText(actions, fruitName)]
+  const collectionNames = collections.map((item: any) => String(item?.name || '').trim()).filter(Boolean)
+  if (collectionNames.length)
+    parts.push(`涉及藏品：${[...new Set(collectionNames)].join('、')}`)
+  if (description && description !== name)
+    parts.push(description)
+  return parts.filter(Boolean).join('·')
+}
 
 const phaseProgress = computed(() => {
   const start = Number(land.value?.phaseStartTime) || 0
@@ -195,9 +224,9 @@ function format(value: unknown) {
               <span v-if="effect.tag && effect.tag !== '无'" class="text-[10px] text-pink-400">· {{ effect.tag }}</span>
             </span>
           </div>
-          <div v-if="mutantEffects.some(effect => effect.description)" class="land-mutant-desc">
+          <div v-if="mutantEffects.some(effect => effect.detail)" class="land-mutant-desc">
             <div v-for="effect in mutantEffects" :key="`mut-desc-${effect.id}-${effect.icon}`">
-              {{ effect.description || effect.name }}
+              {{ effect.detail || effect.name }}
             </div>
           </div>
         </div>

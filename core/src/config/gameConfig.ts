@@ -116,6 +116,10 @@ interface MutantEffectDto {
     description: string;
     tag: string;
     activityId: number;
+    /** 官方 actions 字段，形如 "类型:倍数"（2=数量，3=售价，4=变身果实）。 */
+    actions: string;
+    /** 变身类效果（actions 4:0）的目标果实名。 */
+    fruitName: string;
 }
 
 interface IllustratedConfigItem {
@@ -600,6 +604,8 @@ function toMutantEffectDto(effect: MutantEffectItem | undefined, id: number): Mu
             description: '',
             tag: '',
             activityId: 0,
+            actions: '',
+            fruitName: '',
         };
     }
 
@@ -616,6 +622,8 @@ function toMutantEffectDto(effect: MutantEffectItem | undefined, id: number): Mu
         ),
         tag: String(effect.tag || ''),
         activityId: Number(effect.activity_id) || 0,
+        actions: String(effect.actions || ''),
+        fruitName: String(effect.fruit_name || ''),
     };
 }
 

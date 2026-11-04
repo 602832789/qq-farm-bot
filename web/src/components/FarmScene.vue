@@ -244,15 +244,6 @@ function mutantsOf(land: any) {
   return list
 }
 
-/** 成长阶段小字：仅生长中且有倒计时时显示，避免与气泡里的阶段文案重复。 */
-function phaseText(land: any) {
-  if (isLocked(land) || isEmpty(land) || land?.occupiedByMaster)
-    return ''
-  if (remainSec(land) <= 0)
-    return ''
-  return String(land?.phaseName || '').trim()
-}
-
 function safeImage(url: string) {
   return url && url.startsWith('http://') ? url.replace('http://', 'https://') : url
 }
@@ -308,7 +299,6 @@ onUnmounted(() => {
           <span v-for="need in needsOf(land)" :key="need.key" class="scene-plot__need" :class="`is-${need.key}`" :title="need.label"><span :class="need.icon" /></span>
           <span v-for="item in mutantsOf(land)" :key="item.key" class="scene-plot__mutant" :title="item.label"><img v-if="item.image" :src="item.image" alt="" @error="markMutantFailed(item.key)"><span v-else :class="item.icon" /></span>
           {{ bubble(land).text }}
-          <span v-if="phaseText(land)" class="scene-plot__phase">{{ phaseText(land) }}</span>
         </span>
       </button>
     </div>
@@ -466,12 +456,6 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   object-fit: contain;
-}
-
-.scene-plot__phase {
-  margin-left: 2px;
-  font-weight: 500;
-  opacity: 0.78;
 }
 
 .farm-scene__hint {
