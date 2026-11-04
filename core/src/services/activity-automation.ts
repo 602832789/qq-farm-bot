@@ -404,12 +404,7 @@ function buildMilkTeaOps(): AutomationOp[] {
                 const slot = Array.from({ length: capacity }, (_, i) => i)
                     .find(i => !(state.shop?.slots || []).some((v: any) => toNum(v.slot_index) === i && toNum(v.end_at) > now));
                 if (slot == null) return false;
-                // milk_tea_hire_policy.talent 可覆盖首选人才（0/9001~9004）；未设置时回退到现有字段。
-                const hirePolicy: any = automation.milk_tea_hire_policy || {};
-                const policyTalent = Number(hirePolicy.talent);
-                const primaryInput = [0, 9001, 9002, 9003, 9004].includes(policyTalent)
-                    ? policyTalent
-                    : Number(automation.milk_tea_hire_primary_talent ?? automation.milk_tea_hire_talent);
+                const primaryInput = Number(automation.milk_tea_hire_primary_talent ?? automation.milk_tea_hire_talent);
                 const primaryTalentId = [0, 9001, 9002, 9003, 9004].includes(primaryInput) ? primaryInput : 0;
                 const backupInput = Number(automation.milk_tea_hire_backup_talent);
                 const backupTalentId = primaryTalentId === 0 ? 0 : ([0, 9001, 9002, 9003, 9004].includes(backupInput) ? backupInput : 0);
@@ -431,8 +426,7 @@ function buildMilkTeaOps(): AutomationOp[] {
                 if (!state.active || state.settling || !shift) return false;
                 if (toNum(shift.begin_at) > toNum(state.serverTime) || toNum(shift.end_at) <= toNum(state.serverTime)) return false;
                 if (state.work.interact_done || toNum(shift.interact_count) >= toNum(shift.interact_limit)) return false;
-                // milk_tea_work_interaction_type 作为打工互动类型的覆盖项；未设置时回退到 milk_tea_interaction_type。
-                const type = Number(automation.milk_tea_work_interaction_type ?? automation.milk_tea_interaction_type);
+                const type = Number(automation.milk_tea_interaction_type);
                 const kind = [1, 2, 3, 4, 5].includes(type) ? type : 1;
                 await operateMilkTea('interact', { interactionType: kind, expectedShiftId: String(shift.shift_id) });
                 return true;

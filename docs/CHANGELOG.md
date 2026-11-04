@@ -30,6 +30,11 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-05 · 再次撤销 milk_tea_work_interaction_type / milk_tea_hire_policy 接线
+
+- 撤销 `8c8385d` 恢复的两项接线：`milk_tea_interact` op 恢复仅读 `milk_tea_interaction_type`；`milk_tea_hire` op 恢复仅读 `milk_tea_hire_primary_talent ?? milk_tea_hire_talent`。
+- 两个开关回到僵尸键状态（字段定义保留，UI 可见可存但配置不生效）；`milk_tea_seed_policy` 同样保持回滚状态。后端 328 项测试通过，类型检查通过。
+
 ### 2026-11-05 · 恢复 milk_tea_work_interaction_type / milk_tea_hire_policy 两项接线
 
 - `milk_tea_interact` op：恢复以 `milk_tea_work_interaction_type` 作为打工互动类型的覆盖项，未设置时回退旧字段 `milk_tea_interaction_type`。
