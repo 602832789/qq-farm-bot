@@ -2,7 +2,9 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 // 本次开关修复新增/改动的纯逻辑与关键分支回归。
-// 覆盖：自家黄金虫地块识别、好友可放黄金虫判定、点券礼包可买数、黄金虫计数、种子优先级覆盖。
+// 覆盖：自家黄金虫地块识别、好友可放黄金虫判定、点券礼包可买数、黄金虫计数。
+// 注：milk_tea_seed_policy / milk_tea_hire_policy / milk_tea_work_interaction_type 三项的接线已回滚，
+// 其策略覆盖行为不再生效，故不在此覆盖。
 const { analyzeLands } = require('../dist/services/farm/land-analysis');
 const { analyzeFriendLands } = require('../dist/services/friend/visit-strategy');
 const { pickSeedGoods } = require('../dist/services/activity-automation');
@@ -119,28 +121,19 @@ test('getGoldenBugCount sums only item 301101', () => {
     assert.equal(getGoldenBugCount(undefined), 0);
 });
 
-// ── milk_tea_seed_policy：偏好档位覆盖默认「活动种子优先」 ──
+// ── milk_tea_seed_buy 默认顺序：活动种子优先（不依赖策略覆盖） ──
 function seedGoods(id, name, rewardId, extra = {}) {
     return { id: String(id), name, category: 'seed', available: true, remaining: 5, rewards: [{ id: String(rewardId), count: 1 }], costs: [], ...extra };
 }
 
-test('pickSeedGoods prefers policy overridden tier over default activity-first', () => {
+test('pickSeedGoods keeps default activity-first ordering without policy override', () => {
     const activity = seedGoods(3, '森野甜莓种子', 20525);
     const coin = seedGoods(1, '金币果种子', 20522);
 
-    // 默认顺序：活动种子优先
+    // 默认顺序：活动种子优先，与排列顺序无关
     assert.equal(pickSeedGoods([coin, activity]).id, '3');
     assert.equal(pickSeedGoods([activity, coin]).id, '3');
 
-    // milk_tea_seed_policy.preferred = coin(2) → 金币种子提到最高优先级
-    assert.equal(pickSeedGoods([coin, activity], 2).id, '1');
-
-    // 命中偏好档位的商品即使排在后面也应被选中
-    assert.equal(pickSeedGoods([activity, coin], 2).id, '1');
-});
-
-test('pickSeedGoods with policy preferred tier falls back when no matching tier', () => {
-    const activity = seedGoods(3, '森野甜莓种子', 20525);
-    // 偏好 exp(1)，但目录里没有经验种子 → 退回默认活动种子优先
-    assert.equal(pickSeedGoods([activity], 1).id, '3');
+    // 多余参数被忽略（保持向后兼容，但无策略覆盖效果）
+    assert.equal(pickSeedGoods([coin, activity], 2).id, '3');
 });

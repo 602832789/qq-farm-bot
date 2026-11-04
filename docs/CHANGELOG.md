@@ -41,6 +41,14 @@ flowchart TB
 - 类型与默认值同步清理：`core/src/types/config.ts`、`core/src/models/store/shared-state.ts`、`web/src/stores/setting.ts` 删除孤儿字段；`activity-automation.ts` 的 `unsupported` 待接入清单移除已接线的 `wish_sign_draw` / `wish_sign_claim`。
 - 新增 8 项针对性回归测试（自家黄金虫地块识别、好友可放黄金虫判定、点券礼包可买数、黄金虫计数、种子优先级覆盖）；后端 329 项、前端 19 项全部通过，类型检查与生产构建通过。
 
+### 2026-11-05 · 回滚 3 项开关接线（milk_tea_work_interaction_type / milk_tea_seed_policy / milk_tea_hire_policy）
+
+- 应需求将上面「15 项修复」中的以下 3 个开关回滚到修复前的无效状态（仅撤销消费逻辑，字段定义与默认值保留，对前端与用户已存配置无影响）：
+  - `milk_tea_work_interaction_type`：`milk_tea_interact` op 不再用其覆盖打工互动类型，恢复仅读 `milk_tea_interaction_type`。
+  - `milk_tea_seed_policy`：`milk_tea_seed_buy` op 不再用其 `preferred` 档位覆盖，恢复默认「活动种子优先」顺序；`pickSeedGoods` 移除 `policyPreferredTier` 参数。
+  - `milk_tea_hire_policy`：`milk_tea_hire` op 不再用其 `talent` 覆盖首选人才，恢复仅读 `milk_tea_hire_primary_talent ?? milk_tea_hire_talent`。
+- 移除上述策略覆盖对应的回归测试（种子优先级覆盖两项），保留 `pickSeedGoods` 默认排序的基础用例；后端测试由 329 降为 328 项，全部通过，类型检查与生产构建通过。
+
 ### 2026-11-05 · 2×2 催熟功能修复与背包多格种子角标
 
 - 修复「设置 → 2x2 催熟」开关不生效：该开关此前在 core 中没有任何消费点（只有默认值和类型定义），属于历史恢复 UI 时遗留的功能缺口。现按老版 `farm-fertilizer.js` 口径完整移植：

@@ -310,9 +310,8 @@ function milkTeaSeedTier(goods: any, fruitIds: Set<string>): number {
     return MILK_TEA_SEED_TIER.other;
 }
 
-/** 按「活动种子 → 经验种子 → 金币种子 → 其它」挑一件当前可兑换的种子商品。
- * 若 policyPreferredTier 命中某个档位，该档位优先级提到最高（覆盖默认顺序）。 */
-function pickSeedGoods(catalog: any[], policyPreferredTier?: number): any | null {
+/** 按「活动种子 → 经验种子 → 金币种子 → 其它」挑一件当前可兑换的种子商品。 */
+function pickSeedGoods(catalog: any[]): any | null {
     const fruitIds = milkTeaFruitIds();
     let picked: any = null;
     let pickedTier = Number.POSITIVE_INFINITY;
@@ -320,11 +319,9 @@ function pickSeedGoods(catalog: any[], policyPreferredTier?: number): any | null
         if (goods?.category !== 'seed' || !goods.available) continue;
         if (goods.remaining != null && toNum(goods.remaining) <= 0) continue;
         const tier = milkTeaSeedTier(goods, fruitIds);
-        // 命中用户偏好档位时优先级提到最高（effectiveTier = -1），其余保持默认排序。
-        const effectiveTier = (policyPreferredTier != null && tier === policyPreferredTier) ? -1 : tier;
-        if (effectiveTier < pickedTier) {
+        if (tier < pickedTier) {
             picked = goods;
-            pickedTier = effectiveTier;
+            pickedTier = tier;
         }
     }
     return picked;
@@ -407,12 +404,7 @@ function buildMilkTeaOps(): AutomationOp[] {
                 const slot = Array.from({ length: capacity }, (_, i) => i)
                     .find(i => !(state.shop?.slots || []).some((v: any) => toNum(v.slot_index) === i && toNum(v.end_at) > now));
                 if (slot == null) return false;
-                // milk_tea_hire_policy.talent 可覆盖首选人才（0/9001~9004）；未设置时回退到现有字段。
-                const hirePolicy: any = automation.milk_tea_hire_policy || {};
-                const policyTalent = Number(hirePolicy.talent);
-                const primaryInput = [0, 9001, 9002, 9003, 9004].includes(policyTalent)
-                    ? policyTalent
-                    : Number(automation.milk_tea_hire_primary_talent ?? automation.milk_tea_hire_talent);
+                const primaryInput = Number(automation.milk_tea_hire_primary_talent ?? automation.milk_tea_hire_talent);
                 const primaryTalentId = [0, 9001, 9002, 9003, 9004].includes(primaryInput) ? primaryInput : 0;
                 const backupInput = Number(automation.milk_tea_hire_backup_talent);
                 const backupTalentId = primaryTalentId === 0 ? 0 : ([0, 9001, 9002, 9003, 9004].includes(backupInput) ? backupInput : 0);
@@ -434,8 +426,7 @@ function buildMilkTeaOps(): AutomationOp[] {
                 if (!state.active || state.settling || !shift) return false;
                 if (toNum(shift.begin_at) > toNum(state.serverTime) || toNum(shift.end_at) <= toNum(state.serverTime)) return false;
                 if (state.work.interact_done || toNum(shift.interact_count) >= toNum(shift.interact_limit)) return false;
-                // milk_tea_work_interaction_type 作为打工互动类型的覆盖项；未设置时回退到 milk_tea_interaction_type。
-                const type = Number(automation.milk_tea_work_interaction_type ?? automation.milk_tea_interaction_type);
+                const type = Number(automation.milk_tea_interaction_type);
                 const kind = [1, 2, 3, 4, 5].includes(type) ? type : 1;
                 await operateMilkTea('interact', { interactionType: kind, expectedShiftId: String(shift.shift_id) });
                 return true;
@@ -446,10 +437,7 @@ function buildMilkTeaOps(): AutomationOp[] {
             run: async (automation: any) => {
                 const state = await milkTea.getMilkTeaActivity('exchange');
                 if (!state.active || state.settling) return false;
-                // milk_tea_seed_policy.preferred 可强制某档位（activity/exp/coin/other）优先。
-                const policy: any = automation.milk_tea_seed_policy || {};
-                const preferredTier = MILK_TEA_SEED_TIER[policy.preferred as keyof typeof MILK_TEA_SEED_TIER];
-                const goods = pickSeedGoods(state.goods || [], Number.isInteger(preferredTier) ? preferredTier : undefined);
+                const goods = pickSeedGoods(state.goods || []);
                 if (!goods) return false;
                 let count = Number(goods.remaining);
                 for (const cost of goods.costs || []) {
