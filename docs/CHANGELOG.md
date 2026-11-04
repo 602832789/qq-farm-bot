@@ -30,6 +30,12 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-05 · 恢复 milk_tea_work_interaction_type / milk_tea_hire_policy 两项接线
+
+- `milk_tea_interact` op：恢复以 `milk_tea_work_interaction_type` 作为打工互动类型的覆盖项，未设置时回退旧字段 `milk_tea_interaction_type`。
+- `milk_tea_hire` op：恢复 `milk_tea_hire_policy.talent`（0/9001~9004）对首选人才的覆盖，未设置时回退 `milk_tea_hire_primary_talent ?? milk_tea_hire_talent`。
+- 实现取自提交 `90ae270`（此前回滚 `17b1416` 的原方案）；`milk_tea_seed_policy` 保持回滚状态不变。后端 328 项测试通过，类型检查通过。
+
 ### 2026-11-05 · 页面闪烁治理 + 策略预览秒开 + 背包默认页签
 
 - 页面闪烁（全页面间歇性「像在不停刷新」）：三类全局空更新导致整树周期性重渲染——① worker 每 10s 全量推送 status，前端即使内容未变也整体替换 `status` 对象（现做 JSON 级比对，未变化直接跳过）；② Sidebar 每 30s `checkConnection` 会对同一账号重复 `subscribe`，服务端每次都全量重推 status + 日志快照（现记录已订阅房间，同账号不重复订阅，断线重连时才重推）；③ 账号列表 10s 轮询每轮都替换数组（现做字段级比对，内容未变不替换）。改动集中在 `stores/status.ts`、`stores/account.ts`。
