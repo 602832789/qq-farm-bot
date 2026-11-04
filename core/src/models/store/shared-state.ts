@@ -344,8 +344,25 @@ function normalizeTimeString(v: unknown, fallback: string): string {
     return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
 }
 
+/** 旧版本落盘的默认间隔（20-25 秒一组），用于一次性迁移到老版默认。 */
+function isLegacyDefaultIntervals(src: Partial<IntervalConfig>): boolean {
+    const expect: Record<string, number> = {
+        farm: 2, farmMin: 20, farmMax: 25,
+        friendMin: 20, friendMax: 25,
+        helpMin: 20, helpMax: 25,
+        stealMin: 20, stealMax: 25,
+    };
+    const actual = src as Record<string, unknown>;
+    return Object.keys(expect).every(key => Number.parseInt(actual[key] as string, 10) === expect[key]);
+}
+
 function normalizeIntervals(intervals: Partial<IntervalConfig> | undefined): IntervalConfig {
     const src = (intervals && typeof intervals === 'object') ? intervals : {} as Partial<IntervalConfig>;
+    // 旧版本把默认间隔写成 20-25 秒并落盘；对齐老版（农场 2-5 秒 / 好友 30-35 秒）时，
+    // 整组恰好等于旧默认值的配置视为「用户没改过」，迁移到老版默认。
+    if (isLegacyDefaultIntervals(src)) {
+        return { farm: 2, farmMin: 2, farmMax: 5, friendMin: 30, friendMax: 35, helpMin: 30, helpMax: 35, stealMin: 30, stealMax: 35 };
+    }
     const toSec = (v: unknown, d: number): number => Math.max(1, Number.parseInt(v as string, 10) || d);
     const farm = toSec(src.farm, 2);
 
