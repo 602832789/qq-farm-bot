@@ -54,13 +54,19 @@ async function openActivity(activity: ActivityDirectoryItemDto) {
 
   selectedActivity.value = gameplay.module.key
   selectedInstanceId.value = activity.instanceId || activity.activityIds.find(id => ['2026092501', '2026110104'].includes(id)) || ''
-  if (['pet', 'wish', 'happy', 'milk'].includes(gameplay.module.key))
+  await loadActivitySideData(gameplay.module.key)
+}
+
+/** 打开活动或切换账号后，为需要按账号拉取详情的活动重载数据；
+ *  milk/wish/happy/pet/solar 页面自带账号监听，自行刷新。 */
+async function loadActivitySideData(key: CenterActivity) {
+  if (['pet', 'wish', 'happy', 'milk', 'solar'].includes(key))
     return
-  const detailsLoaded = await activityStore.loadDetails(accountId(), gameplay.module.key)
-  if (gameplay.module.key === 'qixi' && currentAccountId.value) {
+  const detailsLoaded = await activityStore.loadDetails(accountId(), key as ActivityGameplayKey)
+  if (key === 'qixi' && currentAccountId.value) {
     await friendStore.fetchFriends(String(currentAccountId.value))
   }
-  else if (gameplay.module.key === 'weather' && currentAccountId.value && detailsLoaded) {
+  else if (key === 'weather' && currentAccountId.value && detailsLoaded) {
     void activityStore.loadWeatherFriends(String(currentAccountId.value))
   }
 }
@@ -78,10 +84,11 @@ function goBack() {
 }
 
 watch(currentAccountId, () => {
-  // 切换账号后保持在奶茶热销中页面；其它活动页仍回到活动目录。
-  if (selectedActivity.value !== 'milk')
-    selectedActivity.value = null
+  // 切换账号后保持在当前活动页面（含奶茶热销中），只重拉当前活动的新账号数据。
   activityStore.refresh(accountId())
+  const key = selectedActivity.value
+  if (key)
+    void loadActivitySideData(key)
 }, { flush: 'post' })
 
 watch([notice, actionError], ([successMessage, failureMessage]) => {
