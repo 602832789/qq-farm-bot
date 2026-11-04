@@ -7,10 +7,7 @@
  */
 export {};
 
-const { createModuleLogger } = require('./logger');
-const { toNum } = require('../utils/utils');
-
-const logger = createModuleLogger('activity-automation');
+const { log, logWarn, toNum } = require('../utils/utils');
 
 /** 单个操作的最小重试间隔，避免把「不可领取」类错误刷成请求风暴。 */
 const OP_COOLDOWN_MS = 10 * 60 * 1000;
@@ -385,7 +382,7 @@ function buildOps(): AutomationOp[] {
                         expectedQuestion: event.question,
                     });
                     answered = true;
-                    logger.info('节令答题', `${result?.correct ? '答对并领取附加奖励' : '答错'}：${event.name}`);
+                    log('活动', `活动自动化：节令答题${result?.correct ? '答对并领取附加奖励' : '答错'}：${event.name}`, { event: 'activity_automation' });
                 }
                 return answered;
             },
@@ -434,15 +431,15 @@ async function runActivityAutomationOnce(): Promise<string[]> {
                 const did = await op.run(automation);
                 if (did) {
                     executed.push(op.label);
-                    logger.info('活动自动化执行', `${op.label} 完成`);
+                    log('活动', `活动自动化：${op.label} 执行完成`, { event: 'activity_automation' });
                 } else {
                     // 无可领取 / 未开放也是常态，但要让用户在日志里能看到开关确实在跑。
-                    logger.info('活动自动化检查', `${op.label}：本轮无可领取或活动未开放`);
+                    log('活动', `活动自动化：${op.label} 本轮无可领取或活动未开放`, { event: 'activity_automation' });
                 }
             } catch (error: any) {
-                // 活动未开启 / 无奖励 + 冷却未到都是常态，但提升到 info，让用户看得到跳过原因。
+                // 活动未开启 / 无奖励 + 冷却未到都是常态，但保持可见，让用户看得到跳过原因。
                 const message = String(error?.message || error || '');
-                logger.info('活动自动化跳过', `${op.label}: ${message}`);
+                log('活动', `活动自动化：${op.label} 跳过（${message}）`, { event: 'activity_automation' });
             }
         }
 
@@ -468,7 +465,7 @@ async function runActivityAutomationOnce(): Promise<string[]> {
             if (!automation[key] || warnedKeys.has(key)) continue;
             warnedKeys.add(key);
             // key 写进消息正文：组合日志只保留 message 字段，放 meta 会丢。
-            logger.warn(`活动自动化待接入: ${key} 已开启，但当前版本尚未接入对应协议实现`);
+            logWarn('活动', `活动自动化待接入：${key} 已开启，但当前版本尚未接入对应协议实现`, { event: 'activity_automation' });
         }
     } finally {
         ticking = false;
@@ -482,7 +479,7 @@ function startActivityAutomation(workerScheduler: any, intervalMs: number = 5 * 
         const { runExclusiveAutomationTask } = require('./automation-lock');
         return runExclusiveAutomationTask('activity_automation', () => runActivityAutomationOnce())
             .catch((error: any) => {
-                logger.debug('活动自动化异常', String(error?.message || error || ''));
+                logWarn('活动', `活动自动化执行异常：${String(error?.message || error || '')}`, { event: 'activity_automation' });
             });
     };
     if (workerScheduler && typeof workerScheduler.setIntervalTask === 'function') {

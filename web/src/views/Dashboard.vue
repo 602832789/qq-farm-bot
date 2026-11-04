@@ -75,6 +75,7 @@ const modules = [
   { label: '好友', value: 'friend' },
   { label: '仓库', value: 'warehouse' },
   { label: '任务', value: 'task' },
+  { label: '活动', value: 'activity' },
   { label: '系统', value: 'system' },
 ]
 
@@ -99,6 +100,7 @@ const events = [
   { label: '图鉴奖励', value: 'illustrated_rewards' },
   { label: '邮箱领取', value: 'email_rewards' },
   { label: '出售成功', value: 'sell_success' },
+  { label: '活动自动化', value: 'activity_automation' },
   { label: '土地升级', value: 'upgrade_land' },
   { label: '土地解锁', value: 'unlock_land' },
   { label: '好友巡查', value: 'friend_cycle' },
