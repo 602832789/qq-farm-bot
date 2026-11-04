@@ -252,8 +252,30 @@ function tasksDto(child: any): any[] {
     }));
 }
 
-function researchDto(child: any, balances: Map<string, string>): any {
-    const track = child?.weather_research?.track;
+/**
+ * 雷电变异作物每日收集目标（对齐老版 activity.js 的 lightningHarvest）。
+ *
+ * 活动自动化用它决定「今天的雷电变异是否已经做满」：没做满时，雷雨一结束就要
+ * 立刻续祈一场雨，而不是干等 5 分钟轮询把雷雨窗口白白错过。
+ */
+function lightningHarvestDto(tasks: any[]): any {
+    const task = tasks.find(entry => (
+        /(雷电|闪电)/.test(String(entry?.title || ''))
+        && /变异/.test(String(entry?.title || ''))
+        && /(收集|收获)/.test(String(entry?.title || ''))
+    ));
+    const target = Math.max(0, toNum(task?.dailyLimit));
+    const progress = Math.max(0, toNum(task?.current));
+    return {
+        progress,
+        target,
+        remaining: Math.max(0, target - progress),
+        complete: target > 0 && progress >= target,
+        confirmed: !!task,
+    };
+}
+
+function researchDto(child: any, balances: Map<string, string>): any {    const track = child?.weather_research?.track;
     if (!track) return null;
     const badgeBalance = balances.get(String(LIGHTNING_BADGE_ID)) || '0';
     const nodes = (Array.isArray(track.nodes) ? track.nodes : []).map((node: any) => {
@@ -472,6 +494,7 @@ async function buildWeatherActivitySnapshot(): Promise<any> {
     const shop = shopDto(shopChild, balances, active);
     const research = researchDto(researchChild, balances);
     const nextResearchNode = research?.nextNode || null;
+    const tasks = tasksDto(taskChild);
     return {
         groupId: WEATHER_GROUP_ID,
         activity: activityDto(group.activity),
@@ -489,7 +512,8 @@ async function buildWeatherActivitySnapshot(): Promise<any> {
         ownWeather,
         shop,
         collector: collectorConfigDto(bottleChild),
-        tasks: tasksDto(taskChild),
+        tasks,
+        lightningHarvest: lightningHarvestDto(tasks),
         research,
         inventory: inventoryDto(balances),
         actions: {

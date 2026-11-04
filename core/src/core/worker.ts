@@ -722,6 +722,12 @@ async function startBot(config: any): Promise<void> {
             networkEvents.off('farmHarvested', onFarmHarvested);
         }
         onFarmHarvested = async () => {
+            // 收获后 2 秒补一次活动自动化（老版 rain_poem_after_harvest）：
+            // 雷雨期间的收获进度决定要不要续下一场雨，必须排在出售守卫之前。
+            if (getAutomation().rain_poem_summon_use === true) {
+                const { scheduleActivityAutomationAfterHarvest } = require('../services/activity-automation');
+                scheduleActivityAutomationAfterHarvest();
+            }
             if (harvestSellRunning) return;
             if (!getAutomation().sell) return;
             harvestSellRunning = true;
@@ -1373,10 +1379,20 @@ function getMilkTeaAutoCheckStatus(): any {
     } catch {
         tasks = [];
     }
-    const task = tasks.find(item => item && item.name === 'activity_automation_interval'
-        && !item.running && Number(item.nextRunAt) > 0);
-    if (!task) return { ...base, state: 'idle' };
-    return { ...base, state: 'scheduled', nextRunAt: Number(task.nextRunAt) };
+    // 与老版一致：轮询、启动首轮、保存后一轮和三个事件唤醒都算「下一次触发」，取最近的。
+    const triggers = new Set([
+        'activity_automation_initial',
+        'activity_automation_interval',
+        'activity_automation_after_save',
+        'rain_poem_weather_renew',
+        'rain_poem_after_harvest',
+        'pet_diary_treasure_ready',
+    ]);
+    const nextRunAt = Math.min(...tasks
+        .filter(item => item && triggers.has(String(item.name)) && !item.running && Number(item.nextRunAt) > 0)
+        .map(item => Number(item.nextRunAt)));
+    if (!Number.isFinite(nextRunAt)) return { ...base, state: 'idle' };
+    return { ...base, state: 'scheduled', nextRunAt };
 }
 
 function syncStatus(force: boolean = false): void {

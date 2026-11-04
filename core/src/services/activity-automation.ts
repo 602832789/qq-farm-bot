@@ -7,11 +7,14 @@
  */
 export {};
 
-const { log, logWarn, logFileOnly, isTransientGatewaySkip, toNum } = require('../utils/utils');
+const { log, logWarn, logFileOnly, isTransientGatewaySkip, getServerTimeSec, toNum } = require('../utils/utils');
 
 /**
- * 活动未开启 / 已结束类的报错：老版这类情况根本不会发请求（状态守卫先行），
- * 所以同样按「静默跳过」处理，只在日志文件里留痕。
+ * 常态性「本轮无事可做」的报错。
+ *
+ * 老版是「先读活动状态 → 不满足就整段不进分支」，所以这些情况根本不会发请求、
+ * 也不会有任何日志。当前版的协议实现会先自己读一遍状态再抛业务错误，
+ * 因此把这些消息统一按「静默跳过」处理，只在日志文件里留痕。
  */
 function isActivityNotOpenMessage(message: string): boolean {
     const text = String(message || '');
@@ -22,7 +25,15 @@ function isActivityNotOpenMessage(message: string): boolean {
         || text.includes('活动数据未下发')
         || text.includes('未查询到活动')
         || text.includes('activity not found')
-        || text.includes('not active');
+        || text.includes('not active')
+        // 本轮无事可做（老版对应分支直接不进）
+        || text.includes('当前没有可领取')
+        || text.includes('没有可领取的')
+        || text.includes('今日已领取')
+        || text.includes('今日已分享')
+        || text.includes('今日已购买')
+        || text.includes('今日已达上限')
+        || text.includes('已达今日上限');
 }
 
 /** 单个操作的最小重试间隔；对齐老版 5 分钟轮询节奏（老版无冷却，靠状态守卫，这里用 5 分钟上限兑底）。 */
@@ -35,6 +46,32 @@ const warnedKeys = new Set<string>();
 
 let ticking = false;
 let timer: any = null;
+/** 启动/停止之间记住 scheduler，便于 stop 时清理一次性任务（含三个事件驱动唤醒）。 */
+let workerSchedulerRef: any = null;
+
+/**
+ * 事件驱动定时器的任务名（对齐老版 worker.js 的同名任务）。
+ *
+ * 老版除 5 分钟轮询外还有三处「精准唤醒」，都是 setTimeoutTask 一次性触发、
+ * 回调重入同一个活动自动化循环：
+ * - rain_poem_weather_renew：雷雨快结束时续下一场（不然 5 分钟轮询会整段错过雷雨窗口）
+ * - rain_poem_after_harvest：收获后 2 秒补一次（雷雨期间的收获才算数）
+ * - pet_diary_treasure_ready：押镖/护送结束的那一刻开宝藏
+ */
+const EVENT_TIMER_KEYS = ['rain_poem_weather_renew', 'rain_poem_after_harvest', 'pet_diary_treasure_ready'];
+/** 无 scheduler 的降级通道：按任务名记住 setTimeout 句柄。 */
+const eventTimerHandles = new Map<string, any>();
+
+/** 活动窗口 ID（ActivityList 下发），用于「过期活动直接不发请求」的前置闸门。 */
+const WINDOW_IDS = {
+    qingmei: ['2026080100', '2026081200'],
+    qixi: ['2026081800'],
+    charity: ['2026090900'],
+    petDiary: ['2026090100'],
+    rainPoem: ['2026070300'],
+    milkTea: ['2026110100', '2026110101', '2026110102', '2026110103'],
+    shareReward: ['2026092500', '2026092501', '2026110104'],
+};
 
 interface AutomationOp {
     /** automation 字段名 */
@@ -45,6 +82,14 @@ interface AutomationOp {
     run: (automation: any) => Promise<boolean>;
     /** 覆盖默认冷却间隔；默认已是老版 5 分钟节奏，保留字段供个别操作单独调速。 */
     cooldownMs?: number;
+    /**
+     * 所属活动窗口 ID（可多个，任一在开放区间即放行）。
+     *
+     * 老版是「先读活动状态 → active=false 整段不进分支」，从不给过期活动发请求。
+     * 这里先用 ActivityList 的本地窗口缓存做零成本前置判断：明确过期就不读状态、
+     * 不发任何请求；窗口未知（未加载/服务端没下发）时放行，交给 op 自身的状态守卫。
+     */
+    activityIds?: string[];
 }
 
 function getAutomationSnapshot(): any {
@@ -59,6 +104,116 @@ function getAutomationSnapshot(): any {
 function isCoolingDown(op: AutomationOp, now: number): boolean {
     const last = lastRunAt.get(op.key) || 0;
     return now - last < (op.cooldownMs || OP_COOLDOWN_MS);
+}
+
+/**
+ * 本轮的「活动窗口闸门」。
+ *
+ * 数据来自 ActivityList（登录时已拉、5 分钟缓存、activitiesChanged 时失效），
+ * 属于本地判断，不给每个活动额外发状态请求。判定规则：
+ * - 该 ID 在缓存里且当前不在 [begin, end] → 明确过期/未开始，直接拦掉；
+ * - 该 ID 不在缓存里 → 未知，放行（交给 op 自己的状态守卫，避免因服务端没下发而误停）；
+ * - 缓存整体没加载成功 → 全部放行，不让网络问题把自动化整体停摆。
+ */
+async function buildActivityWindowGate(): Promise<(ids?: string[]) => boolean> {
+    let windows: any[] = [];
+    try {
+        const { getActivityWindows } = require('./activity-windows');
+        windows = await getActivityWindows() || [];
+    } catch {
+        windows = [];
+    }
+    const byId = new Map<string, any>();
+    for (const row of Array.isArray(windows) ? windows : []) {
+        const id = String(row?.id || '').trim();
+        if (id) byId.set(id, row);
+    }
+    if (byId.size === 0) return () => true;
+    const nowSec = getServerTimeSec();
+    return (ids?: string[]): boolean => {
+        if (!Array.isArray(ids) || ids.length === 0) return true;
+        return ids.some((id) => {
+            const window = byId.get(String(id));
+            if (!window) return true;
+            const begin = toNum(window.beginTime);
+            const end = toNum(window.endTime);
+            if (begin > 0 && nowSec < begin) return false;
+            if (end > 0 && nowSec > end) return false;
+            return true;
+        });
+    };
+}
+
+function clearEventTimer(key: string): void {
+    if (workerSchedulerRef && typeof workerSchedulerRef.clear === 'function') {
+        try { workerSchedulerRef.clear(key); } catch {}
+    }
+    const handle = eventTimerHandles.get(key);
+    if (handle != null) {
+        try { clearTimeout(handle); } catch {}
+        eventTimerHandles.delete(key);
+    }
+}
+
+function clearAllEventTimers(): void {
+    for (const key of EVENT_TIMER_KEYS) clearEventTimer(key);
+}
+
+/** 一次性精准唤醒：触发后重入同一轮活动自动化（与老版 setTimeoutTask 回调一致）。 */
+function scheduleEventTimer(key: string, delayMs: number): void {
+    clearEventTimer(key);
+    const delay = Math.max(1000, Math.round(Number(delayMs) || 0));
+    const fire = () => {
+        eventTimerHandles.delete(key);
+        const { runExclusiveAutomationTask } = require('./automation-lock');
+        return runExclusiveAutomationTask('activity_automation', () => runActivityAutomationOnce())
+            .catch(() => null);
+    };
+    if (workerSchedulerRef && typeof workerSchedulerRef.setTimeoutTask === 'function') {
+        workerSchedulerRef.setTimeoutTask(key, delay, fire);
+        return;
+    }
+    const handle = setTimeout(fire, delay);
+    if (handle && typeof handle.unref === 'function') handle.unref();
+    eventTimerHandles.set(key, handle);
+}
+
+/**
+ * 一轮结束后重排事件唤醒（对齐老版 worker.js）。
+ *
+ * 三个任务都是「先清后设」：条件不满足就等于取消唤醒，不会留着过期的定时器乱跑。
+ * 活动已过期时 windowGate 直接拦掉，连状态请求都不发。
+ */
+async function rescheduleActivityEventTimers(automation: any, windowGate: (ids?: string[]) => boolean): Promise<void> {
+    const activityCenter = require('./activity-center');
+
+    // 1) 萌宠日记：押镖/护送结束的那一刻准时开宝藏。
+    clearEventTimer('pet_diary_treasure_ready');
+    if (automation.pet_diary_treasure_open && windowGate(WINDOW_IDS.petDiary)) {
+        const pet = await readRoundActivityState('pet', () => activityCenter.getPetDiary());
+        if (pet && pet.active === true) {
+            const nowMs = getServerTimeSec() * 1000;
+            const nextEnd = (Array.isArray(pet.treasures) ? pet.treasures : [])
+                .filter((item: any) => toNum(item?.status) === 2 && toNum(item?.endTime) > nowMs)
+                .map((item: any) => toNum(item.endTime))
+                .sort((a: number, b: number) => a - b)[0];
+            if (nextEnd) scheduleEventTimer('pet_diary_treasure_ready', nextEnd - nowMs + 2000);
+        }
+    }
+
+    // 2) 雨落成诗：雷电变异每日目标未做满时，雷雨一结束就续下一场。
+    clearEventTimer('rain_poem_weather_renew');
+    if (automation.rain_poem_summon_use && windowGate(WINDOW_IDS.rainPoem)) {
+        const weather = await readRoundActivityState('weather', () => activityCenter.getCurrentWeatherActivity());
+        if (weather && weather.active !== false) {
+            const own = weather.ownWeather || {};
+            const endSec = toNum(own.endTime);
+            const lightningComplete = weather?.lightningHarvest?.complete === true;
+            if (!lightningComplete && own.isThunderstorm === true && endSec > 0) {
+                scheduleEventTimer('rain_poem_weather_renew', (endSec - getServerTimeSec() + 2) * 1000);
+            }
+        }
+    }
 }
 
 /**
@@ -129,7 +284,7 @@ function buildMilkTeaOps(): AutomationOp[] {
     const MILK_SHARE_ID = '2026110104';
     const shopOps: AutomationOp[] = [
         {
-            key: 'milk_tea_cashier', label: '奶茶热销中-领取收益',
+            key: 'milk_tea_cashier', label: '奶茶热销中-领取收益', activityIds: WINDOW_IDS.milkTea,
             run: async () => {
                 const state = await milkTea.getMilkTeaActivity('shop');
                 if (!state.active || !(state.shop?.pending_rewards || []).some((v: any) => toNum(v.count) > 0)) return false;
@@ -138,7 +293,7 @@ function buildMilkTeaOps(): AutomationOp[] {
             },
         },
         {
-            key: 'milk_tea_wages', label: '奶茶热销中-领取工资',
+            key: 'milk_tea_wages', label: '奶茶热销中-领取工资', activityIds: WINDOW_IDS.milkTea,
             run: async () => {
                 const state = await milkTea.getMilkTeaActivity('work');
                 if (!state.active || !(state.work?.slips || []).some((v: any) => toNum(v.wage_status) === 1)) return false;
@@ -147,7 +302,7 @@ function buildMilkTeaOps(): AutomationOp[] {
             },
         },
         {
-            key: 'milk_tea_upgrade', label: '奶茶热销中-升级店铺',
+            key: 'milk_tea_upgrade', label: '奶茶热销中-升级店铺', activityIds: WINDOW_IDS.milkTea,
             run: async () => {
                 const state = await milkTea.getMilkTeaActivity('upgrade');
                 if (!state.active || !state.summary?.can_upgrade) return false;
@@ -156,7 +311,7 @@ function buildMilkTeaOps(): AutomationOp[] {
             },
         },
         {
-            key: 'milk_tea_craft', label: '奶茶热销中-制作奶茶',
+            key: 'milk_tea_craft', label: '奶茶热销中-制作奶茶', activityIds: WINDOW_IDS.milkTea,
             run: async () => {
                 const state = await milkTea.getMilkTeaActivity('workshop');
                 if (!state.active || state.settling) return false;
@@ -169,7 +324,7 @@ function buildMilkTeaOps(): AutomationOp[] {
             },
         },
         {
-            key: 'milk_tea_boost', label: '奶茶热销中-使用宣传喇叭',
+            key: 'milk_tea_boost', label: '奶茶热销中-使用宣传喇叭', activityIds: WINDOW_IDS.milkTea,
             run: async () => {
                 const state = await milkTea.getMilkTeaActivity('shop');
                 const salesItemId = toNum(state.shop?.sales_item_id);
@@ -179,7 +334,7 @@ function buildMilkTeaOps(): AutomationOp[] {
             },
         },
         {
-            key: 'milk_tea_hire', label: '奶茶热销中-雇佣员工',
+            key: 'milk_tea_hire', label: '奶茶热销中-雇佣员工', activityIds: WINDOW_IDS.milkTea,
             run: async (automation: any) => {
                 // 班次时长读设置里的 milk_tea_hire_duration（1=4h/2=12h/3=24h），不传时用 1。
                 const durationInput = Number(automation.milk_tea_hire_duration);
@@ -208,7 +363,7 @@ function buildMilkTeaOps(): AutomationOp[] {
             },
         },
         {
-            key: 'milk_tea_interact', label: '奶茶热销中-打工互动',
+            key: 'milk_tea_interact', label: '奶茶热销中-打工互动', activityIds: WINDOW_IDS.milkTea,
             run: async (automation: any) => {
                 const state = await milkTea.getMilkTeaActivity('work');
                 const shift = state.work?.my_shift;
@@ -222,7 +377,7 @@ function buildMilkTeaOps(): AutomationOp[] {
             },
         },
         {
-            key: 'milk_tea_seed_buy', label: '奶茶热销中-购买活动种子',
+            key: 'milk_tea_seed_buy', label: '奶茶热销中-购买活动种子', activityIds: WINDOW_IDS.milkTea,
             run: async () => {
                 const state = await milkTea.getMilkTeaActivity('exchange');
                 if (!state.active || state.settling) return false;
@@ -239,7 +394,7 @@ function buildMilkTeaOps(): AutomationOp[] {
             },
         },
         {
-            key: 'milk_tea_fund_rewards', label: '奶茶热销中-领取成长基金奖励',
+            key: 'milk_tea_fund_rewards', label: '奶茶热销中-领取成长基金奖励', activityIds: WINDOW_IDS.milkTea,
             run: async () => {
                 const state = await milkTea.getMilkTeaActivity('fund');
                 if (!state.active || !state.fund?.unlocked) return false;
@@ -255,7 +410,7 @@ function buildMilkTeaOps(): AutomationOp[] {
         { key: 'milk_tea_share_daily', label: '奶茶热销中-领取每日快乐值', gate: (s: any) => s.canClaimDaily, action: 'daily' },
         { key: 'milk_tea_share_rewards', label: '奶茶热销中-领取快乐值奖励', gate: (s: any) => s.canClaimMilestones, action: 'milestones' },
     ] as Array<{ key: string, label: string, gate: (s: any) => boolean, action: string }>).map(({ key, label, gate, action }) => ({
-        key, label,
+        key, label, activityIds: WINDOW_IDS.milkTea,
         run: async () => {
             const state = await shareReward.getShareRewardActivity(MILK_SHARE_ID).catch(() => null);
             if (!state?.active || !gate(state)) return false;
@@ -299,6 +454,7 @@ function buildOps(): AutomationOp[] {
         {
             key: 'qingmei_seed_claim',
             label: '领取青莓每日种子',
+            activityIds: WINDOW_IDS.qingmei,
             run: async () => {
                 const state = await readRoundActivityState('qingmei', () => activityCenter.getCurrentQingMeiActivity());
                 if (!isActivityOpen(state)) return false;
@@ -309,6 +465,7 @@ function buildOps(): AutomationOp[] {
         {
             key: 'qingmei_wine_brew',
             label: '青莓酿酒推进',
+            activityIds: WINDOW_IDS.qingmei,
             run: async () => {
                 const state = await readRoundActivityState('qingmei', () => activityCenter.getCurrentQingMeiActivity());
                 if (!isActivityOpen(state)) return false;
@@ -321,6 +478,7 @@ function buildOps(): AutomationOp[] {
         {
             key: 'qixi_bridge_build',
             label: '领取七夕鹊桥奖励',
+            activityIds: WINDOW_IDS.qixi,
             run: async () => {
                 const state = await readRoundActivityState('qixi', () => activityCenter.getCurrentQixiActivity());
                 if (!isActivityOpen(state) || !state.actions?.bridge?.available) return false;
@@ -331,6 +489,7 @@ function buildOps(): AutomationOp[] {
         {
             key: 'qixi_sachet_gift',
             label: '赠送七夕香囊',
+            activityIds: WINDOW_IDS.qixi,
             run: async (automation: any) => {
                 const priority = Array.isArray(automation.qixi_friend_priority)
                     ? automation.qixi_friend_priority
@@ -346,6 +505,7 @@ function buildOps(): AutomationOp[] {
         {
             key: 'charity_flower_donate',
             label: '公益红花捐爱心',
+            activityIds: WINDOW_IDS.charity,
             run: async () => {
                 const state = await readRoundActivityState('charity', () => activityCenter.getCurrentCharityRedFlowerActivity());
                 if (!isActivityOpen(state) || !state.actions?.donateLove?.available) return false;
@@ -354,37 +514,44 @@ function buildOps(): AutomationOp[] {
             },
         },
         {
-            key: 'charity_flower_share_claim',
-            label: '公益红花分享领取',
-            run: async () => {
-                const share = require('./share');
-                const can = await share.checkCanShare();
-                if (can && can.can_share === false) return false;
-                await share.reportShare();
-                return true;
-            },
-        },
-        {
+            // 快乐不独享：与奶茶子活动共用同一套分享奖励协议（老版 operateShareReward('share')）。
             key: 'share_reward_share',
             label: '分享奖励-分享',
+            activityIds: WINDOW_IDS.shareReward,
             run: async () => {
-                const share = require('./share');
-                await share.reportShare();
-                return true;
+                const shareReward = require('./share-reward-activity');
+                const instances = require('../activity-data/share-reward-instances.json');
+                let shared = false;
+                for (const instance of instances) {
+                    const state = await shareReward.getShareRewardActivity(instance.activityId).catch(() => null);
+                    if (!state?.active || !state.canShare) continue;
+                    await shareReward.operateShareRewardActivity(instance.activityId, 'share');
+                    shared = true;
+                }
+                return shared;
             },
         },
         {
             key: 'share_reward_daily',
             label: '分享奖励-每日领取',
+            activityIds: WINDOW_IDS.shareReward,
             run: async () => {
-                const share = require('./share');
-                await share.claimShareReward();
-                return true;
+                const shareReward = require('./share-reward-activity');
+                const instances = require('../activity-data/share-reward-instances.json');
+                let claimed = false;
+                for (const instance of instances) {
+                    const state = await shareReward.getShareRewardActivity(instance.activityId).catch(() => null);
+                    if (!state?.active || !state.canClaimDaily) continue;
+                    await shareReward.operateShareRewardActivity(instance.activityId, 'daily');
+                    claimed = true;
+                }
+                return claimed;
             },
         },
         {
             key: 'pet_diary_adopt',
             label: '萌宠日记-领养',
+            activityIds: WINDOW_IDS.petDiary,
             run: async () => {
                 if (!await petDiaryOpen()) return false;
                 await activityCenter.operatePetDiary('initialize', {});
@@ -394,6 +561,7 @@ function buildOps(): AutomationOp[] {
         {
             key: 'pet_diary_feed',
             label: '萌宠日记-投喂',
+            activityIds: WINDOW_IDS.petDiary,
             run: async () => {
                 if (!await petDiaryOpen()) return false;
                 await activityCenter.operatePetDiary('feed', {});
@@ -403,6 +571,7 @@ function buildOps(): AutomationOp[] {
         {
             key: 'pet_diary_draw',
             label: '萌宠日记-寻宝',
+            activityIds: WINDOW_IDS.petDiary,
             run: async () => {
                 if (!await petDiaryOpen()) return false;
                 await activityCenter.operatePetDiary('draw', {});
@@ -412,6 +581,7 @@ function buildOps(): AutomationOp[] {
         {
             key: 'pet_diary_seed_claim',
             label: '萌宠日记-种子礼包',
+            activityIds: WINDOW_IDS.petDiary,
             run: async () => {
                 if (!await petDiaryOpen()) return false;
                 await activityCenter.operatePetDiary('seeds', {});
@@ -421,6 +591,7 @@ function buildOps(): AutomationOp[] {
         {
             key: 'pet_diary_treasure_open',
             label: '萌宠日记-开启宝藏',
+            activityIds: WINDOW_IDS.petDiary,
             run: async () => {
                 if (!await petDiaryOpen()) return false;
                 await activityCenter.operatePetDiary('openTreasure', {});
@@ -430,6 +601,7 @@ function buildOps(): AutomationOp[] {
         {
             key: 'rain_poem_bottle_buy',
             label: '雨落成诗-兑换采集瓶',
+            activityIds: WINDOW_IDS.rainPoem,
             run: async () => {
                 if (!await weatherActivityOpen()) return false;
                 await activityCenter.exchangeWeatherCollectorBottle();
@@ -439,6 +611,7 @@ function buildOps(): AutomationOp[] {
         {
             key: 'rain_poem_summon_use',
             label: '雨落成诗-使用祈雨瓶',
+            activityIds: WINDOW_IDS.rainPoem,
             run: async () => {
                 if (!await weatherActivityOpen()) return false;
                 await activityCenter.useWeatherSummonBottle();
@@ -469,6 +642,7 @@ function buildOps(): AutomationOp[] {
         {
             key: 'share_reward_milestones',
             label: '分享奖励-里程碑领取',
+            activityIds: WINDOW_IDS.shareReward,
             run: async () => {
                 const shareReward = require('./share-reward-activity');
                 const instances = require('../activity-data/share-reward-instances.json');
@@ -499,11 +673,17 @@ async function runActivityAutomationOnce(): Promise<string[]> {
     try {
         const automation = getAutomationSnapshot();
         const ops = buildOps();
+        // 活动窗口闸门：明确过期的活动连状态都不读、请求都不发（对齐老版「不进分支」）。
+        const windowGate = await buildActivityWindowGate();
         let budget = MAX_OPS_PER_ROUND;
 
         for (const op of ops) {
             if (budget <= 0) break;
             if (!automation[op.key]) continue;
+            if (!windowGate(op.activityIds)) {
+                logFileOnly('活动', `活动自动化：${op.label} 所属活动不在开放区间，本轮跳过`, { event: 'activity_automation' });
+                continue;
+            }
             if (isCoolingDown(op, now)) continue;
 
             budget -= 1;
@@ -530,6 +710,13 @@ async function runActivityAutomationOnce(): Promise<string[]> {
             }
         }
 
+        // 本轮跑完按各活动的时间点重排精准唤醒（老版在这三个活动分支末尾各设一个一次性定时器）。
+        try {
+            await rescheduleActivityEventTimers(automation, windowGate);
+        } catch (error: any) {
+            logFileOnly('活动', `活动自动化：事件定时器重排失败（${String(error?.message || error || '')}）`, { event: 'activity_automation' });
+        }
+
         // 只提醒一次：开关打开了但本版本没有对应协议实现的字段。
         const unsupported = [
             'star_record_claim',
@@ -540,6 +727,7 @@ async function runActivityAutomationOnce(): Promise<string[]> {
             'rain_poem_research_unlock',
             'charity_flower_reward_claim',
             'charity_flower_public_fund_claim',
+            'charity_flower_share_claim',
             'wish_sign_draw',
             'wish_sign_claim',
             'pet_diary_story_claim',
@@ -562,6 +750,7 @@ async function runActivityAutomationOnce(): Promise<string[]> {
 
 function startActivityAutomation(workerScheduler: any, intervalMs: number = 5 * 60 * 1000): void {
     stopActivityAutomation();
+    workerSchedulerRef = workerScheduler || null;
     const tick = () => {
         const { runExclusiveAutomationTask } = require('./automation-lock');
         return runExclusiveAutomationTask('activity_automation', () => runActivityAutomationOnce())
@@ -590,10 +779,28 @@ function stopActivityAutomation(): void {
         workerSchedulerRef.clear('activity_automation_initial');
         workerSchedulerRef.clear('activity_automation_after_save');
     }
+    // 三个事件唤醒也属于本循环，停机/切号时必须一起清，否则会对旧账号的活动下手。
+    clearAllEventTimers();
 }
 
-/** 启动/停止之间记住 scheduler，便于 stop 时清理一次性任务。 */
-let workerSchedulerRef: any = null;
+/**
+ * 收获后 2 秒补一次（对齐老版 farmHarvested 里的 rain_poem_after_harvest）。
+ *
+ * 只在开了「使用祈雨瓶」时才排：雷雨期间的收获进度决定了要不要续雨。
+ */
+function scheduleActivityAutomationAfterHarvest(): void {
+    let automation: any = {};
+    try {
+        automation = getAutomationSnapshot();
+    } catch {
+        automation = {};
+    }
+    if (automation.rain_poem_summon_use !== true) {
+        clearEventTimer('rain_poem_after_harvest');
+        return;
+    }
+    scheduleEventTimer('rain_poem_after_harvest', 2000);
+}
 
 /**
  * 保存自动化配置后延迟跑一轮（对齐老版 star_activity_claim_after_save 的 2 秒节奏）。
@@ -626,6 +833,9 @@ module.exports = {
     startActivityAutomation,
     stopActivityAutomation,
     scheduleActivityAutomationAfterSave,
+    scheduleActivityAutomationAfterHarvest,
     resetCooldownsForEnabledKeys,
     buildOps,
+    // 导出供协议状态回归测试直接校验三个事件唤醒的排定条件与延迟。
+    rescheduleActivityEventTimers,
 };
