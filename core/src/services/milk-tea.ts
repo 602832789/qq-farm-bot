@@ -6,6 +6,7 @@ export {};
 const { types } = require('../utils/proto');
 const { sendMsgAsync } = require('../utils/network');
 const { getServerTimeSec, toNum } = require('../utils/utils');
+const { readActivityRound, invalidateActivityRound } = require('../utils/activity-round');
 const { getItemById, getItemImageById } = require('../config/gameConfig');
 const warehouse = require('./warehouse');
 const { getDiamondBalance } = require('./pay');
@@ -51,11 +52,25 @@ function ruleLines(head: any): string[] {
     try { return JSON.parse(Buffer.from(head.extra).toString()).tips.txt.filter((line: any) => typeof line === 'string').map((line: string) => line.replace(/<br\s*(?:\/\s*)?>/gi, '\n').replace(/<[^>]+>/g, '')); }
     catch { return []; }
 }
-async function group() {
-    const reply = await sendMsgAsync(SERVICE, 'GetGroup', types.GetGroupRequest.encode({ group_id: GROUP }).finish());
-    const result = types.MilkTeaGetGroupReply.decode(reply.body).group;
-    if (String(result?.head?.activity_id) !== GROUP) fail('活动目录回包不匹配');
-    return result.children || [];
+/**
+ * 活动目录（组数据）：活动自动化一轮内只读一次，后续所有页面共用同一份 children。
+ * 轮外（面板/手动操作）直连，保证实时。
+ */
+function group() {
+    return readActivityRound('milk:group', async () => {
+        const reply = await sendMsgAsync(SERVICE, 'GetGroup', types.GetGroupRequest.encode({ group_id: GROUP }).finish());
+        const result = types.MilkTeaGetGroupReply.decode(reply.body).group;
+        if (String(result?.head?.activity_id) !== GROUP) fail('活动目录回包不匹配');
+        return result.children || [];
+    });
+}
+/** 页面读操作：一轮内同一页面（含参数）只读一次。 */
+function readRpc(action: string, params: any = {}, cacheKey: string = action) {
+    return readActivityRound(`milk:read:${cacheKey}`, () => rpc(action, params));
+}
+/** 写操作成功后作废本轮全部读快照（含网络层合并的 GetGroup / Bag）：下一个 op 重新读最新状态。 */
+function invalidateAfterWrite(): void {
+    invalidateActivityRound();
 }
 async function rpc(action: string, params: any = {}) {
     const [cmd, field, id] = operations[action];
@@ -68,11 +83,13 @@ async function rpc(action: string, params: any = {}) {
     return decoded[field];
 }
 async function inventory(diamonds = false) {
-    const bag = warehouse.getBagItems(await warehouse.getBag());
-    const balances: Record<string, number> = {};
-    for (const entry of bag) balances[String(entry.id)] = (balances[String(entry.id)] || 0) + toNum(entry.count);
-    if (diamonds) balances['1004'] = await getDiamondBalance();
-    return { bag, balances };
+    return readActivityRound(diamonds ? 'milk:bag:diamond' : 'milk:bag', async () => {
+        const bag = warehouse.getBagItems(await warehouse.getBag());
+        const balances: Record<string, number> = {};
+        for (const entry of bag) balances[String(entry.id)] = (balances[String(entry.id)] || 0) + toNum(entry.count);
+        if (diamonds) balances['1004'] = await getDiamondBalance();
+        return { bag, balances };
+    });
 }
 function checkCost(costs: any[], expected: any, balances: any, count = 1) {
     const signature = (list: any[]) => (list || []).map(v => `${toNum(v.id)}:${toNum(v.count)}`).sort().join('|');
@@ -153,9 +170,9 @@ async function getMilkTeaActivity(page = 'shop', input: any = {}) {
             conditions: (tier.conditions || []).map((v: any) => ({ type: v.type, current: toNum(v.current_value), target: toNum(v.target_value), reached: !!v.reached })),
         })) };
     } else if (active && toNum(summary.shop_open_at) > 0) {
-        if (['shop', 'upgrade', 'workshop', 'hireList'].includes(page)) result.shop = normalizeShop((await rpc('shop')).shop);
+        if (['shop', 'upgrade', 'workshop', 'hireList'].includes(page)) result.shop = normalizeShop((await readRpc('shop')).shop);
         if (page === 'shop' || page === 'workshop') {
-            result.recipes = normalizeRecipes(await rpc('workshop'));
+            result.recipes = normalizeRecipes(await readRpc('workshop'));
             const bonus = config.MilkTeaStoreLevelConfig.find(v => v.level === toNum(result.shop.level))?.advanced_price_percent || 0;
             for (const recipe of result.recipes) {
                 const basePrice = Number(recipeConfig(recipe.recipe_id)?.base_price.split(':')[1] || 0);
@@ -168,12 +185,12 @@ async function getMilkTeaActivity(page = 'shop', input: any = {}) {
         }
         if (page === 'hireList') {
             const duration = integer(input.durationId ?? 1, 1, 3);
-            const value = await rpc('hireList', { duration_id: duration });
+            const value = await readRpc('hireList', { duration_id: duration }, `hireList:${duration}`);
             result.hire = plain(types.MilkTeaOperateReply, { milk_tea_get_hire_list: value }).milk_tea_get_hire_list;
             result.durations = config.MilkTeaHireDurationConfig;
         }
         if (page === 'work') {
-            const value = await rpc('work');
+            const value = await readRpc('work');
             result.work = plain(types.MilkTeaOperateReply, { milk_tea_get_work_page: value }).milk_tea_get_work_page;
             delete result.work.hire_subscribe_qq_jump_url;
             delete result.work.hire_subscribe_template_id;
@@ -196,7 +213,7 @@ async function getMilkTeaActivity(page = 'shop', input: any = {}) {
     return result;
 }
 
-async function perform(action: string, input: any) {
+async function perform(action: string, input: any, options: { skipRefresh?: boolean } = {}) {
     if (!Object.hasOwn(operations, action) || readActions.has(action)) fail('未知的活动操作');
     const page = ['exchange'].includes(action) ? 'exchange' : ['unlock', 'fundClaim'].includes(action) ? 'fund'
         : ['hire'].includes(action) ? 'hireList' : action === 'craft' ? 'workshop' : ['wages', 'interact'].includes(action) ? 'work' : ['rename', 'hireSetting'].includes(action) ? 'settings' : action === 'upgrade' ? 'upgrade' : 'shop';
@@ -271,6 +288,8 @@ async function perform(action: string, input: any) {
         params = { hire_disabled: input.disabled };
     }
     const reply = await rpc(action, params);
+    // 写操作改动了活动状态/背包：作废本轮共享读快照，下一个 op 重新读一次最新数据再决策。
+    invalidateAfterWrite();
     const field = operations[action][1];
     const result = plain(types.MilkTeaOperateReply, { [field]: reply })[field];
     if (action === 'craft') {
@@ -280,12 +299,14 @@ async function perform(action: string, input: any) {
     if (action === 'hire' && !reply.results?.some((v: any) => v.success)) fail(reply.results?.[0]?.error_msg || '雇佣未成功，请刷新确认');
     const rewards = items(reply.awards || reply.items || reply.rewards || reply.opening_gift || reply.items_gained);
     if (action === 'boost') rewards.push(...items([{ id: 1041, count: reply.token_gain }, { id: 1001, count: reply.coin_gain }]).filter(v => v.count > 0));
+    // 活动自动化只要结果，不需要给面板回一份刷新后的活动状态（省掉一次整页重读）。
+    if (options.skipRefresh) return { activity: null, result, rewards };
     try { return { activity: await getMilkTeaActivity(page, input), result, rewards }; }
     catch { return { activity: null, result, rewards, refreshRequired: true }; }
 }
 
-function operateMilkTeaActivity(action: string, input: any = {}) {
-    const result = tail.then(() => perform(action, input));
+function operateMilkTeaActivity(action: string, input: any = {}, options: { skipRefresh?: boolean } = {}) {
+    const result = tail.then(() => perform(action, input, options));
     tail = result.catch(() => {});
     return result;
 }

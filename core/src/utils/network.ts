@@ -35,6 +35,7 @@ const {
     selectDispatchIndex,
 } = require('./request-priority');
 const { getAmbientRequestClass } = require('./request-context');
+const { isInActivityRound, readActivityRound } = require('./activity-round');
 const { startAceRuntime, stopAceRuntime, getAceDiagnostics } = require('../services/ace');
 
 // ============ 事件发射器 (用于推送通知) ============
@@ -457,7 +458,15 @@ async function sendMsg(context: ConnectionContext, serviceName: string, methodNa
     return true;
 }
 
-/** Promise 版发送 */
+/**
+ * 活动轮次内可合并的纯读方法：活动组数据（GetGroup）与背包（Bag）。
+ * 只在 withActivityRound 作用域内生效，面板/手动操作不在轮内，永远直连。
+ */
+function isActivityRoundRead(serviceName: string, methodName: string): boolean {
+    if (methodName === 'GetGroup') return true;
+    return methodName === 'Bag' && serviceName === 'gamepb.itempb.ItemService';
+}
+
 function sendMsgAsync(serviceName: string, methodName: string, bodyBytes: Buffer, timeoutOrOptions: number | SendMsgOptions = 20000): Promise<{ body: Buffer; meta: any }> {
     const options: SendMsgOptions = typeof timeoutOrOptions === 'number'
         ? { timeoutMs: timeoutOrOptions }
@@ -473,7 +482,18 @@ function sendMsgAsync(serviceName: string, methodName: string, bodyBytes: Buffer
         { priority: options.priority, requestClass: options.requestClass, criticalLane },
         getAmbientRequestClass(),
     );
-    return new Promise((resolve, reject) => {
+
+    // 一轮只读一次组数据再分发：活动自动化一轮里，奶茶/宠物/七夕/天气等模块
+    // 反复读同一份 GetGroup / Bag，这里按「服务+方法+请求体」合并成一次。
+    // 写操作成功后由活动服务（milk-tea / share-reward）与活动自动化 op 层作废本轮快照。
+    if (isInActivityRound() && isActivityRoundRead(serviceName, methodName)) {
+        const key = `net:read:${serviceName}.${methodName}:${bodyBytes.toString('base64')}`;
+        return readActivityRound(key, dispatch);
+    }
+    return dispatch();
+
+    function dispatch(): Promise<{ body: Buffer; meta: any }> {
+        return new Promise((resolve, reject) => {
         const context = currentConnection;
         if (!context || !isCurrentConnection(context) || context.socket.readyState !== WebSocket.OPEN) {
             reject(new Error(`连接未打开: ${methodName}`));
@@ -563,6 +583,7 @@ function sendMsgAsync(serviceName: string, methodName: string, bodyBytes: Buffer
         drainRequestQueue();
         logRequestPressure();
     });
+    }
 }
 
 async function sendMsgNoReply(serviceName: string, methodName: string, bodyBytes: Buffer): Promise<void> {

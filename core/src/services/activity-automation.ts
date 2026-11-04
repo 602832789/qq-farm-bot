@@ -9,6 +9,7 @@ export {};
 
 const { log, logWarn, logFileOnly, isTransientGatewaySkip, getServerTimeSec, toNum } = require('../utils/utils');
 const { getBudgetPressure } = require('../utils/request-governor');
+const { withActivityRound, readActivityRound, invalidateActivityRound } = require('../utils/activity-round');
 
 /**
  * 常态性「本轮无事可做」的报错。
@@ -224,19 +225,13 @@ async function rescheduleActivityEventTimers(automation: any, windowGate: (ids?:
  * 当前版按操作粒度拆开，所以这里做一层 round 级缓存：同一活动一轮只读一次状态，
  * 既对齐老版语义，也不会让 30 多个操作各拉一遍状态把请求预算吃光。
  */
-const roundActivityState = new Map<string, any>();
-
 async function readRoundActivityState(key: string, loader: () => Promise<any>): Promise<any> {
-    if (!roundActivityState.has(key)) {
-        let value: any = null;
-        try {
-            value = await loader();
-        } catch {
-            value = null;
-        }
-        roundActivityState.set(key, value);
+    // 优先走轮次共享缓存（活动自动化轮内 = 只读一次；轮外调用直接直连）。
+    try {
+        return await readActivityRound(`state:${key}`, loader);
+    } catch {
+        return null;
     }
-    return roundActivityState.get(key);
 }
 
 /** 活动是否处于开启窗口：DTO 走 active 字段，青酿这类只有时间窗的按 endTime 判定。 */
@@ -281,6 +276,9 @@ function selectHireCandidate(candidates: any, primaryTalentId: number, backupTal
  */
 function buildMilkTeaOps(): AutomationOp[] {
     const milkTea = require('./milk-tea');
+    // 自动化只要执行结果：skipRefresh 跳过 perform 尾部「给面板用的整页重读」，
+    // 省掉每个写操作后的一整轮 GetGroup + 背包 + 页面读。
+    const operateMilkTea = (action: string, input: any = {}) => milkTea.operateMilkTeaActivity(action, input, { skipRefresh: true });
     const shareReward = require('./share-reward-activity');
     const MILK_SHARE_ID = '2026110104';
     const shopOps: AutomationOp[] = [
@@ -289,7 +287,7 @@ function buildMilkTeaOps(): AutomationOp[] {
             run: async () => {
                 const state = await milkTea.getMilkTeaActivity('shop');
                 if (!state.active || !(state.shop?.pending_rewards || []).some((v: any) => toNum(v.count) > 0)) return false;
-                await milkTea.operateMilkTeaActivity('claim');
+                await operateMilkTea('claim');
                 return true;
             },
         },
@@ -298,7 +296,7 @@ function buildMilkTeaOps(): AutomationOp[] {
             run: async () => {
                 const state = await milkTea.getMilkTeaActivity('work');
                 if (!state.active || !(state.work?.slips || []).some((v: any) => toNum(v.wage_status) === 1)) return false;
-                await milkTea.operateMilkTeaActivity('wages');
+                await operateMilkTea('wages');
                 return true;
             },
         },
@@ -307,7 +305,7 @@ function buildMilkTeaOps(): AutomationOp[] {
             run: async () => {
                 const state = await milkTea.getMilkTeaActivity('upgrade');
                 if (!state.active || !state.summary?.can_upgrade) return false;
-                await milkTea.operateMilkTeaActivity('upgrade', { expectedLevel: toNum(state.shop?.level) });
+                await operateMilkTea('upgrade', { expectedLevel: toNum(state.shop?.level) });
                 return true;
             },
         },
@@ -320,7 +318,7 @@ function buildMilkTeaOps(): AutomationOp[] {
                 const fruits = (state.fruits || []).filter((f: any) => eligible.has(toNum(f.id)) && toNum(f.count) > 0 && !f.locked)
                     .map((f: any) => ({ uid: String(f.uid), count: toNum(f.count) }));
                 if (!fruits.length) return false;
-                await milkTea.operateMilkTeaActivity('craft', { fruits });
+                await operateMilkTea('craft', { fruits });
                 return true;
             },
         },
@@ -330,7 +328,7 @@ function buildMilkTeaOps(): AutomationOp[] {
                 const state = await milkTea.getMilkTeaActivity('shop');
                 const salesItemId = toNum(state.shop?.sales_item_id);
                 if (!state.active || state.settling || !salesItemId || toNum(state.balances?.[String(salesItemId)]) <= 0) return false;
-                await milkTea.operateMilkTeaActivity('boost', { count: 1, expectedCosts: [{ id: salesItemId, count: 1 }] });
+                await operateMilkTea('boost', { count: 1, expectedCosts: [{ id: salesItemId, count: 1 }] });
                 return true;
             },
         },
@@ -355,7 +353,7 @@ function buildMilkTeaOps(): AutomationOp[] {
                 const backupTalentId = primaryTalentId === 0 ? 0 : ([0, 9001, 9002, 9003, 9004].includes(backupInput) ? backupInput : 0);
                 const target = selectHireCandidate(hire, primaryTalentId, backupTalentId, now);
                 if (!target) return false;
-                await milkTea.operateMilkTeaActivity('hire', {
+                await operateMilkTea('hire', {
                     targetGid: String(target.friend.gid),
                     durationId,
                     expectedCosts: [{ id: 1041, count: toNum(hire.wage_total) }],
@@ -373,7 +371,7 @@ function buildMilkTeaOps(): AutomationOp[] {
                 if (state.work.interact_done || toNum(shift.interact_count) >= toNum(shift.interact_limit)) return false;
                 const type = Number(automation.milk_tea_interaction_type);
                 const kind = [1, 2, 3, 4, 5].includes(type) ? type : 1;
-                await milkTea.operateMilkTeaActivity('interact', { interactionType: kind, expectedShiftId: String(shift.shift_id) });
+                await operateMilkTea('interact', { interactionType: kind, expectedShiftId: String(shift.shift_id) });
                 return true;
             },
         },
@@ -390,7 +388,7 @@ function buildMilkTeaOps(): AutomationOp[] {
                     count = Math.min(count, Math.floor(balance / Math.max(1, toNum(cost.count))));
                 }
                 if (!Number.isSafeInteger(count) || count < 1) return false;
-                await milkTea.operateMilkTeaActivity('exchange', { goodsId: goods.id, count, expectedCosts: goods.costs });
+                await operateMilkTea('exchange', { goodsId: goods.id, count, expectedCosts: goods.costs });
                 return true;
             },
         },
@@ -400,7 +398,7 @@ function buildMilkTeaOps(): AutomationOp[] {
                 const state = await milkTea.getMilkTeaActivity('fund');
                 if (!state.active || !state.fund?.unlocked) return false;
                 if (!(state.fund.tiers || []).some((t: any) => toNum(t.state) === 2)) return false;
-                await milkTea.operateMilkTeaActivity('fundClaim');
+                await operateMilkTea('fundClaim');
                 return true;
             },
         },
@@ -669,84 +667,92 @@ async function runActivityAutomationOnce(): Promise<string[]> {
     ticking = true;
     const executed: string[] = [];
     const now = Date.now();
-    // 每轮重新读活动状态：上一轮的缓存不能跨轮沿用（活动可能在两轮之间开启/结束）。
-    roundActivityState.clear();
     try {
-        const automation = getAutomationSnapshot();
-        const ops = buildOps();
-        // 活动窗口闸门：明确过期的活动连状态都不读、请求都不发（对齐老版「不进分支」）。
-        const windowGate = await buildActivityWindowGate();
-        let budget = MAX_OPS_PER_ROUND;
-
-        for (const op of ops) {
-            if (budget <= 0) break;
-            if (!automation[op.key]) continue;
-            if (!windowGate(op.activityIds)) {
-                logFileOnly('活动', `活动自动化：${op.label} 所属活动不在开放区间，本轮跳过`, { event: 'activity_automation' });
-                continue;
-            }
-            if (isCoolingDown(op, now)) continue;
-
-            budget -= 1;
-            lastRunAt.set(op.key, now);
-            try {
-                const did = await op.run(automation);
-                if (did) {
-                    executed.push(op.label);
-                    log('活动', `活动自动化：${op.label} 执行完成`, { event: 'activity_automation' });
-                } else {
-                    // 无可领取 / 未开放是常态；对齐老版：这类跳过只写日志文件，不在前端日志面板显示。
-                    logFileOnly('活动', `活动自动化：${op.label} 本轮无可领取或活动未开放`, { event: 'activity_automation' });
-                }
-            } catch (error: any) {
-                // 对齐老版：老版是「先读活动状态 → 不满足就整段不进分支」，所以从不会出现
-                // 「跳过（原因）」这类日志。这里把同类的跳过（限流让路 / 活动未开启 / 冷却未到）
-                // 只写日志文件，不进前端面板；真正执行失败才可见，文案沿用老版的「失败: 原因」。
-                const message = String(error?.message || error || '');
-                if (isTransientGatewaySkip(error) || isActivityNotOpenMessage(message)) {
-                    logFileOnly('活动', `活动自动化：${op.label} 本轮跳过（${message}）`, { event: 'activity_automation' });
-                } else {
-                    logWarn('活动', `活动自动化：${op.label} 失败: ${message}`, { event: 'activity_automation' });
-                }
-            }
-        }
-
-        // 本轮跑完按各活动的时间点重排精准唤醒（老版在这三个活动分支末尾各设一个一次性定时器）。
-        try {
-            await rescheduleActivityEventTimers(automation, windowGate);
-        } catch (error: any) {
-            logFileOnly('活动', `活动自动化：事件定时器重排失败（${String(error?.message || error || '')}）`, { event: 'activity_automation' });
-        }
-
-        // 只提醒一次：开关打开了但本版本没有对应协议实现的字段。
-        const unsupported = [
-            'star_record_claim',
-            'milk_tea_auto_open',
-            'qixi_dew_use',
-            'rain_poem_weather_collect',
-            'rain_poem_prank_use',
-            'rain_poem_research_unlock',
-            'charity_flower_reward_claim',
-            'charity_flower_public_fund_claim',
-            'charity_flower_share_claim',
-            'wish_sign_draw',
-            'wish_sign_claim',
-            'pet_diary_story_claim',
-            'pet_diary_solar_claim',
-            'pet_diary_compensation_claim',
-            'pet_diary_charm_equip',
-            'pet_diary_battle',
-        ];
-        for (const key of unsupported) {
-            if (!automation[key] || warnedKeys.has(key)) continue;
-            warnedKeys.add(key);
-            // key 写进消息正文：组合日志只保留 message 字段，放 meta 会丢。
-            logWarn('活动', `活动自动化待接入：${key} 已开启，但当前版本尚未接入对应协议实现`, { event: 'activity_automation' });
-        }
+        // 一轮只读一次组数据再分发：奶茶 9 个 op + 分享 3 个 op 在本轮内共享同一份
+        // GetGroup / 背包 / 页面读；写操作成功后自动失效，下一个 op 重新读最新再决策。
+        // 作用域是 AsyncLocalStorage，面板手动操作不在轮内，永远读实时数据。
+        await withActivityRound(() => runActivityAutomationRound(executed, now));
     } finally {
         ticking = false;
     }
     return executed;
+}
+
+/** 轮次主体：必须在 withActivityRound 作用域内执行，读请求才会被合并分发。 */
+async function runActivityAutomationRound(executed: string[], now: number): Promise<void> {
+    const automation = getAutomationSnapshot();
+    const ops = buildOps();
+    // 活动窗口闸门：明确过期的活动连状态都不读、请求都不发（对齐老版「不进分支」）。
+    const windowGate = await buildActivityWindowGate();
+    let budget = MAX_OPS_PER_ROUND;
+
+    for (const op of ops) {
+        if (budget <= 0) break;
+        if (!automation[op.key]) continue;
+        if (!windowGate(op.activityIds)) {
+            logFileOnly('活动', `活动自动化：${op.label} 所属活动不在开放区间，本轮跳过`, { event: 'activity_automation' });
+            continue;
+        }
+        if (isCoolingDown(op, now)) continue;
+
+        budget -= 1;
+        lastRunAt.set(op.key, now);
+        try {
+            const did = await op.run(automation);
+            if (did) {
+                // 这一轮发生过写操作：本轮共享的组数据/背包快照作废，后面的 op 重新读最新状态。
+                invalidateActivityRound();
+                executed.push(op.label);
+                log('活动', `活动自动化：${op.label} 执行完成`, { event: 'activity_automation' });
+            } else {
+                // 无可领取 / 未开放是常态；对齐老版：这类跳过只写日志文件，不在前端日志面板显示。
+                logFileOnly('活动', `活动自动化：${op.label} 本轮无可领取或活动未开放`, { event: 'activity_automation' });
+            }
+        } catch (error: any) {
+            // 对齐老版：老版是「先读活动状态 → 不满足就整段不进分支」，所以从不会出现
+            // 「跳过（原因）」这类日志。这里把同类的跳过（限流让路 / 活动未开启 / 冷却未到）
+            // 只写日志文件，不进前端面板；真正执行失败才可见，文案沿用老版的「失败: 原因」。
+            const message = String(error?.message || error || '');
+            if (isTransientGatewaySkip(error) || isActivityNotOpenMessage(message)) {
+                logFileOnly('活动', `活动自动化：${op.label} 本轮跳过（${message}）`, { event: 'activity_automation' });
+            } else {
+                logWarn('活动', `活动自动化：${op.label} 失败: ${message}`, { event: 'activity_automation' });
+            }
+        }
+    }
+
+    // 本轮跑完按各活动的时间点重排精准唤醒（老版在这三个活动分支末尾各设一个一次性定时器）。
+    try {
+        await rescheduleActivityEventTimers(automation, windowGate);
+    } catch (error: any) {
+        logFileOnly('活动', `活动自动化：事件定时器重排失败（${String(error?.message || error || '')}）`, { event: 'activity_automation' });
+    }
+
+    // 只提醒一次：开关打开了但本版本没有对应协议实现的字段。
+    const unsupported = [
+        'star_record_claim',
+        'milk_tea_auto_open',
+        'qixi_dew_use',
+        'rain_poem_weather_collect',
+        'rain_poem_prank_use',
+        'rain_poem_research_unlock',
+        'charity_flower_reward_claim',
+        'charity_flower_public_fund_claim',
+        'charity_flower_share_claim',
+        'wish_sign_draw',
+        'wish_sign_claim',
+        'pet_diary_story_claim',
+        'pet_diary_solar_claim',
+        'pet_diary_compensation_claim',
+        'pet_diary_charm_equip',
+        'pet_diary_battle',
+    ];
+    for (const key of unsupported) {
+        if (!automation[key] || warnedKeys.has(key)) continue;
+        warnedKeys.add(key);
+        // key 写进消息正文：组合日志只保留 message 字段，放 meta 会丢。
+        logWarn('活动', `活动自动化待接入：${key} 已开启，但当前版本尚未接入对应协议实现`, { event: 'activity_automation' });
+    }
 }
 
 function startActivityAutomation(workerScheduler: any, intervalMs: number = 5 * 60 * 1000): void {

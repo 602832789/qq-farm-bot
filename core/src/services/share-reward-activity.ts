@@ -6,6 +6,7 @@ const { sendMsgAsync } = require('../utils/network');
 const { types } = require('../utils/proto');
 const { getServerTimeSec, toNum } = require('../utils/utils');
 const { getItemById, getItemImageById } = require('../config/gameConfig');
+const { readActivityRound, invalidateActivityRound } = require('../utils/activity-round');
 
 // Operation numbers belong to the client protocol, not to an activity instance.
 // Verified against the 1.15.0.1_20261001 official encoder.
@@ -44,6 +45,11 @@ function findEntry(entry: any, id: string): any {
 
 async function getShareRewardActivity(activityId: unknown) {
     const instance = instanceFor(activityId);
+    // 一轮只读一次组数据：同一活动在本轮内的多次读取（分享/每日/档位）共用一份回包。
+    return readActivityRound(`share:${instance.activityId}`, () => loadShareRewardActivity(instance));
+}
+
+async function loadShareRewardActivity(instance: any) {
     const body = types.GetGroupRequest.encode({ group_id: instance.groupId }).finish();
     const response = await sendMsgAsync('gamepb.activitypb.ActivityService', 'GetGroup', body);
     const entry = findEntry(types.GetGroupReply.decode(response.body).group, instance.activityId);
@@ -86,6 +92,8 @@ async function performOperation(activityId: unknown, action: string, input: any)
     if (String(reply.activity_id) !== instance.activityId || toNum(reply.operate_type) !== operation.cmd || !reply[operation.field]) {
         fail('SHARE_REWARD_RESPONSE_INVALID', '操作回包不完整，请刷新确认结果，勿重复提交');
     }
+    // 写成功：作废本轮读快照（含网络层合并的 GetGroup），下一个 op 重新读最新状态。
+    invalidateActivityRound();
     let result = types.ActivityOperateReply.toObject(reply, { longs: String, bytes: String })[operation.field];
     // Share credentials are never exposed to the browser or used to send messages.
     if (action === 'share') result = { granted_score: result.granted_score || '0' };
