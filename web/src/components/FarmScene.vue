@@ -192,16 +192,6 @@ function bubble(land: any) {
   return { text: String(land?.phaseName || '生长中'), tone: 'growing' }
 }
 
-function needsOf(land: any) {
-  if (isLocked(land) || isEmpty(land) || land?.occupiedByMaster)
-    return []
-  return [
-    land?.needWater && { key: 'water', icon: 'i-carbon-rain-drop', label: '缺水' },
-    land?.needWeed && { key: 'weed', icon: 'i-carbon-clean', label: '杂草' },
-    land?.needBug && { key: 'bug', icon: 'i-carbon-debug', label: '虫害' },
-  ].filter(Boolean) as Array<{ key: string, icon: string, label: string }>
-}
-
 const failedMutantIcons = ref(new Set<string>())
 
 function markMutantFailed(key: string) {
@@ -296,7 +286,6 @@ onUnmounted(() => {
       >
         <img v-if="!isLocked(land) && !isEmpty(land) && land.seedImage" class="scene-plot__crop" :src="safeImage(land.seedImage)" :style="cropStyle(land)" alt="" loading="lazy" referrerpolicy="no-referrer">
         <span class="scene-plot__bubble" :class="`is-${bubble(land).tone}`">
-          <span v-for="need in needsOf(land)" :key="need.key" class="scene-plot__need" :class="`is-${need.key}`" :title="need.label"><span :class="need.icon" /></span>
           <span v-for="item in mutantsOf(land)" :key="item.key" class="scene-plot__mutant" :title="item.label"><img v-if="item.image" :src="item.image" alt="" @error="markMutantFailed(item.key)"><span v-else :class="item.icon" /></span>
           {{ bubble(land).text }}
         </span>

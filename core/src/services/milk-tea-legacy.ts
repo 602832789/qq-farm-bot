@@ -49,6 +49,19 @@ const ACTION_LABELS: Record<string, string> = {
 
 function fail(message: string): never { throw new Error(message); }
 function list(value: any) { return Array.isArray(value) ? value : []; }
+/**
+ * 在 group 树里按 activity_id 找节点（递归）。
+ * 奶茶组 2026110100 的子活动不一定都在第一层：快乐不独享(0104) 会挂在更深一层，
+ * 只查一层 children 会读不到它的 share_reward.summary。
+ */
+function findGroupNode(nodes: any, activityId: string): any {
+    for (const node of list(nodes)) {
+        if (String(node?.head?.activity_id) === activityId) return node;
+        const found = findGroupNode(node?.children, activityId);
+        if (found) return found;
+    }
+    return null;
+}
 function plain(type: any, value: any) { return type.toObject(value, { longs: String, defaults: true }); }
 /** protobufjs map 字段的 hash 键还原成十进制字符串。 */
 function normalizeWireMaps(value: any): any {
@@ -64,6 +77,29 @@ function normalizeWireMaps(value: any): any {
 function itemDto(value: any) {
     const id = toNum(value?.id);
     return { id: String(id), count: String(toNum(value?.count)), name: getItemById(id)?.name || `物品 #${id}`, image: getItemImageById(id) };
+}
+/**
+ * 原始 protobuf 消息里的 int64 是 { low, high, unsigned } 对象，
+ * 直接展开给前端会被渲染成 "[object Object]"（成长基金档位描述、快乐值档位都用得到）。
+ */
+function int64Value(value: any): number {
+    if (value && typeof value === 'object' && 'low' in value) {
+        return Number(value.low || 0) + Number(value.high || 0) * 4294967296;
+    }
+    return toNum(value);
+}
+/**
+ * 配方配置里的 drink_icon 是游戏资源路径（gui/texture/icon/icon_s4_milktea_1/spriteFrame），
+ * 前端只有 config.image 一个入口。这里按原名映射到本地素材 /activity/milk-tea/<name>.png，
+ * 让在售库存 / 配方列表 / 制作弹窗都显示对应品种的杯子图标（而不是共用一张主视觉图）。
+ */
+function recipeImageFromIcon(icon: any): string {
+    const matched = /([A-Za-z0-9_]+)\/spriteFrame$/.exec(String(icon || ''));
+    return matched ? `/activity/milk-tea/${matched[1]}.png` : '';
+}
+function withRecipeImage(row: any): any {
+    if (!row) return row;
+    return { ...row, image: recipeImageFromIcon(row.drink_icon) };
 }
 function phase(now: number, window: { startTime: number; settleTime: number; endTime: number }) {
     if (![now, window.startTime, window.settleTime, window.endTime].every(Number.isFinite)
@@ -184,7 +220,7 @@ async function read() {
     const recipes = list(workshop.recipes).map((recipe: any) => {
         const row: any = config.MilkTeaRecipeConfig.find((x: any) => String(x.recipe_id) === String(recipe.recipe_id));
         return {
-            ...recipe, config: row,
+            ...recipe, config: withRecipeImage(row),
             fruits: inventory.filter((x: any) => String(x.id) === String(row?.fruit_item_id?.split(':')[0]))
                 .map((x: any) => ({ ...itemDto(x), uid: String(x.uid) })),
         };
@@ -203,8 +239,42 @@ async function read() {
     // QQ 原生订阅链接带签名，不下发到 web 与日志。
     delete work.hire_subscribe_qq_jump_url;
     delete work.hire_subscribe_template_id;
-    const share = children.find((x: any) => String(x.head?.activity_id) === HAPPY)?.share_reward?.summary;
-    const fund = children.find((x: any) => String(x.head?.activity_id) === FUND)?.growth_fund;
+    const shareNode = findGroupNode(children, HAPPY);
+    const fundNode = findGroupNode(children, FUND);
+    const share = shareNode?.share_reward?.summary;
+    const fund = fundNode?.growth_fund;
+    // 奶茶组的节点结构（MilkTeaActivityData）里没有 share_reward 字段，快乐不独享
+    // 拿不到 summary。老版面板这里一直是「尚未读取到快乐值活动数据」。
+    // 分享奖励服务用 activitypb 的 ActivityData（含 tag 120）能读到，这里回退取一次并映射成面板形状。
+    let shareFallback: any = null;
+    if (!share) {
+        const shareReward = require('./share-reward-activity');
+        const detail = await shareReward.getShareRewardActivity(HAPPY).catch(() => null);
+        if (detail?.active) {
+            shareFallback = {
+                current_score: String(detail.score ?? 0),
+                score_item_id: String(detail.scoreItemId ?? 0),
+                daily_reward: String(detail.dailyReward ?? 0),
+                first_share_reward: String(detail.firstShareReward ?? 0),
+                daily: {
+                    claimed_count: String(detail.claimedCount ?? 0),
+                    claim_limit: String(detail.claimLimit ?? 0),
+                    daily_reward_claimed: detail.canClaimDaily === false,
+                    first_share_awarded: detail.firstShareAwarded === true,
+                },
+                my_pool: {
+                    claimed_count: String(detail.poolClaimedCount ?? 0),
+                    claim_limit: String(detail.poolClaimLimit ?? 0),
+                },
+                milestones: list(detail.milestones).map((tier: any) => ({
+                    tier_id: toNum(tier.id),
+                    threshold: toNum(tier.threshold),
+                    state: toNum(tier.state),
+                    rewards: list(tier.rewards).map(itemDto),
+                })),
+            };
+        }
+    }
     const levels = (config.MilkTeaStoreLevelConfig as any[]).map((level: any) => ({
         ...level,
         rewards: String(level.rewards || '').split(';').filter(Boolean).map((pair: string) => {
@@ -214,8 +284,24 @@ async function read() {
         recipe_names: String(level.recipe_ids_string || '').split(';').map((id: string) =>
             (config.MilkTeaRecipeConfig as any[]).find((recipe: any) => String(recipe.recipe_id) === id)?.recipe_name).filter(Boolean),
     }));
-    const shareView = share ? { ...plain(types.MilkTeaGetGroupReply, { group: { children: [children.find((x: any) => String(x.head?.activity_id) === HAPPY)] } }).group.children[0].share_reward.summary, milestones: list(share.milestones).map((tier: any) => ({ ...tier, rewards: list(tier.rewards).map(itemDto) })) } : null;
-    const fundView = fund ? { ...plain(types.MilkTeaGetGroupReply, { group: { children: [children.find((x: any) => String(x.head?.activity_id) === FUND)] } }).group.children[0].growth_fund, unlock_cost: list(fund.unlock_cost).map(itemDto), tiers: list(fund.tiers).map((tier: any) => ({ ...tier, reward: list(tier.reward).map(itemDto) })) } : null;
+    const shareView = share
+        ? { ...plain(types.MilkTeaGetGroupReply, { group: { children: [shareNode] } }).group.children[0].share_reward.summary, milestones: list(share.milestones).map((tier: any) => ({ ...tier, tier_id: int64Value(tier.tier_id), threshold: int64Value(tier.threshold), state: int64Value(tier.state), rewards: list(tier.rewards).map(itemDto) })) }
+        : (shareFallback || null);
+    const fundView = fund ? {
+        ...plain(types.MilkTeaGetGroupReply, { group: { children: [fundNode] } }).group.children[0].growth_fund,
+        unlock_cost: list(fund.unlock_cost).map(itemDto),
+        tiers: list(fund.tiers).map((tier: any) => ({
+            ...tier,
+            tier_id: int64Value(tier.tier_id),
+            state: int64Value(tier.state),
+            conditions: list(tier.conditions).map((condition: any) => ({
+                ...condition,
+                current_value: int64Value(condition.current_value),
+                target_value: int64Value(condition.target_value),
+            })),
+            reward: list(tier.reward).map(itemDto),
+        })),
+    } : null;
     return {
         ...state, share: shareView, fund: fundView, shop: shop.shop, recipes, work, goods,
         balances: ['1001', '1004', '1041', '1042'].map((id: string) => itemDto({

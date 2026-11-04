@@ -168,16 +168,17 @@ const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
     plantingStrategy: 'max_exp',
     preferredSeedId: 0,
     capitalMode: { ...DEFAULT_CAPITAL_MODE },
+    // 对齐老版 models/store.js DEFAULT_INTERVALS：农场 2-5 秒、好友任务 30-35 秒。
     intervals: {
         farm: 2,
-        farmMin: 20,
-        farmMax: 25,
-        friendMin: 20,
-        friendMax: 25,
-        helpMin: 20,
-        helpMax: 25,
-        stealMin: 20,
-        stealMax: 25,
+        farmMin: 2,
+        farmMax: 5,
+        friendMin: 30,
+        friendMax: 35,
+        helpMin: 30,
+        helpMax: 35,
+        stealMin: 30,
+        stealMax: 35,
     },
     friendQuietHours: {
         enabled: false,
@@ -352,12 +353,12 @@ function normalizeIntervals(intervals: Partial<IntervalConfig> | undefined): Int
     let farmMax = toSec(src.farmMax, farm);
     if (farmMin > farmMax) [farmMin, farmMax] = [farmMax, farmMin];
 
-    let helpMin = toSec(src.helpMin, 10);
-    let helpMax = toSec(src.helpMax, 10);
+    let helpMin = toSec(src.helpMin, 30);
+    let helpMax = toSec(src.helpMax, 35);
     if (helpMin > helpMax) [helpMin, helpMax] = [helpMax, helpMin];
 
-    let stealMin = toSec(src.stealMin, 10);
-    let stealMax = toSec(src.stealMax, 10);
+    let stealMin = toSec(src.stealMin, 30);
+    let stealMax = toSec(src.stealMax, 35);
     if (stealMin > stealMax) [stealMin, stealMax] = [stealMax, stealMin];
 
     // 新配置使用统一好友任务间隔；旧账号自动取帮助/偷菜两组间隔中较快的一组。

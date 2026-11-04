@@ -210,6 +210,20 @@ function logFileOnly(arg1: string, arg2: string | object | null, arg3: any = nul
     coreLogger.info(msg, { tag: displayTag, ...safeMeta });
 }
 
+/**
+ * 网关预算/排队让路：不是业务失败，而是「这一轮先不占用连接」。
+ * 调用方应当按「本轮无可做」处理并静默等下一轮，不要写 warn/error 日志。
+ */
+function isTransientGatewaySkip(error: any): boolean {
+    if (!error) return false;
+    if (String(error.name || '') === 'GatewayBusyError') return true;
+    const msg = String(error.message || error || '');
+    return msg.includes('网关请求超预算')
+        || msg.includes('请求等待队列已满')
+        || msg.includes('budget_total')
+        || msg.includes('reason=queue_full');
+}
+
 // ============ 异步工具 ============
 function sleep(ms: number): Promise<void> {
     return new Promise(r => setTimeout(r, ms));
@@ -227,5 +241,5 @@ module.exports = {
     setLogHook,
     getServerTimeSec, syncServerTime, getSystemDateKey, getSystemClockMinutes,
     formatDateKeyInTimeZone, formatSystemDateTime24, toTimeSec,
-    log, logWarn, logFileOnly, sleep, randomDelay,
+    log, logWarn, logFileOnly, isTransientGatewaySkip, sleep, randomDelay,
 };

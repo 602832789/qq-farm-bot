@@ -83,11 +83,16 @@ function checkCost(costs: any[], expected: any, balances: any, count = 1) {
     }
 }
 function recipeConfig(id: any) { return config.MilkTeaRecipeConfig.find(v => v.recipe_id === Number(toNum(id))); }
+/** drink_icon 是游戏资源路径，按原名映射到本地素材，保证各品种显示自己的杯子图标。 */
+function recipeImageFromIcon(icon: any): string {
+    const matched = /([A-Za-z0-9_]+)\/spriteFrame$/.exec(String(icon || ''));
+    return matched ? `/activity/milk-tea/${matched[1]}.png` : '';
+}
 function normalizeRecipes(reply: any) {
     return (reply.recipes || []).map((v: any) => {
         const row = recipeConfig(v.recipe_id);
         return { ...plain(types.MilkTeaOperateReply, { milk_tea_get_workshop: { recipes: [v] } }).milk_tea_get_workshop.recipes[0],
-            image: `/activity-assets/milk-tea/recipe-${v.recipe_id}.png`, description: row?.drink_desc || '',
+            image: recipeImageFromIcon(row?.drink_icon), description: row?.drink_desc || '',
             fruitId: Number(row?.fruit_item_id.split(':')[0] || 0),
         };
     });

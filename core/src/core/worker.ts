@@ -155,10 +155,16 @@ function startDailyRoutineTimer(runImmediately: boolean = true): void {
     lastDailyRunDate = getSystemDateKey();
     // 新账号登录后强制执行一次领取
     if (runImmediately) runExclusiveAutomationTask('daily_routines', () => runDailyRoutines(true)).catch(() => null);
-    workerScheduler.setIntervalTask('daily_routine_interval', 30 * 1000, () => {
+    // 对齐老版：60 秒一次日期轮询；同一天内不重复跑日常，但要继续做两件轻量检查——
+    // 分享资格在服务端日切后可能延迟刷新（服务内 10 分钟冷却），持续检查可避免
+    // 零点单次未命中后必须重连才能领取。
+    workerScheduler.setIntervalTask('daily_routine_interval', 60 * 1000, () => {
         if (!loginReady) return;
         const today = getSystemDateKey();
-        if (today === lastDailyRunDate) return;
+        if (today === lastDailyRunDate) {
+            checkDailyShareStatus(false).catch(() => null);
+            return;
+        }
         lastDailyRunDate = today;
         runExclusiveAutomationTask('daily_routines', () => runDailyRoutines(true)).catch(() => null);
     });
@@ -181,11 +187,11 @@ function applyIntervalsToRuntime(intervals: any): void {
     CONFIG.farmCheckIntervalMax = farmRange.max * 1000;
     CONFIG.farmCheckInterval = CONFIG.farmCheckIntervalMin;
 
-    // 好友帮助、偷菜、放虫放草共用一个好友任务间隔。
-    const helpMin = Number.parseInt(data.helpMin, 10) || 12;
-    const helpMax = Number.parseInt(data.helpMax, 10) || 15;
-    const stealMin = Number.parseInt(data.stealMin, 10) || 12;
-    const stealMax = Number.parseInt(data.stealMax, 10) || 15;
+    // 好友帮助、偷菜、放虫放草共用一个好友任务间隔（对齐老版 DEFAULT_INTERVALS：30-35 秒）。
+    const helpMin = Number.parseInt(data.helpMin, 10) || 30;
+    const helpMax = Number.parseInt(data.helpMax, 10) || 35;
+    const stealMin = Number.parseInt(data.stealMin, 10) || 30;
+    const stealMax = Number.parseInt(data.stealMax, 10) || 35;
     const friendMin = data.friendMin ?? Math.min(helpMin, stealMin);
     const friendMax = data.friendMax ?? Math.min(helpMax, stealMax);
     const friendRange = normalizeIntervalRangeSec(friendMin, friendMax, 12);
@@ -488,6 +494,10 @@ function startMysteryShopTimer(): void {
     } = require('../services/mystery-shop-auto');
     stopMysteryShopTimer();
     if (!loginReady || !isMysteryShopWatchEnabled(getAutomation())) return;
+    // 对齐老版 mystery_shop_auto_buy_initial：登录后 10 秒先探一次（商人可能在登录后任意时间出现）。
+    workerScheduler.setTimeoutTask('mystery_shop_initial', 10 * 1000, () => {
+        runExclusiveAutomationTask('mystery_shop', runMysteryShopTick).catch(() => null);
+    });
     workerScheduler.setIntervalTask('mystery_shop_interval', AUTO_BUY_CHECK_INTERVAL_MS, () => {
         runExclusiveAutomationTask('mystery_shop', runMysteryShopTick).catch(() => null);
     });
@@ -568,6 +578,22 @@ function applyRuntimeConfig(snapshot: any, syncNow: boolean = false): number {
             startMysteryShopTimer();
             startActivityAutomationTimer();
             startPetFeedCheckTimer();
+
+            // 对齐老版 mystery_shop_auto_buy_after_save：神秘商店相关开关/预算变化且已开启时，
+            // 保存后 2 秒立即巡查一次，不用等下一个 10 分钟周期。
+            const mysteryKeys = [
+                'mystery_shop_auto_buy',
+                'mystery_shop_allow_gold',
+                'mystery_shop_allow_coupon',
+                'mystery_shop_allow_gold_bean',
+            ];
+            const mysteryChanged = mysteryKeys.some(key => (prevAuto && prevAuto[key]) !== (getAutomation() as any)?.[key]);
+            if ((getAutomation() as any)?.mystery_shop_auto_buy && mysteryChanged) {
+                workerScheduler.setTimeoutTask('mystery_shop_after_save', 2000, () => {
+                    if (!loginReady) return;
+                    runExclusiveAutomationTask('mystery_shop', runMysteryShopTick).catch(() => null);
+                });
+            }
 
             // 对齐老版 star_activity_claim_after_save：保存自动化配置后 2 秒立即跑一轮，
             // 新开启的开关清掉冷却，本轮即可生效，不用等下一个 5 分钟周期。
@@ -768,8 +794,15 @@ async function startBot(config: any): Promise<void> {
 
     connect(code, onLoginSuccess);
 
-    // 启动定时状态同步
-    workerScheduler.setIntervalTask('status_sync', 3000, syncStatus, { preventOverlap: true });
+    // 启动定时状态同步（对齐老版 resource-policy：默认 10s，可用 FARM_STATUS_SYNC_INTERVAL_MS 覆盖）。
+    workerScheduler.setIntervalTask('status_sync', statusSyncIntervalMs(), syncStatus, { preventOverlap: true });
+}
+
+/** 老版 runtime/resource-policy.js：statusSyncIntervalMs = env 覆盖，否则 10s（低内存 30s）。 */
+function statusSyncIntervalMs(): number {
+    const env = Number.parseInt(String(process.env.FARM_STATUS_SYNC_INTERVAL_MS || ''), 10);
+    if (Number.isFinite(env) && env >= 1000) return env;
+    return 10 * 1000;
 }
 
 function detachRuntimeListeners(): void {

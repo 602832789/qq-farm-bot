@@ -9,7 +9,7 @@ const { getFruitName, getPlantByFruitId, getPlantBySeedId, getItemById, getItemI
 const { isAutomationOn } = require('../models/store');
 const { sendMsgAsync, networkEvents, getUserState } = require('../utils/network');
 const { types } = require('../utils/proto');
-const { toLong, toNum, toTimeSec, log, logWarn, sleep, getSystemDateKey } = require('../utils/utils');
+const { toLong, toNum, toTimeSec, log, logWarn, isTransientGatewaySkip, sleep, getSystemDateKey } = require('../utils/utils');
 const { getSellConditionContext } = require('./activity-windows');
 const { updateStatusGold } = require('./status');
 
@@ -401,6 +401,8 @@ async function autoOpenFertilizerGiftPacks(): Promise<number> {
         if (isFertilizerContainerFullError(e)) {
             return 0;
         }
+        // 网关预算/排队让路不是业务失败，属于「这一轮先不占用连接」，静默等下一轮。
+        if (isTransientGatewaySkip(e)) return 0;
         logWarn('仓库', `开启化肥礼包失败: ${e.message}`, {
             module: 'warehouse',
             event: '开启化肥礼包',
@@ -449,6 +451,8 @@ async function openCharitySettlementGiftPacksSilently(): Promise<number> {
         }
         return opened;
     } catch (e: any) {
+        // 网关预算/排队让路不是业务失败（老版对这类跳过同样不报错）。
+        if (isTransientGatewaySkip(e)) return 0;
         logWarn('仓库', `打开公益小红花结算礼包失败: ${e.message}`, {
             module: 'warehouse',
             event: 'charity_settlement_gift_open',

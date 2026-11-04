@@ -7,7 +7,23 @@
  */
 export {};
 
-const { log, logWarn, logFileOnly, toNum } = require('../utils/utils');
+const { log, logWarn, logFileOnly, isTransientGatewaySkip, toNum } = require('../utils/utils');
+
+/**
+ * 活动未开启 / 已结束类的报错：老版这类情况根本不会发请求（状态守卫先行），
+ * 所以同样按「静默跳过」处理，只在日志文件里留痕。
+ */
+function isActivityNotOpenMessage(message: string): boolean {
+    const text = String(message || '');
+    return text.includes('活动未开始')
+        || text.includes('活动已结束')
+        || text.includes('活动未开启')
+        || text.includes('活动不存在')
+        || text.includes('活动数据未下发')
+        || text.includes('未查询到活动')
+        || text.includes('activity not found')
+        || text.includes('not active');
+}
 
 /** 单个操作的最小重试间隔；对齐老版 5 分钟轮询节奏（老版无冷却，靠状态守卫，这里用 5 分钟上限兑底）。 */
 const OP_COOLDOWN_MS = 5 * 60 * 1000;
@@ -43,6 +59,50 @@ function getAutomationSnapshot(): any {
 function isCoolingDown(op: AutomationOp, now: number): boolean {
     const last = lastRunAt.get(op.key) || 0;
     return now - last < (op.cooldownMs || OP_COOLDOWN_MS);
+}
+
+/**
+ * 一轮内的活动状态缓存。
+ *
+ * 老版是「每个活动先读一次状态，再决定要不要发操作请求」，读不到 / active=false 就整段跳过。
+ * 当前版按操作粒度拆开，所以这里做一层 round 级缓存：同一活动一轮只读一次状态，
+ * 既对齐老版语义，也不会让 30 多个操作各拉一遍状态把请求预算吃光。
+ */
+const roundActivityState = new Map<string, any>();
+
+async function readRoundActivityState(key: string, loader: () => Promise<any>): Promise<any> {
+    if (!roundActivityState.has(key)) {
+        let value: any = null;
+        try {
+            value = await loader();
+        } catch {
+            value = null;
+        }
+        roundActivityState.set(key, value);
+    }
+    return roundActivityState.get(key);
+}
+
+/** 活动是否处于开启窗口：DTO 走 active 字段，青酿这类只有时间窗的按 endTime 判定。 */
+function isActivityOpen(state: any): boolean {
+    if (!state) return false;
+    if (state.active === false) return false;
+    if (state.active === true) return true;
+    const endSec = toNum(state.endTime);
+    if (endSec > 0) return endSec > Math.floor(Date.now() / 1000);
+    return true;
+}
+
+async function petDiaryOpen(): Promise<boolean> {
+    const activityCenter = require('./activity-center');
+    const state = await readRoundActivityState('pet', () => activityCenter.getPetDiary());
+    return isActivityOpen(state);
+}
+
+async function weatherActivityOpen(): Promise<boolean> {
+    const activityCenter = require('./activity-center');
+    const state = await readRoundActivityState('weather', () => activityCenter.getCurrentWeatherActivity());
+    return isActivityOpen(state);
 }
 
 /** 奶茶人才偏好：与老版 selectHireCandidate 相同的选人策略。 */
@@ -240,6 +300,8 @@ function buildOps(): AutomationOp[] {
             key: 'qingmei_seed_claim',
             label: '领取青莓每日种子',
             run: async () => {
+                const state = await readRoundActivityState('qingmei', () => activityCenter.getCurrentQingMeiActivity());
+                if (!isActivityOpen(state)) return false;
                 await activityCenter.claimQingMeiDailySeed();
                 return true;
             },
@@ -248,6 +310,8 @@ function buildOps(): AutomationOp[] {
             key: 'qingmei_wine_brew',
             label: '青莓酿酒推进',
             run: async () => {
+                const state = await readRoundActivityState('qingmei', () => activityCenter.getCurrentQingMeiActivity());
+                if (!isActivityOpen(state)) return false;
                 const settled = await activityCenter.settleQingMeiBrew().catch(() => null);
                 if (settled) return true;
                 const continued = await activityCenter.continueQingMeiBrew().catch(() => null);
@@ -258,6 +322,8 @@ function buildOps(): AutomationOp[] {
             key: 'qixi_bridge_build',
             label: '领取七夕鹊桥奖励',
             run: async () => {
+                const state = await readRoundActivityState('qixi', () => activityCenter.getCurrentQixiActivity());
+                if (!isActivityOpen(state) || !state.actions?.bridge?.available) return false;
                 await activityCenter.claimQixiBridgeRewards();
                 return true;
             },
@@ -271,6 +337,8 @@ function buildOps(): AutomationOp[] {
                     : [];
                 const gid = priority.find((value: any) => Number(value) > 0);
                 if (!gid) return false;
+                const state = await readRoundActivityState('qixi', () => activityCenter.getCurrentQixiActivity());
+                if (!isActivityOpen(state) || !state.actions?.gift?.available) return false;
                 await activityCenter.giftQixiSachet(gid);
                 return true;
             },
@@ -279,6 +347,8 @@ function buildOps(): AutomationOp[] {
             key: 'charity_flower_donate',
             label: '公益红花捐爱心',
             run: async () => {
+                const state = await readRoundActivityState('charity', () => activityCenter.getCurrentCharityRedFlowerActivity());
+                if (!isActivityOpen(state) || !state.actions?.donateLove?.available) return false;
                 await activityCenter.donateCharityRedFlowerLove();
                 return true;
             },
@@ -316,6 +386,7 @@ function buildOps(): AutomationOp[] {
             key: 'pet_diary_adopt',
             label: '萌宠日记-领养',
             run: async () => {
+                if (!await petDiaryOpen()) return false;
                 await activityCenter.operatePetDiary('initialize', {});
                 return true;
             },
@@ -324,6 +395,7 @@ function buildOps(): AutomationOp[] {
             key: 'pet_diary_feed',
             label: '萌宠日记-投喂',
             run: async () => {
+                if (!await petDiaryOpen()) return false;
                 await activityCenter.operatePetDiary('feed', {});
                 return true;
             },
@@ -332,6 +404,7 @@ function buildOps(): AutomationOp[] {
             key: 'pet_diary_draw',
             label: '萌宠日记-寻宝',
             run: async () => {
+                if (!await petDiaryOpen()) return false;
                 await activityCenter.operatePetDiary('draw', {});
                 return true;
             },
@@ -340,6 +413,7 @@ function buildOps(): AutomationOp[] {
             key: 'pet_diary_seed_claim',
             label: '萌宠日记-种子礼包',
             run: async () => {
+                if (!await petDiaryOpen()) return false;
                 await activityCenter.operatePetDiary('seeds', {});
                 return true;
             },
@@ -348,6 +422,7 @@ function buildOps(): AutomationOp[] {
             key: 'pet_diary_treasure_open',
             label: '萌宠日记-开启宝藏',
             run: async () => {
+                if (!await petDiaryOpen()) return false;
                 await activityCenter.operatePetDiary('openTreasure', {});
                 return true;
             },
@@ -356,6 +431,7 @@ function buildOps(): AutomationOp[] {
             key: 'rain_poem_bottle_buy',
             label: '雨落成诗-兑换采集瓶',
             run: async () => {
+                if (!await weatherActivityOpen()) return false;
                 await activityCenter.exchangeWeatherCollectorBottle();
                 return true;
             },
@@ -364,6 +440,7 @@ function buildOps(): AutomationOp[] {
             key: 'rain_poem_summon_use',
             label: '雨落成诗-使用祈雨瓶',
             run: async () => {
+                if (!await weatherActivityOpen()) return false;
                 await activityCenter.useWeatherSummonBottle();
                 return true;
             },
@@ -417,6 +494,8 @@ async function runActivityAutomationOnce(): Promise<string[]> {
     ticking = true;
     const executed: string[] = [];
     const now = Date.now();
+    // 每轮重新读活动状态：上一轮的缓存不能跨轮沿用（活动可能在两轮之间开启/结束）。
+    roundActivityState.clear();
     try {
         const automation = getAutomationSnapshot();
         const ops = buildOps();
@@ -439,9 +518,15 @@ async function runActivityAutomationOnce(): Promise<string[]> {
                     logFileOnly('活动', `活动自动化：${op.label} 本轮无可领取或活动未开放`, { event: 'activity_automation' });
                 }
             } catch (error: any) {
-                // 活动未开启 / 无奖励 + 冷却未到都是常态，但保持可见，让用户看得到跳过原因。
+                // 对齐老版：老版是「先读活动状态 → 不满足就整段不进分支」，所以从不会出现
+                // 「跳过（原因）」这类日志。这里把同类的跳过（限流让路 / 活动未开启 / 冷却未到）
+                // 只写日志文件，不进前端面板；真正执行失败才可见，文案沿用老版的「失败: 原因」。
                 const message = String(error?.message || error || '');
-                log('活动', `活动自动化：${op.label} 跳过（${message}）`, { event: 'activity_automation' });
+                if (isTransientGatewaySkip(error) || isActivityNotOpenMessage(message)) {
+                    logFileOnly('活动', `活动自动化：${op.label} 本轮跳过（${message}）`, { event: 'activity_automation' });
+                } else {
+                    logWarn('活动', `活动自动化：${op.label} 失败: ${message}`, { event: 'activity_automation' });
+                }
             }
         }
 
