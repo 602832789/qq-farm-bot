@@ -122,7 +122,7 @@ const avatar = (value?: string) => /^https?:\/\//.test(value || '')
           <thead><tr><th>奶茶</th><th>售出杯数</th></tr></thead>
           <tbody>
             <tr v-for="drink in records.drinks" :key="drink.recipe_id">
-              <td><span class="tea-product"><img v-if="drink.image" :src="drink.image" :alt="drink.name"><b>{{ drink.name }}</b></span></td><td class="tea-number">
+              <td><span class="tea-product"><img :src="teaImage(drink.image || `icon_s4_milktea_${drink.recipe_id}`)" :alt="drink.name"><b>{{ drink.name || `奶茶 #${drink.recipe_id}` }}</b></span></td><td class="tea-number">
                 {{ teaNumber(drink.cups) }}
               </td>
             </tr>
