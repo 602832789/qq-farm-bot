@@ -163,13 +163,36 @@ function createRuntimeEngine(options: RuntimeEngineOptions = {}) {
         }
     }
 
-    function startAllAccounts(): void {
+    /**
+     * 服务启动后自动登录已保存的账号。
+     * 必须走 dataProvider.startAccount：微信账号会在启动前用长效凭证续期换 Code，
+     * 直接 startWorker 会拿 accounts.json 里已被消费的一次性旧 Code 建立连接而被网关拒绝。
+     */
+    async function startAllAccounts(): Promise<void> {
         const accounts = (store.getAccounts().accounts || []);
-        if (accounts.length > 0) {
-            log('系统', `发现 ${accounts.length} 个账号，正在启动...`);
-            accounts.forEach((acc: any) => startWorker(acc));
-        } else {
+        if (!accounts.length) {
             log('系统', '未发现账号，请访问管理面板添加账号');
+            return;
+        }
+        log('系统', `发现 ${accounts.length} 个账号，正在自动登录...`);
+        for (let i = 0; i < accounts.length; i += 1) {
+            const acc: any = accounts[i];
+            const id = String(acc.id || '');
+            const name = String(acc.name || acc.nick || id);
+            try {
+                await dataProvider.startAccount(id);
+                addAccountLog('auto_login', `账号 ${name} 已随服务启动自动登录`, id, name);
+            }
+            catch (error: any) {
+                log('错误', `账号 ${name} 自动登录失败: ${(error && error.message) || String(error)}`, {
+                    accountId: id,
+                    accountName: name,
+                });
+            }
+            // 多账号错峰启动，避免同时建连打满网关与登录限流。
+            if (i < accounts.length - 1) {
+                await new Promise(resolve => setTimeout(resolve, 1500));
+            }
         }
     }
 
@@ -188,7 +211,7 @@ function createRuntimeEngine(options: RuntimeEngineOptions = {}) {
         }
 
         if (shouldAutoStartAccounts) {
-            startAllAccounts();
+            await startAllAccounts();
         }
 
         startAccountKeepAlive();

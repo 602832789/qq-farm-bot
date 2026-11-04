@@ -251,13 +251,17 @@ onUnmounted(() => {
   font-size: 18px;
 }
 
-.picker-state span {
+/* 只作用于空状态里的说明文字，避免把 BaseButton 内部的 .n-button__content
+   也染成灰绿色，导致绿底按钮上的白字看不清。 */
+.picker-state > span {
   max-width: 420px;
   color: var(--ui-muted);
   font-size: 12px;
 }
 
-.picker-state button {
+/* 活动目录页的空状态按钮已统一为 BaseButton primary；这里只保留旧页面中
+   原生 button 的兜底样式，避免全局规则把主按钮覆盖成白底绿字。 */
+.picker-state button:not(.base-button) {
   min-height: 36px;
   margin-top: 8px;
   padding: 0 15px;
@@ -269,7 +273,7 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-.picker-state button:disabled {
+.picker-state button:not(.base-button):disabled {
   opacity: 0.55;
   cursor: wait;
 }

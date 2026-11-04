@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import type { ActivityDirectoryItemDto } from '@/stores/activity-center'
-import { NButton } from 'naive-ui/es/button'
 import { storeToRefs } from 'pinia'
 import { computed, ref } from 'vue'
 import { activityHasGameplay } from '@/components/activity/gameplays'
+import BaseButton from '@/components/ui/BaseButton.vue'
 import FarmPageHeader from '@/components/ui/FarmPageHeader.vue'
 import { useAccountStore } from '@/stores/account'
 import { useActivityCenterStore } from '@/stores/activity-center'
@@ -309,12 +309,12 @@ function openActivity(activity: ActivityDirectoryItemDto) {
 <template>
   <section class="activity-page space-y-4">
     <FarmPageHeader scene title="活动中心" :description="headerDescription" icon="i-carbon-gift">
-      <NButton :loading="loading" :disabled="!currentAccountId" @click="load(true)">
+      <BaseButton variant="primary" size="sm" :loading="loading" :disabled="!currentAccountId" @click="load(true)">
         <template #icon>
           <span class="i-carbon-renew" />
         </template>
         刷新
-      </NButton>
+      </BaseButton>
     </FarmPageHeader>
 
     <div v-if="!currentAccountId" class="picker-state">
@@ -330,17 +330,17 @@ function openActivity(activity: ActivityDirectoryItemDto) {
       <div class="i-carbon-warning-alt" />
       <strong>活动加载失败</strong>
       <span>{{ error }}</span>
-      <button type="button" :disabled="loading" @click="load(true)">
+      <BaseButton variant="primary" size="sm" :loading="loading" @click="load(true)">
         重新加载
-      </button>
+      </BaseButton>
     </div>
     <div v-else-if="accountDataLoaded && !loading && !hasActivities" class="picker-state empty-activities">
       <div class="i-carbon-calendar" />
       <strong>当前无活动</strong>
       <span>服务器暂未返回活动配置</span>
-      <button type="button" @click="load(true)">
+      <BaseButton variant="primary" size="sm" @click="load(true)">
         刷新活动
-      </button>
+      </BaseButton>
     </div>
 
     <template v-else>
@@ -891,27 +891,14 @@ function openActivity(activity: ActivityDirectoryItemDto) {
   font-size: 18px;
 }
 
-.picker-state span {
+.picker-state > span {
   max-width: 420px;
   color: var(--ui-muted);
   font-size: 12px;
 }
 
-.picker-state button {
-  min-height: 36px;
+.picker-state .base-button {
   margin-top: 8px;
-  padding: 0 15px;
-  border: 1px solid var(--ui-border);
-  border-radius: 6px;
-  color: var(--ui-primary);
-  background: var(--ui-surface);
-  font-weight: var(--fw-700);
-  cursor: pointer;
-}
-
-.picker-state button:disabled {
-  opacity: 0.55;
-  cursor: wait;
 }
 
 .picker-state .picker-spinner {

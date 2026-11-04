@@ -729,6 +729,9 @@ function loadGlobalConfig(): void {
                     platform: String(data.systemConfig.platform || 'qq').trim(),
                     os: deviceOs,
                     timeZone: normalizeTimeZone(data.systemConfig.timeZone || DEFAULT_TIME_ZONE),
+                    // 旧 store.json 没有该字段：默认开启服务启动自动登录。
+                    autoStartAccounts: data.systemConfig.autoStartAccounts !== false,
+                    autoCodeRefresh: data.systemConfig.autoCodeRefresh,
                     deviceInfo: {
                         os: deviceOs,
                         clientVersion: deviceClientVersion,

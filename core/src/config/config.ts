@@ -36,6 +36,8 @@ interface SystemConfig {
     timeZone: string;
     deviceInfo: DeviceInfo;
     autoCodeRefresh: AutoCodeRefreshConfig;
+    /** 服务启动后自动登录已保存的账号（默认开启）。 */
+    autoStartAccounts?: boolean;
 }
 
 interface RuntimeConfig extends SystemConfig {
@@ -212,6 +214,8 @@ const DEFAULT_SYSTEM_CONFIG: SystemConfig = {
     timeZone: DEFAULT_TIME_ZONE,
     deviceInfo: { ...DEFAULT_DEVICE_INFO },
     autoCodeRefresh: { enabled: false, intervalMinutes: 60, offlineEnabled: false, offlineDelaySeconds: 60 },
+    // 服务重启后自动拉起已保存账号，避免每次重启都要手动点启动。
+    autoStartAccounts: true,
 };
 
 /** 账号保活配置归一化：重登间隔 1~1440 分钟，掉线等待 1~86400 秒。 */
@@ -230,6 +234,7 @@ function normalizeAutoCodeRefresh(input: unknown): AutoCodeRefreshConfig {
 
 const CONFIG: RuntimeConfig = {
     autoCodeRefresh: { ...DEFAULT_SYSTEM_CONFIG.autoCodeRefresh },
+    autoStartAccounts: DEFAULT_SYSTEM_CONFIG.autoStartAccounts,
     serverUrl: DEFAULT_SYSTEM_CONFIG.serverUrl,
     clientVersion: DEFAULT_CLIENT_VERSION,
     clientVersionUpdatedAt: DEFAULT_CLIENT_VERSION_UPDATED_AT,
@@ -295,6 +300,9 @@ function updateRuntimeConfig(newConfig: Partial<SystemConfig>): void {
     if (newConfig.autoCodeRefresh) {
         CONFIG.autoCodeRefresh = normalizeAutoCodeRefresh(newConfig.autoCodeRefresh);
     }
+    if (newConfig.autoStartAccounts !== undefined) {
+        CONFIG.autoStartAccounts = newConfig.autoStartAccounts === true;
+    }
     if (newConfig.timeZone !== undefined) {
         CONFIG.timeZone = normalizeTimeZone(newConfig.timeZone);
     }
@@ -318,7 +326,19 @@ function getRuntimeConfig(): SystemConfig {
         timeZone: CONFIG.timeZone,
         deviceInfo: { ...CONFIG.deviceInfo },
         autoCodeRefresh: { ...CONFIG.autoCodeRefresh },
+        autoStartAccounts: CONFIG.autoStartAccounts,
     };
+}
+
+/**
+ * 解析「服务启动自动登录」开关。
+ * 优先级：环境变量 FARM_AUTO_START_ACCOUNTS > 已保存的系统配置 > 默认开启。
+ * 环境变量便于 Docker/NAS 无面板时强制覆盖（0/false/no/off 关闭）。
+ */
+function resolveAutoStartAccounts(saved: boolean | undefined, envValue: string | undefined = process.env.FARM_AUTO_START_ACCOUNTS): boolean {
+    const raw = String(envValue ?? '').trim();
+    if (raw) return !/^(0|false|no|off)$/i.test(raw);
+    return saved !== false;
 }
 
 function getDefaultSystemConfig(): SystemConfig {
@@ -367,6 +387,7 @@ module.exports = {
     getRuntimeConfig,
     getDefaultSystemConfig,
     normalizeAutoCodeRefresh,
+    resolveAutoStartAccounts,
     DEFAULT_AUTO_CODE_REFRESH: DEFAULT_SYSTEM_CONFIG.autoCodeRefresh,
     getDevicePresets,
     getTimeZoneOptions,

@@ -30,6 +30,16 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-05 · 服务启动自动登录与登录 Code 续期修复
+
+- 「探索与成长 → 活动中心」页头「刷新」及空状态的「重新加载 / 刷新活动」统一改为绿色实底白字主按钮（与其它页面一致的 `BaseButton variant="primary"`）；同时把父页面里一条非 scoped 的 `.picker-state button` 全局样式限定为只作用于原生按钮，避免主按钮被覆盖成白底绿字。
+- 新增「服务启动自动登录」：系统设置 → 账号保活卡片可开关（默认开启），也可用环境变量 `FARM_AUTO_START_ACCOUNTS=0` 覆盖。服务重启后逐账号错峰拉起（间隔 1.5 秒），单个账号失败不影响其它账号。
+- 启动链路改为复用 `dataProvider.startAccount()` 而不是直接 `startWorker()`：自动启动也会走「启动前换取新鲜一次性 Code」，避免拿 `accounts.json` 里已消费的旧 Code 建连被网关以 400 拒绝。
+- 修复「仅有 loginBuffer、没有 refreshtoken」的微信账号重启后要重新扫码：启动前换码条件从只看 `refreshtoken` 放宽为 `loginBuffer || refreshtoken`。
+- QQ 账号新增启动前免扫码重签 Code 的轻量探测（仅当开启 QQ 扫码服务时）：支持的服务返回新 Code 会写回账号；标准 `qq-miniapp-auth` 返回 `TASK_EXPIRED` 时标记「不支持」并静默回退，不会占用扫码工作流，也不影响原有启动。可通过 `FARM_QQ_CODE_REFRESH_PATH` / `FARM_NAPCAT_PLUGIN_TOKEN` 对接仓库内置 NapCat 插件的 `/miniapp` 端点。
+- 修复 `store.json` 加载时丢弃 `autoCodeRefresh` 字段的问题：账号保活配置不再因服务重启而回到默认关闭。
+- 新增 9 项回归测试（自动登录开关解析、loginBuffer-only 换码、QQ 重签成功/回退/不支持去重、启动链路防回归）；后端 314 项、前端 19 项全部通过，类型检查与生产构建通过。
+
 ### 2026-11-05 · 回滚硬预算期的省请求改动 + 修复奶茶手动兑换
 
 - 回滚 60s 硬预算时代为省请求而牺牲实时性的改动：地块 1.2s TTL 快照、施肥复用巡田快照、任务扫描 30s 节流、化肥礼包 60s 冷却、巡田按预算推迟、偷菜前 60s 抢收窗口、活动自动化首轮额度顺延，全部恢复为「每次读实时数据 / 按正常节奏执行」。

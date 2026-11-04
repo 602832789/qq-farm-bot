@@ -530,8 +530,8 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
 
     app.post('/api/settings/system-config', (req: Request, res: Response) => {
         try {
-            const { serverUrl, clientVersion, wxClientVersion, platform, os, timeZone, deviceInfo, autoCodeRefresh } = req.body || {};
-            const saved = store.setSystemConfig({ serverUrl, clientVersion, wxClientVersion, platform, os, timeZone, deviceInfo, autoCodeRefresh });
+            const { serverUrl, clientVersion, wxClientVersion, platform, os, timeZone, deviceInfo, autoCodeRefresh, autoStartAccounts } = req.body || {};
+            const saved = store.setSystemConfig({ serverUrl, clientVersion, wxClientVersion, platform, os, timeZone, deviceInfo, autoCodeRefresh, autoStartAccounts });
             updateRuntimeConfig(saved);
             if (autoCodeRefresh !== undefined && ctx.provider.applyAccountKeepAliveConfig) {
                 ctx.provider.applyAccountKeepAliveConfig();

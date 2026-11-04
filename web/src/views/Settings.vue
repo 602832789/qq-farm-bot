@@ -681,6 +681,7 @@ const localSystemConfig = ref({
   platform: 'qq',
   os: 'Windows',
   timeZone: 'Asia/Shanghai',
+  autoStartAccounts: true,
   deviceInfo: { ...defaultDeviceInfo },
 })
 const defaultSystemConfig = ref({
@@ -690,6 +691,7 @@ const defaultSystemConfig = ref({
   platform: 'qq',
   os: 'Windows',
   timeZone: 'Asia/Shanghai',
+  autoStartAccounts: true,
   deviceInfo: { ...defaultDeviceInfo },
 })
 const localLoginSettings = ref({
@@ -721,6 +723,7 @@ function normalizeSystemConfig(source: any, fallback: any) {
     platform: source?.platform || 'qq',
     os: source?.os || 'Windows',
     timeZone: source?.timeZone || fallback.timeZone || 'Asia/Shanghai',
+    autoStartAccounts: source?.autoStartAccounts !== false,
     deviceInfo: source?.deviceInfo ? { ...fallback.deviceInfo, ...source.deviceInfo } : { ...fallback.deviceInfo },
   }
 }

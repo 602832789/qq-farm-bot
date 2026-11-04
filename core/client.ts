@@ -27,6 +27,13 @@ const isWorkerProcess: boolean = process.env.FARM_WORKER === '1';
 if (isWorkerProcess) {
     require(`${baseDir}/core/worker`);
 } else {
+    // 服务启动自动登录：默认开启，可用 FARM_AUTO_START_ACCOUNTS=0 或系统设置关闭。
+    const store = require(`${baseDir}/models/store`);
+    const { resolveAutoStartAccounts } = require(`${baseDir}/config/config`);
+    const savedSystemConfig = typeof store.getSystemConfig === 'function' ? store.getSystemConfig() : null;
+    const autoStartAccounts = resolveAutoStartAccounts(savedSystemConfig?.autoStartAccounts);
+    mainLogger.info('auto login on boot', { autoStartAccounts });
+
     const runtimeEngine = createRuntimeEngine({
         processRef: process,
         mainEntryPath: __filename,
@@ -48,7 +55,7 @@ if (isWorkerProcess) {
 
     runtimeEngine.start({
         startAdminServer: true,
-        autoStartAccounts: false,
+        autoStartAccounts,
     }).catch((err: any) => {
         mainLogger.error('runtime bootstrap failed', { error: err && err.message ? err.message : String(err) });
     });

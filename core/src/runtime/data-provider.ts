@@ -448,25 +448,47 @@ function createDataProvider(options: DataProviderOptions) {
             // 已在运行的账号无需续期，保持原行为。
             if (workers[id]) return true;
 
-            // 微信账号启动前先用刷新凭证续期 Code（老版 manual_start 逻辑）：
             // 游戏 Code 是一次性的，账号停止后旧 Code 大概率已失效，
             // 直接启动会被服务端拒绝而要求重新扫码。
-            // 续期成功用新 Code 启动；失败则退回旧 Code（老版同款兜底）。
-            if (String(acc.platform || '') === 'wx' && String(acc.refreshtoken || '').trim()) {
+            const platform = String(acc.platform || '');
+            const loginBuffer = String(acc.loginBuffer || '').trim();
+            const refreshToken = String(acc.refreshtoken || '').trim();
+            // 微信：只要有长效凭证就先换新鲜 Code。旧实现只认 refreshtoken，
+            // 导致「扫码时未回传 refreshtoken、仅有 loginBuffer」的账号被跳过换码，
+            // 重启后拿旧 Code 直连失败，只能重新扫码 —— 这正是部分账号的表现。
+            const canRefreshWxCode = platform === 'wx' && !!(loginBuffer || refreshToken);
+            // QQ：没有滚动凭证，尽力尝试免扫码重签（需 NapCat 提供对应能力），
+            // 不支持时静默回退已保存的 Code，并留下可诊断的账号日志。
+            const canRefreshQqCode = platform === 'qq';
+
+            if (canRefreshWxCode || canRefreshQqCode) {
                 if (pendingStarts.has(id)) return true;
                 pendingStarts.add(id);
                 try {
-                    const { ensureFreshGameCode } = require('../services/wx-credential');
-                    const result = await ensureFreshGameCode(id);
-                    if (result.ok) {
-                        const latest = findAccountByAnyRef(id);
-                        addAccountLog('auto_code_refresh', `账号 ${result.accountName} 启动前已自动续期 Code`, id, result.accountName, { reason: 'manual_start' });
-                        startWorker(latest || acc);
-                        return true;
+                    if (canRefreshWxCode) {
+                        const { ensureFreshGameCode } = require('../services/wx-credential');
+                        const result = await ensureFreshGameCode(id);
+                        if (result.ok) {
+                            const latest = findAccountByAnyRef(id);
+                            addAccountLog('auto_code_refresh', `账号 ${result.accountName} 启动前已自动续期 Code`, id, result.accountName, { reason: 'manual_start' });
+                            startWorker(latest || acc);
+                            return true;
+                        }
+                        addAccountLog('auto_code_refresh_failed', `账号 ${result.accountName} 启动前续期 Code 失败: ${result.error}，尝试用现有 Code 启动`, id, result.accountName, { reason: 'manual_start' });
+                    } else {
+                        const { tryRefreshQqGameCode } = require('../services/qq-credential');
+                        const result = await tryRefreshQqGameCode(id);
+                        if (result.ok) {
+                            const latest = findAccountByAnyRef(id);
+                            const accountName = String((latest && latest.name) || acc.name || '');
+                            addAccountLog('auto_code_refresh', `账号 ${accountName} 启动前已自动重签 QQ Code`, id, accountName, { reason: 'manual_start' });
+                            startWorker(latest || acc);
+                            return true;
+                        }
+                        addAccountLog('auto_code_refresh_failed', `账号 ${acc.name} 未能自动重签 QQ Code（${result.error || '未知原因'}），将用已保存的 Code 启动；若提示 Code 失效请重新扫码或填写新 Code`, id, String(acc.name || ''), { reason: 'manual_start' });
                     }
-                    addAccountLog('auto_code_refresh_failed', `账号 ${result.accountName} 启动前续期 Code 失败: ${result.error}，尝试用现有 Code 启动`, id, result.accountName, { reason: 'manual_start' });
                 } catch (error: any) {
-                    addAccountLog('auto_code_refresh_failed', `账号 ${acc.name} 启动前续期 Code 异常: ${error?.message || error}，尝试用现有 Code 启动`, id, acc.name, { reason: 'manual_start' });
+                    addAccountLog('auto_code_refresh_failed', `账号 ${acc.name} 启动前续期 Code 异常: ${error?.message || error}，尝试用现有 Code 启动`, id, String(acc.name || ''), { reason: 'manual_start' });
                 } finally {
                     pendingStarts.delete(id);
                 }

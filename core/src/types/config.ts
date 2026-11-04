@@ -244,6 +244,8 @@ export interface SystemConfig {
   timeZone: string;
   deviceInfo: DeviceInfo;
   autoCodeRefresh?: AutoCodeRefreshConfig;
+  /** 服务启动后自动登录已保存的账号（默认开启）。 */
+  autoStartAccounts?: boolean;
 }
 
 export interface GlobalConfig {

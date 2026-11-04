@@ -19,6 +19,8 @@ const DEFAULT_CONFIG: AutoCodeRefreshConfig = { enabled: false, intervalMinutes:
 
 const config = ref<AutoCodeRefreshConfig>({ ...DEFAULT_CONFIG })
 const draft = ref<AutoCodeRefreshConfig>({ ...DEFAULT_CONFIG })
+// 服务启动后自动登录已保存的账号（系统级开关，默认开启）。
+const autoStart = ref(true)
 const loading = ref(true)
 const saving = ref(false)
 const open = ref(false)
@@ -48,8 +50,11 @@ async function load() {
   loading.value = true
   try {
     const { data } = await api.get('/api/settings/system-config')
-    if (data?.ok)
-      config.value = normalize((data.data?.saved || data.data?.default)?.autoCodeRefresh)
+    if (data?.ok) {
+      const saved = data.data?.saved || data.data?.default
+      config.value = normalize(saved?.autoCodeRefresh)
+      autoStart.value = saved?.autoStartAccounts !== false
+    }
   }
   catch (e) {
     console.error('加载账号保活配置失败:', e)
@@ -99,6 +104,28 @@ function toggle(next: boolean) {
   void save({ ...config.value, enabled: next, offlineEnabled: next ? config.value.offlineEnabled : false })
 }
 
+async function saveAutoStart(next: boolean | undefined) {
+  if (disabled.value)
+    return
+  const enabled = !!next
+  saving.value = true
+  try {
+    const { data } = await api.post('/api/settings/system-config', { autoStartAccounts: enabled })
+    if (!data?.ok) {
+      emit('notify', getApiErrorMessage(data, '保存自动登录设置失败'), 'danger')
+      return
+    }
+    autoStart.value = (data.data?.saved?.autoStartAccounts ?? enabled) !== false
+    emit('notify', autoStart.value ? '已开启服务启动自动登录' : '已关闭服务启动自动登录', 'primary')
+  }
+  catch (e: any) {
+    emit('notify', `保存失败: ${getApiErrorMessage(e, '未知错误')}`, 'danger')
+  }
+  finally {
+    saving.value = false
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -125,6 +152,22 @@ onMounted(load)
         :tags="tags"
         @toggle="toggle"
         @configure="configure"
+      />
+    </div>
+    <div class="flex flex-wrap items-center justify-between gap-3 border border-gray-200 rounded-lg bg-gray-50/70 p-3 dark:border-gray-700 dark:bg-gray-900/30">
+      <div class="min-w-0">
+        <h4 class="text-sm text-gray-900 font-semibold dark:text-gray-100">
+          服务启动自动登录
+        </h4>
+        <p class="mt-0.5 text-xs text-gray-500 leading-relaxed">
+          重启服务后自动拉起已保存的账号；微信账号会自动续期 Code，QQ 账号 Code 失效时仍需重新扫码或填写新 Code
+        </p>
+      </div>
+      <BaseSwitch
+        :model-value="autoStart"
+        label="自动登录"
+        :disabled="disabled"
+        @update:model-value="saveAutoStart"
       />
     </div>
 
