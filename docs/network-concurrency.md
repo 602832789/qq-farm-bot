@@ -120,6 +120,24 @@ Gateway 是一条 WebSocket 长连接，所有业务共用它。这份文档说�
 可用环境变量调整：`FARM_AUTO_LIMIT_60S`、`FARM_AUTO_CAUTIOUS_LIMIT_60S`、
 `FARM_AUTO_STALL_LIMIT_60S`、`FARM_AUTO_METHOD_LIMIT_60S`、`FARM_FOREGROUND_ACTIVE_MS`。
 
+### 硬预算期留下的省请求改动已回滚（2026-11-05）
+
+硬预算时代为了「把 60s 内的请求数压下来」，还做过一批以牺牲实时性换请求数的改动。
+预算闸门本身被拆成只约束自动任务的保险丝之后，这些改动失去了存在理由，全部回滚：
+
+| 位置 | 硬预算期的妥协 | 现在 |
+| --- | --- | --- |
+| `services/farm/api.ts` | `getAllLands` 1.2s TTL 快照 + 并发合并 | 每次都读服务端实时地块 |
+| `services/farm/planting.ts` | 施肥复用巡田传入的 `knownLands` 快照 | 施肥前后各读一次最新地块 |
+| `services/task.ts` | 任务扫描 30s 节流（`FARM_TASK_SCAN_INTERVAL_MS`） | 每个巡田 tick 正常扫描 |
+| `services/warehouse.ts` | 化肥礼包检查 60s 冷却 | 跟巡田节奏检查 |
+| `services/farm/scheduler.ts` | 遇「超预算」按 `retryAfter` 推迟下一轮巡田 | 不再按预算推迟，按正常间隔重试 |
+| `core/worker.ts` | 偷菜到点前 60s 开「抢收紧急窗口」 | 移除；收菜偷菜本身就在保命白名单里 |
+| `services/activity-automation.ts` | 首轮额度 ≥90% 时顺延 15s | 启动 10 秒后照常跑首轮 |
+
+活动自动化的「一轮只读一次」缓存（`utils/activity-round.ts`）保留：它只在自动化轮次
+作用域内生效，写操作后立即失效，面板与手动操作始终直连实时数据，不影响交互正确性。
+
 ### 前台让路
 
 `checkRequest()` 遇到前台请求会刷新「用户正在操作」时间戳。`runFarmTick()` /

@@ -26,8 +26,6 @@ const NORMAL_CONTAINER_ID: number = 1011;
 const ORGANIC_CONTAINER_ID: number = 1012;
 const CHARITY_SETTLEMENT_GIFT_ID: number = 101604;
 const SPECIAL_GIFT_CHECK_COOLDOWN_MS: number = 5 * 60 * 1000;
-/** 化肥类礼包检查冷却：巡田每轮都读一次背包会白吃单接口预算。 */
-const FERTILIZER_GIFT_CHECK_COOLDOWN_MS: number = 60 * 1000;
 const NORMAL_FERTILIZER_ITEM_HOURS: Map<number, number> = new Map([
     [80001, 1], [80002, 4], [80003, 8], [80004, 12],
 ]);
@@ -338,11 +336,6 @@ function isFertilizerContainerFullError(err: any): boolean {
 }
 
 async function autoOpenFertilizerGiftPacks(): Promise<number> {
-    // 化肥礼包不用跟着巡田（3-5 秒）读背包：每次读一次 Bag 就是一条请求，
-    // 60s 内白吃 15 条预算。60 秒检查一次，开包时效没有任何可感知差别。
-    const nowMs: number = Date.now();
-    if (nowMs - fertilizerGiftLastOpenAt < FERTILIZER_GIFT_CHECK_COOLDOWN_MS) return 0;
-    fertilizerGiftLastOpenAt = nowMs;
     try {
         const bagReply: any = await getBag();
         const bagItems: any[] = getBagItems(bagReply);

@@ -4,7 +4,7 @@ export {};
  */
 
 const protobuf = require('protobufjs');
-const { sendMsgAsync, getUserState, networkEvents } = require('../../utils/network');
+const { sendMsgAsync, getUserState } = require('../../utils/network');
 const { types } = require('../../utils/proto');
 const { toLong, toNum, sleep, randomDelay, log, logWarn } = require('../../utils/utils');
 
@@ -12,36 +12,6 @@ const { toLong, toNum, sleep, randomDelay, log, logWarn } = require('../../utils
 let onOperationLimitsUpdate: ((limits: any) => void) | null = null;
 function setOperationLimitsCallback(callback: (limits: any) => void): void {
     onOperationLimitsUpdate = callback;
-}
-
-/**
- * 自家地块快照缓存。
- *
- * 为什么需要它：一次巡田里「读地 → 判断 → 施肥 → 再判断」会各读一次 AllLands，
- * 单轮 3-5 次；60s 内叠加施肥检测、好友互动、面板刷新之后，单接口 30 次/60s 的
- * 预算会被自家读地一个接口吃光，其余请求全部变成「网关请求超预算」。
- *
- * 规则（参考 qq-farm-evolution 的 panel cache / land snapshot）：
- * - 并发合并：同一时刻只允许一个 AllLands 在途，后来的调用者共享同一份回包；
- * - 短 TTL：默认 1.2s，一次巡田内部的连续读取合并成一次网络请求；
- * - 写操作即失效：任何 plant 服务写回包、LandsNotify 推送都会立刻作废快照，
- *   所以「收完再读」依然是新数据，不会被缓存骗成旧状态。
- */
-const LANDS_SNAPSHOT_TTL_MS = Math.max(0, Number(process.env.FARM_LANDS_SNAPSHOT_TTL_MS) || 1200);
-let landsSnapshot: { at: number; reply: any } | null = null;
-let landsInFlight: Promise<any> | null = null;
-/** 失效代次：作废发生在读取途中时，那次回包不能再写回缓存（否则脏读会复活）。 */
-let landsGeneration = 0;
-
-function invalidateLandsSnapshot(): void {
-    landsSnapshot = null;
-    landsInFlight = null;
-    landsGeneration += 1;
-}
-
-if (networkEvents && typeof networkEvents.on === 'function') {
-    networkEvents.on('landsDirty', invalidateLandsSnapshot);
-    networkEvents.on('landsChanged', invalidateLandsSnapshot);
 }
 
 /**
@@ -78,33 +48,14 @@ async function fetchAllLandsRaw(): Promise<any> {
 
 /**
  * 读自家地块。
- * @param options.maxAgeMs 允许复用多久内的快照；0 表示强制新读（收获判定等关键路径）。
- *                         不传时用默认 TTL，把一次巡田内的多次读取合并成一次请求。
+ *
+ * 每次调用都直接读服务端最新状态。2026-11-05 回滚了「1.2s TTL 快照 + 并发合并」：
+ * 那份缓存在硬预算时期用来省请求，但它会让「刚种完/刚收完立刻再读」拿到旧地块，
+ * 手动操作与自动任务在同一秒内交错时尤其容易误判。现在预算已改为只约束自动任务的
+ * 保险丝，前台操作不会再被限额，因此恢复每次都读实时数据。
  */
-async function getAllLands(options: { maxAgeMs?: number } = {}): Promise<any> {
-    const now = Date.now();
-    const maxAgeMs = options && options.maxAgeMs !== undefined
-        ? Math.max(0, Number(options.maxAgeMs) || 0)
-        : LANDS_SNAPSHOT_TTL_MS;
-    if (maxAgeMs > 0 && landsSnapshot && now - landsSnapshot.at <= maxAgeMs) {
-        return landsSnapshot.reply;
-    }
-    // 并发合并：同一时刻只有一条 AllLands 在途，其余调用者共享它的结果。
-    // 即使调用方要求 maxAgeMs=0（必须新数据），也不会额外多发一条。
-    if (landsInFlight) return landsInFlight;
-    const generation = landsGeneration;
-    const pending = (async () => {
-        try {
-            const reply = await fetchAllLandsRaw();
-            // 读取途中发生过写操作/推送 → 这份回包已经过期，只给本次调用用，不进缓存。
-            if (generation === landsGeneration) landsSnapshot = { at: Date.now(), reply };
-            return reply;
-        } finally {
-            if (landsInFlight === pending) landsInFlight = null;
-        }
-    })();
-    landsInFlight = pending;
-    return pending;
+async function getAllLands(): Promise<any> {
+    return fetchAllLandsRaw();
 }
 
 async function harvest(landIds: number[]): Promise<any> {
@@ -339,8 +290,6 @@ module.exports = {
     setOperationLimitsCallback,
     sendPlantRequest,
     getAllLands,
-    invalidateLandsSnapshot,
-    LANDS_SNAPSHOT_TTL_MS,
     harvest,
     waterLand,
     farming,

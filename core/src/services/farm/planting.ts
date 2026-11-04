@@ -964,7 +964,7 @@ async function plantFromShop(landsToPlant: number[], state: any, overrideStrateg
     return { plantedLands: [...new Set(plantedLands)], remainingLandIds, uncertain };
 }
 
-async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNormal?: boolean; reason?: string; propagateErrors?: boolean; knownLands?: any[] } = {}): Promise<{ normal: number; organic: number }> {
+async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNormal?: boolean; reason?: string; propagateErrors?: boolean } = {}): Promise<{ normal: number; organic: number }> {
     const { fertilize, fertilizeOrganicLoop } = require('./api');
     const automation = getAutomation() || {};
     const fertilizerConfig = automation.fertilizer || 'none';
@@ -1009,21 +1009,21 @@ async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNo
         });
         return { normal: 0, organic: 0 };
     }
-    let latestLands: any[] = Array.isArray(options.knownLands) ? options.knownLands : [];
+    // 每次施肥都重新读地：施肥前后地块状态会变，复用巡田快照会把「刚施过」
+    // 当成「还没施」，多季补肥与 smart 判断都会跟着错。
+    let latestLands: any[] = [];
     const landTypeById = new Map<number, string>();
-    if (latestLands.length === 0) {
-        try {
-            const latest = await getAllLands();
-            latestLands = Array.isArray(latest && latest.lands) ? latest.lands : [];
-        } catch (e: any) {
-            logWarn('施肥', `${reasonLabel}：获取土地信息失败，按已知地块继续 ${e.message}`, {
-                module: 'farm',
-                event: eventName,
-                result: 'error',
-                reason,
-            });
-            if (options.propagateErrors) throw e;
-        }
+    try {
+        const latest = await getAllLands();
+        latestLands = Array.isArray(latest && latest.lands) ? latest.lands : [];
+    } catch (e: any) {
+        logWarn('施肥', `${reasonLabel}：获取土地信息失败，按已知地块继续 ${e.message}`, {
+            module: 'farm',
+            event: eventName,
+            result: 'error',
+            reason,
+        });
+        if (options.propagateErrors) throw e;
     }
     for (const land of latestLands) {
         if (!land) continue;
@@ -1136,17 +1136,13 @@ async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNo
     else if (fertilizerConfig === 'smart') {
         let organicTargets: number[] = [];
         const smartSeconds = toNum(automation.fertilizer_smart_seconds) || 300;
-        // 本轮已经读过地就复用同一份快照：smart 再读一次只是把同一条请求发两遍。
-        if (latestLands.length > 0) {
-            organicTargets = getFastMatureLands(latestLands, smartSeconds);
-        } else {
-            try {
-                const latest = await getAllLands();
-                organicTargets = getFastMatureLands(latest && latest.lands, smartSeconds);
-            } catch (e: any) {
-                logWarn('施肥', `获取全农场地块失败 ${e.message}`);
-                if (options.propagateErrors) throw e;
-            }
+        try {
+            // smart 要先补普通肥，再按最新状态挑快成熟的地块，必须重新读一次。
+            const latest = await getAllLands();
+            organicTargets = getFastMatureLands(latest && latest.lands, smartSeconds);
+        } catch (e: any) {
+            logWarn('施肥', `获取全农场地块失败 ${e.message}`);
+            if (options.propagateErrors) throw e;
         }
 
         if (organicTargets.length > 0) {

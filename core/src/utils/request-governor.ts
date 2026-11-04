@@ -70,18 +70,9 @@ const WATCHMODE_METHODS = new Set<string>([
 ]);
 /** 施肥 HOT 窗口内放宽倍数。 */
 const WATCHMODE_BOOST = Math.max(1, Number(process.env.FARM_WATCHMODE_BOOST) || 3);
-/** 成熟抢收紧急窗口内不被保险丝丢弃的链路请求。 */
-const URGENT_METHODS = new Set<string>([
-    'gamepb.visitpb.VisitService.Enter',
-    'gamepb.visitpb.VisitService.Leave',
-    'gamepb.plantpb.PlantService.CheckCanOperate',
-    'gamepb.plantpb.PlantService.Harvest',
-]);
 
 /** 施肥 HOT 到期时刻；0 = 无窗口。 */
 let watchModeUntil = 0;
-/** 成熟抢收紧急窗口到期时刻；0 = 无窗口。窗口极短（秒级），不会演变成请求风暴。 */
-let urgentModeUntil = 0;
 /** 最近一次前台请求时间，用于「用户正在操作」判定。 */
 let lastForegroundAt = 0;
 
@@ -181,15 +172,6 @@ function watchModeActive(now: number = Date.now()): boolean {
     return now < watchModeUntil;
 }
 
-/** 进入/退出成熟抢收紧急窗口（哨兵到点前后、预进门链路调用）。 */
-function setUrgentMode(active: boolean, untilMs: number = 0): void {
-    urgentModeUntil = active ? Math.max(urgentModeUntil, Number(untilMs) || 0) : 0;
-}
-
-function urgentModeActive(now: number = Date.now()): boolean {
-    return now < urgentModeUntil;
-}
-
 /** 最近是否有用户在面板上操作（前台请求）。 */
 function noteForegroundActivity(now: number = Date.now()): void {
     lastForegroundAt = now;
@@ -244,10 +226,8 @@ function checkRequest(
         return { allowed: true, reason: 'critical', key, retryAfterMs: 0, mode: lastHealthMode };
     }
 
-    // 成熟抢收紧急窗口：只豁免偷菜快路径的四个目标方法，其余自动请求照常过闸。
-    if (urgentModeActive(now) && URGENT_METHODS.has(key)) {
-        return { allowed: true, reason: 'urgent', key, retryAfterMs: 0, mode: lastHealthMode };
-    }
+    // 成熟抢收、收菜偷菜这类链路本身就在 critical/essential 白名单里，
+    // 不再需要额外的紧急窗口。
 
     const mode = classifyHealth(options.health);
     lastHealthMode = mode;
@@ -336,7 +316,6 @@ function getGovernorStats(now: number = Date.now(), health: FlowHealth | null = 
         mode,
         foregroundActive: isForegroundActive(now),
         watchModeActive: watchModeActive(now),
-        urgentModeActive: urgentModeActive(now),
         droppedTotal,
         lastDropAt,
         lastDropKey,
@@ -380,7 +359,6 @@ function resetGovernor(): void {
     lastDropAt = 0;
     lastDropKey = '';
     watchModeUntil = 0;
-    urgentModeUntil = 0;
     lastForegroundAt = 0;
     lastHealthMode = 'healthy';
 }
@@ -405,8 +383,6 @@ module.exports = {
     noteForegroundActivity,
     isForegroundActive,
     setWatchMode,
-    setUrgentMode,
     watchModeActive,
-    urgentModeActive,
     resetGovernor,
 };

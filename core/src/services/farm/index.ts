@@ -11,7 +11,6 @@ const scheduler = require('./scheduler');
 module.exports = {
     // 从 api.js
     checkFarm: scheduler.checkFarm,
-    getFarmBudgetDeferMs: scheduler.getFarmBudgetDeferMs,
     startFarmCheckLoop: scheduler.startFarmCheckLoop,
     stopFarmCheckLoop: scheduler.stopFarmCheckLoop,
     refreshFarmCheckLoop: scheduler.refreshFarmCheckLoop,
@@ -22,7 +21,6 @@ module.exports = {
     getPlantInteractionEffects: landAnalysis.getPlantInteractionEffects,
     setOperationLimitsCallback: api.setOperationLimitsCallback,
     getAllLands: api.getAllLands,
-    invalidateLandsSnapshot: api.invalidateLandsSnapshot,
     getLandsDetail: planting.getLandsDetail,
     getAvailableSeeds: planting.getAvailableSeeds,
     purchaseSeed: planting.purchaseSeed,

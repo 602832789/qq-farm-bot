@@ -471,7 +471,7 @@ onUnmounted(() => {
           </div>
           <input v-model.number="purchaseCount" class="tea-purchase-range" type="range" min="1" :max="Math.max(1, purchaseMax)" aria-label="滑动选择兑换数量" :disabled="blocked || purchaseMax <= 1">
           <p class="tea-muted">
-            剩余限购 {{ teaNumber(selectedGoods.remaining) }} · 当前最多可兑换 {{ teaNumber(purchaseMax) }}
+            {{ selectedGoods.remaining == null ? '不限购' : `剩余限购 ${teaNumber(selectedGoods.remaining)}` }} · 当前最多可兑换 {{ teaNumber(purchaseMax) }}
           </p>
           <div class="tea-purchase-costs">
             <span>合计消耗</span><span v-for="cost in selectedGoods.costs" :key="String(cost.id)" class="tea-price"><img v-if="teaCurrencyImage(cost)" :src="teaCurrencyImage(cost)" :alt="cost.name"><span v-else>{{ cost.name }}</span><b class="tea-number">{{ teaNumber(totalCost(cost)) }}</b></span>

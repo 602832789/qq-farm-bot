@@ -13,9 +13,6 @@ const { recordOperation } = require('./stats');
 let checking: boolean = false;
 let taskClaimDoneDateKey: string = '';
 let taskClaimLastAt: number = 0;
-/** 任务扫描节流：默认 30s，可用 FARM_TASK_SCAN_INTERVAL_MS 覆盖。推送到达时不受限制。 */
-const TASK_SCAN_MIN_INTERVAL_MS: number = Math.max(5000, Number(process.env.FARM_TASK_SCAN_INTERVAL_MS) || 30000);
-let taskScanLastAt: number = 0;
 const taskScheduler: any = createScheduler('task');
 
 // ============ 任务 API ============
@@ -230,14 +227,9 @@ async function checkAndClaimIllustratedRewards(): Promise<boolean> {
 
 // ============ 自动领取 ============
 
-async function checkAndClaimTasks(options: { force?: boolean } = {}): Promise<void> {
+async function checkAndClaimTasks(): Promise<void> {
     if (checking) return;
     if (!isAutomationOn('task')) return;
-    // 任务列表是推送驱动的（taskInfoNotify），巡田每 3-5 秒顺手扫一次 TASK_INFO
-    // 只会在 60s 窗口里白吃十几条请求预算。这里按 30 秒节流，推送到达时仍立即刷新。
-    const nowMs: number = Date.now();
-    if (!options.force && nowMs - taskScanLastAt < TASK_SCAN_MIN_INTERVAL_MS) return;
-    taskScanLastAt = nowMs;
     checking = true;
     try {
         const reply: any = await getTaskInfo();

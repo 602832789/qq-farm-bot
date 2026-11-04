@@ -89,6 +89,20 @@ function int64Value(value: any): number {
     return toNum(value);
 }
 /**
+ * 把 protobuf int64 可能出现的各种形态（Long / {low,high} / number / string）
+ * 统一成十进制字符串，用于商品编号这类必须精确匹配的字段。
+ */
+function idText(value: any): string {
+    if (value == null) return '';
+    if (typeof value === 'object') {
+        if ('low' in value) return String(int64Value(value));
+        const text = typeof value.toString === 'function' ? value.toString() : '';
+        return text && text !== '[object Object]' ? text : '';
+    }
+    const number = Number(value);
+    return Number.isFinite(number) ? String(number) : String(value);
+}
+/**
  * 配方配置里的 drink_icon 是游戏资源路径（gui/texture/icon/icon_s4_milktea_1/spriteFrame），
  * 前端只有 config.image 一个入口。这里按原名映射到本地素材 /activity/milk-tea/<name>.png，
  * 让在售库存 / 配方列表 / 制作弹窗都显示对应品种的杯子图标（而不是共用一张主视觉图）。
@@ -109,19 +123,20 @@ function phase(now: number, window: { startTime: number; settleTime: number; end
 }
 /** 官方 S4ShopUI 排序：可兑换 → 售罄 → 未解锁，再按配置 order。 */
 function compareShopGoods(a: any, b: any) {
-    const group = (goods: any) => !goods.unlocked ? 3 : Number(goods.remaining) === 0 ? 2 : 1;
+    const group = (goods: any) => !goods.unlocked ? 3 : goods.remaining != null && Number(goods.remaining) === 0 ? 2 : 1;
     return group(a) - group(b) || Number(a.order || 0) - Number(b.order || 0);
 }
 function available(costs: any[], inventory: any[], count = 1) {
-    return costs.length > 0 && costs.every((cost: any) => Number(cost.id) !== 1004 && BigInt(toNum(cost.count) || 0) > 0n
+    return costs.length > 0 && costs.every((cost: any) => toNum(cost.id) !== 1004 && BigInt(toNum(cost.count) || 0) > 0n
         && inventory.filter((x: any) => String(x.id) === String(cost.id))
             .reduce((sum: bigint, x: any) => sum + BigInt(toNum(x.count) || 0), 0n) >= BigInt(toNum(cost.count) || 0) * BigInt(count));
 }
 function maximumPurchase(goods: any, inventory: any[]) {
-    if (!goods.unlocked || goods.paid || !goods.cost.length) return 0;
-    let maximum = BigInt(goods.remaining);
-    for (const cost of goods.cost) {
-        if (Number(cost.id) === 1004 || BigInt(toNum(cost.count) || 0) <= 0n) return 0;
+    if (!goods.unlocked || goods.paid || !goods.costs.length) return 0;
+    // remaining = null 表示官方没设限购（purchase_limit <= 0），只受余额约束。
+    let maximum = goods.remaining == null ? BigInt(Number.MAX_SAFE_INTEGER) : BigInt(goods.remaining);
+    for (const cost of goods.costs) {
+        if (toNum(cost.id) === 1004 || BigInt(toNum(cost.count) || 0) <= 0n) return 0;
         const owned = inventory.filter((item: any) => String(item.id) === String(cost.id))
             .reduce((sum: bigint, item: any) => sum + BigInt(toNum(item.count) || 0), 0n);
         const affordable = owned / BigInt(toNum(cost.count) || 1);
@@ -225,15 +240,37 @@ async function read() {
                 .map((x: any) => ({ ...itemDto(x), uid: String(x.uid) })),
         };
     });
-    const goods = list(children.find((x: any) => String(x.head?.activity_id) === SHOP)?.shop?.goods).map((g: any) => ({
-        ...g,
-        items: list(g.item).map(itemDto),
-        costs: list(g.cost).map(itemDto),
-        remaining: Math.max(0, toNum(g.purchase_limit) - toNum(g.purchased_count)),
-        unlocked: list(g.cond_hints).every((x: any) => !!x.satisfied),
-        affordable: available(list(g.cost), inventory),
-        paid: toNum(g.diamond_cost_count) > 0 || list(g.cost).some((x: any) => Number(x.id) === 1004),
-    }));
+    const goods = list(children.find((x: any) => String(x.head?.activity_id) === SHOP)?.shop?.goods).map((g: any) => {
+        const limit = toNum(g.purchase_limit);
+        return {
+            // 这里是整棵树里唯一没走 plain() 的节点：protobuf 的 int64 解码后是 Long 对象，
+            // 经 worker IPC / res.json 序列化会变成 {low,high,unsigned}，前端拿到 goods.id
+            // 就是 “[object Object]”，兑换时再传回来永远匹配不到商品（手动购买必失败）。
+            // 所以像老版 normalizeGoods 一样，把商品字段一次性收敛成 string / number。
+            id: idText(g.id),
+            name: String(g.name || ''),
+            desc: String(g.desc || ''),
+            category_tag: String(g.category_tag || ''),
+            order: toNum(g.order),
+            purchase_limit: limit,
+            purchased_count: toNum(g.purchased_count),
+            restriction_type: toNum(g.restriction_type),
+            diamond_cost_count: toNum(g.diamond_cost_count),
+            background_type: toNum(g.background_type),
+            items: list(g.item).map(itemDto),
+            costs: list(g.cost).map(itemDto),
+            cond_hints: list(g.cond_hints).map((x: any) => ({
+                cond_type: String(x?.cond_type || ''), params: String(x?.params || ''),
+                satisfied: !!x?.satisfied, current: toNum(x?.current), target: toNum(x?.target),
+            })),
+            // 老版口径：purchase_limit > 0 才是有限限购，0 表示不限购（remaining = null）。
+            remaining: limit > 0 ? Math.max(0, limit - toNum(g.purchased_count)) : null,
+            unlocked: list(g.cond_hints).every((x: any) => !!x.satisfied),
+            affordable: available(list(g.cost), inventory),
+            paid: toNum(g.diamond_cost_count) > 0 || list(g.cost).some((x: any) => toNum(x.id) === 1004),
+            maxPurchasable: 0,
+        };
+    });
     for (const good of goods) good.maxPurchasable = state.phase !== 'business' && good.category_tag === 'seed' ? 0 : maximumPurchase(good, inventory);
     goods.sort(compareShopGoods);
     // QQ 原生订阅链接带签名，不下发到 web 与日志。
@@ -422,7 +459,10 @@ async function mutate(action: string, input: any = {}) {
             }
         }
     } else if (action === 'buy') {
-        const goods = state.goods.find((x: any) => String(x.id) === String(input.goodsId));
+        // goodsId 兼容 string / number / Long / {low,high}：前端经过一次 JSON 往返，
+        // 老版本缓存也可能带着 Long 对象，这里统一按十进制字符串比对。
+        const wantedId = idText(input.goodsId);
+        const goods = state.goods.find((x: any) => String(x.id) === wantedId);
         const count = Number(input.count ?? 1);
         // 逐项给出原因：合成一句「商品未解锁、限购已用完或资源不足」时，
         // 用户无法判断到底卡在哪一条，也不知道该刷新、攒券还是放弃。
@@ -435,12 +475,12 @@ async function mutate(action: string, input: any = {}) {
                 ? `店铺 ${toNum(unmet.target)} 级解锁`
                 : '商品解锁条件未达成');
         }
-        const remaining = toNum(goods.remaining);
-        if (remaining <= 0) fail('该商品限购已用完');
-        if (count > remaining) fail(`购买数量超过剩余限购（剩余 ${remaining}）`);
-        if (!available(goods.cost, inventory, count)) fail('奶茶券或道具数量不足');
+        const remaining = goods.remaining == null ? null : toNum(goods.remaining);
+        if (remaining !== null && remaining <= 0) fail('该商品限购已用完');
+        if (remaining !== null && count > remaining) fail(`购买数量超过剩余限购（剩余 ${remaining}）`);
+        if (!available(goods.costs, inventory, count)) fail('奶茶券或道具数量不足');
         if (state.phase !== 'business' && goods.category_tag === 'seed') fail('结算期不能购买活动种子');
-        await opWith(SHOP, 1, 'shop_buy', { goods_id: goods.id, count });
+        await opWith(SHOP, 1, 'shop_buy', { goods_id: String(goods.id), count });
     } else {
         const result = await op(action, params);
         if (action === 'hire' && (!list(result.results).length || list(result.results).some((entry: any) => !entry.success)))

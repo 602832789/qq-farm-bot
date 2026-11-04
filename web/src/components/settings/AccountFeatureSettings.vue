@@ -605,9 +605,23 @@ function cancel() {
   font-size: 16px;
   font-weight: 650;
 }
+/* 概览计数是个数字摘要，必须一眼能读：原来直接用品红/主题绿字贴在页面背景上，
+   在浅色渐变与背景图区域几乎糊在一起。这里改成实底徽标：不透底、加描边、正文色。 */
 .settings-overview-count {
-  color: var(--theme-primary);
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--theme-primary) 34%, var(--surface-border));
+  border-radius: 999px;
+  background: var(--surface-1);
+  box-shadow: var(--surface-shadow-soft);
+  color: var(--theme-text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .settings-module-grid {
   display: grid;

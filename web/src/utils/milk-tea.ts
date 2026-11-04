@@ -31,7 +31,8 @@ export interface TeaGoods {
   items: TeaItem[]
   costs: TeaItem[]
   purchase_limit: TeaAmount
-  remaining: number
+  /** null = 不限购（官方 purchase_limit 为 0）。 */
+  remaining: number | null
   restriction_type?: TeaAmount
   unlocked: boolean
   affordable: boolean
@@ -282,8 +283,11 @@ export function teaPurchaseMax(goods?: TeaGoods) {
     || goods.costs.some(item => String(item.id ?? item.itemId) === '1004' || teaInteger(item.count) <= 0n) || !goods.unlocked) {
     return 0
   }
-  const maximum = Number(goods.maxPurchasable)
-  return Number.isSafeInteger(maximum) && maximum > 0 ? Math.min(maximum, Math.max(0, Math.floor(Number(goods.remaining) || 0))) : 0
+  // 后端单次兑换上限 9999；不限购商品不能把「最大」按钮撑成一个天文数字。
+  const maximum = Math.min(9999, Number(goods.maxPurchasable))
+  // remaining 为 null 表示不限购，只受余额和单次上限约束。
+  const remaining = goods.remaining == null ? Number.POSITIVE_INFINITY : Math.max(0, Math.floor(Number(goods.remaining)))
+  return Number.isSafeInteger(maximum) && maximum > 0 ? Math.min(maximum, remaining) : 0
 }
 export function teaGoodsReason(goods: TeaGoods, phase: MilkTeaPhase) {
   if (!['business', 'settling'].includes(phase))
@@ -298,7 +302,7 @@ export function teaGoodsReason(goods: TeaGoods, phase: MilkTeaPhase) {
   }
   if (phase === 'settling' && goods.category_tag === 'seed')
     return '结算期不可兑换种子'
-  if (Number(goods.remaining) <= 0)
+  if (goods.remaining != null && Number(goods.remaining) <= 0)
     return '限购已用完'
   if (!teaPurchaseMax(goods))
     return '资源不足'

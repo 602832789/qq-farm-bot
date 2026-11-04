@@ -9,7 +9,7 @@ const { getLevelExpProgress, loadConfigs } = require('../config/gameConfig');
 const { getAutomation, getPreferredSeed, getConfigSnapshot, applyConfigSnapshot } = require('../models/store');
 const { checkAndClaimEmails } = require('../services/email');
 const { getEmailDailyState } = require('../services/email');
-const { checkFarm, getFarmBudgetDeferMs, startFarmCheckLoop, stopFarmCheckLoop, refreshFarmCheckLoop, getLandsDetail, getAvailableSeeds, purchaseSeed, runFarmOperation, runFertilizerByConfig, fertilizeOwnLand } = require('../services/farm');
+const { checkFarm, startFarmCheckLoop, stopFarmCheckLoop, refreshFarmCheckLoop, getLandsDetail, getAvailableSeeds, purchaseSeed, runFarmOperation, runFertilizerByConfig, fertilizeOwnLand } = require('../services/farm');
 const { checkFriends, startFriendCheckLoop, stopFriendCheckLoop, refreshFriendCheckLoop, getFriendsList, getFriendsListCacheOnly, getFriendLandsDetail, doFriendOperation, deleteFriend, runScheduledStealCheck } = require('../services/friend');
 const { getInteractRecords } = require('../services/interact');
 const { processInviteCodes } = require('../services/invite');
@@ -38,7 +38,7 @@ const { connect, cleanup, getWs, getUserState, networkEvents, getGatewayLoad } =
 const { loadProto } = require('../utils/proto');
 const { runWithRequestClass } = require('../utils/request-context');
 const { setLogHook, log, logWarn, logFileOnly, toNum, getSystemDateKey, formatSystemDateTime24 } = require('../utils/utils');
-const { getRequestProfile, setUrgentMode, isForegroundActive } = require('../utils/request-governor');
+const { getRequestProfile, isForegroundActive } = require('../utils/request-governor');
 
 // Extend CONFIG with the unified friend-task interval used by this worker.
 interface WorkerRuntimeConfig {
@@ -330,9 +330,7 @@ async function runFarmTick(auto: any): Promise<void> {
     } catch {
         // ignore
     } finally {
-        // 本轮若因 60s 预算被挡下，下一轮要等最早一条请求滑出窗口再发，
-        // 否则 2-5 秒的间隔只会反复撞同一堵墙，把「超预算」刷成常态。
-        nextFarmRunAt = Date.now() + farmMs + getFarmBudgetDeferMs();
+        nextFarmRunAt = Date.now() + farmMs;
         farmTaskRunning = false;
     }
 }
@@ -405,11 +403,6 @@ async function runStealTick(auto: any): Promise<void> {
         log('系统', `偷菜巡查执行失败: ${e.message}`, { module: 'system', event: '偷菜巡查', result: 'error' });
     } finally {
         nextStealRunAt = Date.now() + Math.max(1000, Number(nextStealDelayMs) || 15 * 60 * 1000);
-        // 成熟到点前的抢收窗口：进门/读地块/收获这几条链路请求不受 60s 硬预算丢弃，
-        // 否则预算被日常巡查吃满时，恰好在成熟那一刻丢包就是直接丢收益。
-        // 窗口只在「一分钟内就要动手」时打开，且只豁免这四条链路，不放开全局限流。
-        const dueInMs = Math.max(0, Number(nextStealDelayMs) || 0);
-        setUrgentMode(dueInMs > 0 && dueInMs <= 60 * 1000, Date.now() + dueInMs + 45 * 1000);
         stealTaskRunning = false;
     }
 }
@@ -500,7 +493,7 @@ async function runStartupSequence(canContinue: () => boolean = () => loginReady)
 
             if (!loginReady || !canContinue()) return;
             try {
-                await checkAndClaimTasks({ force: true });
+                await checkAndClaimTasks();
             } catch (e: any) {
                 log('系统', `登录后领取任务失败: ${e.message}`, { module: 'system', event: '启动序列', result: 'error' });
             }
