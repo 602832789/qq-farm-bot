@@ -43,7 +43,7 @@ const DOG_FOOD_DURATIONS = new Map<number, number>([
 
 type CategoryValue = typeof CATEGORY_OPTIONS[number]['value']
 
-const selectedCategory = ref<CategoryValue>('fruit')
+const selectedCategory = ref<CategoryValue>('seed')
 
 const CATEGORY_SHORT_LABELS: Record<string, string> = {
   fruit: '果实',

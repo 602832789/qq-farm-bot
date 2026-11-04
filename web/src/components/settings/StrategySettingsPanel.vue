@@ -113,7 +113,8 @@ const isBagPriority = computed(() => settings.value.plantingStrategy === 'bag_pr
             重置顺序
           </NButton>
         </div>
-        <div v-if="bagSeedsLoading" class="py-4 text-center text-sm text-amber-700 dark:text-amber-300">
+        <!-- 首次无数据时才显示加载中；有缓存回填时后台静默刷新，列表不闪。 -->
+        <div v-if="bagSeedsLoading && bagSeeds.length === 0" class="py-4 text-center text-sm text-amber-700 dark:text-amber-300">
           加载中...
         </div>
         <div v-else-if="bagSeedsError" class="py-4 text-center text-sm text-red-600 dark:text-red-400">

@@ -7,6 +7,33 @@ import { useStatusStore } from '@/stores/status'
  * 种植策略的可视数据源：可售种子（优先种子下拉与预览）、背包种子（优先顺序与土地限制）。
  * 设置页里这些数据原来散在页面顶部，现在被「种植与收获」弹窗和首页摘要共用，集中到这里。
  */
+interface SeedOptionItem {
+  seedId: number
+  name: string
+  requiredLevel: number
+  price: number
+  locked?: boolean
+  soldOut?: boolean
+}
+
+interface BagSeedItem {
+  seedId: number
+  name: string
+  count: number
+  requiredLevel: number
+  plantSize: number
+  image?: string
+}
+
+// 老版方案（useStrategySettings 直接读共享的 farmStore.seeds）：
+// “种植与收获”弹窗每次打开都会重建组件，这里用模块级缓存按账号回填，
+// 预览与背包种子列表秒出，后台仍会静默刷新最新数据。
+const seedOptionsCache = new Map<string, SeedOptionItem[]>()
+const bagSeedsCache = new Map<string, BagSeedItem[]>()
+// 分析排行（第二优先策略预览用）的短 TTL 缓存：重开弹窗不再等一次 /api/analytics 往返。
+const analyticsRankingsCache = new Map<string, { at: number, rankings: any[] }>()
+const ANALYTICS_CACHE_TTL_MS = 60 * 1000
+
 export function usePlantingStrategy(options: {
   strategy: Ref<any>
   accountId: Ref<string | number | null | undefined>
@@ -15,24 +42,6 @@ export function usePlantingStrategy(options: {
   const { strategy, accountId, landTypeOptions } = options
   const statusStore = useStatusStore()
   const runtimeStatus = computed(() => statusStore.status)
-
-  interface SeedOptionItem {
-    seedId: number
-    name: string
-    requiredLevel: number
-    price: number
-    locked?: boolean
-    soldOut?: boolean
-  }
-
-  interface BagSeedItem {
-    seedId: number
-    name: string
-    count: number
-    requiredLevel: number
-    plantSize: number
-    image?: string
-  }
 
   const analyticsSortByMap: Record<string, string> = {
     max_exp: 'exp',
@@ -60,6 +69,13 @@ export function usePlantingStrategy(options: {
 
   const plantNameBySeedId = ref(new Map<number, string>())
   let plantConfigLoaded = false
+
+  // 组件重建时先用缓存回填：预览不再从空白+“加载中”开始。
+  const initialAccountId = currentAccountId()
+  if (initialAccountId) {
+    seedOptions.value = seedOptionsCache.get(initialAccountId) ?? []
+    bagSeeds.value = bagSeedsCache.get(initialAccountId) ?? []
+  }
 
   async function ensurePlantConfigLoaded() {
     if (plantConfigLoaded)
@@ -101,6 +117,8 @@ export function usePlantingStrategy(options: {
       if (requestRevision !== seedOptionsRequestRevision || id !== currentAccountId())
         return
       seedOptions.value = data?.ok ? (data.data || []) : []
+      if (data?.ok)
+        seedOptionsCache.set(id, seedOptions.value)
       seedOptionsRevision.value++
       if (id === currentAccountId())
         seedOptionsLoadedAccountId = id
@@ -135,6 +153,7 @@ export function usePlantingStrategy(options: {
         return
       if (res.data.ok) {
         bagSeeds.value = (res.data.data || []).filter((seed: BagSeedItem) => seed.plantSize >= 1)
+        bagSeedsCache.set(id, bagSeeds.value)
       }
       else {
         bagSeeds.value = []
@@ -463,6 +482,20 @@ export function usePlantingStrategy(options: {
     if (!sortBy)
       return
 
+    const applyRankings = (rankings: any[]) => {
+      const availableIds = new Set(available.map(seed => seed.seedId))
+      const match = rankings.find(item => availableIds.has(Number(item.seedId)))
+      const seed = match ? available.find(item => item.seedId === Number(match.seedId)) : undefined
+      strategyPreviewLabel.value = seed ? `${seed.requiredLevel}级 ${seed.name}` : '暂无匹配种子'
+    }
+
+    // 短 TTL 缓存命中时先同步出结果（重开弹窗不再先闪“加载中”），请求回来后再静默校正。
+    const cacheKey = `${id || 'all'}:${sortBy}`
+    const cached = analyticsRankingsCache.get(cacheKey)
+    const cacheFresh = !!cached && Date.now() - cached.at < ANALYTICS_CACHE_TTL_MS
+    if (cacheFresh)
+      applyRankings(cached!.rankings)
+
     try {
       const { data } = await api.get('/api/analytics', {
         params: { sort: sortBy },
@@ -471,28 +504,27 @@ export function usePlantingStrategy(options: {
       if (requestRevision !== previewRequestRevision || id !== currentAccountId())
         return
       const rankings: any[] = data?.ok ? (data.data || []) : []
-      const availableIds = new Set(available.map(seed => seed.seedId))
-      const match = rankings.find(item => availableIds.has(Number(item.seedId)))
-      const seed = match ? available.find(item => item.seedId === Number(match.seedId)) : undefined
-      strategyPreviewLabel.value = seed ? `${seed.requiredLevel}级 ${seed.name}` : '暂无匹配种子'
+      analyticsRankingsCache.set(cacheKey, { at: Date.now(), rankings })
+      applyRankings(rankings)
     }
     catch {
-      if (requestRevision === previewRequestRevision && id === currentAccountId())
+      if (requestRevision === previewRequestRevision && id === currentAccountId() && !cacheFresh)
         strategyPreviewLabel.value = null
     }
   }, { immediate: true })
 
   watch(currentAccountId, () => {
     draggingBagSeedId.value = null
-    bagSeeds.value = []
     bagSeedsError.value = null
-    seedOptions.value = []
+    strategyPreviewLabel.value = null
+    const id = currentAccountId()
+    // 切账号时用缓存回填，避免列表先清空再加载的闪烁。
+    seedOptions.value = (id && seedOptionsCache.get(id)) || []
+    bagSeeds.value = (id && bagSeedsCache.get(id)) || []
     seedOptionsRequestAccountId = ''
     seedOptionsLoadedAccountId = ''
     bagSeedsRequestAccountId = ''
     bagSeedsLoadedAccountId = ''
-    strategyPreviewLabel.value = null
-    const id = currentAccountId()
     if (id)
       fetchSeedOptions(id)
   })
@@ -507,14 +539,16 @@ export function usePlantingStrategy(options: {
     fetchSeedOptions(id)
     if (strategy.value.plantingStrategy === 'bag_priority')
       fetchBagSeeds(id)
-  })
+  }, { immediate: true })
 
   function reset() {
     draggingBagSeedId.value = null
-    bagSeeds.value = []
     bagSeedsError.value = null
-    seedOptions.value = []
     strategyPreviewLabel.value = null
+    // 保留模块级缓存：reset 后仍可直接秒显上次数据，等待后台刷新。
+    const id = currentAccountId()
+    seedOptions.value = (id && seedOptionsCache.get(id)) || []
+    bagSeeds.value = (id && bagSeedsCache.get(id)) || []
   }
 
   return {

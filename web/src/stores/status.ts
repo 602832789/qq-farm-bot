@@ -60,6 +60,9 @@ export const useStatusStore = defineStore('status', () => {
   let socket: Socket | null = null
   let statusRequestSequence = 0
   let diamondRequestSequence = 0
+  // 已订阅的账号房间：同一账号不重复 subscribe，
+  // 服务端每次 subscribe 都会全量重推 status + logs 快照，重复订阅会让前端数据周期性整体重建。
+  let lastSubscribedAccount: string | null = null
 
   function normalizeStatusPayload(input: any) {
     return (input && typeof input === 'object') ? { ...input } : {}
@@ -88,9 +91,17 @@ export const useStatusStore = defineStore('status', () => {
     if (currentRealtimeAccountId.value && accountId !== currentRealtimeAccountId.value)
       return
     if (body.status && typeof body.status === 'object') {
+      const next = normalizeStatusPayload(body.status)
+      // worker 每 10s 全量推一次 status；内容没变就不替换对象，
+      // 否则所有页面依赖 status 的整棵组件树都会无谓重渲染，看起来像在不停刷新。
+      if (status.value && JSON.stringify(next) === JSON.stringify(status.value)) {
+        loading.value = false
+        error.value = ''
+        return
+      }
       statusRequestSequence++
       loading.value = false
-      status.value = normalizeStatusPayload(body.status)
+      status.value = next
       error.value = ''
     }
   }
@@ -122,20 +133,18 @@ export const useStatusStore = defineStore('status', () => {
 
     socket.on('connect', () => {
       realtimeConnected.value = true
-      if (currentRealtimeAccountId.value) {
-        socket?.emit('subscribe', { accountId: currentRealtimeAccountId.value })
-      }
-      else {
-        socket?.emit('subscribe', { accountId: 'all' })
-      }
+      lastSubscribedAccount = currentRealtimeAccountId.value || 'all'
+      socket?.emit('subscribe', { accountId: lastSubscribedAccount })
     })
 
     socket.on('disconnect', () => {
       realtimeConnected.value = false
+      lastSubscribedAccount = null
     })
 
     socket.on('connect_error', (err) => {
       realtimeConnected.value = false
+      lastSubscribedAccount = null
       console.error('[realtime] 连接失败:', err.message)
     })
 
@@ -168,9 +177,14 @@ export const useStatusStore = defineStore('status', () => {
     }
 
     if (client.connected) {
-      client.emit('subscribe', { accountId: currentRealtimeAccountId.value || 'all' })
+      const target = currentRealtimeAccountId.value || 'all'
+      if (lastSubscribedAccount !== target) {
+        lastSubscribedAccount = target
+        client.emit('subscribe', { accountId: target })
+      }
       return
     }
+    lastSubscribedAccount = null
     client.connect()
   }
 
@@ -185,6 +199,7 @@ export const useStatusStore = defineStore('status', () => {
     socket.off('logs:snapshot', handleRealtimeLogsSnapshot)
     socket.disconnect()
     socket = null
+    lastSubscribedAccount = null
     realtimeConnected.value = false
   }
 

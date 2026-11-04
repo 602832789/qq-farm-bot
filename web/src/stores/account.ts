@@ -46,6 +46,15 @@ export function getPlatformClass(p?: string) {
   return ''
 }
 
+/** 轮询去抖：账号列表内容没变时不替换数组（每项字段级比较，数量小开销可忽略）。 */
+function accountsEqual(a: Account[], b: Account[]) {
+  if (a === b)
+    return true
+  if (a.length !== b.length)
+    return false
+  return a.every((item, index) => JSON.stringify(item) === JSON.stringify(b[index]))
+}
+
 export const useAccountStore = defineStore('account', () => {
   const accounts = ref<Account[]>([])
   const currentAccountId = useStorage('current_account_id', '')
@@ -66,7 +75,10 @@ export const useAccountStore = defineStore('account', () => {
       if (sequence !== accountsRequestSequence)
         return
       if (res.data.ok && res.data.data && res.data.data.accounts) {
-        accounts.value = res.data.data.accounts
+        const nextAccounts: Account[] = res.data.data.accounts
+        // 10s 轮询：列表内容没变就不替换数组，避免顶栏账号菜单等全局组件周期性重渲染。
+        if (!accountsEqual(accounts.value, nextAccounts))
+          accounts.value = nextAccounts
 
         // Auto-select first account if none selected or selected not found
         if (accounts.value.length > 0) {
