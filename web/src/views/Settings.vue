@@ -138,7 +138,7 @@ const localStrategySettings = ref({
   stealDelaySeconds: 0,
   plantOrderRandom: false,
   plantDelaySeconds: 0,
-  intervals: { farmMin: 2, farmMax: 5, friendMin: 10, friendMax: 15 },
+  intervals: { farmMin: 20, farmMax: 25, friendMin: 30, friendMax: 35 },
   friendQuietHours: { enabled: false, start: '23:00', end: '07:00', continueFarm: true },
 })
 

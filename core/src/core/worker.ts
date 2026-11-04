@@ -182,7 +182,8 @@ function normalizeIntervalRangeSec(minSec: any, maxSec: any, fallbackSec: any): 
 function applyIntervalsToRuntime(intervals: any): void {
     const data = (intervals && typeof intervals === 'object') ? intervals : {};
 
-    const farmLegacy = Math.max(1, Number.parseInt(data.farm, 10) || 2);
+    // 农场巡查默认 20-25 秒（farmMin/farmMax 存在时以它们为准，farm 只是历史遗留单值）。
+    const farmLegacy = Math.max(1, Number.parseInt(data.farm, 10) || 20);
     const farmRange = normalizeIntervalRangeSec(data.farmMin, data.farmMax, farmLegacy);
     CONFIG.farmCheckIntervalMin = farmRange.min * 1000;
     CONFIG.farmCheckIntervalMax = farmRange.max * 1000;

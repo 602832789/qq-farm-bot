@@ -168,11 +168,12 @@ const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
     plantingStrategy: 'max_exp',
     preferredSeedId: 0,
     capitalMode: { ...DEFAULT_CAPITAL_MODE },
-    // 对齐老版 models/store.js DEFAULT_INTERVALS：农场 2-5 秒、好友任务 30-35 秒。
+    // 农场巡查 20-25 秒、好友任务 30-35 秒。2-5 秒一轮会把网关打满（每次轮询都要
+    // AllLands + 一批操作请求），这里回到更早的 20-25 秒方案；好友任务保持 30-35 秒。
     intervals: {
-        farm: 2,
-        farmMin: 2,
-        farmMax: 5,
+        farm: 20,
+        farmMin: 20,
+        farmMax: 25,
         friendMin: 30,
         friendMax: 35,
         helpMin: 30,
@@ -344,30 +345,38 @@ function normalizeTimeString(v: unknown, fallback: string): string {
     return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
 }
 
-/** 旧版本落盘的默认间隔（20-25 秒一组），用于一次性迁移到老版默认。 */
-function isLegacyDefaultIntervals(src: Partial<IntervalConfig>): boolean {
-    const expect: Record<string, number> = {
-        farm: 2, farmMin: 20, farmMax: 25,
-        friendMin: 20, friendMax: 25,
-        helpMin: 20, helpMax: 25,
-        stealMin: 20, stealMax: 25,
-    };
+/**
+ * 历史版本落盘过的「没改过」默认组，统一迁移到当前默认（农场 20-25 秒 / 好友 30-35 秒）。
+ * - 组 A（b108a3d ~ 289c8d6 的对齐老版方案）：农场 2-5 秒 + 好友 30-35 秒
+ * - 组 B（更早的 20-25 秒全组）：农场 20-25 秒 + 好友 20-25 秒
+ * 只有整组完全命中才算「用户没改过」；任意一项被改过就原样保留，不覆盖手动配置。
+ */
+function isStockDefaultIntervals(src: Partial<IntervalConfig>): boolean {
     const actual = src as Record<string, unknown>;
-    return Object.keys(expect).every(key => Number.parseInt(actual[key] as string, 10) === expect[key]);
+    const eq = (key: string, want: number): boolean => Number.parseInt(actual[key] as string, 10) === want;
+    const groupA = eq('farmMin', 2) && eq('farmMax', 5)
+        && eq('friendMin', 30) && eq('friendMax', 35)
+        && eq('helpMin', 30) && eq('helpMax', 35)
+        && eq('stealMin', 30) && eq('stealMax', 35);
+    const groupB = eq('farmMin', 20) && eq('farmMax', 25)
+        && eq('friendMin', 20) && eq('friendMax', 25)
+        && eq('helpMin', 20) && eq('helpMax', 25)
+        && eq('stealMin', 20) && eq('stealMax', 25);
+    return groupA || groupB;
 }
 
 function normalizeIntervals(intervals: Partial<IntervalConfig> | undefined): IntervalConfig {
     const src = (intervals && typeof intervals === 'object') ? intervals : {} as Partial<IntervalConfig>;
-    // 旧版本把默认间隔写成 20-25 秒并落盘；对齐老版（农场 2-5 秒 / 好友 30-35 秒）时，
-    // 整组恰好等于旧默认值的配置视为「用户没改过」，迁移到老版默认。
-    if (isLegacyDefaultIntervals(src)) {
-        return { farm: 2, farmMin: 2, farmMax: 5, friendMin: 30, friendMax: 35, helpMin: 30, helpMax: 35, stealMin: 30, stealMax: 35 };
+    // 旧的默认组合（2-5 秒方案、更早的 20-25 秒全组）一次性收敛到当前默认：
+    // 农场 20-25 秒、好友/帮助/偷菜 30-35 秒。
+    if (isStockDefaultIntervals(src)) {
+        return { farm: 20, farmMin: 20, farmMax: 25, friendMin: 30, friendMax: 35, helpMin: 30, helpMax: 35, stealMin: 30, stealMax: 35 };
     }
     const toSec = (v: unknown, d: number): number => Math.max(1, Number.parseInt(v as string, 10) || d);
-    const farm = toSec(src.farm, 2);
+    const farm = toSec(src.farm, 20);
 
-    let farmMin = toSec(src.farmMin, farm);
-    let farmMax = toSec(src.farmMax, farm);
+    let farmMin = toSec(src.farmMin, 20);
+    let farmMax = toSec(src.farmMax, 25);
     if (farmMin > farmMax) [farmMin, farmMax] = [farmMax, farmMin];
 
     let helpMin = toSec(src.helpMin, 30);

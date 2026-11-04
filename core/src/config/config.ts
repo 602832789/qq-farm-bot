@@ -240,12 +240,14 @@ const CONFIG: RuntimeConfig = {
     timeZone: DEFAULT_SYSTEM_CONFIG.timeZone,
     deviceInfo: { ...DEFAULT_DEVICE_INFO },
     heartbeatInterval: 25000,
-    farmCheckInterval: 3000,
-    friendCheckInterval: 12000,
-    farmCheckIntervalMin: 3000,
-    farmCheckIntervalMax: 5000,
-    friendCheckIntervalMin: 12000,
-    friendCheckIntervalMax: 15000,
+    // 兜底初值，启动后会被账号配置里的 intervals 覆盖；默认与 DEFAULT_ACCOUNT_CONFIG 一致：
+    // 农场巡查 20-25 秒、好友任务 30-35 秒。
+    farmCheckInterval: 20000,
+    friendCheckInterval: 30000,
+    farmCheckIntervalMin: 20000,
+    farmCheckIntervalMax: 25000,
+    friendCheckIntervalMin: 30000,
+    friendCheckIntervalMax: 35000,
     adminPort: Number(process.env.ADMIN_PORT),
     adminPassword: process.env.ADMIN_PASSWORD,
 };
