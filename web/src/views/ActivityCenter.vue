@@ -116,6 +116,8 @@ watch(stellarDetailsAvailable, (available) => {
 
 onMounted(() => {
   activityStore.refresh(accountId())
+  // 活动中心默认进入奶茶热销中；点返回仍会回到活动目录选择其它活动。
+  selectedActivity.value = 'milk'
 })
 onUnmounted(() => {
   appStore.activityDetailOpen = false

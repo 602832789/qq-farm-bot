@@ -30,6 +30,10 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-05 · 活动中心默认进入奶茶热销中
+
+- `ActivityCenter.vue` 挂载时默认选中 `milk`，进入活动中心直接打开奶茶热销中页面；点返回仍回到活动目录可选其它活动，切换账号行为不变（回到目录）。vue-tsc 与 19 项 web 测试通过。
+
 ### 2026-11-05 · 营业记录数据链路对齐老版（补回 normalizeWireMaps）
 
 - 移植缺口：老版 `rpc()` 对所有应答统一 `normalizeWireMaps(plain(...))`，现版定义了该函数却没有调用点。protobufjs `map<int64,…>` 字段（营业记录 `cups_by_recipe` 等）的 hash 键未还原成十进制字符串，导致配方查找失败、名称为空、图标破图，营业记录数据残缺。
