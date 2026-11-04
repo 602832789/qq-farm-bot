@@ -37,12 +37,10 @@ RUN --mount=type=cache,id=qq-farm-pnpm-store,target=/pnpm/store,sharing=locked \
 # independently instead of rebuilding Web after a Core-only source change.
 FROM workspace-deps AS web-builder
 
-# Web 有两个文件跨目录引用 core 的配置，必须在 COPY web 之前显式拷进来，
+# Web 有一个文件跨目录引用 core 的配置，必须在 COPY web 之前显式拷进来，
 # 否则本阶段没有 ./core，Vite 会报 Could not resolve "../../../core/...":
-#   web/src/constants/solar-terms.ts        -> core/src/gameConfig/SolarTerms.json
-#   web/src/utils/notification-template.ts  -> core/src/config/notification-templates.json
-# 只拷这两个文件，不能整体拷 core/src/gameConfig（65MB 素材）。
-COPY core/src/gameConfig/SolarTerms.json ./core/src/gameConfig/SolarTerms.json
+#   web/src/utils/notification-template.ts -> core/src/config/notification-templates.json
+# 只拷这一个文件，不能整体拷 core/src/gameConfig（素材太大）。
 COPY core/src/config/notification-templates.json ./core/src/config/notification-templates.json
 COPY web ./web
 RUN pnpm -C web build
