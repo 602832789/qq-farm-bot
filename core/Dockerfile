@@ -22,6 +22,11 @@ RUN npm config set registry "${NPM_REGISTRY}" \
 FROM pnpm-base AS workspace-deps
 
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+# .npmrc 里有 node-linker=hoisted，必须跟着进镜像：不带它时 pnpm 会退回默认
+# 符号链接布局，core/tsconfig.json（declaration: true）在为 JS 生成 .d.ts 时
+# 无法命名 Express 的推断类型，构建阶段报 TS2742。这里只影响构建阶段布局，
+# 运行阶段仍用下面 prod-deps 的默认布局。
+COPY .npmrc ./
 COPY core/package.json ./core/
 COPY web/package.json ./web/
 

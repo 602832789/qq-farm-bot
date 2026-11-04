@@ -22,6 +22,25 @@
 const express = require('express');
 const { resolveAdvertiseAddresses } = require('./ip-utils');
 
+/**
+ * 返回值必须显式标注：tsconfig 开着 declaration，若让 TS 自行推断 express()
+ * 的返回类型，声明产物的类型名会落到 `@types/express-serve-static-core`，
+ * 在 pnpm 符号链接布局（Docker 构建阶段）下无法命名，报 TS2742。
+ * 这里用 import('express') 显式引用，任何 node_modules 布局下都可命名。
+ *
+ * @param {object} [options] 依赖注入
+ * @param {object} [options.config] 抓包服务配置（apiHost/apiPort/apiToken 等）
+ * @param {object} [options.ca] 根 CA（cert/key）
+ * @param {object} [options.sessionStore] 会话存储
+ * @param {object} [options.proxyManager] MITM 代理管理器
+ * @param {(level: string, message: string) => void} [options.log] 日志函数
+ * @returns {{
+ *   app: import('express').Express,
+ *   start: () => Promise<import('http').Server>,
+ *   handleApiRequest: (method: string, path: string, body?: object, context?: { sessionId?: string }) => Promise<{ status: number, body?: object, buffer?: Buffer }>,
+ *   getCaCertDer: () => Buffer
+ * }} 抓包服务 API 句柄
+ */
 function createCaptureApi({ config, ca, sessionStore, proxyManager, log = () => {} } = {}) {
   const startedAt = Date.now();
 
