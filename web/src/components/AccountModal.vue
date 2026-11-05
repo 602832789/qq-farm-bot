@@ -107,7 +107,9 @@ async function addQrAccount(platform: 'wx' | 'qq', code: string, nickname: strin
   const name = form.name.trim() || nickname
   if (platform === 'wx') {
     wxPendingCode = code
-    if (credential && credential.refreshtoken)
+    // 部分环境不回传 refreshtoken，但 loginBuffer 仍是长效凭证，
+    // 不能因为缺刷新令牌就把整套续期凭据丢掉。
+    if (credential && (credential.refreshtoken || credential.loginBuffer || credential.expires_at))
       wxPendingCredential = credential
   }
   else {
@@ -149,10 +151,16 @@ async function submitPendingQrAccount(platform: 'wx' | 'qq') {
 
   const credential = platform === 'wx' ? wxPendingCredential : null
   const payload: any = {
+    // 编辑态重扫时直接更新原账号，不再靠备注名碰巧匹配（不匹配会新增重复账号）。
+    ...(props.editData?.id ? { id: String(props.editData.id) } : {}),
     name,
     code,
     platform,
     loginType: 'manual',
+    // 重新登录即代表上一次的续期失败已恢复：显式清空失败标记，
+    // 否则账号管理页会一直显示「待续期」的琥珀色。
+    wxCredentialRefreshError: '',
+    wxCredentialLastAttemptAt: Date.now(),
     ...(credential
       ? {
           wxid: credential.wxid,
@@ -161,7 +169,7 @@ async function submitPendingQrAccount(platform: 'wx' | 'qq') {
           loginBuffer: credential.loginBuffer,
           expires_in: credential.expires_in,
           expires_at: credential.expires_at,
-          wxCredentialRefreshedAt: credential.wxCredentialRefreshedAt,
+          wxCredentialRefreshedAt: Number(credential.wxCredentialRefreshedAt) || Date.now(),
         }
       : {}),
   }
@@ -237,10 +245,13 @@ async function submitManual() {
   }
 
   const payload: any = {
+    ...(props.editData?.id ? { id: String(props.editData.id) } : {}),
     name: form.name,
     code,
     platform: props.editData ? (props.editData.platform || 'qq') : form.platform,
     loginType: 'manual',
+    // 手动填 Code 重新登录同样要清掉上一次的续期失败标记。
+    ...(props.editData ? { wxCredentialRefreshError: '', wxCredentialLastAttemptAt: Date.now() } : {}),
   }
 
   await addAccount(payload, !!props.editData)
@@ -283,7 +294,10 @@ function isWxFlowActive(taskId: string, flowVersion: number) {
 async function getWxCodeAndAdd(taskId: string, flowVersion: number) {
   if (!isWxFlowActive(taskId, flowVersion))
     return
-  const codeResult = await api.post(`/api/wx-login/tasks/${taskId}/code`)
+  // 编辑态重扫把账号 id 一并交给后端，让新凭据直接写回原账号；
+  // 即便前端后续保存失败，也不会留下旧 token / 旧错误标记。
+  const editAccountId = props.editData?.id ? String(props.editData.id) : ''
+  const codeResult = await api.post(`/api/wx-login/tasks/${taskId}/code`, editAccountId ? { account_id: editAccountId } : undefined)
   if (!isWxFlowActive(taskId, flowVersion))
     return
   const code = String(codeResult.data?.data?.code || '').trim()

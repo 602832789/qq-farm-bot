@@ -7,12 +7,13 @@ import { NInputNumber } from 'naive-ui/es/input-number'
 import { NPopover } from 'naive-ui/es/popover'
 import { NSwitch } from 'naive-ui/es/switch'
 import { storeToRefs } from 'pinia'
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import CareerHarvestSteal from '@/components/CareerHarvestSteal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import LandCard from '@/components/FarmLandCard.vue'
 import FarmScene from '@/components/FarmScene.vue'
+import LandCropBubble from '@/components/LandCropBubble.vue'
 import LandDetailModal from '@/components/LandDetailModal.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
@@ -53,8 +54,44 @@ const { settings } = storeToRefs(settingStore)
 const { status } = storeToRefs(statusStore)
 const detailLandId = ref<number | null>(null)
 const detailLand = computed(() => lands.value.find(land => land.id === detailLandId.value) || null)
+/** 老版就地气泡：点作物只浮出气泡，土地等级/升级条件仍由 LandDetailModal 提供。 */
+const detailBubbleOpen = ref(false)
+const bubbleAnchor = shallowRef<HTMLElement | null>(null)
+const modalLand = computed(() => detailBubbleOpen.value ? null : detailLand.value)
 /** 弹窗内催熟/铲除进行中标记，避免重复提交。 */
 const detailActionPending = ref(false)
+
+function resolveLandAnchor(id: unknown) {
+  const key = String(id ?? '')
+  return key ? document.querySelector<HTMLElement>(`[data-land-id="${key}"]`) : null
+}
+
+/** 点击地块/作物：就地浮出老版气泡，不再弹居中大弹窗。 */
+function openLandBubble(land: any) {
+  if (!land)
+    return
+  const id = Number(land.id) || null
+  // 再次点击同一块地时收起气泡（老版选中态口径）。
+  if (detailBubbleOpen.value && detailLandId.value === id) {
+    closeLandDetail()
+    return
+  }
+  detailLandId.value = id
+  detailBubbleOpen.value = true
+  bubbleAnchor.value = resolveLandAnchor(land.id)
+}
+
+function closeLandDetail() {
+  detailLandId.value = null
+  detailBubbleOpen.value = false
+  bubbleAnchor.value = null
+}
+
+/** 气泡里的入口：切回完整土地详情弹窗（等级/升级条件）。 */
+function openLandDetailsFromBubble() {
+  detailBubbleOpen.value = false
+  bubbleAnchor.value = null
+}
 
 /** 弹窗内催熟（老版 ripenLand 方案）：先普通肥一次，再连续施有机肥至成熟或无法继续。 */
 let detailActionSequence = 0
@@ -189,7 +226,7 @@ watch(currentAccountId, () => {
 })
 
 watch(currentAccountId, () => {
-  detailLandId.value = null
+  closeLandDetail()
 })
 
 const farmingLandId = ref<number | null>(null)
@@ -1009,7 +1046,7 @@ onUnmounted(() => {
             <FarmScene
               v-if="landView === 'scene'"
               :lands="lands"
-              @open="selecting ? toggleLand($event) : detailLandId = $event.id"
+              @open="selecting ? toggleLand($event) : openLandBubble($event)"
             />
             <div
               v-else
@@ -1028,7 +1065,7 @@ onUnmounted(() => {
                 :selected="isLandSelected(land)"
                 :selection-disabled="!canSelectLand(land)"
                 :selection-label="selectReason(land)"
-                @open="detailLandId = $event.id"
+                @open="openLandBubble($event)"
                 @select="toggleLand(land)"
               />
             </div>
@@ -1038,12 +1075,22 @@ onUnmounted(() => {
     </div>
 
     <LandDetailModal
-      :land="detailLand"
+      :land="modalLand"
       :player="status?.status"
       :connected="currentAccountConnected"
-      @close="detailLandId = null"
+      @close="closeLandDetail"
       @fertilize="handleDetailFertilize"
       @remove="handleDetailRemove"
+    />
+
+    <LandCropBubble
+      :land="detailBubbleOpen ? detailLand : null"
+      :anchor="bubbleAnchor"
+      :pending="detailActionPending"
+      @close="closeLandDetail"
+      @fertilize="handleDetailFertilize"
+      @remove="handleDetailRemove"
+      @details="openLandDetailsFromBubble"
     />
 
     <ConfirmModal

@@ -242,6 +242,7 @@ const ariaLabel = computed(() => {
     :aria-disabled="selectable ? selectionDisabled : undefined"
     :aria-label="ariaLabel"
     :title="selectable && selectionDisabled ? (selectionLabel || '这块地当前不能选择') : undefined"
+    :data-land-id="land.id"
     @click="activate"
     @keydown.enter.prevent="activate"
     @keydown.space.prevent="activate"

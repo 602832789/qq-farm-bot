@@ -9,6 +9,7 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import { getPlatformClass, getPlatformLabel, useAccountStore } from '@/stores/account'
 import { useStatusStore } from '@/stores/status'
 import { getAccountRuntimeStatus, isAccountActive } from '@/utils/account-runtime'
+import { getCredentialStatus } from '@/utils/credential-status'
 
 const emit = defineEmits<{ openSettings: [account: any] }>()
 
@@ -65,35 +66,9 @@ function runtimeState(acc: any) {
   return getAccountRuntimeStatus(acc, now.value.getTime())
 }
 
-/**
- * 访问凭证剩余时间。旧账号可能没有 expires_at，用最近一次续期时间 + TTL 兜底。
- */
+/** 访问凭证剩余时间；判定逻辑抽到纯函数里，便于回归测试。 */
 function credentialStatus(acc: any) {
-  const invalidColor = 'text-red-600 dark:text-red-400'
-  let expiresAt = Number(acc.expires_at)
-  if (!Number.isFinite(expiresAt) || expiresAt <= 0) {
-    const refreshedAt = Number(acc.wxCredentialRefreshedAt)
-    const ttl = Number(acc.expires_in)
-    if (!Number.isFinite(refreshedAt) || refreshedAt <= 0)
-      return { text: '访问凭证：到期时间未知', color: 'text-gray-500' }
-    if (refreshedAt > now.value.getTime())
-      return { text: '访问凭证：时间异常', color: invalidColor }
-    expiresAt = refreshedAt + (Number.isFinite(ttl) && ttl > 0 ? ttl : 7200) * 1000
-  }
-  const remaining = expiresAt - now.value.getTime()
-  const seconds = Math.max(0, Math.ceil(remaining / 1000))
-  const duration = `${Math.floor(seconds / 3600)} 小时 ${Math.floor(seconds / 60) % 60} 分 ${String(seconds % 60).padStart(2, '0')} 秒`
-  const warning = !!acc.wxCredentialRefreshError
-  return {
-    text: remaining <= 0
-      ? '访问凭证：已过期'
-      : `访问凭证：剩余 ${duration}${remaining <= 45 * 60000 ? ' · 待续期' : ''}`,
-    color: remaining <= 0
-      ? invalidColor
-      : warning || remaining <= 45 * 60000
-        ? 'text-amber-600 dark:text-amber-400'
-        : 'text-green-600 dark:text-green-400',
-  }
+  return getCredentialStatus(acc, now.value.getTime())
 }
 
 function selectAccount(account: any) {
@@ -192,15 +167,15 @@ async function refreshWxCredentials() {
     const success = Number(data.success) || 0
     const failed = Number(data.failed) || 0
     const skipped = Number(data.skipped) || 0
-    if (!res?.ok && success === 0) {
-      notify(res?.error || '微信授权续期失败', 'danger')
-      return
-    }
     const failureDetail = (Array.isArray(data.results) ? data.results : [])
       .filter((item: any) => !item.ok)
       .map((item: any) => `${item.name}：${item.error || '续期失败'}`)
       .join('；')
-    const summary = `续期完成：成功 ${success} 个${failed > 0 ? `，失败 ${failed} 个` : ''}${skipped > 0 ? `，跳过 ${skipped} 个（缺少刷新凭证）` : ''}`
+    if (!res?.ok && success === 0) {
+      notify([res?.error, failureDetail].filter(Boolean).join('\n') || '微信授权续期失败', 'danger')
+      return
+    }
+    const summary = `续期完成：成功 ${success} 个${failed > 0 ? `，失败 ${failed} 个` : ''}${skipped > 0 ? `，跳过 ${skipped} 个（缺少长效凭证）` : ''}`
     notify(failureDetail ? `${summary}\n${failureDetail}` : summary, failed > 0 ? 'danger' : 'primary')
   }
   catch (e: any) {

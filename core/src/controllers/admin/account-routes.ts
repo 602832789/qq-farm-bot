@@ -130,12 +130,14 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
     });
 
     // API: 续期微信授权（批量）。返回每个账号的结果，前端据此提示成功/失败数量。
+    // 与启动前换码一致：优先用长效 loginBuffer 直接换 Code，只有失效时才滚动
+    // refreshtoken，避免每次点按钮都消耗一次性滚动凭证导致失败。
     async function refreshWxCredentials(req: Request, res: Response): Promise<any> {
         try {
-            const { hasWxCredential, refreshAccountCredential } = require('../../services/wx-credential');
+            const { hasRenewableCredential, ensureFreshGameCode } = require('../../services/wx-credential');
             const accounts = (ctx.provider.getAccounts().accounts || []);
             const wxAccounts = accounts.filter((account: any) => String(account.platform || '') === 'wx');
-            const targetAccounts = wxAccounts.filter((account: any) => hasWxCredential(account));
+            const targetAccounts = wxAccounts.filter((account: any) => hasRenewableCredential(account));
             if (targetAccounts.length === 0) {
                 return res.json({
                     ok: false,
@@ -146,7 +148,7 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
 
             const results: any[] = [];
             for (const account of targetAccounts) {
-                const result = await refreshAccountCredential(account.id);
+                const result = await ensureFreshGameCode(account.id);
                 results.push({
                     accountId: String(account.id),
                     name: result.accountName,
@@ -187,9 +189,9 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
 
     app.post('/api/accounts/:id/refresh-wx-credential', async (req: Request, res: Response) => {
         try {
-            const { refreshAccountCredential } = require('../../services/wx-credential');
+            const { ensureFreshGameCode } = require('../../services/wx-credential');
             const accountId = resolveAccId(ctx, req.params.id) || String(req.params.id || '');
-            const result = await refreshAccountCredential(accountId);
+            const result = await ensureFreshGameCode(accountId);
             res.status(result.ok ? 200 : 400).json({
                 ok: result.ok,
                 ...(result.ok ? {} : { error: result.error || '续期失败' }),

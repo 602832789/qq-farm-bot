@@ -101,8 +101,31 @@ function addOrUpdateAccount(acc: Partial<Account> & { avatarUrl?: string; openid
     if (acc.id) {
         const idx = data.accounts.findIndex(a => a.id === acc.id);
         if (idx >= 0) {
-            data.accounts[idx] = { ...data.accounts[idx], ...acc, name: acc.name !== undefined ? acc.name : data.accounts[idx].name, updatedAt: Date.now() };
-            touchedAccountId = String(data.accounts[idx].id || '');
+            const previous: any = data.accounts[idx];
+            const next: any = {
+                ...previous,
+                ...acc,
+                name: acc.name !== undefined ? acc.name : previous.name,
+                updatedAt: Date.now(),
+            };
+            // 重新扫码 / 手动填 Code / 续期成功都会换 Code 或换长效凭据。
+            // 此时必须清掉上一次的失败标记，否则账号管理页会一直显示琥珀色
+            // 「待续期」，即使凭证已经刷新（用户反馈的“重扫后不是绿色”）。
+            // 只有调用方显式传入新的错误信息时才保留它。
+            const rotatedKeys = ['code', 'refreshtoken', 'accesstoken', 'loginBuffer', 'wxid', 'openid', 'expires_at'];
+            const credentialRotated = rotatedKeys.some(key =>
+                (acc as any)[key] !== undefined
+                && String((acc as any)[key] ?? '') !== String(previous[key] ?? ''),
+            );
+            if (credentialRotated && !String((acc as any).wxCredentialRefreshError || '').trim()) {
+                delete next.wxCredentialRefreshError;
+                if ((acc as any).wxCredentialRefreshedAt === undefined)
+                    next.wxCredentialRefreshedAt = Date.now();
+                if ((acc as any).wxCredentialLastAttemptAt === undefined)
+                    next.wxCredentialLastAttemptAt = Date.now();
+            }
+            data.accounts[idx] = next;
+            touchedAccountId = String(next.id || '');
         }
     } else {
         const id = data.nextId++;

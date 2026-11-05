@@ -285,6 +285,7 @@ onUnmounted(() => {
         v-for="land in displayLands"
         :key="land.id"
         type="button"
+        :data-land-id="land.id"
         class="scene-plot"
         :class="[`scene-plot--${bubble(land).tone}`, { 'is-large': Number(land.plantSize) > 1 }]"
         :style="landStyle(land)"

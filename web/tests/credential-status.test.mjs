@@ -1,0 +1,89 @@
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+// eslint-disable-next-line test/no-import-node-test
+import test from 'node:test'
+
+const require = createRequire(import.meta.url)
+const ts = require('typescript')
+const source = readFileSync(new URL('../src/utils/credential-status.ts', import.meta.url), 'utf8')
+const { outputText } = ts.transpileModule(source, {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
+})
+const module = { exports: {} }
+// eslint-disable-next-line no-new-func
+new Function('require', 'module', 'exports', outputText)(require, module, module.exports)
+const { getCredentialStatus } = module.exports
+
+const HOUR = 3600_000
+const MINUTE = 60_000
+const GREEN = 'text-green-600 dark:text-green-400'
+const AMBER = 'text-amber-600 dark:text-amber-400'
+const RED = 'text-red-600 dark:text-red-400'
+const GRAY = 'text-gray-500'
+
+function account(patch = {}) {
+  return { platform: 'wx', expires_at: NOW + 2 * HOUR, expires_in: 7200, ...patch }
+}
+
+const NOW = 1_800_000_000_000
+
+test('有效期充足的凭证显示绿色，且不带待续期文案', () => {
+  const status = getCredentialStatus(account(), NOW)
+  assert.equal(status.color, GREEN)
+  assert.match(status.text, /^访问凭证：剩余 2 小时 0 分 00 秒$/)
+  assert.ok(!status.text.includes('待续期'))
+})
+
+test('剩余 45 分钟内才显示待续期（琥珀色）', () => {
+  assert.equal(getCredentialStatus(account({ expires_at: NOW + 30 * MINUTE }), NOW).color, AMBER)
+  assert.match(getCredentialStatus(account({ expires_at: NOW + 30 * MINUTE }), NOW).text, /待续期/)
+  assert.equal(getCredentialStatus(account({ expires_at: NOW + 46 * MINUTE }), NOW).color, GREEN)
+})
+
+test('已过期的凭证显示红色', () => {
+  const status = getCredentialStatus(account({ expires_at: NOW - 1000 }), NOW)
+  assert.equal(status.color, RED)
+  assert.equal(status.text, '访问凭证：已过期')
+})
+
+test('没有任何到期信息时显示灰色「未知」；刷新时间在未来则报时间异常', () => {
+  assert.deepEqual(getCredentialStatus(account({ expires_at: 0, wxCredentialRefreshedAt: 0 }), NOW), {
+    text: '访问凭证：到期时间未知', color: GRAY,
+  })
+  assert.equal(getCredentialStatus(account({ expires_at: 0, wxCredentialRefreshedAt: NOW + HOUR }), NOW).color, RED)
+})
+
+test('旧账号没有 expires_at 时用最近成功时间 + TTL 兜底', () => {
+  const status = getCredentialStatus(account({ expires_at: 0, wxCredentialRefreshedAt: NOW - 10 * MINUTE }), NOW)
+  assert.equal(status.color, GREEN)
+  assert.match(status.text, /1 小时 50 分/)
+})
+
+test('秒级 expires_at 不会被误判成已过期', () => {
+  const status = getCredentialStatus(account({ expires_at: Math.floor((NOW + HOUR) / 1000) }), NOW)
+  assert.equal(status.color, GREEN)
+})
+
+test('重新扫码后：历史失败标记 + 旧到期时间不再让凭证变成待续期颜色', () => {
+  // 后端仍残留旧错误、旧 expires_at 已临近过期，但最近一次成功时间就是刚才
+  const status = getCredentialStatus(account({
+    expires_at: NOW + 20 * MINUTE,
+    wxCredentialRefreshedAt: NOW - 1000,
+    wxCredentialLastAttemptAt: NOW - 1000,
+    wxCredentialRefreshError: '微信授权续期失败：code=40001',
+  }), NOW)
+  assert.equal(status.color, GREEN, '重扫成功后的凭证必须是绿色')
+  assert.ok(!status.text.includes('待续期'))
+  assert.ok(!status.text.includes('上次续期失败'))
+})
+
+test('最近一次续期确实失败（晚于最近成功）才标琥珀色并说明原因', () => {
+  const status = getCredentialStatus(account({
+    wxCredentialRefreshedAt: NOW - 2 * HOUR,
+    wxCredentialLastAttemptAt: NOW - 1000,
+    wxCredentialRefreshError: 'invalid refresh token',
+  }), NOW)
+  assert.equal(status.color, AMBER)
+  assert.match(status.text, /上次续期失败/)
+})

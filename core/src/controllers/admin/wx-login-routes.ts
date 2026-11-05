@@ -68,7 +68,9 @@ function mountWxLoginRoutes(app: Application, ctx: AdminContext): void {
             };
             const body: any = (req.body && typeof req.body === 'object') ? req.body : {};
             const accountId = String(body.account_id || body.accountId || '').trim();
-            if (accountId && credential.refreshtoken) {
+            // 只要拿到长效凭证就写回：部分环境不回传 refreshtoken，
+            // 但 loginBuffer 仍可直接换 Code，不能因为缺 refreshtoken 就丢掉整套凭据。
+            if (accountId && (credential.refreshtoken || credential.loginBuffer)) {
                 // 编辑重扫场景：直接把新凭据写回账号，避免只更新 Code 导致下次续期用旧 token。
                 try {
                     store.addOrUpdateAccount({
