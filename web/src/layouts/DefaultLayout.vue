@@ -6,6 +6,7 @@ import { useRoute, useRouter } from 'vue-router'
 import Sidebar from '@/components/Sidebar.vue'
 import ThemeSwitcher from '@/components/ThemeSwitcher.vue'
 import TopAccountMenu from '@/components/TopAccountMenu.vue'
+import { useAccountSwitchScrollPreserve } from '@/composables/useAccountSwitchScroll'
 import { isMenuActive, matchMenu, menuGroups, menuPath, visibleMenuRoutes } from '@/router/menu'
 import { useAppStore } from '@/stores/app'
 import { useToastStore } from '@/stores/toast'
@@ -15,6 +16,8 @@ const appStore = useAppStore()
 const userStore = useUserStore()
 const route = useRoute()
 const router = useRouter()
+// 布局级常驻：切换账号后保持当前页面与滚动位置，所有页面统一生效
+useAccountSwitchScrollPreserve()
 const { sidebarOpen, activityDetailOpen } = storeToRefs(appStore)
 const desktop = useMediaQuery('(min-width: 1024px)')
 const loggingOut = ref(false)

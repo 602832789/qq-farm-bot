@@ -7,6 +7,7 @@ import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } fr
 import { useRouter } from 'vue-router'
 import { resolveActivityGameplay } from '@/components/activity/gameplays'
 import ShareRewardActivity from '@/components/activity/ShareRewardActivity.vue'
+import { ACCOUNT_SWITCH_WINDOW_MS, isAccountSwitching } from '@/composables/useAccountSwitchScroll'
 import { useAccountStore } from '@/stores/account'
 import { useActivityCenterStore } from '@/stores/activity-center'
 import { useAppStore } from '@/stores/app'
@@ -118,9 +119,22 @@ watch([notice, actionError], ([successMessage, failureMessage]) => {
   activityStore.clearActionMessages()
 })
 
+let stellarAvailabilityTimer: number | undefined
+
 watch(stellarDetailsAvailable, (available) => {
-  if (selectedActivity.value === 'stellar' && !available)
-    selectedActivity.value = null
+  if (selectedActivity.value !== 'stellar' || available)
+    return
+  // 切号会先清空活动快照，此时数据短暂不可用；等切号窗口结束再复核，
+  // 避免把用户从当前活动页踢回活动目录。
+  if (isAccountSwitching()) {
+    window.clearTimeout(stellarAvailabilityTimer)
+    stellarAvailabilityTimer = window.setTimeout(() => {
+      if (selectedActivity.value === 'stellar' && !stellarDetailsAvailable.value)
+        selectedActivity.value = null
+    }, ACCOUNT_SWITCH_WINDOW_MS + 200)
+    return
+  }
+  selectedActivity.value = null
 })
 
 onMounted(() => {
@@ -129,6 +143,7 @@ onMounted(() => {
   selectedActivity.value = 'milk'
 })
 onUnmounted(() => {
+  window.clearTimeout(stellarAvailabilityTimer)
   appStore.activityDetailOpen = false
 })
 </script>

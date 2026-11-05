@@ -4,6 +4,7 @@ import { storeToRefs } from 'pinia'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, useTemplateRef } from 'vue'
 import AccountModal from '@/components/AccountModal.vue'
 import RemarkModal from '@/components/RemarkModal.vue'
+import { beginAccountSwitch } from '@/composables/useAccountSwitchScroll'
 import { getPlatformClass, getPlatformLabel, useAccountStore } from '@/stores/account'
 import { useStatusStore } from '@/stores/status'
 
@@ -174,6 +175,13 @@ function onMenuFocusout(event: FocusEvent) {
 }
 
 function selectAccount(acc: any) {
+  // 点当前账号不算切号，别触发一次无意义的数据重载
+  if (String(acc?.id ?? '') === String(accountStore.currentAccountId || '')) {
+    closeDropdown()
+    return
+  }
+  // 先记录页面与所有滚动容器的位置，再切号；布局层会在数据回填期间持续还原
+  beginAccountSwitch()
   accountStore.setCurrentAccount(acc)
   closeDropdown()
 }

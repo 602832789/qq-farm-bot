@@ -30,6 +30,14 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-06 · 任意页面切换账号后保持原页面与原滚动位置
+
+- 手机端在页面中下部切号会跳回顶部，根因是切号时 `status.value = null`、活动中心 `snapshot` 被重置，页面主体内容瞬间卸载使 `#farm-page-content` 高度塌陷，浏览器把 `scrollTop` 钳制为 0，数据回填后不会自动还原。
+- 新增 `web/src/composables/useAccountSwitchScroll.ts`：切号前快照主滚动容器及所有嵌套滚动容器的 `scrollTop`/`scrollLeft`（含横向页签栏）；切号后通过 `nextTick` + rAF + `MutationObserver` + 多轮定时持续还原，覆盖 3 秒保护窗口；用户一旦触摸/滚轮/按键即交还控制权；切号伴随正常路由跳转则不干预。
+- `DefaultLayout.vue` 布局级挂载 `useAccountSwitchScrollPreserve()`，覆盖所有页面与所有切号入口；右上角 `TopAccountMenu.vue` 在 `setCurrentAccount` 前调用 `beginAccountSwitch()` 记录最精确位置，并对「点击当前账号」短路。
+- 修复活动中心残留的跳页问题：`activity-center` 的 `performLoad` 切号时清空快照会让 `stellarDetailsAvailable` 变 false，原 watch 会把星砂活动页踢回活动目录。现改为切号窗口内延后复核，数据确实仍不可用才回退；其余活动页沿用既有保持逻辑。
+- core 328 项 / web 22 项测试通过，eslint 与 vue-tsc 类型检查通过。
+
 ### 2026-11-06 · 修复背包种子页仍每 10 秒自动刷新
 
 - 根因：页面级常驻组件 `PersonalResourceStrip.vue` 有独立的 10 秒兜底轮询，`refresh()` → `bagStore.fetchBag()`（2.5s 节流，10s 周期必触发），每次整体替换 `allItems` 导致背包种子列表重渲染；它位于三个页签之外、且不受自动刷新开关控制，是上次只改 BagPanel 定时器时漏掉的入口。
