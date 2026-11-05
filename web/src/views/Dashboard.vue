@@ -436,6 +436,10 @@ const filteredOperations = computed(() => {
 // 老版本今日统计：主动作按次数排序展示，无记录的收进折叠区。
 const operationGroups = computed(() => partitionOperations(filteredOperations.value))
 
+// 当日新增金币/经验：后端以当日首次基线计算，跨重启与跨天均已处理。
+const todayGoldGained = computed(() => Math.max(0, Number(status.value?.sessionGoldGained) || 0))
+const todayExpGained = computed(() => Math.max(0, Number(status.value?.sessionExpGained) || 0))
+
 function getOpName(key: string | number) {
   return OP_META[String(key)]?.label || String(key)
 }
@@ -943,7 +947,7 @@ useIntervalFn(updateCountdowns, 1000)
             description="启动账号后显示今日收获与互动统计"
             icon="i-carbon-connection-signal-off"
           />
-          <div v-else-if="!operationGroups.active.length" class="flex flex-col items-center justify-center gap-1 py-6 text-center">
+          <div v-else-if="!operationGroups.active.length && todayGoldGained <= 0 && todayExpGained <= 0" class="flex flex-col items-center justify-center gap-1 py-6 text-center">
             <span class="i-carbon-sprout text-3xl text-gray-300 dark:text-gray-600" />
             <strong class="text-sm text-gray-700 dark:text-gray-200">等待第一份收获</strong>
             <p class="text-xs text-gray-400">
@@ -951,7 +955,37 @@ useIntervalFn(updateCountdowns, 1000)
             </p>
           </div>
           <template v-else>
-            <div class="grid grid-cols-2 gap-2 2xl:gap-3" role="region" aria-label="今日动作统计，可滚动查看">
+            <div class="mb-2 grid grid-cols-2 gap-2 2xl:gap-3" role="region" aria-label="今日金币与经验增量">
+              <div class="flex items-center justify-between rounded-xl bg-amber-50 px-3 py-2 dark:bg-amber-950/20">
+                <div class="flex items-center gap-2">
+                  <span class="i-carbon-coins text-base text-amber-500 2xl:text-lg" aria-hidden="true" />
+                  <div class="text-xs text-gray-500 2xl:text-sm">
+                    今日金币
+                  </div>
+                </div>
+                <div class="text-sm font-bold text-amber-600 2xl:text-base dark:text-amber-400">
+                  +{{ todayGoldGained.toLocaleString() }}<small class="ml-0.5 text-[10px] text-gray-400 font-normal">金币</small>
+                </div>
+              </div>
+              <div class="flex items-center justify-between rounded-xl bg-sky-50 px-3 py-2 dark:bg-sky-950/20">
+                <div class="flex items-center gap-2">
+                  <span class="i-carbon-star-filled text-base text-sky-500 2xl:text-lg" aria-hidden="true" />
+                  <div class="text-xs text-gray-500 2xl:text-sm">
+                    今日经验
+                  </div>
+                </div>
+                <div class="text-sm font-bold text-sky-600 2xl:text-base dark:text-sky-400">
+                  +{{ todayExpGained.toLocaleString() }}<small class="ml-0.5 text-[10px] text-gray-400 font-normal">经验</small>
+                </div>
+              </div>
+            </div>
+            <div v-if="!operationGroups.active.length" class="flex flex-col items-center justify-center gap-1 py-4 text-center">
+              <span class="i-carbon-sprout text-2xl text-gray-300 dark:text-gray-600" />
+              <p class="text-xs text-gray-400">
+                本轮巡查完成后，主动作统计会在这里更新。
+              </p>
+            </div>
+            <div v-else class="grid grid-cols-2 gap-2 2xl:gap-3" role="region" aria-label="今日动作统计，可滚动查看">
               <div
                 v-for="[key, val] in operationGroups.active"
                 :key="key"

@@ -28,11 +28,11 @@ const { status, loading: statusLoading, error: statusError, realtimeConnected } 
 const imageErrors = ref<Record<string, boolean>>({})
 
 const CATEGORY_OPTIONS = [
-  { label: '全部', value: 'all' },
   { label: '果实', value: 'fruit' },
   { label: '超变果实', value: 'mutant' },
   { label: '种子', value: 'seed' },
   { label: '道具', value: 'tool' },
+  { label: '全部', value: 'all' },
 ] as const
 
 const DOG_FOOD_DURATIONS = new Map<number, number>([

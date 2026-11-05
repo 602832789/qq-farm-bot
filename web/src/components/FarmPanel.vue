@@ -3,7 +3,9 @@ import type { FertilizerType, RipenAllPreview } from '@/stores/farm'
 import type { FriendInteractionItemDto, FriendInteractionResultDto } from '@/stores/friend'
 import { useIntervalFn, useResizeObserver } from '@vueuse/core'
 import { NButton } from 'naive-ui/es/button'
+import { NInputNumber } from 'naive-ui/es/input-number'
 import { NPopover } from 'naive-ui/es/popover'
+import { NSwitch } from 'naive-ui/es/switch'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
@@ -191,6 +193,41 @@ watch(currentAccountId, () => {
 
 const farmingLandId = ref<number | null>(null)
 const manualRefreshing = ref(false)
+// ---- 土地自动刷新（默认关闭）：开关与秒数按账号存 localStorage ----
+const AUTO_REFRESH_KEY = 'qq-farm-bot:farm-refresh'
+const autoRefreshEnabled = ref(false)
+const autoRefreshSeconds = ref(60)
+
+function readAutoRefresh(accountId: string) {
+  try {
+    const raw = JSON.parse(localStorage.getItem(`${AUTO_REFRESH_KEY}:${accountId}`) || '{}')
+    autoRefreshEnabled.value = raw?.enabled === true
+    const seconds = Number(raw?.seconds)
+    autoRefreshSeconds.value = Number.isFinite(seconds) ? Math.min(600, Math.max(10, Math.round(seconds))) : 60
+  }
+  catch {
+    autoRefreshEnabled.value = false
+    autoRefreshSeconds.value = 60
+  }
+}
+
+watch(currentAccountId, accountId => readAutoRefresh(String(accountId || '')), { immediate: true })
+
+watch([autoRefreshEnabled, autoRefreshSeconds], () => {
+  if (!currentAccountId.value)
+    return
+  try {
+    localStorage.setItem(`${AUTO_REFRESH_KEY}:${String(currentAccountId.value)}`, JSON.stringify({
+      enabled: autoRefreshEnabled.value,
+      seconds: autoRefreshSeconds.value,
+    }))
+  }
+  catch {
+    // 偏好存不下不影响看农场
+  }
+})
+
+const autoRefreshIntervalMs = computed(() => Math.min(600, Math.max(10, Math.round(Number(autoRefreshSeconds.value) || 60))) * 1000)
 const confirmVisible = ref(false)
 const confirmConfig = ref({
   title: '',
@@ -755,11 +792,19 @@ const { pause, resume } = useIntervalFn(() => {
   }
 }, 1000)
 
-const { pause: pauseRefresh, resume: resumeRefresh } = useIntervalFn(refreshFarmData, 60000)
+const { pause: pauseRefresh, resume: resumeRefresh } = useIntervalFn(refreshFarmData, autoRefreshIntervalMs, { immediate: false })
+
+watch(autoRefreshEnabled, (enabled) => {
+  if (enabled)
+    resumeRefresh()
+  else
+    pauseRefresh()
+})
 
 onMounted(() => {
   resume()
-  resumeRefresh()
+  if (autoRefreshEnabled.value)
+    resumeRefresh()
 })
 
 onUnmounted(() => {
@@ -837,6 +882,25 @@ onUnmounted(() => {
               <span class="i-carbon-renew" />
             </template>
           </NButton>
+          <div class="flex items-center gap-1.5" title="自动刷新土地数据：开启后按设定的秒数周期刷新；默认关闭">
+            <NSwitch v-model:value="autoRefreshEnabled" size="small" :disabled="!currentAccountId" aria-label="自动刷新开关" />
+            <NInputNumber
+              v-if="autoRefreshEnabled"
+              v-model:value="autoRefreshSeconds"
+              size="small"
+              class="!w-24"
+              :min="10"
+              :max="600"
+              :step="10"
+              :show-button="false"
+              :disabled="!currentAccountId"
+              aria-label="自动刷新秒数"
+            >
+              <template #suffix>
+                <span class="text-xs text-gray-400">秒</span>
+              </template>
+            </NInputNumber>
+          </div>
         </div>
         <div class="farm-actions" :class="{ 'is-selecting': selecting }">
           <NButton :type="selecting ? 'default' : 'primary'" :secondary="!selecting" :disabled="selectionBusy || !currentAccountRunning || !loaded || !!error" @click="selecting ? exitSelecting() : enterSelecting()">

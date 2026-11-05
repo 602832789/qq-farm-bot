@@ -145,6 +145,14 @@ function checkAndResetDailyStats(): void {
         Object.keys(operations).forEach((key: string) => {
             operations[key] = 0;
         });
+        // 跨天后基线清空：下次 getStats/recomputeSessionTotals 以当时值重新起算，
+        // 金币/经验当日增量从新的一天重新累计。
+        initialState.gold = null;
+        initialState.exp = null;
+        initialState.coupon = null;
+        session.goldGained = 0;
+        session.expGained = 0;
+        session.couponGained = 0;
     }
     currentDateKey = todayKey;
 }
@@ -206,6 +214,21 @@ function initStatsWithPersistence(accountId: string, gold: number, exp: number, 
     }
 
     initStats(gold, exp, coupon);
+
+    // 同日重启：用持久化里的当日基线覆盖刚设置的登录基线，
+    // 金币/经验当日增量跨重启继续累计，不从头算。
+    if (saved && saved.date === todayKey) {
+        const savedInitial = saved.initialState || {};
+        const restoredGold = Number(savedInitial.gold);
+        const restoredExp = Number(savedInitial.exp);
+        const restoredCoupon = Number(savedInitial.coupon);
+        if (Number.isFinite(restoredGold) && restoredGold >= 0)
+            initialState.gold = restoredGold;
+        if (Number.isFinite(restoredExp) && restoredExp >= 0)
+            initialState.exp = restoredExp;
+        if (Number.isFinite(restoredCoupon) && restoredCoupon >= 0)
+            initialState.coupon = restoredCoupon;
+    }
 }
 
 function updateStats(currentGold: number, currentExp: number): void {
