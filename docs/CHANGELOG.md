@@ -30,6 +30,13 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-05 · 同步上游 20261104 更新（PR #117-#118 至 ed75089）
+
+- 采纳上游 muyuewang/qq-farm-bot-404 `b804745..ed75089` 增量（7 个提交）：购买数量上限同时受限购与余额约束（新增 `web/src/utils/purchase-count.ts` 与测试）、快乐不独享双端版本同步并完善奖励描述（`share-reward-activity` reward 补 description、`ShareRewardActivity.vue` 布局重排）、TSDK 升级 `v3.9.0.1793764291`/微信 `1793763796`（双 wasm + tsdk-runtime 钉值）、客户端版本 `1.16.3.8_20261028`（config + 三处测试钉值）、游戏配置 JSON 刷新。
+- 上游对 `MilkTeaContent.vue` 的兑换上限改进不移植：本地老版回归面板已由后端 `maximumPurchase`（限购+余额取最小，BigInt）+ 前端 `teaPurchaseMax` 覆盖同语义，该文件本地已删除。
+- 冲突处理：4 个本地定制文件（config.ts 自动重登配置、share-reward-activity 活动轮次缓存、两个 keepalive 测试的静默熔断用例）逐行手工合并，本地功能全部保留。
+- core 328 项 / web 22 项（含新增 purchase-count 3 项）测试通过，类型检查通过。
+
 ### 2026-11-05 · 今日统计卡片样式统一 + 增量逻辑分离 + 农场页整体刷新治理
 
 - 首页今日统计「金币/经验」两卡改为「图标 + 数值」：去掉「今日金币/今日经验」文字与数值前的 `+`，金币改用项目金币图标（`/game-config/resource-icons/gold.png`），卡片尺寸/背景与下方其他统计卡统一（`bg-gray-50` 同款）。
