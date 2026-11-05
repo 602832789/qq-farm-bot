@@ -957,15 +957,25 @@ useIntervalFn(updateCountdowns, 1000)
           <template v-else>
             <div class="grid grid-cols-2 mb-2 gap-2 2xl:gap-3" role="region" aria-label="今日金币与经验增量">
               <div class="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2 transition-transform hover:scale-105 dark:bg-gray-700/30">
-                <img src="/game-config/resource-icons/gold.png" alt="金币" class="h-5 w-5 object-contain 2xl:h-6 2xl:w-6" aria-hidden="true">
+                <div class="flex items-center gap-2">
+                  <img src="/game-config/resource-icons/gold.png" alt="金币" class="h-5 w-5 object-contain 2xl:h-6 2xl:w-6" aria-hidden="true">
+                  <div class="text-xs text-gray-500 2xl:text-sm">
+                    金币
+                  </div>
+                </div>
                 <div class="text-sm font-bold 2xl:text-base">
-                  {{ todayGoldGained.toLocaleString() }}
+                  {{ todayGoldGained }}<small class="ml-0.5 text-[10px] text-gray-400 font-normal">次</small>
                 </div>
               </div>
               <div class="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2 transition-transform hover:scale-105 dark:bg-gray-700/30">
-                <span class="i-carbon-star-filled text-base text-sky-500 2xl:text-lg" aria-hidden="true" />
+                <div class="flex items-center gap-2">
+                  <span class="i-carbon-star-filled text-base text-sky-500 2xl:text-lg" aria-hidden="true" />
+                  <div class="text-xs text-gray-500 2xl:text-sm">
+                    经验
+                  </div>
+                </div>
                 <div class="text-sm font-bold 2xl:text-base">
-                  {{ todayExpGained.toLocaleString() }}
+                  {{ todayExpGained }}<small class="ml-0.5 text-[10px] text-gray-400 font-normal">次</small>
                 </div>
               </div>
             </div>
