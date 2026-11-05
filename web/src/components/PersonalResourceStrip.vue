@@ -247,13 +247,13 @@ onUnmounted(() => {
           </div>
           <div><span>钻石</span><strong>{{ formatCouponAmount(diamondBalance || 0) }}</strong></div>
           <div><span>金豆</span><strong>{{ hasStatus ? formatGoldBeanAmount(gameStatus.goldBean || 0) : '—' }}</strong></div>
-          <div v-if="(status?.sessionGoldGained || 0) !== 0">
+          <div v-if="(status?.runGoldGained || 0) !== 0">
             <span>本次运行金币</span>
-            <strong>{{ status!.sessionGoldGained! > 0 ? '+' : '' }}{{ formatGoldAmount(status!.sessionGoldGained) }}</strong>
+            <strong>{{ status!.runGoldGained! > 0 ? '+' : '' }}{{ formatGoldAmount(status!.runGoldGained) }}</strong>
           </div>
-          <div v-if="(status?.sessionCouponGained || 0) !== 0">
+          <div v-if="(status?.runCouponGained || 0) !== 0">
             <span>本次运行点券</span>
-            <strong>{{ status!.sessionCouponGained! > 0 ? '+' : '' }}{{ formatCouponAmount(status!.sessionCouponGained) }}</strong>
+            <strong>{{ status!.runCouponGained! > 0 ? '+' : '' }}{{ formatCouponAmount(status!.runCouponGained) }}</strong>
           </div>
           <div><span>作物图鉴</span><strong>Lv.{{ illustratedLevels.crop }}</strong></div>
           <div><span>超变图鉴</span><strong>Lv.{{ illustratedLevels.mutant }}</strong></div>

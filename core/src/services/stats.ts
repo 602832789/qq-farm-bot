@@ -106,12 +106,23 @@ const initialState: InitialState = {
     gold: null,
     exp: null,
     coupon: null,
+}
+
+// 本次运行基线：每次登录/重启时重新记录，不做持久化恢复。
+// 与 initialState（当日基线，同日重启恢复）互不影响，供资产卡片“本次运行”增量使用。
+const runInitial: InitialState = {
+    gold: null,
+    exp: null,
+    coupon: null,
 };
 
 interface SessionData {
     goldGained: number;
     expGained: number;
     couponGained: number;
+    runGoldGained: number;
+    runExpGained: number;
+    runCouponGained: number;
     lastExpGain: number;
     lastGoldGain: number;
     lastExpTime?: number;
@@ -121,6 +132,9 @@ const session: SessionData = {
     goldGained: 0,
     expGained: 0,
     couponGained: 0,
+    runGoldGained: 0,
+    runExpGained: 0,
+    runCouponGained: 0,
     lastExpGain: 0,
     lastGoldGain: 0,
 };
@@ -189,6 +203,10 @@ function initStats(gold: number, exp: number, coupon: number = 0): void {
     initialState.gold = g;
     initialState.exp = e;
     initialState.coupon = c;
+    // 本次运行基线只在登录时重置：资产卡“本次运行”增量从这次登录起算。
+    runInitial.gold = g;
+    runInitial.exp = e;
+    runInitial.coupon = c;
 }
 
 function initStatsWithPersistence(accountId: string, gold: number, exp: number, coupon: number = 0): void {
@@ -285,6 +303,10 @@ function recomputeSessionTotals(currentGold: number, currentExp: number, current
     session.goldGained = currentGold - (initialState.gold as number);
     session.expGained = currentExp - (initialState.exp as number);
     session.couponGained = currentCoupon - (initialState.coupon as number);
+    // 本次运行增量：独立于当日增量，重启/重新登录后从新基线重新累计。
+    session.runGoldGained = currentGold - (runInitial.gold ?? currentGold);
+    session.runExpGained = currentExp - (runInitial.exp ?? currentExp);
+    session.runCouponGained = currentCoupon - (runInitial.coupon ?? currentCoupon);
 }
 
 function getStats(statusData: any, userState: any, connected: boolean, limits: any): any {
@@ -325,6 +347,9 @@ function getStats(statusData: any, userState: any, connected: boolean, limits: a
         sessionExpGained: session.expGained,
         sessionGoldGained: session.goldGained,
         sessionCouponGained: session.couponGained,
+        runExpGained: session.runExpGained,
+        runGoldGained: session.runGoldGained,
+        runCouponGained: session.runCouponGained,
         lastExpGain: session.lastExpGain,
         lastGoldGain: session.lastGoldGain,
         limits,

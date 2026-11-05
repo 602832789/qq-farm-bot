@@ -16,6 +16,7 @@ import FarmScene from '@/components/FarmScene.vue'
 import LandDetailModal from '@/components/LandDetailModal.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
+import { useFarmAutoRefresh, useFarmAutoRefreshInterval } from '@/composables/useFarmAutoRefresh'
 import { useAccountStore } from '@/stores/account'
 import { useFarmStore } from '@/stores/farm'
 import { useSettingStore } from '@/stores/setting'
@@ -193,41 +194,8 @@ watch(currentAccountId, () => {
 
 const farmingLandId = ref<number | null>(null)
 const manualRefreshing = ref(false)
-// ---- 土地自动刷新（默认关闭）：开关与秒数按账号存 localStorage ----
-const AUTO_REFRESH_KEY = 'qq-farm-bot:farm-refresh'
-const autoRefreshEnabled = ref(false)
-const autoRefreshSeconds = ref(60)
-
-function readAutoRefresh(accountId: string) {
-  try {
-    const raw = JSON.parse(localStorage.getItem(`${AUTO_REFRESH_KEY}:${accountId}`) || '{}')
-    autoRefreshEnabled.value = raw?.enabled === true
-    const seconds = Number(raw?.seconds)
-    autoRefreshSeconds.value = Number.isFinite(seconds) ? Math.min(600, Math.max(10, Math.round(seconds))) : 60
-  }
-  catch {
-    autoRefreshEnabled.value = false
-    autoRefreshSeconds.value = 60
-  }
-}
-
-watch(currentAccountId, accountId => readAutoRefresh(String(accountId || '')), { immediate: true })
-
-watch([autoRefreshEnabled, autoRefreshSeconds], () => {
-  if (!currentAccountId.value)
-    return
-  try {
-    localStorage.setItem(`${AUTO_REFRESH_KEY}:${String(currentAccountId.value)}`, JSON.stringify({
-      enabled: autoRefreshEnabled.value,
-      seconds: autoRefreshSeconds.value,
-    }))
-  }
-  catch {
-    // 偏好存不下不影响看农场
-  }
-})
-
-const autoRefreshIntervalMs = computed(() => Math.min(600, Math.max(10, Math.round(Number(autoRefreshSeconds.value) || 60))) * 1000)
+// ---- 土地自动刷新（默认关闭）：开关与秒数与背包/任务共享，按账号存 localStorage ----
+const { autoRefreshEnabled, autoRefreshSeconds } = useFarmAutoRefresh()
 const confirmVisible = ref(false)
 const confirmConfig = ref({
   title: '',
@@ -792,25 +760,16 @@ const { pause, resume } = useIntervalFn(() => {
   }
 }, 1000)
 
-const { pause: pauseRefresh, resume: resumeRefresh } = useIntervalFn(refreshFarmData, autoRefreshIntervalMs, { immediate: false })
-
-watch(autoRefreshEnabled, (enabled) => {
-  if (enabled)
-    resumeRefresh()
-  else
-    pauseRefresh()
-})
+// 组件卸载时 useIntervalFn 会随作用域自动暂停，无需手动 pauseRefresh
+useFarmAutoRefreshInterval(refreshFarmData)
 
 onMounted(() => {
   resume()
-  if (autoRefreshEnabled.value)
-    resumeRefresh()
 })
 
 onUnmounted(() => {
   window.cancelAnimationFrame(gridResizeFrame)
   pause()
-  pauseRefresh()
 })
 </script>
 
@@ -818,7 +777,7 @@ onUnmounted(() => {
   <div class="personal-panel">
     <div class="personal-panel__card cartoon-card farm-card rounded-2xl bg-white shadow-lg dark:bg-gray-800 !p-0">
       <!-- Header with Title and Actions -->
-      <div class="farm-head panel-sticky flex shrink-0 flex-col gap-3 border-b border-gray-100 p-4 lg:flex-row lg:items-center lg:justify-between dark:border-gray-700 sm:p-5" :class="{ 'is-selecting': selecting }">
+      <div class="farm-head panel-sticky flex shrink-0 flex-col flex-wrap gap-3 border-b border-gray-100 p-4 lg:flex-row lg:items-center lg:justify-between dark:border-gray-700 sm:p-5" :class="{ 'is-selecting': selecting }">
         <div class="farm-heading flex items-center justify-between gap-3">
           <h3 class="flex items-center gap-2 text-lg font-bold">
             <span class="i-carbon-sprout text-green-600" /> 土地详情
@@ -882,25 +841,6 @@ onUnmounted(() => {
               <span class="i-carbon-renew" />
             </template>
           </NButton>
-          <div class="flex items-center gap-1.5" title="自动刷新土地数据：开启后按设定的秒数周期刷新；默认关闭">
-            <NSwitch v-model:value="autoRefreshEnabled" size="small" :disabled="!currentAccountId" aria-label="自动刷新开关" />
-            <NInputNumber
-              v-if="autoRefreshEnabled"
-              v-model:value="autoRefreshSeconds"
-              size="small"
-              class="!w-24"
-              :min="10"
-              :max="600"
-              :step="10"
-              :show-button="false"
-              :disabled="!currentAccountId"
-              aria-label="自动刷新秒数"
-            >
-              <template #suffix>
-                <span class="text-xs text-gray-400">秒</span>
-              </template>
-            </NInputNumber>
-          </div>
         </div>
         <div class="farm-actions" :class="{ 'is-selecting': selecting }">
           <NButton :type="selecting ? 'default' : 'primary'" :secondary="!selecting" :disabled="selectionBusy || !currentAccountRunning || !loaded || !!error" @click="selecting ? exitSelecting() : enterSelecting()">
@@ -927,6 +867,29 @@ onUnmounted(() => {
             <span :class="op.icon" />
             {{ op.label }}
           </NButton>
+        </div>
+        <!-- 自动刷新独立整行：手机上不再和标题/按钮挤在一起，避免显示不全 -->
+        <div class="farm-auto-refresh" title="自动刷新农场数据：开启后按设定的秒数周期刷新土地、背包、任务；默认关闭">
+          <span class="farm-auto-refresh__label">
+            <span class="i-carbon-renew" aria-hidden="true" />自动刷新
+          </span>
+          <NSwitch v-model:value="autoRefreshEnabled" size="small" :disabled="!currentAccountId" aria-label="自动刷新开关" />
+          <NInputNumber
+            v-if="autoRefreshEnabled"
+            v-model:value="autoRefreshSeconds"
+            size="small"
+            class="!w-24"
+            :min="10"
+            :max="600"
+            :step="10"
+            :show-button="false"
+            :disabled="!currentAccountId"
+            aria-label="自动刷新秒数"
+          >
+            <template #suffix>
+              <span class="text-xs text-gray-400">秒</span>
+            </template>
+          </NInputNumber>
         </div>
         <p v-if="ripenAllRunning" class="ripen-progress" role="status">
           {{ ripenAllProgress }}
@@ -1464,6 +1427,24 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+}
+
+/* 自动刷新控件独占一行：始终完整可见，不与标题/按钮争宽度 */
+.farm-auto-refresh {
+  display: flex;
+  flex: 1 0 100%;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.farm-auto-refresh__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ui-muted);
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .farm-mobile-actions {

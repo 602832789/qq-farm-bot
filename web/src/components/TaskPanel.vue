@@ -4,6 +4,7 @@ import { NTab, NTabs } from 'naive-ui/es/tabs'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, ref, watch } from 'vue'
 import DailyOverview from '@/components/DailyOverview.vue'
+import { useFarmAutoRefreshInterval } from '@/composables/useFarmAutoRefresh'
 import { useAccountStore } from '@/stores/account'
 import { useStatusStore } from '@/stores/status'
 
@@ -40,6 +41,12 @@ onMounted(() => {
 
 watch(currentAccountId, () => {
   refresh()
+})
+
+// 与农场土地/背包共用同一自动刷新开关：默认关闭，开启后按设定秒数刷新任务
+useFarmAutoRefreshInterval(() => {
+  if (isConnected.value)
+    refresh()
 })
 
 function formatTaskProgress(task: any) {

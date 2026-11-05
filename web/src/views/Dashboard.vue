@@ -731,15 +731,15 @@ useIntervalFn(updateCountdowns, 1000)
           <div class="ov-tile">
             <span class="ov-tile__label"><span class="i-fas-coins text-yellow-500" />金币</span>
             <strong class="ov-tile__value">{{ formatCompactAsset(status?.status?.gold) }}</strong>
-            <small v-if="(status?.sessionGoldGained || 0) !== 0" class="ov-tile__delta" :class="(status?.sessionGoldGained || 0) > 0 ? 'is-up' : 'is-down'">
-              本次 {{ (status?.sessionGoldGained || 0) > 0 ? '+' : '' }}{{ formatPlainNumber(status?.sessionGoldGained) }}
+            <small v-if="(status?.runGoldGained || 0) !== 0" class="ov-tile__delta" :class="(status?.runGoldGained || 0) > 0 ? 'is-up' : 'is-down'">
+              本次 {{ (status?.runGoldGained || 0) > 0 ? '+' : '' }}{{ formatPlainNumber(status?.runGoldGained) }}
             </small>
           </div>
           <div class="ov-tile">
             <span class="ov-tile__label"><span class="i-fas-ticket-alt text-emerald-500" />点券</span>
             <strong class="ov-tile__value">{{ formatAssetAmount(status?.status?.coupon) }}</strong>
-            <small v-if="(status?.sessionCouponGained || 0) !== 0" class="ov-tile__delta" :class="(status?.sessionCouponGained || 0) > 0 ? 'is-up' : 'is-down'">
-              本次 {{ (status?.sessionCouponGained || 0) > 0 ? '+' : '' }}{{ formatPlainNumber(status?.sessionCouponGained) }}
+            <small v-if="(status?.runCouponGained || 0) !== 0" class="ov-tile__delta" :class="(status?.runCouponGained || 0) > 0 ? 'is-up' : 'is-down'">
+              本次 {{ (status?.runCouponGained || 0) > 0 ? '+' : '' }}{{ formatPlainNumber(status?.runCouponGained) }}
             </small>
           </div>
           <div class="ov-tile">
@@ -955,27 +955,17 @@ useIntervalFn(updateCountdowns, 1000)
             </p>
           </div>
           <template v-else>
-            <div class="mb-2 grid grid-cols-2 gap-2 2xl:gap-3" role="region" aria-label="今日金币与经验增量">
-              <div class="flex items-center justify-between rounded-xl bg-amber-50 px-3 py-2 dark:bg-amber-950/20">
-                <div class="flex items-center gap-2">
-                  <span class="i-carbon-coins text-base text-amber-500 2xl:text-lg" aria-hidden="true" />
-                  <div class="text-xs text-gray-500 2xl:text-sm">
-                    今日金币
-                  </div>
-                </div>
-                <div class="text-sm font-bold text-amber-600 2xl:text-base dark:text-amber-400">
-                  +{{ todayGoldGained.toLocaleString() }}<small class="ml-0.5 text-[10px] text-gray-400 font-normal">金币</small>
+            <div class="grid grid-cols-2 mb-2 gap-2 2xl:gap-3" role="region" aria-label="今日金币与经验增量">
+              <div class="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2 transition-transform hover:scale-105 dark:bg-gray-700/30">
+                <img src="/game-config/resource-icons/gold.png" alt="金币" class="h-5 w-5 object-contain 2xl:h-6 2xl:w-6" aria-hidden="true">
+                <div class="text-sm font-bold 2xl:text-base">
+                  {{ todayGoldGained.toLocaleString() }}
                 </div>
               </div>
-              <div class="flex items-center justify-between rounded-xl bg-sky-50 px-3 py-2 dark:bg-sky-950/20">
-                <div class="flex items-center gap-2">
-                  <span class="i-carbon-star-filled text-base text-sky-500 2xl:text-lg" aria-hidden="true" />
-                  <div class="text-xs text-gray-500 2xl:text-sm">
-                    今日经验
-                  </div>
-                </div>
-                <div class="text-sm font-bold text-sky-600 2xl:text-base dark:text-sky-400">
-                  +{{ todayExpGained.toLocaleString() }}<small class="ml-0.5 text-[10px] text-gray-400 font-normal">经验</small>
+              <div class="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2 transition-transform hover:scale-105 dark:bg-gray-700/30">
+                <span class="i-carbon-star-filled text-base text-sky-500 2xl:text-lg" aria-hidden="true" />
+                <div class="text-sm font-bold 2xl:text-base">
+                  {{ todayExpGained.toLocaleString() }}
                 </div>
               </div>
             </div>
