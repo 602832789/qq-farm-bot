@@ -7,7 +7,6 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { getApiErrorMessage } from '@/api'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
-import { useFarmAutoRefreshInterval } from '@/composables/useFarmAutoRefresh'
 import { useAccountStore } from '@/stores/account'
 import { useBagStore } from '@/stores/bag'
 import { usePetStore } from '@/stores/pet'
@@ -644,11 +643,8 @@ watch(selectedCategory, () => {
   selectedForBatch.value.clear()
 })
 
-// 与农场土地/任务共用同一自动刷新开关：默认关闭，不再固定 60 秒轮询
-useFarmAutoRefreshInterval(() => {
-  if (currentAccount.value?.running && status.value?.connection?.connected)
-    loadBag()
-})
+// 周期刷新由页面级资产条（PersonalResourceStrip）统一按共享自动刷新开关驱动。
+// 这里只保留进入页面、切换账号与手动刷新按钮的按需加载，避免双份 /api/bag 请求。
 </script>
 
 <template>

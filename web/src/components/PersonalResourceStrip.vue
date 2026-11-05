@@ -2,6 +2,7 @@
 import { useDocumentVisibility, useIntervalFn } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
 import { computed, onUnmounted, ref, watch } from 'vue'
+import { useFarmAutoRefreshInterval } from '@/composables/useFarmAutoRefresh'
 import { useAccountStore } from '@/stores/account'
 import { useBagStore } from '@/stores/bag'
 import { useFarmStore } from '@/stores/farm'
@@ -106,21 +107,20 @@ const illustratedLevels = computed(() => ({
   mutant: Number(illustratedStore.data?.mutant?.level) || 0,
 }))
 
-// ---- 数据刷新：状态走实时推送，兜底轮询；背包 2.5s 节流，图鉴 / 钻石 60s 节流。 ----
+// ---- 数据刷新：状态走实时推送；背包只由显式事件与共享自动刷新开关驱动；图鉴 / 钻石 60s 节流。 ----
+// 顶部资产条是页面级常驻组件：这里的 10s 轮询若拉背包，会让背包种子页每 10 秒整体重渲染。
 let disposed = false
-let lastBagFetchAt = 0
 let lastIllustratedFetchAt = 0
 let lastDiamondFetchAt = 0
 
-async function refreshResources(accountId: string, force: boolean) {
+async function refreshResources(accountId: string, force: boolean, includeBag: boolean) {
   if (disposed || visibility.value !== 'visible' || accountId !== currentAccountId.value)
     return
   const now = Date.now()
   const tasks: Promise<unknown>[] = []
-  if (force || now - lastBagFetchAt >= 2500) {
-    lastBagFetchAt = now
+  // 背包：切号 / 连接恢复 / 页面切回 / 操作完成等显式事件，或自动刷新开关按设定秒数触发时才拉取
+  if (includeBag)
     tasks.push(bagStore.fetchBag(accountId))
-  }
   if (force || now - lastIllustratedFetchAt >= 60000) {
     lastIllustratedFetchAt = now
     tasks.push(illustratedStore.fetch(accountId))
@@ -132,25 +132,24 @@ async function refreshResources(accountId: string, force: boolean) {
   await Promise.allSettled(tasks)
 }
 
-function refresh(force = false) {
+function refresh(force = false, includeBag = false) {
   const accountId = currentAccountId.value
   if (!accountId || disposed || visibility.value !== 'visible')
     return Promise.resolve()
   return (async () => {
     if (!realtimeConnected.value)
       await statusStore.fetchStatus(accountId)
-    await refreshResources(accountId, force)
+    await refreshResources(accountId, force, includeBag)
   })().catch(() => {})
 }
 
 watch(currentAccountId, (accountId) => {
   localUptime.value = 0
-  lastBagFetchAt = 0
   lastIllustratedFetchAt = 0
   lastDiamondFetchAt = 0
   illustratedStore.reset()
   if (accountId) {
-    void refresh(true)
+    void refresh(true, true)
   }
   else {
     bagStore.clearBag()
@@ -163,22 +162,31 @@ watch(() => status.value?.uptime, (uptime) => {
 
 watch(connected, (isConnected) => {
   if (isConnected)
-    void refresh(true)
+    void refresh(true, true)
 })
 
 watch(() => farmStore.fertilizePending, (pending, previous) => {
   if (!pending && previous)
-    void refresh()
+    void refresh(false, true)
 })
 
 watch(visibility, (visible) => {
   if (visible === 'visible')
-    void refresh(true)
+    void refresh(true, true)
 })
 
+// 10s 兜底轮询：只补状态与资产条自身的低频数据，不拉背包，避免背包页每 10 秒整体重渲染
 useIntervalFn(() => {
   void refresh()
 }, 10000)
+
+// 背包数据统一在页面级跟随共享开关：默认关闭，开启后按用户设定的秒数刷新
+useFarmAutoRefreshInterval(() => {
+  const accountId = String(currentAccountId.value || '')
+  if (!accountId || disposed || visibility.value !== 'visible' || !connected.value)
+    return
+  void bagStore.fetchBag(accountId)
+})
 
 useIntervalFn(() => {
   if (visibility.value === 'visible' && connected.value)

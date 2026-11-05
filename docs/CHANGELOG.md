@@ -30,6 +30,15 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-06 · 修复背包种子页仍每 10 秒自动刷新
+
+- 根因：页面级常驻组件 `PersonalResourceStrip.vue` 有独立的 10 秒兜底轮询，`refresh()` → `bagStore.fetchBag()`（2.5s 节流，10s 周期必触发），每次整体替换 `allItems` 导致背包种子列表重渲染；它位于三个页签之外、且不受自动刷新开关控制，是上次只改 BagPanel 定时器时漏掉的入口。
+- 修复：10 秒轮询只保留 status 兜底与图鉴/钻石 60s 节流，不再拉背包；背包周期刷新统一由页面级 `useFarmAutoRefreshInterval` 按共享开关与用户设定秒数驱动（默认关闭）。
+- 保留按需刷新：切号、连接恢复、页面切回可见、施肥完成、手动刷新按钮仍即时拉取背包。
+- `BagPanel.vue` 移除重复的周期注册，避免开关开启后产生双份 `/api/bag` 请求。
+- 加固 `useFarmAutoRefresh`：偏好监听移入 `effectScope(true)` 独立作用域，组件卸载/路由切换后 watch 仍有效，避免切账号时开关状态串号、开关变化不再写回 localStorage。
+- core 328 项 / web 22 项测试通过，vue-tsc 类型检查通过。
+
 ### 2026-11-05 · 同步上游 20261104 更新（PR #117-#118 至 ed75089）
 
 - 采纳上游 muyuewang/qq-farm-bot-404 `b804745..ed75089` 增量（7 个提交）：购买数量上限同时受限购与余额约束（新增 `web/src/utils/purchase-count.ts` 与测试）、快乐不独享双端版本同步并完善奖励描述（`share-reward-activity` reward 补 description、`ShareRewardActivity.vue` 布局重排）、TSDK 升级 `v3.9.0.1793764291`/微信 `1793763796`（双 wasm + tsdk-runtime 钉值）、客户端版本 `1.16.3.8_20261028`（config + 三处测试钉值）、游戏配置 JSON 刷新。

@@ -1,6 +1,6 @@
 import { useIntervalFn } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
-import { computed, ref, watch } from 'vue'
+import { computed, effectScope, ref, watch } from 'vue'
 import { useAccountStore } from '@/stores/account'
 
 const AUTO_REFRESH_KEY = 'qq-farm-bot:farm-refresh'
@@ -26,11 +26,16 @@ function readForAccount(accountId: string) {
   }
 }
 
-/** 默认不自动刷新：只有显式开启后，各面板才按设定的秒数周期刷新。 */
-export function useFarmAutoRefresh() {
-  const { currentAccountId } = storeToRefs(useAccountStore())
-  if (!initialized) {
-    initialized = true
+/**
+ * 偏好监听放在独立（detached）作用域：注册它的组件卸载（切路由 / 切页签）后 watch 仍然有效，
+ * 否则切账号时不会重新读取该账号的开关，开关变化也不会再写回 localStorage。
+ */
+function ensurePreferenceWatchers() {
+  if (initialized)
+    return
+  initialized = true
+  effectScope(true).run(() => {
+    const { currentAccountId } = storeToRefs(useAccountStore())
     watch(currentAccountId, accountId => readForAccount(String(accountId || '')), { immediate: true })
     watch([autoRefreshEnabled, autoRefreshSeconds], () => {
       const accountId = String(currentAccountId.value || '')
@@ -46,7 +51,12 @@ export function useFarmAutoRefresh() {
         // 偏好存不下不影响使用
       }
     })
-  }
+  })
+}
+
+/** 默认不自动刷新：只有显式开启后，各面板才按设定的秒数周期刷新。 */
+export function useFarmAutoRefresh() {
+  ensurePreferenceWatchers()
   const autoRefreshIntervalMs = computed(() => clampSeconds(autoRefreshSeconds.value) * 1000)
   return { autoRefreshEnabled, autoRefreshSeconds, autoRefreshIntervalMs }
 }
