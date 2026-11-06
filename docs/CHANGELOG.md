@@ -30,6 +30,14 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-06 · 同步上游 muyuewang/qq-farm-bot-404（ed75089..3b3608c，PR #119–#121）并保留本地改动
+
+- **同步基线**：`upstream/main` 从 `ed75089`（上次同步提交 `f1dc717`）前进到 `3b3608c`，共 8 个上游提交，净增量 6 个文件：`core/src/services/milk-tea.ts`、`web/src/components/activity/ShareRewardActivity.vue`、`web/src/layouts/DefaultLayout.vue`、`web/src/views/activity-center/MilkTeaContent.vue` / `MilkTeaPage.vue` / `MilkTeaWork.vue`。本地与上游历史不同源（本地 640 提交为重建历史，上游为浅克隆 59 提交），沿用仓库既有的「逐项采纳 + sync 提交」做法，不做 `git merge`，避免把 2350 个历史差异文件反向覆盖本地。
+- **采纳**：上游 PR #120「无员工时雇佣页面报错」的后端修复——`normalizeShop()` 增加 `result.slots ??= []`，proto 未返回 `slots` 时统一归一是空数组；新增 `core/tests/milk-tea.test.js` 回归用例（已验证：去掉该行时测试 fail 1，恢复后通过）。前端 `web/src/utils/milk-tea.ts` 的 `teaOpenSlots()` / `teaHireReason()` 原本就有 `(state.shop.slots || [])` 兜底，本地前端无需改动。
+- **保留本地改动**：上游 `MilkTeaContent.vue` / `MilkTeaPage.vue` / `MilkTeaWork.vue` 三个视图在本地早已删除、替换为自绘的 `MilkTeaActivityPanel.vue` + `milk-tea-workbench.css`，因此其布局重构、奖励展示与「切换侧栏内容区空白」修复不移植、不恢复文件；`ShareRewardActivity.vue` / `DefaultLayout.vue` 的上游布局调整针对上游那套「页面级滚动 + 通配 `> *` 收窄到 `.activity-shell`」外壳，本地用的是 `.farm-page-content.is-activity-detail`（`overflow:hidden` + 子元素 `flex:1`）配 `.share-scroll` 内部滚动，直接套用会让「快乐不独享」长内容被裁剪且无法滚动，也会推翻刚定稿的手机端排版，故保留现状。首页状态行、土地气泡与二级弹窗、奶茶 4 个自动化开关、图鉴对齐、按钮文案等所有本地定制逐项原样保留。
+- 顺带把 `milk-tea.ts` 一处既有 ESLint 报错做等价替换（`[A-Za-z0-9_]` → `\w`），使改动文件 lint 全绿，不改变匹配行为。
+- 验证：core 361/361、web 65/65、`vue-tsc -b`、改动文件 ESLint、`vite build` 全部通过；本地未运行浏览器/真机，排版类改动本轮为零。
+
 ### 2026-11-06 · 图鉴标题与收藏计数等高 + 奶茶两行左对齐
 
 - **收藏图鉴**：`BookOverview.vue` 的 `.book-overview__heading` 从 `align-items: baseline` 改为 `center`，新增 `--book-heading-line: 20px` 以「已收藏 x / y」的行高作为整行高度基准；`h3`「作物图鉴」与 `.book-overview__caption` 共用同一 `line-height`，两块垂直居中对齐、看起来一样高。标题 15px、计数 12px 的字号与字体格式完全不变（用户明确要求不改字体）。该组件被作物 / 超变图鉴、藏品、快乐不独享共用，四处概览标题一并对齐。

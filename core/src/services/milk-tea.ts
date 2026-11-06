@@ -102,7 +102,7 @@ function checkCost(costs: any[], expected: any, balances: any, count = 1) {
 function recipeConfig(id: any) { return config.MilkTeaRecipeConfig.find(v => v.recipe_id === Number(toNum(id))); }
 /** drink_icon 是游戏资源路径，按原名映射到本地素材，保证各品种显示自己的杯子图标。 */
 function recipeImageFromIcon(icon: any): string {
-    const matched = /([A-Za-z0-9_]+)\/spriteFrame$/.exec(String(icon || ''));
+    const matched = /(\w+)\/spriteFrame$/.exec(String(icon || ''));
     return matched ? `/activity/milk-tea/${matched[1]}.png` : '';
 }
 function normalizeRecipes(reply: any) {
@@ -116,6 +116,8 @@ function normalizeRecipes(reply: any) {
 }
 function normalizeShop(value: any) {
     const result = plain(types.MilkTeaOperateReply, { milk_tea_get_shop: { shop: value } }).milk_tea_get_shop.shop;
+    // 上游 PR #120：无员工 / 店铺未返回 slots 时，proto 默认不含该字段，前端读取会报错。
+    result.slots ??= [];
     for (const key of ['drink_cups', 'pending_cups_by_recipe', 'pending_cups_by_source', 'boost_coin_price']) result[key] = cupMap(value[key]);
     result.pending_rewards = items(value.pending_rewards);
     result.boost_preview_rewards = items(value.boost_preview_rewards);

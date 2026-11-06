@@ -111,6 +111,14 @@ test('hire partial failures are not reported as success and signed work links st
     assert.equal(JSON.stringify(state).includes('private-'), false);
 });
 
+test('missing shop slots are normalized to an empty array (upstream PR #120)', async () => {
+    const h = harness();
+    delete h.shop.slots;
+    const state = await h.service.getMilkTeaActivity();
+    assert.ok(Array.isArray(state.shop.slots), 'shop.slots 必须始终是可遍历的数组');
+    assert.deepEqual(state.shop.slots, []);
+});
+
 test('hire automatically chooses a freshly vacant unlocked slot and rejects a full shop', async () => {
     const h = harness();
     h.shop.level = 3;
