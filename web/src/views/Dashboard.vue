@@ -747,9 +747,8 @@ useIntervalFn(updateCountdowns, 1000)
             </div>
             <div class="ov-presence">
               <span class="ov-presence__state" :class="isOnline ? 'is-online' : 'is-offline'">{{ isOnline ? '在线' : '离线' }}</span>
-              <!-- 离线时保留占位而不是移除：v-if 抽掉整段会把后面的平台标签顶到左边 -->
-              <span class="ov-presence__item ov-presence__uptime" :class="{ 'is-placeholder': !isOnline }"><span class="i-carbon-time" />已运行 <span class="ov-presence__digit">{{ formatDuration(localUptime) }}</span></span>
-              <span v-if="platformLabel" class="ov-presence__item ov-presence__platform">{{ platformLabel }}</span>
+              <span v-if="isOnline" class="ov-presence__item"><span class="i-carbon-time" />已运行 {{ formatDuration(localUptime) }}</span>
+              <span v-if="platformLabel" class="ov-presence__item">{{ platformLabel }}</span>
             </div>
           </div>
           <BaseButton to="/personal" variant="primary" size="sm" class="ov-farm-entry" aria-label="进入我的农场">
@@ -1329,26 +1328,12 @@ useIntervalFn(updateCountdowns, 1000)
 
 .ov-presence {
   display: flex;
-  /* 关键：禁止换行。旧样式是允许 wrap 的，时长从 59:59 进位到 01:00:00、
-     或平台标签出现/消失时，整行宽度越过换行阈值就会掉到第二行，
-     卡片高度随之变化 —— 这就是「位置偶尔跳来跳去」的直接原因。
-     单行 + 各段宽度稳定后，整行高度与排版都不再变化。 */
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px 10px;
   margin-top: 5px;
-  min-width: 0;
-  overflow: hidden;
   color: var(--ui-muted);
   font-size: 12px;
-}
-
-/* 极窄屏兜底：空间不够时让「已运行」这段先省略，平台标签始终完整可见。 */
-.ov-presence__uptime {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
 }
 
 .ov-presence__state {
@@ -1384,24 +1369,6 @@ useIntervalFn(updateCountdowns, 1000)
   align-items: center;
   gap: 4px;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-/* 时长数字用等宽 + 固定最小宽度：'59:59' → '01:00:00' 进位时不再挤动右侧平台标签。 */
-.ov-presence__digit {
-  display: inline-block;
-  min-width: 7ch;
-  font-variant-numeric: tabular-nums;
-}
-
-.ov-presence__platform {
-  /* 平台标签宽度稳定，不参与伸缩，避免被时长挤压后换行。 */
-  flex: none;
-}
-
-.ov-presence__uptime.is-placeholder {
-  /* 离线时占位：保持行高与右边距，内容不可见也不可读屏。 */
-  visibility: hidden;
 }
 
 .ov-exp__labels {

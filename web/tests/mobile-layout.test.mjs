@@ -33,15 +33,14 @@ function media(source, query) {
 // 奶茶样式取最后追加的统一排版块。
 const phoneTea = media(teaCss, '@media (max-width: 639px)')
 
-test('首页状态行恢复原方案：单行 flex + 平台标签按数据显隐', () => {
+test('首页状态行再退一格：回到 f5c7d25 之前的原始排布', () => {
   const presence = rule(dashboard, '.ov-presence')
   assert.match(presence, /display:\s*flex/)
+  assert.match(presence, /flex-wrap:\s*wrap/, '恢复原始的可换行排布')
   assert.doesNotMatch(presence, /display:\s*grid/, '固定三列栅格已撤销')
-  assert.match(presence, /flex-wrap:\s*nowrap/)
-  assert.match(rule(dashboard, '.ov-presence__digit'), /min-width:\s*7ch/)
-  assert.match(dashboard, /v-if="platformLabel"/)
+  assert.doesNotMatch(dashboard, /ov-presence__digit/, '等宽固定宽度已移除')
+  assert.doesNotMatch(dashboard, /ov-presence__uptime/, '离线占位段已移除')
   assert.doesNotMatch(dashboard, /\.ov-account__meta/, '手机端账号头两行栅格已撤销')
-  assert.doesNotMatch(dashboard, /grid-template-columns:\s*44px minmax\(0, 1fr\) auto/)
 })
 
 test('奶茶头部：图标、活动名、状态徽章同处一行', () => {
@@ -54,7 +53,7 @@ test('奶茶头部：图标、活动名、状态徽章同处一行', () => {
   assert.match(teaCss, /\.tea-heading-icon/)
 })
 
-test('手机端头部两行：标题一行，剩余时间与按钮靠右对齐成一行', () => {
+test('手机端头部两行：标题一行，剩余时间与按钮同排不折行（靠右方案已回滚）', () => {
   const heading = rule(phoneTea, '.tea-workbench-heading')
   assert.match(heading, /flex-wrap:\s*wrap/)
   assert.match(rule(phoneTea, '.tea-heading-main'), /flex:\s*1 1 100%/, '标题区占满第一行')
@@ -62,13 +61,11 @@ test('手机端头部两行：标题一行，剩余时间与按钮靠右对齐�
   const tools = rule(phoneTea, '.tea-header-tools')
   assert.match(tools, /flex:\s*1 1 100%/, '工具区独占第二行')
   assert.match(tools, /flex-wrap:\s*nowrap/, '剩余时间与按钮不能折行')
-  assert.match(tools, /justify-content:\s*flex-end/, '整组靠右')
+  assert.match(tools, /justify-content:\s*flex-start/, '恢复原始的靠左排布')
   const remaining = rule(phoneTea, '.tea-header-tools .tea-remaining')
-  assert.match(remaining, /margin-left:\s*auto/, '剩余时间靠右')
-  assert.match(remaining, /margin-right:\s*0/, '不能再被 auto 外边距推回左边')
+  assert.match(remaining, /margin-right:\s*auto/, '恢复原始的 auto 外边距')
   assert.match(remaining, /white-space:\s*nowrap/, '「剩余 10 天 9 小时」必须整段不换行')
   assert.match(remaining, /font-variant-numeric:\s*tabular-nums/)
-  assert.doesNotMatch(teaCss, /\.tea-header-tools > span\s*\{\s*margin-right:\s*auto/, '历史窄屏规则不能再把剩余推到左边')
   assert.match(milkPanel, /class="tea-remaining">剩余 \{\{ remaining \}\}/)
   assert.doesNotMatch(teaCss, /tea-header-tools > span:first-child\s*\{\s*display:\s*none/, '窄屏不能再隐藏剩余时间')
 })

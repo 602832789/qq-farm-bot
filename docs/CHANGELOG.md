@@ -30,6 +30,12 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-06 · 首页状态行再退一格 + 回滚「剩余时间」靠右对齐
+
+- **首页「在线 已运行 00:16:31 微信」再退一格**：按反馈退到 `f5c7d25` 跳位修复之前（`240e41a`）的原始排布 —— `.ov-presence` 恢复 `flex-wrap: wrap`，移除 `min-width: 0` / `overflow: hidden` 裁剪兜底；模板恢复 `v-if="isOnline"` 控制「已运行」整段显隐，去掉离线占位、`7ch` 等宽数字与平台标签固定列（`ov-presence__uptime` / `__digit` / `__platform` 相关样式一并删除）。**保留** `localUptime` computed 单调递增、服务端锚点与重启重新锚定、平台标签 ref 缓存这三处数据正确性修复 —— 它们不影响排布，回退会重新引入「数字忽进忽退」。
+- **「剩余 10 天 9 小时」靠右与按钮对齐回滚**：撤销 `27b2d92` 的靠右方案，恢复 `1980ffb` 的排布 —— 工具区 `justify-content: flex-start`、剩余 `margin-right: auto`，639px 历史规则同步恢复 `margin-right: auto`。领取收益「PC / 手机端同排」的改动保持不变。
+- 更新 `dashboard-presence.test.mjs`（前 3 项改为回退口径）与 `mobile-layout.test.mjs`（首页测试改「再退一格」、头部测试改「靠右已回滚」）。web 56/56、core 360/360，`vue-tsc -b`、改动文件 eslint、`vite build` 全部通过。
+
 ### 2026-11-06 · 手机端排版再调整：首页恢复原方案 + 领取收益 PC/手机同排
 
 - **首页「在线 已运行 00:16:31 微信」恢复原方案**：按反馈回退上一条记录（`1980ffb`）里的固定三列栅格与手机端账号头两行方案 —— `.ov-presence` 回到单行 flex `nowrap` + `overflow: hidden` 兜底、时长数字回到 `7ch` 等宽、平台标签恢复 `v-if="platformLabel"`，账号头恢复 `min-w-0 flex-1` 的原始单行结构。手机端不再为了固定位置多占一行。

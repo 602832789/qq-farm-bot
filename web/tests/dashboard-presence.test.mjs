@@ -12,22 +12,19 @@ function block(selector) {
   return source.slice(start, end)
 }
 
-test('首页状态行不换行，避免时长进位/平台标签变化时跳到第二行', () => {
+test('状态行排布退回 f5c7d25 之前：允许换行、无等宽固定列', () => {
   const presence = block('.ov-presence')
-  assert.match(presence, /flex-wrap:\s*nowrap/, '状态行必须 nowrap，否则宽度变化会触发换行')
-  assert.doesNotMatch(presence, /flex-wrap:\s*wrap\b/, '不能再出现 flex-wrap: wrap')
+  assert.match(presence, /display:\s*flex/)
+  assert.match(presence, /flex-wrap:\s*wrap/, '恢复原始的可换行排布')
+  assert.doesNotMatch(presence, /overflow:\s*hidden/, '不再用裁剪兜底')
+  assert.doesNotMatch(source, /ov-presence__digit/, '等宽固定宽度已移除')
+  assert.doesNotMatch(source, /ov-presence__uptime/, '离线占位段已移除')
+  assert.doesNotMatch(source, /ov-presence__platform/, '平台标签固定列已移除')
 })
 
-test('在线状态与平台标签同时存在时，两者都不使用 v-if 抽掉整段', () => {
-  // 已运行：离线保留占位（is-placeholder），平台标签才允许按数据缺失隐藏。
-  assert.match(source, /ov-presence__uptime" :class="\{ 'is-placeholder': !isOnline \}"/)
-  assert.doesNotMatch(source, /<span v-if="isOnline" class="ov-presence__item"><span class="i-carbon-time"/, '离线不应直接抽掉已运行整段')
-})
-
-test('时长数字使用等宽固定最小宽度', () => {
-  const digit = block('.ov-presence__digit')
-  assert.match(digit, /min-width:\s*7ch/)
-  assert.match(digit, /font-variant-numeric:\s*tabular-nums/)
+test('「已运行」与平台标签恢复按数据显隐', () => {
+  assert.match(source, /v-if="isOnline" class="ov-presence__item"><span class="i-carbon-time" \/>已运行/)
+  assert.match(source, /v-if="platformLabel" class="ov-presence__item">\{\{ platformLabel \}\}/)
 })
 
 test('已运行时长单调递增：不再用每秒自增 + 整包覆盖的双写', () => {

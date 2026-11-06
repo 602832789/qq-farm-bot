@@ -340,8 +340,7 @@
   .tea-window { font-size: 10px; }
   .tea-window > span { margin-inline: 2px; }
   .tea-header-tools { left: 16px; right: 16px; bottom: 20px; }
-  /* 只压字号：旧的 auto 外边距会把「剩余」推到最左，与右侧按钮失去对齐。 */
-  .tea-header-tools > span { font-size: 11px; }
+  .tea-header-tools > span { margin-right: auto; font-size: 11px; }
   .tea-tabs { gap: 21px; padding: 0 16px; }
   .tea-tabs button { min-height: 44px; font-size: 12px; gap: 5px; }
   .tea-tabs button > span[class*="i-"] { font-size: 14px; }
@@ -642,8 +641,8 @@
 
 /* ==========================================================================
    手机端统一排版（放在最后，覆盖上面的历史窄屏规则）
-   头部拆成两行：第一行「图标 + 活动名 + 进行中」，第二行工具区，剩余时间与
-   按钮靠右对齐成一排；领取收益沿用基础栅格，PC / 手机端都是同一排不换行。
+   头部拆成两行：第一行「图标 + 活动名 + 进行中」，第二行「剩余时间 + 工具按钮」；
+   领取收益沿用基础栅格，PC / 手机端都是同一排不换行。
    ========================================================================== */
 @media (max-width: 639px) {
   .tea-workbench-heading {
@@ -694,12 +693,10 @@
     white-space: nowrap;
   }
 
-  /* 工具区独占第二行：返回按钮留在左侧，剩余时间与「活动时间与规则 / 刷新」
-     按钮一起靠右对齐成一排，整段不换行。 */
   .tea-header-tools {
     flex: 1 1 100%;
     flex-wrap: nowrap;
-    justify-content: flex-end;
+    justify-content: flex-start;
     gap: 6px;
     margin-left: 0;
     min-width: 0;
@@ -707,8 +704,7 @@
 
   .tea-header-tools .tea-remaining {
     flex: none;
-    margin-left: auto;
-    margin-right: 0;
+    margin-right: auto;
     font-size: 11px;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
