@@ -740,7 +740,7 @@ useIntervalFn(updateCountdowns, 1000)
             <span v-else class="i-carbon-user-avatar" />
             <i class="ov-avatar__dot" />
           </div>
-          <div class="ov-account__meta">
+          <div class="min-w-0 flex-1">
             <div class="ov-account__name-row">
               <strong class="ov-account__name" :title="displayName">{{ displayName }}</strong>
               <span class="ov-level">Lv.{{ status?.status?.level || 0 }}</span>
@@ -749,8 +749,7 @@ useIntervalFn(updateCountdowns, 1000)
               <span class="ov-presence__state" :class="isOnline ? 'is-online' : 'is-offline'">{{ isOnline ? '在线' : '离线' }}</span>
               <!-- 离线时保留占位而不是移除：v-if 抽掉整段会把后面的平台标签顶到左边 -->
               <span class="ov-presence__item ov-presence__uptime" :class="{ 'is-placeholder': !isOnline }"><span class="i-carbon-time" />已运行 <span class="ov-presence__digit">{{ formatDuration(localUptime) }}</span></span>
-              <!-- 平台标签同样常驻占位：数据没到 / 离线时只是不可见，列的宽度与位置始终不变 -->
-              <span class="ov-presence__item ov-presence__platform" :class="{ 'is-placeholder': !platformLabel }">{{ platformLabel || '微信' }}</span>
+              <span v-if="platformLabel" class="ov-presence__item ov-presence__platform">{{ platformLabel }}</span>
             </div>
           </div>
           <BaseButton to="/personal" variant="primary" size="sm" class="ov-farm-entry" aria-label="进入我的农场">
@@ -1329,22 +1328,19 @@ useIntervalFn(updateCountdowns, 1000)
 }
 
 .ov-presence {
-  /* 固定三列栅格：状态徽章 / 已运行+时长 / 平台标签，宽度全部写死。
-     旧样式是允许换行的，时长进位、平台标签出现或消失都会让整行重排；
-     现在三列位置与容器宽度无关，「在线↔离线」「微信有无」「时长进位」都不再移动。
-     手机端还会让整行独占一行，不再被头像和「我的农场」按钮挤压裁剪。 */
-  display: grid;
-  grid-template-columns: 56px 152px 36px;
-  justify-content: start;
-  align-items: center;
-  column-gap: 6px;
+  display: flex;
+  /* 关键：禁止换行。旧样式是允许 wrap 的，时长从 59:59 进位到 01:00:00、
+     或平台标签出现/消失时，整行宽度越过换行阈值就会掉到第二行，
+     卡片高度随之变化 —— 这就是「位置偶尔跳来跳去」的直接原因。
+     单行 + 各段宽度稳定后，整行高度与排版都不再变化。 */
   flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px 10px;
   margin-top: 5px;
   min-width: 0;
   overflow: hidden;
   color: var(--ui-muted);
   font-size: 12px;
-  white-space: nowrap;
 }
 
 /* 极窄屏兜底：空间不够时让「已运行」这段先省略，平台标签始终完整可见。 */
@@ -1391,71 +1387,21 @@ useIntervalFn(updateCountdowns, 1000)
   white-space: nowrap;
 }
 
-/* 时长数字用等宽 + 固定最小宽度：'59:59' → '01:00:00' 进位时不再挤动右侧平台标签。
-   不设死 width，跨天的「1天 03:34:40」才能完整显示。 */
+/* 时长数字用等宽 + 固定最小宽度：'59:59' → '01:00:00' 进位时不再挤动右侧平台标签。 */
 .ov-presence__digit {
   display: inline-block;
-  min-width: 8ch;
+  min-width: 7ch;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }
 
 .ov-presence__platform {
-  /* 平台标签常驻占位，宽度稳定，不参与伸缩。 */
+  /* 平台标签宽度稳定，不参与伸缩，避免被时长挤压后换行。 */
   flex: none;
-  white-space: nowrap;
 }
 
-.ov-presence__uptime.is-placeholder,
-.ov-presence__platform.is-placeholder {
-  /* 离线 / 标签数据未到时占位：保持列宽与行高，内容不可见也不可读屏。 */
+.ov-presence__uptime.is-placeholder {
+  /* 离线时占位：保持行高与右边距，内容不可见也不可读屏。 */
   visibility: hidden;
-}
-
-.ov-account__meta {
-  min-width: 0;
-  flex: 1;
-}
-
-/* 手机端：账号头改成两行栅格，状态行独占第二行并横跨整张卡片。
-   这样「已运行 03:34:40 微信」有完整宽度，不再被右侧按钮挤压、裁剪或换行。 */
-@media (max-width: 639px) {
-  .ov-account__head {
-    display: grid;
-    grid-template-columns: 44px minmax(0, 1fr) auto;
-    align-items: center;
-    column-gap: 10px;
-    row-gap: 4px;
-  }
-
-  .ov-avatar {
-    width: 44px;
-    height: 44px;
-    grid-column: 1;
-    grid-row: 1;
-  }
-
-  /* 让中间容器的两个子元素直接成为栅格项：名字留在第一行，状态行落到第二行。 */
-  .ov-account__meta {
-    display: contents;
-  }
-
-  .ov-account__name-row {
-    grid-column: 2;
-    grid-row: 1;
-  }
-
-  .ov-farm-entry {
-    grid-column: 3;
-    grid-row: 1;
-  }
-
-  .ov-presence {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    margin-top: 2px;
-    font-size: 11px;
-  }
 }
 
 .ov-exp__labels {

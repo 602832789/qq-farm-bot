@@ -26,9 +26,8 @@ test('在线状态与平台标签同时存在时，两者都不使用 v-if 抽�
 
 test('时长数字使用等宽固定最小宽度', () => {
   const digit = block('.ov-presence__digit')
-  assert.match(digit, /min-width:\s*8ch/)
+  assert.match(digit, /min-width:\s*7ch/)
   assert.match(digit, /font-variant-numeric:\s*tabular-nums/)
-  assert.match(digit, /white-space:\s*nowrap/)
 })
 
 test('已运行时长单调递增：不再用每秒自增 + 整包覆盖的双写', () => {

@@ -15,9 +15,9 @@ function rule(source, selector) {
   return source.slice(start, source.indexOf('}', start))
 }
 
-/** 取指定媒体查询的完整内容，用花括号配对避免被内层规则截断。 */
-function media(source, query, last = true) {
-  const start = last ? source.lastIndexOf(query) : source.indexOf(query)
+/** 取最后一个指定媒体查询的完整内容，用花括号配对避免被内层规则截断。 */
+function media(source, query) {
+  const start = source.lastIndexOf(query)
   assert.notEqual(start, -1, `媒体查询 ${query} 不存在`)
   const open = source.indexOf('{', start)
   let depth = 0
@@ -30,34 +30,18 @@ function media(source, query, last = true) {
   assert.fail(`媒体查询 ${query} 未闭合`)
 }
 
-// Dashboard 有两个 639px 块，账号头布局在第一个；奶茶样式取最后追加的统一排版块。
-const phoneDashboard = media(dashboard, '@media (max-width: 639px)', false)
+// 奶茶样式取最后追加的统一排版块。
 const phoneTea = media(teaCss, '@media (max-width: 639px)')
 
-test('首页「已运行 + 时长 + 微信/QQ」是固定三列栅格，位置与内容长短无关', () => {
+test('首页状态行恢复原方案：单行 flex + 平台标签按数据显隐', () => {
   const presence = rule(dashboard, '.ov-presence')
-  assert.match(presence, /display:\s*grid/)
-  assert.match(presence, /grid-template-columns:\s*56px 152px 36px/, '三列宽度必须写死')
-  assert.match(presence, /justify-content:\s*start/)
-  assert.match(presence, /white-space:\s*nowrap/)
+  assert.match(presence, /display:\s*flex/)
+  assert.doesNotMatch(presence, /display:\s*grid/, '固定三列栅格已撤销')
   assert.match(presence, /flex-wrap:\s*nowrap/)
-})
-
-test('平台标签常驻占位，数据未到或离线都不抽掉整列', () => {
-  assert.doesNotMatch(dashboard, /v-if="platformLabel"/, 'v-if 会让「微信」出现/消失时整行重排')
-  assert.match(dashboard, /ov-presence__platform" :class="\{ 'is-placeholder': !platformLabel \}/)
-  assert.match(dashboard, /\.ov-presence__platform\.is-placeholder/)
-  assert.match(rule(dashboard, '.ov-presence__digit'), /min-width:\s*8ch/)
-})
-
-test('手机端状态行独占第二行，不再被头像和「我的农场」按钮挤压裁剪', () => {
-  const head = rule(phoneDashboard, '.ov-account__head')
-  assert.match(head, /display:\s*grid/)
-  assert.match(head, /grid-template-columns:\s*44px minmax\(0, 1fr\) auto/)
-  assert.match(rule(phoneDashboard, '.ov-account__meta'), /display:\s*contents/, '名字留在第一行、状态行落到第二行')
-  const presence = rule(phoneDashboard, '.ov-presence')
-  assert.match(presence, /grid-column:\s*1 \/ -1/)
-  assert.match(presence, /grid-row:\s*2/)
+  assert.match(rule(dashboard, '.ov-presence__digit'), /min-width:\s*7ch/)
+  assert.match(dashboard, /v-if="platformLabel"/)
+  assert.doesNotMatch(dashboard, /\.ov-account__meta/, '手机端账号头两行栅格已撤销')
+  assert.doesNotMatch(dashboard, /grid-template-columns:\s*44px minmax\(0, 1fr\) auto/)
 })
 
 test('奶茶头部：图标、活动名、状态徽章同处一行', () => {
@@ -70,7 +54,7 @@ test('奶茶头部：图标、活动名、状态徽章同处一行', () => {
   assert.match(teaCss, /\.tea-heading-icon/)
 })
 
-test('手机端奶茶头部两行固定：标题一行、剩余时间与工具按钮一行', () => {
+test('手机端头部两行：标题一行，剩余时间与按钮靠右对齐成一行', () => {
   const heading = rule(phoneTea, '.tea-workbench-heading')
   assert.match(heading, /flex-wrap:\s*wrap/)
   assert.match(rule(phoneTea, '.tea-heading-main'), /flex:\s*1 1 100%/, '标题区占满第一行')
@@ -78,23 +62,35 @@ test('手机端奶茶头部两行固定：标题一行、剩余时间与工具�
   const tools = rule(phoneTea, '.tea-header-tools')
   assert.match(tools, /flex:\s*1 1 100%/, '工具区独占第二行')
   assert.match(tools, /flex-wrap:\s*nowrap/, '剩余时间与按钮不能折行')
+  assert.match(tools, /justify-content:\s*flex-end/, '整组靠右')
   const remaining = rule(phoneTea, '.tea-header-tools .tea-remaining')
-  assert.match(remaining, /white-space:\s*nowrap/, '「剩余 10 天 10 小时」必须整段不换行')
+  assert.match(remaining, /margin-left:\s*auto/, '剩余时间靠右')
+  assert.match(remaining, /margin-right:\s*0/, '不能再被 auto 外边距推回左边')
+  assert.match(remaining, /white-space:\s*nowrap/, '「剩余 10 天 9 小时」必须整段不换行')
   assert.match(remaining, /font-variant-numeric:\s*tabular-nums/)
+  assert.doesNotMatch(teaCss, /\.tea-header-tools > span\s*\{\s*margin-right:\s*auto/, '历史窄屏规则不能再把剩余推到左边')
   assert.match(milkPanel, /class="tea-remaining">剩余 \{\{ remaining \}\}/)
   assert.doesNotMatch(teaCss, /tea-header-tools > span:first-child\s*\{\s*display:\s*none/, '窄屏不能再隐藏剩余时间')
 })
 
-test('手机端「待领取收益 198 奶茶券」固定三列且不换行', () => {
-  const claim = rule(phoneTea, '.tea-claim')
+test('领取收益：PC 与手机端共用同一套栅格，金币与数字一排', () => {
+  const claim = rule(teaCss, '.tea-claim')
   assert.match(claim, /display:\s*grid/)
-  assert.match(claim, /grid-template-columns:\s*28px minmax\(0, 1fr\) auto/)
-  assert.match(claim, /flex-wrap:\s*nowrap/)
-  const value = rule(phoneTea, '.tea-claim__value')
+  assert.match(claim, /grid-template-columns:\s*auto minmax\(0, 1fr\) auto/)
+  const value = rule(teaCss, '.tea-claim__value')
+  assert.match(value, /display:\s*flex/)
   assert.match(value, /flex-wrap:\s*nowrap/, '文案/数值/单位必须在同一排')
   assert.match(value, /white-space:\s*nowrap/)
-  assert.match(rule(phoneTea, '.tea-claim__value strong'), /overflow-wrap:\s*normal/, '数值不能被 anywhere 拆断')
-  assert.match(rule(phoneTea, '.tea-claim__extras'), /grid-row:\s*2/, '收银台提示与额外奖励放第二行，不挤压数值行')
+  assert.match(rule(teaCss, '.tea-claim__value > *'), /flex:\s*none/)
+  assert.match(rule(teaCss, '.tea-claim strong'), /overflow-wrap:\s*normal/, '数值不能被 anywhere 拆断')
+  assert.match(rule(teaCss, '.tea-claim__extras'), /grid-row:\s*2/, '收银台提示与额外奖励放第二行')
+  assert.match(rule(teaCss, '.tea-claim__extras .tea-reward-name'), /display:\s*inline/, '金币名称与数量同排')
+  assert.match(rule(teaCss, '.tea-claim__extras .tea-reward > span:last-child'), /white-space:\s*nowrap/)
+
+  // 手机端只缩尺寸，不再另写一套 display/grid 布局，避免 PC 与手机端排布分裂。
+  assert.doesNotMatch(rule(phoneTea, '.tea-claim'), /display:\s*(grid|flex)/)
+  assert.doesNotMatch(rule(phoneTea, '.tea-claim'), /grid-template-columns/)
+  assert.doesNotMatch(rule(phoneTea, '.tea-claim__value'), /display:\s*(grid|flex)/)
   assert.match(shopPanel, /class="tea-claim__value"/)
   assert.match(shopPanel, /class="[^"]*tea-claim__action[^"]*"/)
   assert.match(shopPanel, /class="tea-claim__extras"/)

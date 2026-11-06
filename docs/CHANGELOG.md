@@ -30,6 +30,13 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-06 · 手机端排版再调整：首页恢复原方案 + 领取收益 PC/手机同排
+
+- **首页「在线 已运行 00:16:31 微信」恢复原方案**：按反馈回退上一条记录（`1980ffb`）里的固定三列栅格与手机端账号头两行方案 —— `.ov-presence` 回到单行 flex `nowrap` + `overflow: hidden` 兜底、时长数字回到 `7ch` 等宽、平台标签恢复 `v-if="platformLabel"`，账号头恢复 `min-w-0 flex-1` 的原始单行结构。手机端不再为了固定位置多占一行。
+- **领取收益模块 PC 与手机端排布不一致**：根因是同一张卡片写了两套布局 —— 基础 `.tea-claim` 是 `flex-wrap: wrap` 且 `<p>` 为块级（文案与数值天生两行），手机端却另写一套 grid；额外奖励里 `.tea-reward-name` 又是 `display: block`，把「金币」名称和数量拆成上下两排。修复：把 `grid-template-columns: auto minmax(0, 1fr) auto` 提到基础规则，图标 / 文案+数值+单位 / 领取按钮固定同排，`.tea-claim__extras` 固定第二行，`.tea-claim__value` 一律 `flex-wrap: nowrap` + `white-space: nowrap` + 数值 `overflow-wrap: normal`；额外奖励名称改 `inline` 与数量同排。手机端只保留字号、内距、图标尺寸覆盖，**不再重写 display / grid 列结构**，因此 PC 与手机端完全同一排。
+- **「剩余 10 天 9 小时」靠右与「活动时间与规则」按钮对齐**：手机端 639px 历史规则 `.tea-header-tools > span { margin-right: auto }` 把剩余时间顶到最左、按钮留在最右，两者虽然同行却分离。改成只压字号（不设 auto 外边距），统一排版块里工具区 `justify-content: flex-end` + 剩余 `margin-left: auto` / `margin-right: 0`，让剩余时间与规则、刷新按钮一起靠右对齐成一排，整段 `nowrap` + 等宽数字不换行。PC 端工具区本就是靠右一排，未改动。
+- 更新 `mobile-layout.test.mjs`：撤回上一轮 3 项首页栅格断言，新增「首页恢复原方案」回归；奶茶两条断言改为校验「基础规则统一 + 手机端只缩尺寸」与「剩余靠右」。web 57/57、core 360/360，`vue-tsc -b`、改动文件 eslint、`vite build` 全部通过。
+
 ### 2026-11-06 · 手机端固定排版：首页已运行状态行 + 奶茶活动三处对齐
 
 - **「已运行 03:34:40 微信」位置仍不固定**：上一版只做了「禁止换行 + 等宽数字」，但手机端账号头是「头像 + 名字/状态 + 我的农场按钮」的单行 flex，状态行只剩约 170px，被 `overflow: hidden` 裁掉，平台标签又用 `v-if` 抽掉整段导致出现/消失时重排。修复：`.ov-presence` 改成固定三列栅格（`56px / 152px / 36px`，宽度写死、与容器宽度无关），平台标签与离线状态一样常驻占位（`visibility: hidden`），时长数字 `8ch` 等宽且不折行、跨天的「1天 03:34:40」也能完整显示；手机端 `.ov-account__head` 改两行栅格，中间容器 `display: contents` 让名字留在第一行、状态行 `grid-column: 1 / -1` 独占第二行并横跨整张卡片，不再与按钮抢宽度。
