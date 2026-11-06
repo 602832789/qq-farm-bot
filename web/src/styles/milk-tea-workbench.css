@@ -53,9 +53,11 @@
 .tea-state > span[class*="i-"] { font-size: 36px; color: var(--tea-muted); opacity: .65; }
 .tea-state p { font-size: 12px; color: var(--tea-muted); }
 .tea-workbench-heading { position: relative; display: flex; gap: 14px; align-items: flex-start; min-height: 168px; padding: 28px 28px 58px; background: #ecf4e7 url('/activity/milk-tea/workbench/tea-atelier.jpg') center 57% / cover no-repeat; color: #264c36; isolation: isolate; }
-.tea-workbench-heading > img { width: 60px; height: 64px; flex-shrink: 0; }
-.tea-workbench-heading h2 { font-size: 25px; font-weight: 650; color: #264c36; }
-.tea-title-line { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.tea-heading-main { min-width: 0; flex: 1; }
+/* 图标与标题、状态徽章同处一行，保证三者在任何屏宽下垂直对齐、一起排版。 */
+.tea-heading-icon { width: 60px; height: 64px; flex: none; }
+.tea-workbench-heading h2 { min-width: 0; overflow: hidden; font-size: 25px; font-weight: 650; color: #264c36; text-overflow: ellipsis; white-space: nowrap; }
+.tea-title-line { display: flex; align-items: center; flex-wrap: nowrap; gap: 12px; min-width: 0; white-space: nowrap; }
 .tea-title-line .tea-badge { color: #26724a; background: #ffffffe6; }
 .tea-window { margin-top: 8px !important; font-size: 11px; line-height: 1.8; color: #536d56; }
 .tea-window > span { margin-inline: 6px; }
@@ -106,11 +108,14 @@
 .tea-shop-name .tea-icon-button { width: 25px; height: 25px; font-size: 14px !important; }
 .tea-claim { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 15px 17px; margin-bottom: 25px; background: var(--tea-positive); border-left: 3px solid color-mix(in srgb, var(--tea-primary) 45%, var(--tea-surface)); }
 .tea-claim > img { width: 42px; height: 42px; flex-shrink: 0; }
-.tea-claim > div { flex: 1; min-width: 0; }
+.tea-claim__value { flex: 1; min-width: 0; }
 .tea-claim p { font-size: 11px; color: var(--tea-muted); }
 .tea-claim strong { font-size: 23px; color: var(--tea-primary); font-weight: 600; margin-right: 6px; }
 .tea-claim small { font-size: 11px; color: var(--tea-muted); }
-.tea-claim .tea-rewards { margin-top: 7px; }
+/* 「收银台已满」与额外奖励统一放到数值行下方，不参与数值行的排布。 */
+.tea-claim__extras { flex: 1 1 100%; display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-top: 2px; }
+.tea-claim__extras .tea-rewards { margin-top: 0; }
+.tea-remaining { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tea-check { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; color: var(--tea-muted); cursor: pointer; }
 .tea-check input, .tea-fruit-choice input, .tea-allow-hire input, .tea-recipe-row input { width: 15px; height: 15px; margin: 0; flex-shrink: 0; accent-color: var(--tea-primary); }
 .tea-recipe-head, .tea-recipe-row { display: grid; grid-template-columns: 21px minmax(125px, 1fr) 80px 100px 77px; align-items: center; gap: 7px; }
@@ -321,7 +326,7 @@
 @media (max-width: 639px) {
   .tea-workbench-heading { min-height: 166px; padding: 23px 16px 57px; background-size: auto 166px; background-position: right center; }
   .tea-workbench-heading::before { content: ""; position: absolute; inset: 0; z-index: -1; background: #f5fbf1ab; }
-  .tea-workbench-heading > img { width: 43px; height: 48px; }
+  .tea-heading-icon { width: 43px; height: 48px; }
   .tea-workbench-heading h2 { font-size: 21px; }
   .tea-title-line { gap: 7px; }
   .tea-window { font-size: 10px; }
@@ -459,7 +464,7 @@
 .tea-workspace-auto { margin: 24px 7px 0; }
 .tea-workspace-main { min-width: 0; }
 .tea-workbench-heading { min-height: auto; padding: 22px 26px; background: var(--tea-soft); color: var(--tea-text); align-items: center; }
-.tea-workbench-heading > img { width: 40px; height: 47px; }
+.tea-heading-icon { width: 40px; height: 47px; }
 .tea-workbench-heading h2 { font-size: 23px; color: var(--tea-text); }
 .tea-window { color: var(--tea-muted); }
 .tea-header-tools { position: static; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
@@ -583,12 +588,13 @@
   .tea-quick-entry { grid-template-columns: minmax(0, 1fr); padding: 10px 8px; gap: 5px; border-color: var(--tea-border); min-height: 109px; }
   .tea-quick-entry > span:last-child { display: none; }
   .tea-quick-entry small { font-size: 9px; }
-  .tea-header-tools > span:first-child { display: none; }
+  /* 「剩余 X 天 X 小时」在窄屏也要完整显示，只压字号，不隐藏首个文本节点。 */
+  .tea-header-tools > .tea-remaining { font-size: 11px; }
 }
 @media (max-width: 639px) {
   .tea-workbench-heading { min-height: auto; padding: 17px 16px; gap: 10px; }
   .tea-workbench-heading::before { display: none; }
-  .tea-workbench-heading > img { width: 30px; height: 36px; }
+  .tea-heading-icon { width: 30px; height: 36px; }
   .tea-workbench-heading h2 { font-size: 19px; }
   .tea-header-tools { gap: 4px; flex-wrap: nowrap; }
   .tea-header-tools .tea-operation-status { display: none; }
@@ -622,4 +628,140 @@
   .tea-hire-durations { gap: 6px; }
   .tea-automation-row { font-size: 12px; }
   .tea-automation-summary { flex-wrap: wrap; }
+}
+
+/* ==========================================================================
+   手机端统一排版（放在最后，覆盖上面的历史窄屏规则）
+   头部拆成两行：第一行「图标 + 活动名 + 进行中」，第二行「剩余时间 + 工具按钮」；
+   待领取收益固定三列：图标 / 文案+数值+单位 / 领取按钮。
+   三处都用 nowrap + 固定列，位置不随文字长短、数值位数或状态变化。
+   ========================================================================== */
+@media (max-width: 639px) {
+  .tea-workbench-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 12px;
+  }
+
+  .tea-heading-main {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .tea-title-line {
+    flex-wrap: nowrap;
+    gap: 7px;
+    min-width: 0;
+    white-space: nowrap;
+  }
+
+  .tea-heading-icon {
+    width: 26px;
+    height: 31px;
+    flex: none;
+  }
+
+  .tea-workbench-heading h2 {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 17px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .tea-title-line .tea-badge {
+    flex: none;
+    padding: 2px 6px;
+    font-size: 10px;
+    white-space: nowrap;
+  }
+
+  .tea-window {
+    overflow: hidden;
+    font-size: 9px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .tea-header-tools {
+    flex: 1 1 100%;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    gap: 6px;
+    margin-left: 0;
+    min-width: 0;
+  }
+
+  .tea-header-tools .tea-remaining {
+    flex: none;
+    margin-right: auto;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .tea-header-tools .tea-icon-button {
+    width: 28px;
+    height: 28px;
+    flex: none;
+  }
+
+  .tea-header-tools .tea-operation-status {
+    display: none;
+  }
+
+  .tea-claim {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 7px;
+    row-gap: 6px;
+    flex-wrap: nowrap;
+    padding: 11px 10px;
+  }
+
+  .tea-claim > img {
+    grid-column: 1;
+    grid-row: 1;
+    width: 28px;
+    height: 32px;
+  }
+
+  .tea-claim__value {
+    grid-column: 2;
+    grid-row: 1;
+    display: flex;
+    align-items: baseline;
+    flex-wrap: nowrap;
+    gap: 4px;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .tea-claim__value p,
+  .tea-claim__value strong,
+  .tea-claim__value small {
+    flex: none;
+    white-space: nowrap;
+  }
+
+  .tea-claim__value p { font-size: 10px; }
+  .tea-claim__value strong { margin-right: 0; font-size: 19px; overflow-wrap: normal; }
+  .tea-claim__value small { font-size: 10px; }
+
+  .tea-claim__action {
+    grid-column: 3;
+    grid-row: 1;
+    flex: none;
+  }
+
+  .tea-claim__extras {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    flex: none;
+    margin-top: 0;
+  }
 }

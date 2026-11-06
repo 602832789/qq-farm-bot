@@ -30,6 +30,14 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-06 · 手机端固定排版：首页已运行状态行 + 奶茶活动三处对齐
+
+- **「已运行 03:34:40 微信」位置仍不固定**：上一版只做了「禁止换行 + 等宽数字」，但手机端账号头是「头像 + 名字/状态 + 我的农场按钮」的单行 flex，状态行只剩约 170px，被 `overflow: hidden` 裁掉，平台标签又用 `v-if` 抽掉整段导致出现/消失时重排。修复：`.ov-presence` 改成固定三列栅格（`56px / 152px / 36px`，宽度写死、与容器宽度无关），平台标签与离线状态一样常驻占位（`visibility: hidden`），时长数字 `8ch` 等宽且不折行、跨天的「1天 03:34:40」也能完整显示；手机端 `.ov-account__head` 改两行栅格，中间容器 `display: contents` 让名字留在第一行、状态行 `grid-column: 1 / -1` 独占第二行并横跨整张卡片，不再与按钮抢宽度。
+- **奶茶活动头部「图标 / 奶茶热销中 / 进行中」不对齐**：根因是工具区（返回、剩余时间、规则、刷新）与标题区挤在同一个 flex 行，手机端标题区只剩约 98px，徽章被折到第二行、标题本身也会断行。修复：图标移进 `.tea-title-line`，与 `h2`、状态徽章成为同一 `nowrap` 行的三个元素；手机端头部拆两行，标题区 `flex: 1 1 100%` 占第一行、工具区同样占满第二行并 `flex-wrap: nowrap`。
+- **「剩余 10 天 10 小时」换行、跳位**：给该文本独立 class `tea-remaining`，加 `white-space: nowrap` 与等宽数字；删掉 850px 断点里 `.tea-header-tools > span:first-child { display: none }`（选择器本就匹配不到任何元素，语义还会误伤剩余时间），工具区独占一行后不会再被挤压。
+- **「待领取收益 198 奶茶券」显示不统一**：`.tea-claim` 基础是 `flex-wrap: wrap`，且 `<p>` 是块级元素使文案与数值天然分两行，`.tea-number` 的 `overflow-wrap: anywhere` 还会把数字拆断。修复：文案 / 数值 / 单位收进 `.tea-claim__value`，「收银台已满」与额外奖励移到 `.tea-claim__extras`；手机端 `.tea-claim` 用固定三列栅格（图标 / 数值行 / 领取按钮），数值行 `flex-wrap: nowrap` + `white-space: nowrap` + `overflow-wrap: normal`，额外奖励固定落到第二行，不挤压数值行。
+- 新增 6 项手机排版回归测试、更新 1 项状态行断言。web 59/59（+6）、core 360/360，`vue-tsc -b`、改动文件 eslint、`vite build` 全部通过。
+
 ### 2026-11-06 · 土地气泡收益跟随变异叠加 + 奶茶活动 4 个新开关
 
 - **作物气泡里「每季经验 / 每季金币」是固定值**：根因在 `core/src/services/farm/land-analysis.ts` 的 `buildLandDetail()` —— 只按 `plant.exp` 和「果实单价 × 数量」算基础收益，完全没读变异效果。修复：解析官方 `MutantEffect.actions`（`2:x` 果实数量倍率、`3:x` 售价倍率、`4:0` 变身），数量倍率同时放大经验与金币、售价倍率只放大金币，同类倍率相乘形成叠加；后端直接输出叠加后的 `harvestExpPerSeason` / `harvestGoldPerSeason`，并附带 `harvestBonus`（基础值、两个倍率、逐条变异明细）。`LandCropBubble.vue` 据此展示 `×N` 徽标、「基础 xxx」和琥珀色变异来源说明，不在前端重复解析配置。变身果实（黄金 / 奶茶等）用金豆豆或活动币计价，只标注不折算进金币，避免把 `1005` / `1017` 的数量误显示成金币金额；空地与未解锁土地两项收益归零。

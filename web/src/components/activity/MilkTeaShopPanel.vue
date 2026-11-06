@@ -110,16 +110,16 @@ function materialCount(recipe: TeaRecipe) {
       </header>
       <div class="tea-claim">
         <img :src="teaImage('icon_s4_ticket')" alt="">
-        <div>
-          <p>待领取收益 <span v-if="state.summary.cashier_full" class="tea-badge tea-badge--warning">收银台已满</span></p>
-          <strong class="tea-number">{{ teaNumber(primaryPending?.count ?? '0') }}</strong><small>奶茶券</small>
-          <div v-if="extraPending.length" class="tea-rewards">
-            <MilkTeaRewardIcon v-for="item in extraPending" :key="String(item.id)" :item="item" named />
-          </div>
+        <div class="tea-claim__value">
+          <p>待领取收益</p><strong class="tea-number">{{ teaNumber(primaryPending?.count ?? '0') }}</strong><small>奶茶券</small>
         </div>
-        <button type="button" class="tea-button tea-button--primary" :disabled="blocked || !hasPending" @click="emit('action', 'cashier')">
+        <button type="button" class="tea-button tea-button--primary tea-claim__action" :disabled="blocked || !hasPending" @click="emit('action', 'cashier')">
           <span class="i-carbon-checkmark" aria-hidden="true" />领取收益
         </button>
+        <div v-if="state.summary.cashier_full || extraPending.length" class="tea-claim__extras">
+          <span v-if="state.summary.cashier_full" class="tea-badge tea-badge--warning">收银台已满</span>
+          <MilkTeaRewardIcon v-for="item in extraPending" :key="String(item.id)" :item="item" named />
+        </div>
       </div>
       <header class="tea-heading">
         <div><h3>在售库存</h3><small>{{ allRecipes.filter(recipe => recipe.unlocked).length }} / {{ allRecipes.length }} 配方已解锁</small></div>

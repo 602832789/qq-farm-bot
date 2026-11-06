@@ -311,9 +311,9 @@ onUnmounted(() => {
 <template>
   <section class="milk-workbench" aria-label="奶茶活动工作台" :aria-busy="busy || loading">
     <header class="tea-workbench-heading">
-      <img :src="teaImage('icon_s4_milktea_1')" alt="">
-      <div>
+      <div class="tea-heading-main">
         <div class="tea-title-line">
+          <img class="tea-heading-icon" :src="teaImage('icon_s4_milktea_1')" alt="">
           <h2>{{ state?.title || '奶茶热销中' }}</h2><span class="tea-badge"><span v-if="active" class="tea-dot" />{{ !inWindow ? now < MILK_TEA_ACTIVITY_WINDOW.startMs ? '未开始' : '已结束' : phase === 'settling' ? '结算期' : phase === 'ended' ? '已结束' : phase === 'upcoming' ? '未开始' : '进行中' }}</span>
         </div>
         <p class="tea-window">
@@ -324,7 +324,7 @@ onUnmounted(() => {
         <button type="button" class="tea-icon-button" aria-label="返回活动中心" title="返回活动中心" @click="emit('back')">
           <span class="i-carbon-arrow-left" aria-hidden="true" />
         </button>
-        <span>剩余 {{ remaining }}</span>
+        <span class="tea-remaining">剩余 {{ remaining }}</span>
         <button type="button" class="tea-icon-button" aria-label="活动时间与规则" title="活动时间与规则" :disabled="blocked || !state" @click="open('rules')">
           <span class="i-carbon-information" aria-hidden="true" />
         </button>
