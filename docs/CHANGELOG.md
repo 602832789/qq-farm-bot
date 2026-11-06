@@ -30,6 +30,12 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-06 · 图鉴标题与收藏计数等高 + 奶茶两行左对齐
+
+- **收藏图鉴**：`BookOverview.vue` 的 `.book-overview__heading` 从 `align-items: baseline` 改为 `center`，新增 `--book-heading-line: 20px` 以「已收藏 x / y」的行高作为整行高度基准；`h3`「作物图鉴」与 `.book-overview__caption` 共用同一 `line-height`，两块垂直居中对齐、看起来一样高。标题 15px、计数 12px 的字号与字体格式完全不变（用户明确要求不改字体）。该组件被作物 / 超变图鉴、藏品、快乐不独享共用，四处概览标题一并对齐。
+- **奶茶热销中**：`.tea-stock-basic` 去掉左右 10px 内距（`padding: 10px 10px 0` → `10px 0 0`），使「普通奶茶 · 不限量供应 · 3 券 / 杯」与无内距的 `.tea-actions` 里「账号设置 / 自动化状态」共用同一左边缘，以后者为基准。
+- 新增 `web/tests/overview-alignment.test.mjs` 2 项回归测试（等高对齐且字号不变 / 两行左边缘一致）。web 65/65、core 360/360，`vue-tsc -b`、改动文件 eslint、`vite build` 全部通过。
+
 ### 2026-11-06 · 奶茶页返回按钮文案简化为「活动中心」
 
 - 头部工具行首位 `.tea-link.tea-header-back` 按钮文案从「返回活动中心」改为「活动中心」四个字，箭头图标、透明文字样式、靠左位置与 `emit('back')` 行为不变；节令日历页 `SolarCalendar.vue` 的 `aria-label="返回活动中心"` 属于另一个组件，未改动。

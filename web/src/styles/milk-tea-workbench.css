@@ -497,7 +497,8 @@
 .tea-stock-item strong { display: block; margin-block: 5px; font-size: 18px; }
 .tea-stock-item small { font-size: 10px; display: block; color: var(--tea-primary); overflow-wrap: anywhere; }
 .tea-stock-item strong small { display: inline; margin-left: 4px; color: var(--tea-muted); font-weight: 400; }
-.tea-stock-basic { grid-column: 1 / -1; padding: 10px 10px 0; border-top: 1px dashed var(--tea-border); }
+/* 与 .tea-actions 的「账号设置 / 自动化状态」共用同一左边缘：不额外缩进 10px。 */
+.tea-stock-basic { grid-column: 1 / -1; padding: 10px 0 0; border-top: 1px dashed var(--tea-border); }
 .tea-stock-basic .tea-link { font-size: 10px !important; }
 .tea-craft-prompt { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px; margin-top: 17px; border-left: 3px solid var(--tea-primary); background: var(--tea-positive); }
 .tea-craft-prompt h3 { font-size: 12px; }
