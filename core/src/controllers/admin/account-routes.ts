@@ -99,26 +99,44 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
                 }
             }
 
+            /**
+             * 是否属于「重新登录」。
+             *
+             * 以前只能靠备注名碰巧匹配到已有账号来识别（isRemarkRelogin），
+             * 那条分支会无条件 restartAccount，所以停止中的账号重扫后也会被拉起来。
+             * 现在前端编辑态重扫/填新 Code 会显式带上账号 id（为了把新凭据写回原账号、
+             * 不再产生重复账号），带 id 就不再走备注匹配，于是掉进
+             * `wasRunning && !onlyRemarkChanged` 分支 —— 账号本来是停止状态时
+             * wasRunning 为 false，结果既不重启也不启动，用户看到的就是
+             * 「重新扫码/填完新 Code 后不会直接登录」。
+             *
+             * 因此这里把「带 id 且携带新登录凭据」也认定为重新登录。
+             */
+            const hasLoginCredential = !!(payload.code || payload.refreshtoken || payload.loginBuffer);
+            const isRelogin = isRemarkRelogin
+                || (isUpdate && !onlyRemarkChanged && hasLoginCredential);
+
             const data = addOrUpdateAccount(payload);
             if (ctx.provider.addAccountLog) {
                 const accountId = isUpdate ? String(payload.id) : String((data.accounts.at(-1) || {}).id || '');
                 const accountName = payload.name || '';
                 ctx.provider.addAccountLog(
                     isUpdate ? 'update' : 'add',
-                    isRemarkRelogin
+                    isRelogin
                         ? `通过备注重新登录账号: ${accountName || accountId}`
                         : isUpdate ? `更新账号: ${accountName || accountId}` : `添加账号: ${accountName || accountId}`,
                     accountId,
                     accountName
                 );
             }
-            // 如果是新增，自动启动
+            // 新增账号直接启动；重新登录无论此前是否在跑都要用新凭据上线。
             if (!isUpdate) {
                 const newAcc = data.accounts.at(-1);
-                if (newAcc) ctx.provider.startAccount(newAcc.id);
-            } else if (isRemarkRelogin) {
-                // Adding with an existing remark is a relogin operation, including for stopped accounts.
-                ctx.provider.restartAccount(payload.id);
+                if (newAcc) Promise.resolve(ctx.provider.startAccount(newAcc.id)).catch(() => {});
+            } else if (isRelogin) {
+                // 在跑：重建 worker 让新凭据立即生效；已停止：直接启动（启动前会先换码）。
+                if (wasRunning) ctx.provider.restartAccount(payload.id);
+                else Promise.resolve(ctx.provider.startAccount(payload.id)).catch(() => {});
             } else if (wasRunning && !onlyRemarkChanged) {
                 // 如果是更新，且之前在运行，且不是仅修改备注，则重启
                 ctx.provider.restartAccount(payload.id);
