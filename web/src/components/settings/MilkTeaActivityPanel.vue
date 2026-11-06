@@ -12,6 +12,13 @@ const advancedOpen = ref(false)
 const rewardOptions = computed(() => MILK_TEA_AUTOMATION_OPTIONS.filter(item => !item.businessOnly))
 const businessOptions = computed(() => MILK_TEA_AUTOMATION_OPTIONS.filter(item => item.businessOnly))
 const allKeys = computed(() => MILK_TEA_AUTOMATION_OPTIONS.map(item => item.key as string))
+// 「同时购买金币果/经验蘑菇种子」是附加范围，默认不买，也不纳入推荐全自动。
+const conditionalSeedKeys = new Set(['milk_tea_seed_buy_coin', 'milk_tea_seed_buy_exp'])
+
+/** 带 requires 的开关只在主开关开启时可用，与后端门闸一致。 */
+function isOptionDisabled(option: { requires?: string }) {
+  return !!option.requires && !automation.value.automation[option.requires]
+}
 
 const interactionOptions = [
   { label: '宣传推广（推荐）', value: 1 },
@@ -35,7 +42,7 @@ const talentOptions = [
 
 function recommend() {
   for (const key of allKeys.value)
-    automation.value.automation[key] = true
+    automation.value.automation[key] = !conditionalSeedKeys.has(key)
   automation.value.automation.milk_tea_interaction_type = 1
   if (![1, 2, 3].includes(automation.value.automation.milk_tea_hire_duration))
     automation.value.automation.milk_tea_hire_duration = 1
@@ -57,7 +64,7 @@ function recommend() {
       推荐全自动（保留目标与额度）
     </BaseButton>
     <p class="text-sm text-gray-600 dark:text-gray-300">
-      推荐配置只修改当前表单，保存后生效；开启收益领取、工资、分享、基金、升级、制作、雇佣、工作互动与购种。
+      推荐配置只修改当前表单，保存后生效；开启收益领取、工资、分享、基金、升级、制作、雇佣、工作互动、购种与两种化肥自动购买。金币果与经验蘑菇种子默认不勾选。
     </p>
 
     <div class="grid grid-cols-1 gap-2 md:grid-cols-3">
@@ -81,9 +88,18 @@ function recommend() {
           v-model="automation.automation[option.key]"
           class="min-h-11"
           :label="option.label"
+          :disabled="isOptionDisabled(option)"
+          :title="option.requires ? '需先开启「自动购买已解锁种子」' : undefined"
         />
       </div>
     </div>
+
+    <p class="text-sm text-gray-600 dark:text-gray-300">
+      「同时购买金币果种子」「同时购买经验蘑菇种子」默认关闭，仅在「自动购买已解锁种子」开启时生效；不勾选时只兑换活动奶茶种子（森野系列），额度或余额不足时依次往下让位。
+    </p>
+    <p class="text-sm text-gray-600 dark:text-gray-300">
+      「自动购买普通化肥」「自动购买有机肥料」互相独立，也不受购种开关影响，开启后按兑换商店限购与余额自动补充。
+    </p>
 
     <p class="text-sm text-gray-600 dark:text-gray-300">
       制作消耗整组果实库存，最多 100 组，实际杯数以游戏结果为准。不会购买喇叭或花钻石，喇叭只使用现有库存。
@@ -129,9 +145,6 @@ function recommend() {
     </div>
     <p class="text-xs text-gray-500 dark:text-gray-400">
       仅执行当前班次明确提供的所选互动；缺少选项时跳过。雇佣按班次扣券，未确认的费用不会重复消耗。
-    </p>
-    <p class="text-xs text-gray-500 dark:text-gray-400">
-      “自动购买已解锁种子”按优先级兑换：活动奶茶种子（森野系列）→ 经验种子 → 金币种子；额度或余额不足时依次往下让位。
     </p>
   </section>
 </template>

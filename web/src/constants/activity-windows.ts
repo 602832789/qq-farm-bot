@@ -39,7 +39,15 @@ export function isWithinActivityWindowMs(window: { startMs: number, endMs: numbe
 export const MILK_TEA_ACTIVITY_WINDOW = { startMs: 1792029600000, endMs: 1794844799000, updatedMs: 1792029600000 }
 export const MILK_TEA_BUSINESS_WINDOW = { ...MILK_TEA_ACTIVITY_WINDOW, endMs: 1794671998000 }
 
-export const MILK_TEA_AUTOMATION_OPTIONS = [
+export interface MilkTeaAutomationOption {
+  key: string
+  label: string
+  businessOnly: boolean
+  /** 仅在指定主开关开启时生效；UI 会随主开关禁用，后端也做同样的门闸。 */
+  requires?: string
+}
+
+export const MILK_TEA_AUTOMATION_OPTIONS: readonly MilkTeaAutomationOption[] = [
   { key: 'mall_coupon_gift_buy', label: '自动购买点券礼包', businessOnly: false },
   { key: 'milk_tea_cashier', label: '自动领取收益', businessOnly: false },
   { key: 'milk_tea_wages', label: '自动领取工资', businessOnly: false },
@@ -53,4 +61,8 @@ export const MILK_TEA_AUTOMATION_OPTIONS = [
   { key: 'milk_tea_hire', label: '自动雇佣员工', businessOnly: true },
   { key: 'milk_tea_interact', label: '自动工作互动', businessOnly: true },
   { key: 'milk_tea_seed_buy', label: '自动购买已解锁种子', businessOnly: true },
-] as const
+  { key: 'milk_tea_seed_buy_coin', label: '同时购买金币果种子', businessOnly: true, requires: 'milk_tea_seed_buy' },
+  { key: 'milk_tea_seed_buy_exp', label: '同时购买经验蘑菇种子', businessOnly: true, requires: 'milk_tea_seed_buy' },
+  { key: 'milk_tea_fertilizer_buy_normal', label: '自动购买普通化肥', businessOnly: true },
+  { key: 'milk_tea_fertilizer_buy_organic', label: '自动购买有机肥料', businessOnly: true },
+]

@@ -90,6 +90,49 @@ function getPlantMutantRecords(plant: any, currentPhase: any = null): any[] {
     return records;
 }
 
+// 官方 MutantEffect.actions 形如「类型:倍数」，与收获收益相关的类型只有三种：
+//   2 = 果实数量倍率、3 = 果实售价倍率、4 = 变身（产出替换为 mutant_effect_plant 指向的变体果实）。
+// 5（喜鹊等活动效果）、6（藏品变异）不改收益。多变异叠加时同类倍率相乘。
+const MUTANT_ACTION_COUNT = 2;
+const MUTANT_ACTION_PRICE = 3;
+const MUTANT_ACTION_TRANSFORM = 4;
+
+function parseMutantAction(actions: any): { type: number; value: number } {
+    const [type, value] = String(actions || '').split(':').map((part: string) => Number(part) || 0);
+    return { type: type || 0, value: value || 0 };
+}
+
+/**
+ * 汇总当前作物全部变异效果对收获收益的加成，供土地气泡/详情展示「基础值 → 变异后」。
+ * 返回的 details 只包含真正改变收益的变异，前端据此标注来源。
+ */
+function buildMutantHarvestBonus(mutantEffects: any[]) {
+    let countMultiplier = 1;
+    let priceMultiplier = 1;
+    const details: any[] = [];
+    for (const effect of Array.isArray(mutantEffects) ? mutantEffects : []) {
+        const { type, value } = parseMutantAction(effect?.actions);
+        const name = String(effect?.name || effect?.effect_name || '变异');
+        const id = toNum(effect?.id);
+        if (type === MUTANT_ACTION_COUNT && value > 0) {
+            countMultiplier *= value;
+            details.push({ id, name, kind: 'count', multiplier: value, label: `数量×${value}` });
+        } else if (type === MUTANT_ACTION_PRICE && value > 0) {
+            priceMultiplier *= value;
+            details.push({ id, name, kind: 'price', multiplier: value, label: `售价×${value}` });
+        } else if (type === MUTANT_ACTION_TRANSFORM) {
+            const fruitName = String(effect?.fruitName || effect?.fruit_name || '').trim();
+            details.push({ id, name, kind: 'transform', multiplier: 1, label: fruitName ? `变身·${fruitName}` : '变身' });
+        }
+    }
+    return {
+        countMultiplier,
+        priceMultiplier,
+        transformed: details.some((detail: any) => detail.kind === 'transform'),
+        details,
+    };
+}
+
 function getPlantMutantConfigIds(plant: any, currentPhase: any = null): string[] {
     const values: any[] = Array.isArray(plant?.mutant_config_ids) ? [...plant.mutant_config_ids] : [];
     values.push(...getPlantMutantRecords(plant, currentPhase).map((record: any) => record?.mutant_config_id));
@@ -330,6 +373,9 @@ function buildLandDetail(land: any, options: { friendMode?: boolean; landsMap?: 
         needInteractionCleanup: false,
         protocolField40: null,
         leftInorcFertTimes: null,
+        harvestExpPerSeason: 0,
+        harvestGoldPerSeason: 0,
+        harvestBonus: null,
     };
     if (!base.unlocked) {
         return {
@@ -378,12 +424,22 @@ function buildLandDetail(land: any, options: { friendMode?: boolean; landsMap?: 
     const plantCfg = getPlantById(plantId);
     const seedId = toNum(plantCfg?.seed_id);
     // 成熟后每季可收获的经验与金币（老版 getSeedHarvestInfo 口径：经验取 plant.exp，
-    // 金币取果实单价 × 果实数量）。
-    const harvestExpPerSeason = toNum(plantCfg?.exp) || 0;
-    const harvestFruitId = toNum(plantCfg?.fruit?.id) || 0;
-    const harvestGoldPerSeason = harvestFruitId > 0
-        ? getFruitPrice(harvestFruitId) * (toNum(plantCfg?.fruit?.count) || 0)
+    // 金币取果实单价 × 果实数量）。变异效果在此基础上叠加：
+    //   actions 2:x = 数量倍率，同时放大经验与金币；
+    //   actions 3:x = 售价倍率，只放大金币；
+    //   多个变异同时存在时同类倍率相乘，形成叠加效果。
+    //   actions 4:0 = 变身果实：产出换成活动/金豆豆计价的特殊果实，不作为金币收益口径，
+    //   仅在 harvestBonus 里标注，避免把金豆豆数量误显示成金币。
+    const harvestBaseExp = toNum(plantCfg?.exp) || 0;
+    const harvestBaseFruitId = toNum(plantCfg?.fruit?.id) || 0;
+    const harvestBaseGold = harvestBaseFruitId > 0
+        ? getFruitPrice(harvestBaseFruitId) * (toNum(plantCfg?.fruit?.count) || 0)
         : 0;
+    const mutantBonus = buildMutantHarvestBonus(mutantEffects);
+    const harvestExpPerSeason = Math.round(harvestBaseExp * mutantBonus.countMultiplier);
+    const harvestGoldPerSeason = Math.round(
+        harvestBaseGold * mutantBonus.countMultiplier * mutantBonus.priceMultiplier,
+    );
     // 当前阶段的起止时间（秒），供详情弹窗画阶段进度条；末段（成熟）无结束时间。
     const phaseBeginSec = toTimeSec(currentPhase.begin_time);
     const phaseEndSecRaw = Array.isArray(plant.phases)
@@ -428,6 +484,18 @@ function buildLandDetail(land: any, options: { friendMode?: boolean; landsMap?: 
         phaseEndTime,
         harvestExpPerSeason,
         harvestGoldPerSeason,
+        // 收益构成：基础值 + 变异叠加明细，前端据此展示「基础 → 变异后」。
+        harvestBonus: {
+            baseExp: Math.round(harvestBaseExp),
+            baseGold: Math.round(harvestBaseGold),
+            countMultiplier: mutantBonus.countMultiplier,
+            priceMultiplier: mutantBonus.priceMultiplier,
+            transformed: mutantBonus.transformed,
+            transformedPlantName: mutantBonus.transformed && displayPlantId !== plantId
+                ? (getPlantName(displayPlantId) || '')
+                : '',
+            details: mutantBonus.details,
+        },
         currentSeason,
         totalSeason,
         matureInSec,

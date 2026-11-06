@@ -310,8 +310,13 @@ function milkTeaSeedTier(goods: any, fruitIds: Set<string>): number {
     return MILK_TEA_SEED_TIER.other;
 }
 
-/** 按「活动种子 → 经验种子 → 金币种子 → 其它」挑一件当前可兑换的种子商品。 */
-function pickSeedGoods(catalog: any[]): any | null {
+/**
+ * 按「活动种子 → 经验种子 → 金币种子 → 其它」挑一件当前可兑换的种子商品。
+ * filters 供自动化开关限定购买范围：金币果/经验蘑菇默认不买，只有对应开关打开才纳入候选。
+ */
+function pickSeedGoods(catalog: any[], filters: { allowCoin?: boolean, allowExp?: boolean } = {}): any | null {
+    const allowCoin = filters.allowCoin !== false;
+    const allowExp = filters.allowExp !== false;
     const fruitIds = milkTeaFruitIds();
     let picked: any = null;
     let pickedTier = Number.POSITIVE_INFINITY;
@@ -319,12 +324,61 @@ function pickSeedGoods(catalog: any[]): any | null {
         if (goods?.category !== 'seed' || !goods.available) continue;
         if (goods.remaining != null && toNum(goods.remaining) <= 0) continue;
         const tier = milkTeaSeedTier(goods, fruitIds);
+        if (tier === MILK_TEA_SEED_TIER.exp && !allowExp) continue;
+        if (tier === MILK_TEA_SEED_TIER.coin && !allowCoin) continue;
         if (tier < pickedTier) {
             picked = goods;
             pickedTier = tier;
         }
     }
     return picked;
+}
+
+/** 兑换商店化肥奖励的官方物品 ID：80001~80004 普通、80011~80014 有机，礼包按名称兜底。 */
+const MILK_TEA_NORMAL_FERTILIZER_IDS = new Set(['80001', '80002', '80003', '80004', '100003']);
+const MILK_TEA_ORGANIC_FERTILIZER_IDS = new Set(['80011', '80012', '80013', '80014', '100004']);
+
+/** 判定一件兑换商品属于普通化肥还是有机肥料；ID 优先、名称兜底，未知商品返回 null。 */
+function milkTeaFertilizerKind(goods: any): 'normal' | 'organic' | null {
+    if (!goods || typeof goods !== 'object') return null;
+    // 遍历的是整个兑换目录，商品形状可能异常；非数组奖励字段直接忽略，避免一轮调度因脏数据中断。
+    const rewards = [
+        ...(Array.isArray(goods.rewards) ? goods.rewards : []),
+        ...(Array.isArray(goods.items) ? goods.items : []),
+    ];
+    const ids = rewards
+        .map((entry: any) => String(toNum(entry?.id)))
+        .filter((id: string) => id && id !== '0');
+    if (ids.some(id => MILK_TEA_ORGANIC_FERTILIZER_IDS.has(id))) return 'organic';
+    if (ids.some(id => MILK_TEA_NORMAL_FERTILIZER_IDS.has(id))) return 'normal';
+    const label = [goods.name, ...rewards.map((entry: any) => entry?.name)].filter(Boolean).join(' ');
+    if (!label) return null;
+    if (/有机化肥|有机肥料|有机肥/.test(label)) return 'organic';
+    if (/化肥|肥料/.test(label)) return 'normal';
+    return null;
+}
+
+/** 按化肥类型挑一件当前可兑换的商品；两个开关互相独立，不看购种开关状态。 */
+function pickFertilizerGoods(catalog: any[], kind: 'normal' | 'organic'): any | null {
+    for (const goods of catalog) {
+        if (!goods?.available) continue;
+        if (goods.remaining != null && toNum(goods.remaining) <= 0) continue;
+        if (milkTeaFertilizerKind(goods) === kind) return goods;
+    }
+    return null;
+}
+
+/** 兑换商品统一结算：按剩余限购与各货币余额折算数量，买不到就静默跳过。 */
+async function buyMilkTeaExchangeGoods(goods: any, state: any, operate: (action: string, input?: any) => Promise<any>): Promise<boolean> {
+    if (!goods) return false;
+    let count = goods.remaining == null ? 1 : Number(goods.remaining);
+    for (const cost of goods.costs || []) {
+        const balance = toNum(state.balances?.[String(toNum(cost.id))]);
+        count = Math.min(count, Math.floor(balance / Math.max(1, toNum(cost.count))));
+    }
+    if (!Number.isSafeInteger(count) || count < 1) return false;
+    await operate('exchange', { goodsId: goods.id, count, expectedCosts: goods.costs });
+    return true;
 }
 
 /**
@@ -443,16 +497,30 @@ function buildMilkTeaOps(): AutomationOp[] {
             run: async (automation: any) => {
                 const state = await milkTea.getMilkTeaActivity('exchange');
                 if (!state.active || state.settling) return false;
-                const goods = pickSeedGoods(state.goods || []);
-                if (!goods) return false;
-                let count = Number(goods.remaining);
-                for (const cost of goods.costs || []) {
-                    const balance = toNum(state.balances?.[String(toNum(cost.id))]);
-                    count = Math.min(count, Math.floor(balance / Math.max(1, toNum(cost.count))));
-                }
-                if (!Number.isSafeInteger(count) || count < 1) return false;
-                await operateMilkTea('exchange', { goodsId: goods.id, count, expectedCosts: goods.costs });
-                return true;
+                // 金币果/经验蘑菇种子默认不买；两个附加开关只有主开关开启时才会走到这里。
+                const goods = pickSeedGoods(state.goods || [], {
+                    allowCoin: !!automation.milk_tea_seed_buy_coin,
+                    allowExp: !!automation.milk_tea_seed_buy_exp,
+                });
+                return buyMilkTeaExchangeGoods(goods, state, operateMilkTea);
+            },
+        },
+        {
+            key: 'milk_tea_fertilizer_buy_normal', label: '奶茶热销中-购买普通化肥', activityIds: WINDOW_IDS.milkTea,
+            run: async () => {
+                const state = await milkTea.getMilkTeaActivity('exchange');
+                if (!state.active || state.settling) return false;
+                const goods = pickFertilizerGoods(state.goods || [], 'normal');
+                return buyMilkTeaExchangeGoods(goods, state, operateMilkTea);
+            },
+        },
+        {
+            key: 'milk_tea_fertilizer_buy_organic', label: '奶茶热销中-购买有机肥料', activityIds: WINDOW_IDS.milkTea,
+            run: async () => {
+                const state = await milkTea.getMilkTeaActivity('exchange');
+                if (!state.active || state.settling) return false;
+                const goods = pickFertilizerGoods(state.goods || [], 'organic');
+                return buyMilkTeaExchangeGoods(goods, state, operateMilkTea);
             },
         },
         {
@@ -948,4 +1016,7 @@ module.exports = {
     rescheduleActivityEventTimers,
     // 奶茶兑换商店的种子购买优先级（活动种子 → 经验种子 → 金币种子）。
     pickSeedGoods,
+    // 兑换商店化肥识别与选购，供回归测试直接校验。
+    milkTeaFertilizerKind,
+    pickFertilizerGoods,
 };

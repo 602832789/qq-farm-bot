@@ -117,6 +117,12 @@ export interface AutomationConfig {
   milk_tea_hire_primary_talent: number;
   milk_tea_hire_backup_talent: number;
   milk_tea_seed_buy: boolean;
+  /** 仅在 milk_tea_seed_buy 开启时生效：默认不买金币果/经验蘑菇种子。 */
+  milk_tea_seed_buy_coin: boolean;
+  milk_tea_seed_buy_exp: boolean;
+  /** 兑换商店化肥：两个独立开关，不受其它开关影响。 */
+  milk_tea_fertilizer_buy_normal: boolean;
+  milk_tea_fertilizer_buy_organic: boolean;
   milk_tea_auto_open: boolean;
   milk_tea_work_interaction_type: number;
   milk_tea_seed_policy: Record<string, unknown>;

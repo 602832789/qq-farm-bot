@@ -1435,6 +1435,10 @@ const MILK_TEA_AUTOMATION_KEYS = [
     'milk_tea_interact',
     'milk_tea_hire',
     'milk_tea_seed_buy',
+    // 两个化肥开关是独立的调度动作；金币果/经验蘑菇种子只是购种的附加范围，
+    // 不是独立动作，主开关关闭时不应让首页显示「已有自动化待执行」。
+    'milk_tea_fertilizer_buy_normal',
+    'milk_tea_fertilizer_buy_organic',
 ];
 
 function getMilkTeaAutoCheckStatus(): any {

@@ -8,6 +8,7 @@ const farmPanel = read('components/FarmPanel.vue')
 const farmLandCard = read('components/FarmLandCard.vue')
 const farmScene = read('components/FarmScene.vue')
 const bubble = read('components/LandCropBubble.vue')
+const landDetailModal = read('components/LandDetailModal.vue')
 
 test('点击地块/作物统一走老版就地气泡，而不是直接弹居中弹窗', () => {
   assert.match(farmPanel, /@open="openLandBubble\(\$event\)"/)
@@ -47,4 +48,30 @@ test('气泡完整移植老版字段与操作，并浮在 body 上', () => {
 test('切号时气泡与弹窗一起关闭，避免显示上一个账号的地块', () => {
   assert.match(farmPanel, /watch\(currentAccountId, \(\) => \{\s*closeLandDetail\(\)/)
   assert.match(farmPanel, /function closeLandDetail\(\)[\s\S]*bubbleAnchor\.value = null/)
+})
+
+test('气泡收益取后端叠加值，并标注倍率与基础值', () => {
+  assert.match(bubble, /harvestExpPerSeason/)
+  assert.match(bubble, /harvestGoldPerSeason/)
+  assert.match(bubble, /harvestBonus/)
+  assert.match(bubble, /harvestExpMultiplier/)
+  assert.match(bubble, /harvestGoldMultiplier/)
+  assert.match(bubble, /变异叠加已计入收益/)
+  assert.match(bubble, /基础 \{\{ formatNumber/)
+})
+
+test('土地升级详情只保留土地信息，不再重复作物区', () => {
+  for (const cropText of ['land-crop-grid', 'land-crop-head', '每季金币', '每季经验', '变异效果', '催熟', '铲除']) {
+    assert.ok(!landDetailModal.includes(cropText), `土地弹窗不应包含作物字段：${cropText}`)
+  }
+  assert.match(landDetailModal, /土地等级 \/ 升级条件/)
+  assert.match(landDetailModal, /land-detail-metrics/)
+  assert.match(landDetailModal, /土地加成/)
+  assert.match(landDetailModal, /升级条件/)
+  assert.doesNotMatch(landDetailModal, /NButton/)
+  const modalTag = farmPanel.match(/<LandDetailModal[\s\S]*?\/>/)?.[0] || ''
+  assert.doesNotMatch(modalTag, /@fertilize|@remove/)
+  const bubbleTag = farmPanel.match(/<LandCropBubble[\s\S]*?\/>/)?.[0] || ''
+  assert.match(bubbleTag, /@fertilize="handleDetailFertilize"/)
+  assert.match(bubbleTag, /@remove="handleDetailRemove"/)
 })

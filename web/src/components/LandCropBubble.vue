@@ -96,6 +96,25 @@ function buildMutantDetail(name: string, actions: string, fruitName: string, des
   return parts.filter(Boolean).join('·')
 }
 
+/** 变异收益叠加明细：后端按 actions 算出倍率，前端展示「基础 → 变异后」。 */
+const harvestBonus = computed(() => {
+  const bonus = props.land?.harvestBonus
+  return bonus && typeof bonus === 'object' ? bonus : null
+})
+const harvestDetails = computed(() => {
+  const details = harvestBonus.value?.details
+  return Array.isArray(details) ? details : []
+})
+const harvestBoosted = computed(() => {
+  const bonus = harvestBonus.value
+  return !!bonus && (Number(bonus.countMultiplier) > 1 || Number(bonus.priceMultiplier) > 1)
+})
+const harvestExpMultiplier = computed(() => Number(harvestBonus.value?.countMultiplier) || 1)
+const harvestGoldMultiplier = computed(() => (Number(harvestBonus.value?.countMultiplier) || 1) * (Number(harvestBonus.value?.priceMultiplier) || 1))
+function formatNumber(value: unknown) {
+  return (Number(value) || 0).toLocaleString('zh-CN')
+}
+
 const phaseProgress = computed(() => {
   const start = Number(props.land?.phaseStartTime) || 0
   const end = Number(props.land?.phaseEndTime) || 0
@@ -251,17 +270,39 @@ onUnmounted(() => {
           <div class="text-[10px] text-gray-400">
             每季经验
           </div>
-          <div class="mt-0.5 tabular-nums font-semibold">
+          <div class="mt-0.5 flex items-center gap-1 tabular-nums font-semibold">
             +{{ Number(land.harvestExpPerSeason) || 0 }}
+            <span v-if="harvestExpMultiplier > 1" class="rounded bg-pink-100 px-1 text-[10px] text-pink-600 dark:bg-pink-900/40 dark:text-pink-300">×{{ harvestExpMultiplier }}</span>
+          </div>
+          <div v-if="harvestExpMultiplier > 1" class="mt-0.5 text-[10px] text-gray-400 tabular-nums">
+            基础 {{ formatNumber(harvestBonus?.baseExp) }}
           </div>
         </div>
         <div class="bubble-cell">
           <div class="text-[10px] text-gray-400">
             每季金币
           </div>
-          <div class="mt-0.5 tabular-nums font-semibold">
+          <div class="mt-0.5 flex items-center gap-1 tabular-nums font-semibold">
             +{{ (Number(land.harvestGoldPerSeason) || 0).toLocaleString('zh-CN') }}
+            <span v-if="harvestGoldMultiplier > 1" class="rounded bg-pink-100 px-1 text-[10px] text-pink-600 dark:bg-pink-900/40 dark:text-pink-300">×{{ harvestGoldMultiplier }}</span>
           </div>
+          <div v-if="harvestGoldMultiplier > 1" class="mt-0.5 text-[10px] text-gray-400 tabular-nums">
+            基础 {{ formatNumber(harvestBonus?.baseGold) }}
+          </div>
+        </div>
+      </div>
+
+      <div v-if="harvestDetails.length" class="mt-2 rounded-lg bg-amber-50 px-2 py-1.5 text-[10px] text-amber-700 leading-relaxed dark:bg-amber-950/30 dark:text-amber-300">
+        <div class="font-medium">
+          {{ harvestBoosted ? '变异叠加已计入收益' : '变异产出' }}
+        </div>
+        <div class="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5">
+          <span v-for="(detail, index) in harvestDetails" :key="`bonus-${detail.id}-${index}`">
+            {{ detail.name }} · {{ detail.label }}
+          </span>
+        </div>
+        <div v-if="harvestBonus?.transformed" class="mt-0.5 opacity-80">
+          变身果实按{{ harvestBonus.transformedPlantName || '活动' }}口径结算，不计入上方金币估值
         </div>
       </div>
 

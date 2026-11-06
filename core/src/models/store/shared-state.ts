@@ -153,6 +153,12 @@ const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
         milk_tea_hire_primary_talent: 0,
         milk_tea_hire_backup_talent: 0,
         milk_tea_seed_buy: false,
+        // 「同时购买金币果/经验蘑菇种子」默认不买，且只有主开关开启时才生效。
+        milk_tea_seed_buy_coin: false,
+        milk_tea_seed_buy_exp: false,
+        // 化肥购买相互独立，默认关闭。
+        milk_tea_fertilizer_buy_normal: false,
+        milk_tea_fertilizer_buy_organic: false,
         milk_tea_auto_open: false,
         milk_tea_work_interaction_type: 1,
         milk_tea_seed_policy: {},

@@ -56,10 +56,13 @@ const activeInfo = computed(() => activeModule.value ? moduleInfo[activeModule.v
 const fertilizerName = computed(() => props.fertilizerOptions.find(item => item.value === automation.value.automation.fertilizer)?.label || '未设置')
 const selectedLandNames = computed(() => props.fertilizerLandTypeOptions.filter(item => automation.value.automation.fertilizer_land_types?.includes(item.value)).map(item => item.label))
 const selectedLandTypeCount = computed(() => Array.isArray(automation.value.automation.fertilizer_land_types) ? automation.value.automation.fertilizer_land_types.length : 0)
+function milkTeaOptionEffective(option: { requires?: string }) {
+  return !option.requires || !!automation.value.automation[option.requires]
+}
 const activityKeys = computed(() => [
   'star_solar_claim',
   'star_solar_quiz_claim',
-  ...(showMilkTeaActivity.value ? milkTeaSettings.value.map(setting => setting.key) : []),
+  ...(showMilkTeaActivity.value ? milkTeaSettings.value.filter(milkTeaOptionEffective).map(setting => setting.key) : []),
   'share_reward_share',
   'share_reward_daily',
   'share_reward_milestones',
@@ -138,7 +141,7 @@ function summaryTags(key: ModuleKey) {
     automation.value.automation.task ? '自动完成日常任务' : '不做日常',
     automation.value.automation.task_after_farm && '种植收获后巡查任务',
     (automation.value.automation.star_solar_claim || automation.value.automation.star_solar_quiz_claim) && '节令小札',
-    showMilkTeaActivity.value && milkTeaSettings.value.some(setting => automation.value.automation[setting.key]) && '奶茶热销中',
+    showMilkTeaActivity.value && milkTeaSettings.value.some(setting => milkTeaOptionEffective(setting) && automation.value.automation[setting.key]) && '奶茶热销中',
     shareRewardActivityEnabled.value && '快乐不独享',
     activityEnabledCount.value === 0 && !automation.value.automation.task && '未开启活动',
   ].filter(Boolean)

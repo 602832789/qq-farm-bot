@@ -1079,8 +1079,6 @@ onUnmounted(() => {
       :player="status?.status"
       :connected="currentAccountConnected"
       @close="closeLandDetail"
-      @fertilize="handleDetailFertilize"
-      @remove="handleDetailRemove"
     />
 
     <LandCropBubble
