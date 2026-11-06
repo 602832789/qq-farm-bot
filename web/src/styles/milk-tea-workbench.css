@@ -596,7 +596,6 @@
   .tea-workspace-layout { grid-template-columns: minmax(0, 1fr); }
   .tea-workspace-nav { border-right: 0; padding: 12px 16px; border-bottom: 1px solid var(--tea-border); }
   .tea-workspace-logo, .tea-workspace-current, .tea-workspace-auto { display: none; }
-  .tea-workspace-back { margin-bottom: 10px; }
   .tea-quick-entries { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; }
   .tea-quick-entry { grid-template-columns: minmax(0, 1fr); padding: 10px 8px; gap: 5px; border-color: var(--tea-border); min-height: 109px; }
   .tea-quick-entry > span:last-child { display: none; }

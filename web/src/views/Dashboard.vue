@@ -747,8 +747,11 @@ useIntervalFn(updateCountdowns, 1000)
             </div>
             <div class="ov-presence">
               <span class="ov-presence__state" :class="isOnline ? 'is-online' : 'is-offline'">{{ isOnline ? '在线' : '离线' }}</span>
-              <span v-if="isOnline" class="ov-presence__item"><span class="i-carbon-time" />已运行 {{ formatDuration(localUptime) }}</span>
-              <span v-if="platformLabel" class="ov-presence__item">{{ platformLabel }}</span>
+              <!-- 运行信息收成一组：PC 端与「在线」同行，手机端整组落到下一行，避免逐项各自换行走位。 -->
+              <span class="ov-presence__meta">
+                <span v-if="isOnline" class="ov-presence__item"><span class="i-carbon-time" />已运行 {{ formatDuration(localUptime) }}</span>
+                <span v-if="platformLabel" class="ov-presence__item">{{ platformLabel }}</span>
+              </span>
             </div>
           </div>
           <BaseButton to="/personal" variant="primary" size="sm" class="ov-farm-entry" aria-label="进入我的农场">
@@ -1336,6 +1339,15 @@ useIntervalFn(updateCountdowns, 1000)
   font-size: 12px;
 }
 
+/* PC 端默认与「在线」同处一行，整组不拆散；换行只由窄屏媒体查询触发。 */
+.ov-presence__meta {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 4px 10px;
+  min-width: 0;
+}
+
 .ov-presence__state {
   display: inline-flex;
   align-items: center;
@@ -1831,6 +1843,13 @@ useIntervalFn(updateCountdowns, 1000)
 }
 
 @media (max-width: 639px) {
+  /* 手机端：「在线」占第一行，「已运行 + 平台标签」整组落到下面一行；
+     PC 端不触发，仍与在线图标同处一行。字号略缩，保证跨天时长也能完整一行显示。 */
+  .ov-presence__meta {
+    flex: 0 0 100%;
+    font-size: 11px;
+  }
+
   .dashboard-log-scroll {
     height: 430px;
     max-height: 430px;

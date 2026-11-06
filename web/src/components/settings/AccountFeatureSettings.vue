@@ -552,16 +552,13 @@ function cancel() {
               </section>
 
               <section class="border border-orange-100 rounded-lg p-4 space-y-3 dark:border-orange-900/40">
-                <div class="flex items-start justify-between gap-3">
-                  <div>
-                    <div class="text-sm text-gray-700 font-medium dark:text-gray-300">
-                      快乐不独享
-                    </div>
-                    <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                      自动分享领取首次分享快乐值，无需好友点击；自动领取每日快乐值和已达成的档位奖励。
-                    </div>
+                <div>
+                  <div class="text-sm text-gray-700 font-medium dark:text-gray-300">
+                    快乐不独享
                   </div>
-                  <span class="rounded-full bg-orange-100 px-2 py-1 text-xs text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">2026-09-24 00:00 — 2026-10-12 23:59</span>
+                  <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    自动分享领取首次分享快乐值，无需好友点击；自动领取每日快乐值和已达成的档位奖励。
+                  </div>
                 </div>
                 <div class="grid gap-3 sm:grid-cols-2">
                   <BaseSwitch v-model="automation.automation.share_reward_share" label="自动分享" />

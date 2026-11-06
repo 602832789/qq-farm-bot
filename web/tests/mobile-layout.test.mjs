@@ -30,8 +30,9 @@ function media(source, query) {
   assert.fail(`媒体查询 ${query} 未闭合`)
 }
 
-// 奶茶样式取最后追加的统一排版块。
+// 奶茶样式取最后追加的统一排版块；首页只有一个 639px 断点。
 const phoneTea = media(teaCss, '@media (max-width: 639px)')
+const phoneDashboard = media(dashboard, '@media (max-width: 639px)')
 
 test('首页状态行再退一格：回到 f5c7d25 之前的原始排布', () => {
   const presence = rule(dashboard, '.ov-presence')
@@ -41,6 +42,18 @@ test('首页状态行再退一格：回到 f5c7d25 之前的原始排布', () =>
   assert.doesNotMatch(dashboard, /ov-presence__digit/, '等宽固定宽度已移除')
   assert.doesNotMatch(dashboard, /ov-presence__uptime/, '离线占位段已移除')
   assert.doesNotMatch(dashboard, /\.ov-account__meta/, '手机端账号头两行栅格已撤销')
+})
+
+test('手机端「已运行」落到在线图标下一行，PC 端保持同一行', () => {
+  const baseMeta = rule(dashboard, '.ov-presence__meta')
+  assert.match(baseMeta, /display:\s*inline-flex/, 'PC 端把运行信息收成一组')
+  assert.match(baseMeta, /flex-wrap:\s*nowrap/, '组内不拆散')
+  assert.doesNotMatch(baseMeta, /flex:\s*0 0 100%/, '基础规则不能强制换行')
+  assert.match(rule(phoneDashboard, '.ov-presence__meta'), /flex:\s*0 0 100%/, '手机端整组独占第二行')
+  assert.match(dashboard, /<span class="ov-presence__state"[\s\S]*?<span class="ov-presence__meta">/, '在线图标仍在第一行')
+  assert.match(dashboard, /class="ov-presence__meta"[\s\S]*?v-if="isOnline"[\s\S]*?已运行/)
+  // PC 端状态行仍是原来的可换行 flex 排布，没有改回固定栅格或 nowrap 单行。
+  assert.match(rule(dashboard, '.ov-presence'), /flex-wrap:\s*wrap/)
 })
 
 test('奶茶头部：图标、活动名、状态徽章同处一行', () => {

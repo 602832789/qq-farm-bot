@@ -27,6 +27,16 @@ test('「已运行」与平台标签恢复按数据显隐', () => {
   assert.match(source, /v-if="platformLabel" class="ov-presence__item">\{\{ platformLabel \}\}/)
 })
 
+test('PC 端已运行仍与在线图标同一行，只有手机端才换行', () => {
+  assert.match(source, /class="ov-presence__meta"/, '运行信息需要收成一组')
+  const base = block('.ov-presence__meta')
+  assert.match(base, /display:\s*inline-flex/)
+  assert.match(base, /flex-wrap:\s*nowrap/, '整组不能被拆散')
+  assert.doesNotMatch(base, /flex:\s*0 0 100%/, '基础规则不能强制换行，PC 端保持原排布')
+  const phone = source.slice(source.lastIndexOf('@media (max-width: 639px)'))
+  assert.match(phone, /\.ov-presence__meta\s*\{[\s\S]*?flex:\s*0 0 100%/, '639px 以下整组独占第二行')
+})
+
 test('已运行时长单调递增：不再用每秒自增 + 整包覆盖的双写', () => {
   assert.doesNotMatch(source, /localUptime\.value\+\+/, '不能再用每秒 ++ 覆盖 computed')
   assert.match(source, /const localUptime = computed\(/, 'localUptime 应为 computed（锚点 + 本地时间差）')

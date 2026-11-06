@@ -359,9 +359,6 @@ onUnmounted(() => {
     <template v-else>
       <div class="tea-workspace-layout">
         <aside class="tea-workspace-nav" aria-label="奶茶活动导航">
-          <button type="button" class="tea-link tea-workspace-back" @click="emit('back')">
-            <span class="i-carbon-arrow-left" aria-hidden="true" />活动中心
-          </button>
           <img class="tea-workspace-logo" :src="teaImage('img_s4Main_logo')" alt="奶茶热销中">
           <div class="tea-workspace-current">
             <span class="i-carbon-store" aria-hidden="true" />我的小店
