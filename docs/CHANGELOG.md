@@ -30,6 +30,12 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-06 · 功能模块「土地与施肥」2x2催熟开关间距
+
+- **问题**：`AccountFeatureSettings.vue` 施肥参数 section 里 `2x2催熟` 与 `多季补肥` 两个 `BaseSwitch` 都是 `display:inline-flex`，直接相邻时只靠模板换行产生的一个空白字符分隔，文字「2x2催熟」后面紧跟着下一个开关的旋钮，看起来挤在一起。
+- **修复**：把两个开关包进 `flex flex-wrap items-center gap-x-6 gap-y-3` 容器，PC 端固定 24px 横向间距；窄屏放不下时自动换行并保持 12px 行间距。两个开关的 `v-model`、label、`mutationTestActive` 禁用逻辑，以及全站 `.base-switch` 自身的 8px 开关↔文字间距全部不变，其它模块的开关不受影响。
+- 新增 `web/tests/fertilizer-switch-spacing.test.mjs` 2 项静态断言（间距容器 / 绑定与全局样式不变）；已反向验证：撤掉容器时 2 项均 fail，恢复后全绿。验证：web **67/67**、core 361/361、`vue-tsc -b`、改动文件 ESLint、`vite build` 全部通过。仍无浏览器 / 真机截图，纯静态断言 + 构建验证。
+
 ### 2026-11-06 · 同步上游 muyuewang/qq-farm-bot-404（ed75089..3b3608c，PR #119–#121）并保留本地改动
 
 - **同步基线**：`upstream/main` 从 `ed75089`（上次同步提交 `f1dc717`）前进到 `3b3608c`，共 8 个上游提交，净增量 6 个文件：`core/src/services/milk-tea.ts`、`web/src/components/activity/ShareRewardActivity.vue`、`web/src/layouts/DefaultLayout.vue`、`web/src/views/activity-center/MilkTeaContent.vue` / `MilkTeaPage.vue` / `MilkTeaWork.vue`。本地与上游历史不同源（本地 640 提交为重建历史，上游为浅克隆 59 提交），沿用仓库既有的「逐项采纳 + sync 提交」做法，不做 `git merge`，避免把 2350 个历史差异文件反向覆盖本地。

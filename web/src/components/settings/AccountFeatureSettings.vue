@@ -431,8 +431,10 @@ function cancel() {
                     <BaseSelect v-model="fertilizerSmartUnit" label="单位" :options="FERTILIZER_TIME_UNITS" class="w-32" />
                   </div>
                 </div>
-                <BaseSwitch v-model="automation.automation.fertilizer_2x2_ripen" label="2x2催熟" :disabled="mutationTestActive" />
-                <BaseSwitch v-model="automation.automation.fertilizer_multi_season" label="多季补肥" />
+                <div class="flex flex-wrap items-center gap-x-6 gap-y-3">
+                  <BaseSwitch v-model="automation.automation.fertilizer_2x2_ripen" label="2x2催熟" :disabled="mutationTestActive" />
+                  <BaseSwitch v-model="automation.automation.fertilizer_multi_season" label="多季补肥" />
+                </div>
               </section>
 
               <section v-if="automation.automation.fertilizer_buy_organic || automation.automation.fertilizer_buy_normal" class="border border-gray-100 rounded-lg p-4 space-y-3 dark:border-gray-700">
