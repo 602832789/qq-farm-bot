@@ -30,6 +30,11 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-06 · 奶茶页返回按钮文案简化为「活动中心」
+
+- 头部工具行首位 `.tea-link.tea-header-back` 按钮文案从「返回活动中心」改为「活动中心」四个字，箭头图标、透明文字样式、靠左位置与 `emit('back')` 行为不变；节令日历页 `SolarCalendar.vue` 的 `aria-label="返回活动中心"` 属于另一个组件，未改动。
+- `mobile-layout.test.mjs` / `settings-cleanup.test.mjs` 的文案计数断言同步：全页「活动中心」仍只出现 1 次、不再出现「返回活动中心」，并新增「箭头后直接跟四个字」断言。web 63/63、core 360/360，`vue-tsc -b`、改动文件 eslint、`vite build` 全部通过。
+
 ### 2026-11-06 · 首页已运行手机端换行 + 去除奶茶侧栏「活动中心」/「快乐不独享」日期
 
 - **首页「在线 已运行 00:16:31 微信」**：PC 端保持原排布不变，仅手机端（≤639px）让「已运行 + 平台标签」整组落在在线图标的下一行。模板把两个 `ov-presence__item` 收进 `.ov-presence__meta`，基础样式 `inline-flex + nowrap` 保证组内不拆散；639px 媒体查询给该组 `flex: 0 0 100%` 独占第二行，并略缩到 11px 以容纳跨天时长。账号头结构、`v-if` 数据显隐、`localUptime` computed 与原有 `flex-wrap: wrap` 基础排布均未改动。

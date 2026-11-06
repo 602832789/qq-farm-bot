@@ -85,15 +85,16 @@ test('手机端头部两行：标题一行，返回按钮在左、剩余时间�
   assert.doesNotMatch(teaCss, /tea-header-tools > span:first-child\s*\{\s*display:\s*none/, '窄屏不能再隐藏剩余时间')
 })
 
-test('白色方块返回按钮已移除，空状态的文字返回按钮挪到工具行首位', () => {
+test('白色方块返回按钮已移除，头部文字按钮文案为「活动中心」', () => {
   const tools = milkPanel.match(/<div class="tea-header-tools">([\s\S]*?)<\/div>/)?.[1] || ''
-  assert.doesNotMatch(tools, /aria-label="返回活动中心"/, '工具行不能再有旧的白色图标返回按钮')
-  assert.match(tools, /class="tea-link tea-header-back"[\s\S]*?@click="emit\('back'\)"[\s\S]*?返回活动中心/)
+  assert.doesNotMatch(tools, /aria-label="[^"]*活动中心"/, '工具行不能再有旧的白色图标返回按钮')
+  assert.match(tools, /class="tea-link tea-header-back"[\s\S]*?@click="emit\('back'\)"[\s\S]*?活动中心/)
+  assert.doesNotMatch(tools, /返回活动中心/, '按钮文案改为四个字，不再带「返回」')
   assert.ok(tools.indexOf('tea-header-back') < tools.indexOf('tea-remaining'), '返回按钮必须占工具行第一位')
-  // 空状态里不再重复放同一个入口，全页只保留头部这一个「返回活动中心」。
+  // 空状态里不再重复放同一个入口，全页只保留头部这一个「活动中心」。
   const emptyState = milkPanel.match(/<div v-else-if="!state" class="tea-state"[\s\S]*?<\/div>/)?.[1] || ''
-  assert.doesNotMatch(emptyState, /返回活动中心/)
-  assert.equal((milkPanel.match(/返回活动中心/g) || []).length, 1)
+  assert.doesNotMatch(emptyState, /活动中心/)
+  assert.equal((milkPanel.match(/活动中心/g) || []).length, 1)
   const back = rule(teaCss, '.tea-header-back')
   assert.match(back, /background:\s*transparent/, '新按钮不能是白色方块')
   assert.match(back, /white-space:\s*nowrap/, '返回文案不能折行')

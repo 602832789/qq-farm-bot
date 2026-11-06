@@ -19,11 +19,12 @@ test('功能模块「快乐不独享」去除旁边写死的活动日期', () =>
   assert.match(section, /share_reward_milestones/, '档位奖励开关保留')
 })
 
-test('奶茶活动页去除侧栏「活动中心」按钮，头部返回入口保持不变', () => {
+test('奶茶活动页去除侧栏按钮，头部只留一个文案为「活动中心」的入口', () => {
   assert.doesNotMatch(milkPanel, /tea-workspace-back/, '侧栏按钮已移除')
   assert.doesNotMatch(teaCss, /\.tea-workspace-back/, '对应 CSS 死规则已清理')
-  assert.equal((milkPanel.match(/活动中心/g) || []).length, 1, '全页只剩头部「返回活动中心」这一处')
-  assert.equal((milkPanel.match(/返回活动中心/g) || []).length, 1, '头部返回入口仍唯一')
-  assert.match(milkPanel, /class="tea-link tea-header-back"[\s\S]*?返回活动中心/)
+  assert.equal((milkPanel.match(/活动中心/g) || []).length, 1, '全页只剩头部「活动中心」这一处')
+  assert.doesNotMatch(milkPanel, /返回活动中心/, '按钮文案已简化为四个字')
+  assert.match(milkPanel, /class="tea-link tea-header-back"[\s\S]*?活动中心/)
+  assert.match(milkPanel, /<span class="i-carbon-arrow-left" aria-hidden="true" \/>活动中心/, '箭头后直接跟四个字')
   assert.match(milkPanel, /<aside class="tea-workspace-nav"[\s\S]*?<img class="tea-workspace-logo"/, '侧栏首个元素改为 logo')
 })

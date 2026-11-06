@@ -324,7 +324,7 @@ onUnmounted(() => {
         <!-- 返回入口统一放在工具行首位：沿用空状态里带箭头的文字按钮，
              替换原来只有箭头、底色发白的方块图标按钮。 -->
         <button type="button" class="tea-link tea-header-back" @click="emit('back')">
-          <span class="i-carbon-arrow-left" aria-hidden="true" />返回活动中心
+          <span class="i-carbon-arrow-left" aria-hidden="true" />活动中心
         </button>
         <span class="tea-remaining">剩余 {{ remaining }}</span>
         <button type="button" class="tea-icon-button" aria-label="活动时间与规则" title="活动时间与规则" :disabled="blocked || !state" @click="open('rules')">
