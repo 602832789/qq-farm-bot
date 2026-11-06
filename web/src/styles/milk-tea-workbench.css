@@ -37,6 +37,9 @@
 .tea-link { padding: 4px 0; border: 0; background: transparent; color: var(--tea-primary); font-size: 12px !important; text-decoration: none; }
 .tea-link:hover:not(:disabled) { text-decoration: underline; }
 .tea-button > span[class*="i-"], .tea-link > span[class*="i-"] { font-size: 16px; flex-shrink: 0; }
+/* 头部返回入口：透明文字按钮，取代原来底色发白的方块图标按钮。 */
+.tea-header-back { flex: none; gap: 5px; color: var(--tea-primary); font-size: 12px !important; white-space: nowrap; background: transparent; }
+.tea-header-back > span[class*="i-"] { font-size: 14px; }
 .tea-badge { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; gap: 5px; padding: 3px 7px; font-size: 11px; line-height: 1.5; font-weight: 500; border-radius: 4px; background: var(--tea-soft); color: var(--tea-muted); }
 .tea-badge--positive { background: var(--tea-positive); color: var(--tea-primary); }
 .tea-badge--warning { background: #fff4dc; color: #936422; }
@@ -340,7 +343,8 @@
   .tea-window { font-size: 10px; }
   .tea-window > span { margin-inline: 2px; }
   .tea-header-tools { left: 16px; right: 16px; bottom: 20px; }
-  .tea-header-tools > span { margin-right: auto; font-size: 11px; }
+  /* 只压字号：旧的 auto 外边距会把「剩余」推到最左，与右侧按钮失去对齐。 */
+  .tea-header-tools > span { font-size: 11px; }
   .tea-tabs { gap: 21px; padding: 0 16px; }
   .tea-tabs button { min-height: 44px; font-size: 12px; gap: 5px; }
   .tea-tabs button > span[class*="i-"] { font-size: 14px; }
@@ -641,8 +645,8 @@
 
 /* ==========================================================================
    手机端统一排版（放在最后，覆盖上面的历史窄屏规则）
-   头部拆成两行：第一行「图标 + 活动名 + 进行中」，第二行「剩余时间 + 工具按钮」；
-   领取收益沿用基础栅格，PC / 手机端都是同一排不换行。
+   头部拆成两行：第一行「图标 + 活动名 + 进行中」，第二行工具区，返回按钮留在左侧、
+   剩余时间与按钮靠右对齐成一排；领取收益沿用基础栅格，PC / 手机端都是同一排不换行。
    ========================================================================== */
 @media (max-width: 639px) {
   .tea-workbench-heading {
@@ -693,18 +697,24 @@
     white-space: nowrap;
   }
 
+  /* 工具区独占第二行：返回按钮留在左侧，剩余时间与「活动时间与规则 / 刷新」
+     按钮一起靠右对齐成一排，整段不换行。 */
   .tea-header-tools {
     flex: 1 1 100%;
     flex-wrap: nowrap;
-    justify-content: flex-start;
+    justify-content: flex-end;
     gap: 6px;
     margin-left: 0;
     min-width: 0;
   }
 
+  .tea-header-back { gap: 3px; font-size: 10px !important; }
+  .tea-header-back > span[class*="i-"] { font-size: 12px; }
+
   .tea-header-tools .tea-remaining {
     flex: none;
-    margin-right: auto;
+    margin-left: auto;
+    margin-right: 0;
     font-size: 11px;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;

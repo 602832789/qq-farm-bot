@@ -53,21 +53,37 @@ test('奶茶头部：图标、活动名、状态徽章同处一行', () => {
   assert.match(teaCss, /\.tea-heading-icon/)
 })
 
-test('手机端头部两行：标题一行，剩余时间与按钮同排不折行（靠右方案已回滚）', () => {
+test('手机端头部两行：标题一行，返回按钮在左、剩余时间与按钮靠右对齐成一行', () => {
   const heading = rule(phoneTea, '.tea-workbench-heading')
   assert.match(heading, /flex-wrap:\s*wrap/)
   assert.match(rule(phoneTea, '.tea-heading-main'), /flex:\s*1 1 100%/, '标题区占满第一行')
   assert.match(rule(phoneTea, '.tea-title-line'), /flex-wrap:\s*nowrap/, '图标/标题/徽章不能折行')
   const tools = rule(phoneTea, '.tea-header-tools')
   assert.match(tools, /flex:\s*1 1 100%/, '工具区独占第二行')
-  assert.match(tools, /flex-wrap:\s*nowrap/, '剩余时间与按钮不能折行')
-  assert.match(tools, /justify-content:\s*flex-start/, '恢复原始的靠左排布')
+  assert.match(tools, /flex-wrap:\s*nowrap/, '返回按钮、剩余时间与其它按钮不能折行')
+  assert.match(tools, /justify-content:\s*flex-end/, '整组靠右')
   const remaining = rule(phoneTea, '.tea-header-tools .tea-remaining')
-  assert.match(remaining, /margin-right:\s*auto/, '恢复原始的 auto 外边距')
+  assert.match(remaining, /margin-left:\s*auto/, '剩余时间靠右')
+  assert.match(remaining, /margin-right:\s*0/, '不能再被 auto 外边距推回左边')
   assert.match(remaining, /white-space:\s*nowrap/, '「剩余 10 天 9 小时」必须整段不换行')
   assert.match(remaining, /font-variant-numeric:\s*tabular-nums/)
   assert.match(milkPanel, /class="tea-remaining">剩余 \{\{ remaining \}\}/)
+  assert.doesNotMatch(teaCss, /\.tea-header-tools > span\s*\{\s*margin-right:\s*auto/, '历史窄屏规则不能再把剩余推到左边')
   assert.doesNotMatch(teaCss, /tea-header-tools > span:first-child\s*\{\s*display:\s*none/, '窄屏不能再隐藏剩余时间')
+})
+
+test('白色方块返回按钮已移除，空状态的文字返回按钮挪到工具行首位', () => {
+  const tools = milkPanel.match(/<div class="tea-header-tools">([\s\S]*?)<\/div>/)?.[1] || ''
+  assert.doesNotMatch(tools, /aria-label="返回活动中心"/, '工具行不能再有旧的白色图标返回按钮')
+  assert.match(tools, /class="tea-link tea-header-back"[\s\S]*?@click="emit\('back'\)"[\s\S]*?返回活动中心/)
+  assert.ok(tools.indexOf('tea-header-back') < tools.indexOf('tea-remaining'), '返回按钮必须占工具行第一位')
+  // 空状态里不再重复放同一个入口，全页只保留头部这一个「返回活动中心」。
+  const emptyState = milkPanel.match(/<div v-else-if="!state" class="tea-state"[\s\S]*?<\/div>/)?.[1] || ''
+  assert.doesNotMatch(emptyState, /返回活动中心/)
+  assert.equal((milkPanel.match(/返回活动中心/g) || []).length, 1)
+  const back = rule(teaCss, '.tea-header-back')
+  assert.match(back, /background:\s*transparent/, '新按钮不能是白色方块')
+  assert.match(back, /white-space:\s*nowrap/, '返回文案不能折行')
 })
 
 test('领取收益：PC 与手机端共用同一套栅格，金币与数字一排', () => {
