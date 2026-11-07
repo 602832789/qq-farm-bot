@@ -881,22 +881,27 @@ useIntervalFn(updateCountdowns, 1000)
               @clear="onLogSearchTrigger"
             />
 
-            <BaseSelect
-              v-model="filter.module"
-              :options="modules"
-              placeholder="筛选模块"
-              @change="onLogFilterChange"
-            />
+            <div class="dashboard-log-module">
+              <BaseSelect
+                v-model="filter.module"
+                :options="modules"
+                placeholder="筛选模块"
+                @change="onLogFilterChange"
+              />
+            </div>
 
-            <BaseSelect
-              v-model="filter.event"
-              :options="events"
-              placeholder="筛选事件"
-              @change="onLogFilterChange"
-            />
+            <div class="dashboard-log-event">
+              <BaseSelect
+                v-model="filter.event"
+                :options="events"
+                placeholder="筛选事件"
+                @change="onLogFilterChange"
+              />
+            </div>
 
             <BaseButton
               v-if="hasActiveLogFilter"
+              class="dashboard-log-reset"
               variant="ghost"
               size="sm"
               title="重置筛选"
@@ -1859,13 +1864,34 @@ useIntervalFn(updateCountdowns, 1000)
     padding: 12px;
   }
 
+  /* 手机端筛选栏：搜索独占第一行，模块筛选与重置按钮同行，
+     「筛选事件」下拉独占整行。原来两个下拉挤在 1fr/1fr/32px 三列里，
+     「所有事件」等选项文字会被省略号截断，这里给它完整宽度。 */
   .dashboard-log-toolbar {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 32px;
+    grid-template-columns: minmax(0, 1fr) 32px;
+    gap: 8px;
     padding: 0 12px 12px;
   }
 
   .dashboard-log-search {
+    grid-row: 1;
     grid-column: 1 / -1;
+  }
+
+  .dashboard-log-module {
+    grid-row: 2;
+    grid-column: 1;
+  }
+
+  .dashboard-log-event {
+    grid-row: 3;
+    grid-column: 1 / -1;
+  }
+
+  .dashboard-log-reset {
+    grid-row: 2;
+    grid-column: 2;
+    justify-self: end;
   }
 
   .dashboard-log-summary {

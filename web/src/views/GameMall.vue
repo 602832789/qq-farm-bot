@@ -17,8 +17,8 @@ const tabs: Array<{ key: MallTab, label: string, icon: string }> = [
   { key: 'mall', label: '游戏商城', icon: 'i-carbon-shopping-bag' },
   { key: 'limited', label: '限时商店', icon: 'i-carbon-timer' },
   { key: 'props', label: '道具商店', icon: 'i-carbon-store' },
-  { key: 'svip', label: 'SVIP 专属商城', icon: 'i-carbon-diamond-outline' },
   { key: 'mystery', label: '神秘商人', icon: 'i-carbon-store' },
+  { key: 'svip', label: 'SVIP 专属商城', icon: 'i-carbon-diamond-outline' },
 ]
 const activeTab = computed<MallTab>(() => route.query.tab === 'limited' || route.query.tab === 'mystery' || route.query.tab === 'svip' || route.query.tab === 'props' ? route.query.tab : 'mall')
 const purchasing = computed(() => purchasingGoodsId.value !== null || mysteryPurchasing.value)
