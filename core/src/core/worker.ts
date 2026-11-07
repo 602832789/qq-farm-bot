@@ -525,6 +525,19 @@ function runMysteryShopTick(): Promise<void> {
     } = require('../services/mystery-shop-auto');
     if (!isMysteryShopWatchEnabled(getAutomation())) return Promise.resolve();
     return checkMysteryShopTick().then((result: any) => {
+        // 面板内消息（局内通知）：本地落盘即可，不依赖外部推送渠道；写失败不影响外部提醒。
+        if (result?.event) {
+            try {
+                require('../services/panel-notification').appendPanelNotification(
+                    String(process.env.FARM_ACCOUNT_ID || ''),
+                    result.event,
+                );
+            } catch (e: any) {
+                logWarn('商城', `面板消息写入失败: ${e.message}`, {
+                    module: 'shop', event: '面板消息', result: 'error', error: e.message,
+                });
+            }
+        }
         if (result?.push?.title && result?.push?.content) {
             sendToMaster({ type: 'push_notify', title: result.push.title, content: result.push.content });
         }

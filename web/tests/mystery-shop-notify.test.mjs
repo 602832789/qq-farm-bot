@@ -16,13 +16,15 @@ function merchantTemplate() {
 
 test('功能模块提供「到货提醒」「购买通知」两个开关', () => {
   const block = merchantTemplate()
-  assert.match(block, /事件提醒/)
+  assert.match(block, /消息与外部推送/)
   assert.match(block, /v-model="automation\.automation\.mystery_shop_arrival_notify" label="到货提醒"/)
   assert.match(block, /v-model="automation\.automation\.mystery_shop_purchase_notify" label="购买通知"/)
   assert.match(block, /grid gap-3 sm:grid-cols-2/, '两个提醒开关同组展示')
-  assert.match(block, /设置 → 下线提醒/, '说明推送渠道的配置位置')
-  assert.match(block, /单独开启也会启动每 10 分钟的巡查/, '说明到货提醒会启动巡查')
-  assert.match(block, /购买通知仅在自动购买成功后推送/, '说明购买通知是附属开关')
+  assert.match(block, /顶栏「消息」/, '说明局内消息的位置')
+  assert.match(block, /无需配置任何推送渠道/, '局内消息不依赖外部渠道')
+  assert.match(block, /设置 → 下线提醒/, '说明外部推送渠道的配置位置')
+  assert.match(block, /到货提醒单独开启也会启动每 10 分钟巡查/, '说明到货提醒会启动巡查')
+  assert.match(block, /购买通知需配合自动购买，仅在买成功后推送/, '说明购买通知是附属开关')
 })
 
 test('模块摘要与总开关状态同步提醒配置', () => {

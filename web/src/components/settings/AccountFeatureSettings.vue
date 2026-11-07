@@ -526,14 +526,14 @@ function cancel() {
               <section class="border border-gray-100 rounded-lg p-4 space-y-3 dark:border-gray-700">
                 <div>
                   <div class="mb-2 text-sm text-gray-700 font-medium dark:text-gray-300">
-                    事件提醒
+                    消息与外部推送
                   </div>
                   <div class="grid gap-3 sm:grid-cols-2">
                     <BaseSwitch v-model="automation.automation.mystery_shop_arrival_notify" label="到货提醒" />
                     <BaseSwitch v-model="automation.automation.mystery_shop_purchase_notify" label="购买通知" />
                   </div>
                   <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                    到货提醒会在神秘商人上新时推送一次，单独开启也会启动每 10 分钟的巡查；购买通知仅在自动购买成功后推送，需同时开启本模块总开关。两种提醒共用「设置 → 下线提醒」里配置的推送渠道，未配置渠道时只写日志。
+                    神秘商人到货、自动购买成功都会记入顶栏「消息」，无需配置任何推送渠道。下面两个开关控制是否额外推送到外部渠道（渠道在「设置 → 下线提醒」配置）：到货提醒单独开启也会启动每 10 分钟巡查；购买通知需配合自动购买，仅在买成功后推送。
                   </p>
                 </div>
               </section>

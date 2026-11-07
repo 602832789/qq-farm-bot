@@ -11,6 +11,8 @@ const {
     mysteryShopConfigChanged,
     resolveMysteryShopPushFlags,
     buildMysteryShopPush,
+    checkMysteryShopTick,
+    createMysteryShopAutoState,
     DIAMOND_ITEM_ID,
 } = require('../dist/services/mystery-shop-auto');
 
@@ -100,6 +102,32 @@ test('购买通知确实生成推送，且只在自动购买成功时生成', ()
     assert.equal(resolveMysteryShopPushFlags(decision, true, {
         ...auto, mystery_shop_purchase_notify: false,
     }, state).purchase, false, '关掉购买通知不推送');
+});
+
+test('面板内消息不依赖提醒开关和外部推送渠道', async () => {
+    // 只开自动购买 + 货币，两个提醒开关全关：不发外部推送，但站内消息照常生成。
+    const bought = await checkMysteryShopTick({
+        getAutomation: () => ({ mystery_shop_auto_buy: true, mystery_shop_allow_diamond: true }),
+        getShop: async () => diamondOffer,
+        buy: async () => ({}),
+        state: createMysteryShopAutoState(),
+    });
+    assert.equal(bought.bought, true);
+    assert.equal(bought.push, undefined, '没开提醒开关就不发外部推送');
+    assert.equal(bought.event?.type, 'mystery_purchase', '购买事件仍写入面板内消息');
+    assert.match(bought.event.dedupeKey, /^purchase:/);
+    assert.match(bought.event.content, /花费 10 钻石/);
+
+    // 巡查时未买成功（货币不允许）：记到货事件，不需要任何通知开关或渠道。
+    const arrival = await checkMysteryShopTick({
+        getAutomation: () => ({ mystery_shop_auto_buy: true }),
+        getShop: async () => diamondOffer,
+        buy: async () => ({}),
+        state: createMysteryShopAutoState(),
+    });
+    assert.equal(arrival.bought, false);
+    assert.equal(arrival.event?.type, 'mystery_arrival');
+    assert.equal(arrival.event?.title, '神秘商人到货');
 });
 
 test('配置变更检测覆盖全部神秘商人开关，worker 保存后立即重查', () => {

@@ -3,6 +3,7 @@ import { useMediaQuery } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import PanelNotificationBell from '@/components/PanelNotificationBell.vue'
 import Sidebar from '@/components/Sidebar.vue'
 import ThemeSwitcher from '@/components/ThemeSwitcher.vue'
 import TopAccountMenu from '@/components/TopAccountMenu.vue'
@@ -74,6 +75,7 @@ async function logout() {
           </div>
         </div>
         <div class="farm-topbar-actions">
+          <PanelNotificationBell />
           <ThemeSwitcher />
           <TopAccountMenu />
           <button class="farm-icon-button" type="button" title="退出验证" aria-label="退出验证" :disabled="loggingOut" @click="logout">

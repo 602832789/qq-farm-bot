@@ -46,6 +46,14 @@ interface MysteryShopPushFlags {
     purchase: boolean;
 }
 
+/** 面板内消息（局内通知）：与外部推送渠道解耦，不受提醒开关和渠道配置影响。 */
+interface MysteryShopEvent {
+    dedupeKey: string;
+    type: 'mystery_arrival' | 'mystery_purchase';
+    title: string;
+    content: string;
+}
+
 const defaultState: MysteryShopAutoState = {
     lastArrivalKey: '',
     lastPurchaseKey: '',
@@ -178,7 +186,7 @@ async function checkMysteryShopTick(options: {
     getShop?: () => Promise<any>;
     buy?: (npcId: number) => Promise<any>;
     state?: MysteryShopAutoState;
-} = {}): Promise<{ skipped?: boolean; reason?: string; bought?: boolean; push?: { title: string; content: string } | null }> {
+} = {}): Promise<{ skipped?: boolean; reason?: string; bought?: boolean; push?: { title: string; content: string } | null; event?: MysteryShopEvent | null }> {
     const automation = (options.getAutomation || getAutomation)() || {};
     const state = options.state || defaultState;
     if (!isMysteryShopWatchEnabled(automation)) {
@@ -236,12 +244,22 @@ async function checkMysteryShopTick(options: {
         }
     }
 
+    // 面板内消息始终记一条：到货或自动购买成功，由存储层按 dedupeKey 去重，
+    // 不依赖提醒开关，也不需要配置 Bark / 钉钉 / Webhook 等外部渠道。
+    const eventMessage = buildMysteryShopPush(shop, { arrival: !bought, purchase: bought });
+    const event: MysteryShopEvent | null = eventMessage && decision.visitKey ? {
+        dedupeKey: `${bought ? 'purchase' : 'arrival'}:${decision.visitKey}`,
+        type: bought ? 'mystery_purchase' : 'mystery_arrival',
+        title: eventMessage.title,
+        content: eventMessage.content,
+    } : null;
+
     const flags = resolveMysteryShopPushFlags(decision, bought, automation, state);
     if (!flags.arrival && !flags.purchase) {
-        return { bought };
+        return { bought, event };
     }
     commitMysteryShopNotify(state, String(decision.visitKey), flags);
-    return { bought, push: buildMysteryShopPush(shop, flags) };
+    return { bought, push: buildMysteryShopPush(shop, flags), event };
 }
 
 module.exports = {

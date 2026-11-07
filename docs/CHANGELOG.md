@@ -30,6 +30,15 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-07 · 新增面板内消息（局内通知）：顶栏铃铛 + 本地持久化
+
+- **口径澄清**：用户说的「购买通知」是**面板内就能看到的局内消息**，不是 Bark / 钉钉 / Webhook 外部推送。复查工作区三个老版本：`qq-farm-bot-404` / `_merge_src/dawn` 的设置页 `AutomationSettingsForm.vue` 有「到货提醒 / 购买提醒」开关，但代码明确走 `push_notify → sendConfiguredPush → Pushoo` 外部渠道；`legacy-...bundle` 旧版只有购买后的页面 toast 与购买历史。三个版本都没有独立通知中心。因此上一轮补的两个开关属于外部推送，本轮新建真正的局内消息能力。
+- **后端**：新增 `core/src/services/panel-notification.ts`，每账号一个 `data/panel_notifications/<id>.json`，保留最近 100 条；按 `dedupeKey` 去重，避免 10 分钟一轮的巡查反复刷同一条到货消息；损坏文件 / 空内容安全降级。新增 `GET /api/panel-notifications` + provider + 路由注册，读取失败只返回空列表、不打断面板。
+- **事件与开关解耦**：`checkMysteryShopTick` 现在始终返回 `event`（到货或自动购买成功，`mystery_arrival` / `mystery_purchase`），worker 本地落盘，**不需要任何提醒开关、也不需要配置外部推送渠道**；两个提醒开关改为只控制是否额外发外部推送。功能模块神秘商人区标题改「消息与外部推送」，说明里写清「到货、自动购买成功都会记入顶栏「消息」」。
+- **前端**：新增 `web/src/stores/panel-notifications.ts`（按账号读取、未读数用 localStorage 的已读时间算，避免 worker 与主进程同时改同一文件）与 `PanelNotificationBell.vue`（顶栏铃铛、未读红点、Teleport 下拉、时间/标题/多行内容、空态、展开即已读、30 秒轮询、切账号刷新、卸载清理定时器），挂到 `DefaultLayout.vue` 顶栏操作区。
+- 新增 `core/tests/panel-notification.test.js` 5 项（账号隔离 / 去重 / 100 条 / 损坏文件 / 链路）+ `mystery-shop-switches.test.js` 1 项行为测试（提醒开关全关时 `push` 为空但 `event` 仍在），`web/tests/panel-notifications.test.mjs` 3 项（铃铛挂载 / 面板展示 / store 行为）；更新既有 `mystery-shop-notify.test.mjs` 的文案断言。web 断言已反向验证（移除铃铛时 fail 1）。
+- 验证：core **375/375**、web **77/77**、`vue-tsc -b`、改动文件 ESLint、`vite build` 全通过。仍无浏览器/真机截图，纯静态断言 + 构建验证。
+
 ### 2026-11-07 · 补齐神秘商人「到货提醒 / 购买通知」开关与保存后立即巡查
 
 - **背景**：上一轮验证自动化开关时提到「购买通知」是附属开关，但复查发现这两个键（`mystery_shop_arrival_notify` / `mystery_shop_purchase_notify`）虽然后端链路完整、默认值与类型都在，**前端任何页面都没有开关控件**——功能模块「神秘商人」只有 4 个货币开关和模块总开关，`Settings.vue` 里也只是默认值。等于这两个开关永远为 `false`，通知从未真正发出过。

@@ -260,6 +260,9 @@ function createDataProvider(options: DataProviderOptions) {
         getMysteryShopHistory: (accountRef: string) => (
             require('../services/mystery-shop-history').getMysteryShopHistory(resolveAccountRefId(accountRef))
         ),
+        getPanelNotifications: (accountRef: string) => (
+            require('../services/panel-notification').getPanelNotifications(resolveAccountRefId(accountRef))
+        ),
         purchaseMysteryOffer: (accountRef: string, npcId: unknown) => (
             callWorkerApi(resolveAccountRefId(accountRef), 'purchaseMysteryOffer', npcId)
         ),
