@@ -579,7 +579,7 @@ function applyRuntimeConfig(snapshot: any, syncNow: boolean = false): number {
     // 资本模式配置变更（关闭/换狗）时收回自动派出的宠物。
     try {
         require('../services/capital-mode').reconcileConfigChange(prevCapitalMode, getCapitalMode()).catch(() => null);
-    } catch (_e: any) {
+    } catch {
         // capital-mode 未初始化时忽略
     }
 
@@ -649,7 +649,7 @@ function applyRuntimeConfig(snapshot: any, syncNow: boolean = false): number {
                 resetCooldownsForEnabledKeys(Object.keys(nextAutoAll)
                     .filter(key => nextAutoAll[key] === true && !(prevAuto && prevAuto[key] === true)));
                 scheduleActivityAutomationAfterSave(workerScheduler);
-            } catch (_e: any) {
+            } catch {
                 // 活动自动化未初始化时忽略
             }
 
@@ -1100,7 +1100,7 @@ async function handleApiCall(msg: any): Promise<void> {
                 // 手动派出：释放资本模式的自动召回所有权。
                 try {
                     require('../services/capital-mode').releaseForManualCommand();
-                } catch (_e: any) {
+                } catch {
                     // capital-mode 未初始化时忽略
                 }
                 result = await require('../services/pets').deployDog(args[0]);
@@ -1320,7 +1320,8 @@ async function handleApiCall(msg: any): Promise<void> {
                 result = await require('../services/commerce').getMysteryShop();
                 break;
             case 'purchaseMysteryOffer':
-                result = await require('../services/commerce').purchaseMysteryOffer(args[0]);
+                // 后台 API 只可能是页面手动购买；自动购买由 mystery-shop-auto 内部标记 'auto'。
+                result = await require('../services/commerce').purchaseMysteryOffer(args[0], 'manual');
                 break;
             case 'getSchedulers':
                 result = getSchedulerRegistrySnapshot();

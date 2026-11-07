@@ -10,9 +10,9 @@ import CommerceItemImage from '@/components/commerce/CommerceItemImage.vue'
 import { useAccountStore } from '@/stores/account'
 import { useToastStore } from '@/stores/toast'
 
+const emit = defineEmits<{ back: [] }>()
 const { currentAccountId, currentAccount } = storeToRefs(useAccountStore())
 const connected = computed(() => !!currentAccount.value?.running)
-const emit = defineEmits<{ back: [] }>()
 const toast = useToastStore()
 const data = ref<any>(null)
 const busy = ref(false)
@@ -310,6 +310,12 @@ onUnmounted(() => sequence++)
   --serif: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', SimSun, serif;
   width: 100%;
   min-width: 0;
+  /* 活动详情外壳是 overflow:hidden + flex:1/min-height:0，滚动必须由页面自身提供，
+     否则手机端内容超出视口后无法向下滑动。 */
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   color: var(--ui-ink);
   container-type: inline-size;
 }

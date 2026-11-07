@@ -257,6 +257,9 @@ function createDataProvider(options: DataProviderOptions) {
             callWorkerApi(resolveAccountRefId(accountRef), 'purchaseMallProduct', goodsId, count, slotType, expectedPrice)
         ),
         getMysteryShop: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getMysteryShop'),
+        getMysteryShopHistory: (accountRef: string) => (
+            require('../services/mystery-shop-history').getMysteryShopHistory(resolveAccountRefId(accountRef))
+        ),
         purchaseMysteryOffer: (accountRef: string, npcId: unknown) => (
             callWorkerApi(resolveAccountRefId(accountRef), 'purchaseMysteryOffer', npcId)
         ),

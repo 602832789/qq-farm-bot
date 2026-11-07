@@ -124,6 +124,7 @@ function summaryTags(key: ModuleKey) {
       automation.value.automation.mystery_shop_allow_gold && '金币',
       automation.value.automation.mystery_shop_allow_coupon && '点券',
       automation.value.automation.mystery_shop_allow_gold_bean && '金豆豆',
+      automation.value.automation.mystery_shop_allow_diamond && '钻石',
     ].filter(Boolean)
     return [
       automation.value.automation.mystery_shop_auto_buy ? '自动购买' : '未开启购买',
@@ -505,10 +506,11 @@ function cancel() {
                   <div class="mb-2 text-sm text-gray-700 font-medium dark:text-gray-300">
                     允许使用的货币
                   </div>
-                  <div class="grid gap-3 sm:grid-cols-3">
+                  <div class="grid gap-3 lg:grid-cols-4 sm:grid-cols-2">
                     <BaseSwitch v-model="automation.automation.mystery_shop_allow_gold" label="金币" />
                     <BaseSwitch v-model="automation.automation.mystery_shop_allow_coupon" label="点券" />
                     <BaseSwitch v-model="automation.automation.mystery_shop_allow_gold_bean" label="金豆豆" />
+                    <BaseSwitch v-model="automation.automation.mystery_shop_allow_diamond" label="钻石" />
                   </div>
                 </div>
               </section>

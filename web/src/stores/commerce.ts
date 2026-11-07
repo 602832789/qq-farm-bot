@@ -63,9 +63,27 @@ export interface MysteryShopDto {
   }
 }
 
+/** 老版购买历史字段形状：手动 / 自动购买共用一份记录。 */
+export interface MysteryHistoryRecord {
+  id: string
+  purchasedAt: number
+  source: 'auto' | 'manual'
+  npcId: number
+  itemId: number
+  itemName: string
+  itemImage: string
+  itemCount: number
+  currencyId: number
+  currencyName: string
+  price: number
+  originalPrice: number
+  discount: number
+}
+
 export const useCommerceStore = defineStore('commerce', () => {
   const mall = ref<MallCatalogDto | null>(null)
   const mystery = ref<MysteryShopDto | null>(null)
+  const mysteryHistory = ref<MysteryHistoryRecord[]>([])
   const mallLoading = ref(false)
   const mysteryLoading = ref(false)
   const mysteryPurchasing = ref(false)
@@ -89,6 +107,7 @@ export const useCommerceStore = defineStore('commerce', () => {
     requestVersion++
     mall.value = null
     mystery.value = null
+    mysteryHistory.value = []
     mallAccountId = ''
     mysteryAccountId = ''
     mallLoading.value = false
@@ -248,6 +267,28 @@ export const useCommerceStore = defineStore('commerce', () => {
     }
   }
 
+  /** 老版 /api/shop/mystery/history：按账号读取购买历史，读取失败不影响货品展示。 */
+  async function fetchMysteryHistory(accountId: string) {
+    const id = String(accountId || '').trim()
+    if (!id) {
+      mysteryHistory.value = []
+      return
+    }
+    try {
+      const response = await api.get('/api/mystery-shop/history', {
+        headers: { 'x-account-id': id },
+        skipErrorToast: true,
+      } as any)
+      if (!response.data?.ok || String(localStorage.getItem('current_account_id') || '') !== id)
+        return
+      const records = response.data.data
+      mysteryHistory.value = Array.isArray(records) ? records : []
+    }
+    catch {
+      // 记录读取失败不阻塞当前货品展示。
+    }
+  }
+
   async function purchaseMystery(accountId: string, npcId: number) {
     const id = String(accountId || '').trim()
     if (!id || mysteryPurchasing.value)
@@ -264,6 +305,7 @@ export const useCommerceStore = defineStore('commerce', () => {
       if (String(localStorage.getItem('current_account_id') || '') !== id)
         return false
       mystery.value = response.data.data.shop
+      void fetchMysteryHistory(id)
       const purchase = response.data.data.purchase as { reward?: CommerceItemDto, price?: CommerceItemDto } | undefined
       const reward = purchase?.reward
       const price = purchase?.price
@@ -288,6 +330,7 @@ export const useCommerceStore = defineStore('commerce', () => {
   return {
     mall,
     mystery,
+    mysteryHistory,
     mallLoading,
     mysteryLoading,
     mysteryPurchasing,
@@ -299,6 +342,7 @@ export const useCommerceStore = defineStore('commerce', () => {
     fetchMall,
     purchaseMall,
     fetchMystery,
+    fetchMysteryHistory,
     purchaseMystery,
   }
 })

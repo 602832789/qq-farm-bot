@@ -187,7 +187,7 @@ async function checkMysteryShopTick(options: {
 
     const commerce = require('./commerce');
     const getShop = options.getShop || commerce.getMysteryShop;
-    const buy = options.buy || ((npcId: number) => commerce.purchaseMysteryOffer(npcId));
+    const buy = options.buy || ((npcId: number) => commerce.purchaseMysteryOffer(npcId, 'auto'));
 
     let shop: any;
     try {

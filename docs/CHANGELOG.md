@@ -30,6 +30,17 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-07 · 节令日历手机端可下滑 + 神秘商人购买历史回归 + 自动化开关验证
+
+- **节令日历手机端无法下滑**：活动详情外壳 `.farm-page-content.is-activity-detail` 是 `overflow:hidden` + 子元素 `flex:1/min-height:0`，滚动必须交给页面自身；`SolarCalendar.vue` 的 `.solar` 只有 `width/min-width`，内容超出视口后被裁掉。给 `.solar` 补 `min-height:0 / overflow-y:auto / overscroll-behavior:contain / -webkit-overflow-scrolling:touch`，PC 与手机端都由页面自身滚动。
+- **神秘商人「没有记录」判定：是 BUG，不是没买过**。老版本有 `mystery-shop-history.js` + `/api/shop/mystery/history` + 页面「购买历史」区块（空态「暂无购买记录，手动和自动购买都会记录在这里。」）；新版移植商城时整条链路都漏了，无论是否购买都不会有记录。按老版口径补齐：
+  - 新增 `core/src/services/mystery-shop-history.ts`：每账号一个 `data/mystery_shop_history/<id>.json`，保留最近 100 条，字段与老版一致。
+  - `commerce.purchaseMysteryOffer(npcId, source)` 购买成功后写记录；worker 后台 API 固定 `manual`、`mystery-shop-auto` 自动巡查固定 `auto`，写盘失败不影响购买结果。
+  - 新增 `GET /api/mystery-shop/history` 与 provider 读取；前端 `commerce` store 增加 `mysteryHistory` / `fetchMysteryHistory`（购买成功后自动刷新），`MysteryShopPanel.vue` 增加与商品卡同宽的「购买历史」区块（次数、按货币累计花费、时间、手动/自动、价格、折扣、空态、最近 100 条说明）。
+- **神秘商人自动化开关验证：生效**。链路为 功能模块开关 → `DEFAULT_ACCOUNT_CONFIG.automation`（白名单自动取 `Object.keys`）→ worker 登录后 10 秒首查 + 每 10 分钟巡查 + 改开关后 2 秒重查 → `decideMysteryShopTick` 判定总开关 / 货币 / 余额 → 购买。新增 `core/tests/mystery-shop-switches.test.js` 2 项可执行验证（开关组合与钻石货品、白名单 / 定时器 / UI 消费点）。发现并补上功能模块缺失的**钻石**货币开关（后端 `mystery_shop_allow_diamond` 早已支持、前端无入口，钻石货品永远跳过），货币栅格改为「手机 2 列 / PC 4 列」，模块摘要同步显示钻石。注意「购买通知」是附属开关，单独开启不会启动巡查，需配合自动购买或到货提醒。
+- 顺带用 ESLint 自动修复 `SolarCalendar.vue` 的 `defineEmits` 位置与 UnoCSS 类顺序，并清理 `worker.ts` 3 处既有 unused catch 绑定，使本轮改动文件 lint 全绿；均为等价改动。
+- 新增 `core/tests/mystery-shop-history.test.js` 4 项、`core/tests/mystery-shop-switches.test.js` 2 项、`web/tests/mystery-shop-history.test.mjs` 4 项。验证：core **367/367**、web **71/71**、`vue-tsc -b`、改动文件 ESLint、`vite build` 全部通过。仍无浏览器 / 真机截图，滚动与排版为静态断言 + 构建验证。
+
 ### 2026-11-06 · 功能模块「土地与施肥」2x2催熟开关间距
 
 - **问题**：`AccountFeatureSettings.vue` 施肥参数 section 里 `2x2催熟` 与 `多季补肥` 两个 `BaseSwitch` 都是 `display:inline-flex`，直接相邻时只靠模板换行产生的一个空白字符分隔，文字「2x2催熟」后面紧跟着下一个开关的旋钮，看起来挤在一起。

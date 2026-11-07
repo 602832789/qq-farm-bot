@@ -4,6 +4,7 @@ const { getItemById, getItemImageById } = require('../config/gameConfig');
 const { getServerTimeSec, toNum } = require('../utils/utils');
 const mallService = require('./mall');
 const mysteryShopService = require('./mystery-shop');
+const { appendMysteryShopHistory } = require('./mystery-shop-history');
 
 let purchaseTail: Promise<void> = Promise.resolve();
 
@@ -324,7 +325,8 @@ async function getMysteryShop(): Promise<any> {
     };
 }
 
-async function purchaseMysteryOffer(npcIdInput: unknown): Promise<any> {
+/** source: 'manual' = 页面手动购买，'auto' = 自动化巡查购买；两者都写交易记录。 */
+async function purchaseMysteryOffer(npcIdInput: unknown, source: string = 'manual'): Promise<any> {
     const npcId = positiveInteger(npcIdInput, 'INVALID_MYSTERY_NPC_ID', 'npcId');
     return serializePurchase(async () => {
         const before = await getMysteryShop();
@@ -341,16 +343,34 @@ async function purchaseMysteryOffer(npcIdInput: unknown): Promise<any> {
         if (shop.active && shop.npc?.id === npcId && shop.npc.reward.count >= offer.reward.count) {
             throw businessError('MYSTERY_PURCHASE_NOT_CONFIRMED', 'Mystery shop purchase was not confirmed');
         }
-        return {
-            purchase: {
-                npcId,
-                reward: offer.reward,
-                price: offer.price,
-                originalPrice: offer.originalPrice,
-                discountPercent: offer.discountPercent,
-            },
-            shop,
+        const purchase = {
+            npcId,
+            reward: offer.reward,
+            price: offer.price,
+            originalPrice: offer.originalPrice,
+            discountPercent: offer.discountPercent,
         };
+        // 老版口径：购买成功后按账号落一条交易记录，供商城页面「购买历史」读取。
+        const accountId = String(process.env.FARM_ACCOUNT_ID || '');
+        if (accountId) {
+            try {
+                appendMysteryShopHistory(accountId, {
+                    npcId,
+                    itemId: offer.reward.id,
+                    itemName: offer.reward.name,
+                    itemImage: offer.reward.image,
+                    itemCount: offer.reward.count,
+                    currencyId: offer.price.id,
+                    currencyName: offer.price.name,
+                    price: offer.price.count,
+                    originalPrice: offer.originalPrice,
+                    discount: offer.discountPercent,
+                }, { reward: { itemId: offer.reward.id, count: offer.reward.count } }, source);
+            } catch {
+                // 记录落盘失败不影响已完成的购买结果。
+            }
+        }
+        return { purchase, shop };
     });
 }
 

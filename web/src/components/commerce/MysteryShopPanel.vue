@@ -11,7 +11,7 @@ import { useCommerceStore } from '@/stores/commerce'
 const accountStore = useAccountStore()
 const commerceStore = useCommerceStore()
 const { currentAccountId } = storeToRefs(accountStore)
-const { mystery, mysteryLoading, mysteryPurchasing, error, notice } = storeToRefs(commerceStore)
+const { mystery, mysteryHistory, mysteryLoading, mysteryPurchasing, error, notice } = storeToRefs(commerceStore)
 const clock = ref(Date.now())
 const purchaseDialogOpen = ref(false)
 let timer: number | undefined
@@ -61,8 +61,27 @@ const purchaseHint = computed(() => {
 
 const buttonLabel = computed(() => mysteryPurchasing.value ? '购买中' : canPurchase.value ? '购买' : '暂不可购买')
 
+const historySummary = computed(() => {
+  const totals = new Map<string, number>()
+  for (const record of mysteryHistory.value)
+    totals.set(record.currencyName, (totals.get(record.currencyName) || 0) + record.price)
+  return [...totals.entries()].map(([name, amount]) => `${amount.toLocaleString()} ${name}`).join('、')
+})
+
+function formatHistoryTime(timestamp: number) {
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(timestamp))
+}
+
 function load() {
-  commerceStore.fetchMystery(String(currentAccountId.value || ''))
+  const id = String(currentAccountId.value || '')
+  commerceStore.fetchMystery(id)
+  commerceStore.fetchMysteryHistory(id)
 }
 
 function purchase() {
@@ -162,6 +181,33 @@ onUnmounted(() => {
         <span class="i-carbon-information" aria-hidden="true" />{{ purchaseHint }}
       </p>
     </article>
+
+    <section class="merchant-history" aria-label="神秘商人购买历史">
+      <header class="merchant-history__head">
+        <div>
+          <h3>购买历史</h3>
+          <p>共 {{ mysteryHistory.length }} 次<span v-if="historySummary">，累计花费 {{ historySummary }}</span></p>
+        </div>
+        <span>保留最近 100 条</span>
+      </header>
+      <p v-if="!mysteryHistory.length" class="merchant-history__empty">
+        暂无购买记录，手动和自动购买都会记录在这里。
+      </p>
+      <ul v-else class="merchant-history__list">
+        <li v-for="record in mysteryHistory" :key="record.id" class="merchant-history__item">
+          <CommerceItemImage v-if="record.itemImage" :src="record.itemImage" :alt="record.itemName" size="sm" />
+          <span v-else class="merchant-history__icon i-carbon-gift" aria-hidden="true" />
+          <div class="merchant-history__info">
+            <strong>{{ record.itemName }} ×{{ record.itemCount.toLocaleString() }}</strong>
+            <small>{{ formatHistoryTime(record.purchasedAt) }} · {{ record.source === 'auto' ? '自动购买' : '手动购买' }}</small>
+          </div>
+          <div class="merchant-history__price">
+            <b>{{ record.price.toLocaleString() }} {{ record.currencyName }}</b>
+            <small v-if="record.discount">{{ (record.discount / 10).toFixed(record.discount % 10 ? 1 : 0) }} 折</small>
+          </div>
+        </li>
+      </ul>
+    </section>
 
     <Teleport to="body">
       <Transition name="merchant-dialog">
@@ -423,6 +469,123 @@ onUnmounted(() => {
 
   .merchant-hint {
     padding: 0 14px 12px;
+  }
+}
+
+/* 购买历史：老版「共 N 次 / 累计花费 / 保留最近 100 条」口径。 */
+.merchant-history {
+  width: 100%;
+  max-width: 760px;
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-card);
+  background: var(--ui-surface);
+  box-shadow: var(--ui-shadow-sm);
+}
+.merchant-history__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--ui-border);
+  background: var(--ui-surface-soft);
+}
+.merchant-history__head h3 {
+  margin: 0;
+  color: var(--ui-ink);
+  font-size: 14px;
+  font-weight: var(--fw-650);
+}
+.merchant-history__head p {
+  margin: 2px 0 0;
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+.merchant-history__head > span {
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+.merchant-history__empty {
+  margin: 0;
+  padding: 26px 16px;
+  color: var(--ui-muted);
+  font-size: 13px;
+  text-align: center;
+}
+.merchant-history__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.merchant-history__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--ui-border);
+}
+.merchant-history__item:last-child {
+  border-bottom: 0;
+}
+.merchant-history__item :deep(.item-image),
+.merchant-history__icon {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: 10px;
+  object-fit: contain;
+}
+.merchant-history__icon {
+  display: grid;
+  place-items: center;
+  color: var(--ui-muted);
+  background: var(--ui-surface-soft);
+  font-size: 22px;
+}
+.merchant-history__info {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+.merchant-history__info strong {
+  overflow: hidden;
+  color: var(--ui-ink);
+  font-size: 13px;
+  font-weight: var(--fw-650);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.merchant-history__info small {
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+.merchant-history__price {
+  flex: none;
+  text-align: right;
+}
+.merchant-history__price b {
+  display: block;
+  color: var(--ui-ink);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.merchant-history__price small {
+  display: block;
+  margin-top: 2px;
+  color: var(--ui-warning);
+  font-size: 12px;
+}
+@media (max-width: 520px) {
+  .merchant-history__item {
+    gap: 10px;
+    padding: 10px 12px;
+  }
+  .merchant-history__price b {
+    font-size: 12px;
   }
 }
 
