@@ -30,6 +30,15 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-07 · 补齐神秘商人「到货提醒 / 购买通知」开关与保存后立即巡查
+
+- **背景**：上一轮验证自动化开关时提到「购买通知」是附属开关，但复查发现这两个键（`mystery_shop_arrival_notify` / `mystery_shop_purchase_notify`）虽然后端链路完整、默认值与类型都在，**前端任何页面都没有开关控件**——功能模块「神秘商人」只有 4 个货币开关和模块总开关，`Settings.vue` 里也只是默认值。等于这两个开关永远为 `false`，通知从未真正发出过。
+- **后端链路（已存在，本轮确认）**：`mystery-shop-auto.ts` 的 `decideMysteryShopTick` / `resolveMysteryShopPushFlags` / `buildMysteryShopPush` 生成「神秘商人到货」「神秘商人已自动购买」消息 → `worker.ts` 的 `sendToMaster({ type: 'push_notify' })` → `worker-manager.ts` → `sendConfiguredPush` → `sendPushooMessage`。推送渠道与「设置 → 下线提醒」共用一套配置（`getOfflineReminder()`），**未配置渠道时只记日志、不会真正发出**。到货提醒本身会启动巡查（`isMysteryShopWatchEnabled` 认它），购买通知只在自动购买成功后才可能推送。
+- **补齐前端**：功能模块神秘商人区新增「事件提醒」section，两个 `BaseSwitch` 绑定这两个键并附说明；模块摘要增加「到货提醒 / 购买通知 / 未开启提醒」；`moduleEnabled('merchant')` 改为 `auto_buy || arrival_notify`（只开到货提醒时模块也显示启用），关闭模块总开关时同步清掉两个提醒开关，避免状态自相矛盾。
+- **修 worker 遗漏**：`applyRuntimeConfig` 里手写的 `mysteryKeys` 只列了 `auto_buy` + 3 个货币键，漏了钻石与两个通知键，且立即巡查条件写死 `mystery_shop_auto_buy` 为真——只开到货提醒或只改通知开关时，保存配置后要干等下一个 10 分钟周期。改用服务侧已有的 `mysteryShopConfigChanged(prevAuto, nextAuto)`（键表 7 个，新增开关自动覆盖）+ `isMysteryShopWatchEnabled(nextAuto)`，保存后 2 秒立即巡查。
+- 新增 `core/tests/mystery-shop-switches.test.js` 2 项（真实生成推送内容、去重与开关关闭；7 键变更检测 + 推送链路静态断言）与 `web/tests/mystery-shop-notify.test.mjs` 3 项（开关 UI / 摘要与模块状态 / 配置类型）；web 断言已反向验证（改掉 label 时 fail 1）。
+- 验证：core **369/369**、web **74/74**、`vue-tsc -b`、改动文件 ESLint、`vite build` 全通过。仍无浏览器/真机截图，纯静态断言 + 构建验证。
+
 ### 2026-11-07 · 节令日历手机端可下滑 + 神秘商人购买历史回归 + 自动化开关验证
 
 - **节令日历手机端无法下滑**：活动详情外壳 `.farm-page-content.is-activity-detail` 是 `overflow:hidden` + 子元素 `flex:1/min-height:0`，滚动必须交给页面自身；`SolarCalendar.vue` 的 `.solar` 只有 `width/min-width`，内容超出视口后被裁掉。给 `.solar` 补 `min-height:0 / overflow-y:auto / overscroll-behavior:contain / -webkit-overflow-scrolling:touch`，PC 与手机端都由页面自身滚动。

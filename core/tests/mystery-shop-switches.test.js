@@ -8,6 +8,9 @@ const {
     decideMysteryShopTick,
     isMysteryShopWatchEnabled,
     isCurrencyAllowed,
+    mysteryShopConfigChanged,
+    resolveMysteryShopPushFlags,
+    buildMysteryShopPush,
     DIAMOND_ITEM_ID,
 } = require('../dist/services/mystery-shop-auto');
 
@@ -66,4 +69,59 @@ test('开关从 UI 到 worker 的完整链路都有消费点', () => {
     assert.match(workerSrc, /startMysteryShopTimer\(\)/, '登录启动巡查定时器');
     assert.match(workerSrc, /mystery_shop_after_save/, '改开关后立即重查一次');
     assert.match(settings, /mystery_shop_allow_diamond/, '功能模块有钻石开关入口');
+});
+
+test('购买通知确实生成推送，且只在自动购买成功时生成', () => {
+    const state = { lastArrivalKey: '', lastPurchaseKey: '' };
+    const auto = {
+        mystery_shop_auto_buy: true,
+        mystery_shop_allow_diamond: true,
+        mystery_shop_purchase_notify: true,
+    };
+    const decision = decideMysteryShopTick(diamondOffer, auto, state);
+    assert.equal(decision.shouldBuy, true);
+
+    const notBoughtFlags = resolveMysteryShopPushFlags(decision, false, auto, state);
+    assert.deepEqual(notBoughtFlags, { arrival: false, purchase: false }, '未购买成功不推送');
+    assert.equal(buildMysteryShopPush(diamondOffer, notBoughtFlags), null);
+
+    const flags = resolveMysteryShopPushFlags(decision, true, auto, state);
+    assert.equal(flags.purchase, true, '购买成功且开启购买通知时推送');
+    const push = buildMysteryShopPush(diamondOffer, flags);
+    assert.equal(push.title, '神秘商人已自动购买');
+    assert.match(push.content, /购买 神秘商品 x1/);
+    assert.match(push.content, /花费 10 钻石/);
+
+    const repeated = resolveMysteryShopPushFlags(decision, true, auto, {
+        lastArrivalKey: '', lastPurchaseKey: decision.visitKey,
+    });
+    assert.equal(repeated.purchase, false, '同一批货不重复推送');
+
+    assert.equal(resolveMysteryShopPushFlags(decision, true, {
+        ...auto, mystery_shop_purchase_notify: false,
+    }, state).purchase, false, '关掉购买通知不推送');
+});
+
+test('配置变更检测覆盖全部神秘商人开关，worker 保存后立即重查', () => {
+    for (const key of [
+        'mystery_shop_auto_buy',
+        'mystery_shop_allow_gold',
+        'mystery_shop_allow_coupon',
+        'mystery_shop_allow_gold_bean',
+        'mystery_shop_allow_diamond',
+        'mystery_shop_arrival_notify',
+        'mystery_shop_purchase_notify',
+    ]) {
+        assert.equal(mysteryShopConfigChanged({}, { [key]: true }), true, `${key} 变化应触发立即巡查`);
+    }
+    assert.equal(isMysteryShopWatchEnabled({ mystery_shop_arrival_notify: true }), true, '只开到货提醒也要巡查');
+    assert.equal(isMysteryShopWatchEnabled({ mystery_shop_purchase_notify: true }), false, '购买通知是附属开关');
+
+    const workerSrc = read('src/core/worker.ts');
+    assert.match(workerSrc, /isMysteryShopWatchEnabled\(nextAuto\) && mysteryShopConfigChanged\(prevAuto, nextAuto\)/);
+    assert.doesNotMatch(workerSrc, /const mysteryKeys = \[/, '不再手写容易漏键的列表');
+    assert.match(workerSrc, /sendToMaster\(\{ type: 'push_notify'/, 'worker 把推送发给主进程');
+    const managerSrc = read('src/runtime/worker-manager.ts');
+    assert.match(managerSrc, /msg\.type === 'push_notify'/);
+    assert.match(managerSrc, /sendConfiguredPush\(\{/, '主进程走已配置的推送渠道');
 });

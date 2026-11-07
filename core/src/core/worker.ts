@@ -625,16 +625,11 @@ function applyRuntimeConfig(snapshot: any, syncNow: boolean = false): number {
             startActivityAutomationTimer();
             startPetFeedCheckTimer();
 
-            // 对齐老版 mystery_shop_auto_buy_after_save：神秘商店相关开关/预算变化且已开启时，
+            // 对齐老版 mystery_shop_auto_buy_after_save：神秘商人相关开关变化且巡查已启用时，
             // 保存后 2 秒立即巡查一次，不用等下一个 10 分钟周期。
-            const mysteryKeys = [
-                'mystery_shop_auto_buy',
-                'mystery_shop_allow_gold',
-                'mystery_shop_allow_coupon',
-                'mystery_shop_allow_gold_bean',
-            ];
-            const mysteryChanged = mysteryKeys.some(key => (prevAuto && prevAuto[key]) !== (getAutomation() as any)?.[key]);
-            if ((getAutomation() as any)?.mystery_shop_auto_buy && mysteryChanged) {
+            // 用服务侧的键表，避免新增货币 / 通知开关后这里漏配（钻石、到货提醒、购买通知曾遗漏）。
+            const { isMysteryShopWatchEnabled, mysteryShopConfigChanged } = require('../services/mystery-shop-auto');
+            if (isMysteryShopWatchEnabled(nextAuto) && mysteryShopConfigChanged(prevAuto, nextAuto)) {
                 workerScheduler.setTimeoutTask('mystery_shop_after_save', 2000, () => {
                     if (!loginReady) return;
                     runExclusiveAutomationTask('mystery_shop', runMysteryShopTick).catch(() => null);
