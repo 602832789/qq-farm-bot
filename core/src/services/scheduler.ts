@@ -1,6 +1,7 @@
 export {};
 const { createModuleLogger } = require('./logger');
 const { classForSchedulerNamespace, runWithRequestClass } = require('../utils/request-context');
+const { trackScheduledTask } = require('./runtime-diagnostics');
 
 const schedulerLogger = createModuleLogger('scheduler');
 
@@ -127,7 +128,8 @@ function createScheduler(namespace = 'default'): Scheduler {
     const defaultRequestClass = classForSchedulerNamespace(name);
 
     function runTask(taskFn: () => Promise<void> | void): Promise<void> | void {
-        return runWithRequestClass(defaultRequestClass, taskFn);
+        // 运行诊断埋点：只统计成功/失败，不改变任务返回形态与请求班次。
+        return trackScheduledTask(() => runWithRequestClass(defaultRequestClass, taskFn), name) as Promise<void> | void;
     }
 
     function clear(taskName: string): boolean {

@@ -18,6 +18,7 @@ const { performDailyMonthCardGift, getMonthCardDailyState } = require('../servic
 const { performDailyVipGift, getVipDailyState } = require('../services/qqvip');
 const { runExclusiveAutomationTask } = require('../services/automation-lock');
 const { createScheduler, getSchedulerRegistrySnapshot } = require('../services/scheduler');
+const { readProcessMetrics } = require('../services/runtime-diagnostics');
 const { checkDailyShareStatus, getShareDailyState } = require('../services/share');
 const { refreshActivityWindows } = require('../services/activity-windows');
 const { resetSessionGains, recordOperation, initStatsWithPersistence, saveStats } = require('../services/stats');
@@ -1350,7 +1351,11 @@ async function handleApiCall(msg: any): Promise<void> {
                 result = await require('../services/commerce').purchaseMysteryOffer(args[0], 'manual');
                 break;
             case 'getSchedulers':
-                result = getSchedulerRegistrySnapshot();
+                // 附带账号 Worker 进程读数，供首页「账号堆内存」等运行诊断指标使用。
+                result = {
+                    ...getSchedulerRegistrySnapshot(),
+                    processMetrics: readProcessMetrics(),
+                };
                 break;
             default:
                 error = 'Unknown method';

@@ -5,6 +5,7 @@ import { storeToRefs } from 'pinia'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import api, { getApiErrorMessage } from '@/api'
 import LevelForecast from '@/components/LevelForecast.vue'
+import RuntimeDiagnosticsCard from '@/components/RuntimeDiagnosticsCard.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
@@ -996,6 +997,9 @@ useIntervalFn(updateCountdowns, 1000)
             </div>
           </div>
         </section>
+
+        <!-- 运行诊断：进程 / 队列 / 事件循环指标 -->
+        <RuntimeDiagnosticsCard />
 
         <!-- Operations Grid -->
         <div class="farm-card rounded-2xl bg-white p-5 shadow-md dark:bg-gray-800">

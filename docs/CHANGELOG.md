@@ -30,6 +30,14 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-08 · 首页新增「运行诊断」模块（截图对照自建）
+
+- **现成代码核查**：按截图逐项检索本地三套源码、legacy bundle、`_preview` 旧产物，以及 `liyangpengs/qq-farm-bot` 的 master / `test_20260828` 全部分支与首页提交历史，均未发现「运行诊断 / 队列空闲 / 事件循环 P99」实现；上游首页只有运行日志、巡查倒计时、今日统计。因此不移植，改用项目已有的 `/api/scheduler` 调度器任务快照作数据源，其余完整自建。
+- **后端采集**：新增 `core/src/services/runtime-diagnostics.ts`（10 分钟滚动窗口、2 秒采样、200ms 事件循环探针）——CPU 区间平均按 `process.cpuUsage()` 差值 / CPU 核数换算、堆内存趋势、事件循环延迟 P99、当前排队 / 256 与峰值、近 10 分钟完成 / 失败 / 排队超时统计，自动判定「队列空闲 / 运行中 / 需要关注 / 队列积压」。`scheduler.ts` 在 `runTask` 用 `trackScheduledTask` 统一埋点（同步任务仍保持同步返回），`worker.ts` 的 `getSchedulers` 附带账号 Worker 进程读数。
+- **接口**：新增 `GET /api/runtime-diagnostics`（`runtime-diagnostics-routes.ts`），账号 Worker 读数 5 秒缓存避免首页轮询放大 IPC；采样器随 admin server 启动，定时器全部 `unref()` 不阻塞进程退出。
+- **前端卡片**：新增 `RuntimeDiagnosticsCard.vue`，按截图还原状态点 + 更新时间 + 2×2 指标（当前排队进度条 / CPU 区间平均 / 账号堆内存面积折线 / 事件循环 P99 实线与警戒虚线）+ 近 10 分钟汇总 + 「更多指标」展开 12 项辅助指标；10 秒自动刷新、请求序列竞态保护、错误重试；`Dashboard.vue` 右侧列挂在自动巡查与今日统计之间，手机端与暗色主题适配。
+- **测试与验证**：新增 core 15 项、web 12 项；core 413/413、web 113/113、`tsc`、`vue-tsc -b`、改动文件 ESLint、`vite build` 全通过。环境无浏览器 / 真机，界面与配色为静态断言 + 构建验证；`vite build` 清空既有 `dist` 时被工作区批量删除保护拦截，移走旧产物后构建成功。
+
 ### 2026-11-08 · 今日统计去掉单位「次」 + 账号管理 Code 过期自动监听与自动补码
 
 - **首页「今日统计」去掉数值后面的「次」**：金币、经验与各动作项三处 `<small>次</small>` 全部移除；数字、负数配色（`ov-today-gold.is-down`）与动作统计列表不变，运行日志「连续重复 N 次」文案不受影响。
