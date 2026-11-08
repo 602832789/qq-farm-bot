@@ -1,0 +1,27 @@
+#!/bin/sh
+# 每次提交后自动递增版本号（chore(version) 提交本身跳过，避免递归）。
+# 启用方式：pnpm hooks:install  （git config core.hooksPath .githooks）
+set -e
+
+msg=$(git log -1 --pretty=%s)
+case "$msg" in
+  "chore(version)"*) exit 0 ;;
+esac
+
+if [ -n "$FARM_VERSION_BUMP_RUNNING" ]; then
+  exit 0
+fi
+
+# 本次提交已经带上 version.json（手动执行过 version:bump）时不重复递增
+if git show --pretty=format: --name-only HEAD | grep -qx 'version.json'; then
+  exit 0
+fi
+
+if [ ! -f scripts/version.mjs ]; then
+  exit 0
+fi
+
+FARM_VERSION_BUMP_RUNNING=1 node scripts/version.mjs bump --from-commit --auto-commit || {
+  echo "[version] 自动递增失败，可手动执行 pnpm version:bump" >&2
+  exit 0
+}

@@ -1,6 +1,6 @@
- {
+{
   "name": "qq-farm-bot-ui",
-  "version": "20261104",
+  "version": "2.9.0",
   "packageManager": "pnpm@10.30.2",
   "scripts": {
     "dev:core": "pnpm -C core dev",
@@ -17,6 +17,10 @@
     "package:linux": "pnpm build && pnpm -C core build:linux",
     "package:mac": "pnpm build && pnpm -C core build:mac",
     "package:release": "pnpm build && pnpm -C core build:release",
-    "install:all": "pnpm install -r --prod=false"
+    "install:all": "pnpm install -r --prod=false",
+    "version:show": "node scripts/version.mjs show",
+    "version:bump": "node scripts/version.mjs bump",
+    "version:dry": "node scripts/version.mjs bump --dry-run",
+    "hooks:install": "git config core.hooksPath .githooks"
   }
 }

@@ -657,7 +657,7 @@ function filterLandIdsForNormalFertilizer(landIds: number[], lands: any[]): numb
     return ids.filter(id => applyable.has(id) || !knownPlanted.has(id));
 }
 
-function getFastMatureLands(lands: any[], thresholdSec: number = 300): number[] {
+function getFastMatureLands(lands: any[], thresholdSec: number = 60): number[] {
     const list: any[] = Array.isArray(lands) ? lands : [];
     const targets: number[] = [];
     const nowSec: number = getServerTimeSec();

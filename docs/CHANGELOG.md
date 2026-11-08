@@ -4,6 +4,19 @@
 
 这里记录 QQ Farm Bot 已完成的重要功能和改进。最新记录在最前面。
 
+## 版本总览
+
+> **版本号规则**：采用 `MAJOR.MINOR.PATCH`，每次更新提交后自动递增 —— 新增功能 → `MINOR` 进 1、`PATCH` 归零；修复 / 优化 / 回滚 → `PATCH` 进 1；重大不兼容变更 → `MAJOR` 进 1（手动 `--type major`）。
+> **更新序号**：累计更新次数，每次提交无条件 +1；`v2.8.0` 及更早为历史版本，自 `v2.9.0` 起每条更新日志都带版本号。
+> 版本号由 `version.json` 统一维护，可用 `pnpm version:bump` 手动递增，安装 `pnpm hooks:install` 后每次提交自动递增；提交前手动递增的首条记录没有提交号（显示 `—`），由 hook 自动递增的记录会带上对应提交号。
+
+| 版本 | 更新序号 | 日期 | 更新内容 | 提交 |
+| --- | --- | --- | --- | --- |
+| v2.9.0 | #1 | 2026-11-09 | 新增版本号功能 + 快成熟默认 60 秒 | — |
+| v2.8.0 | 历史 | 2026-10-15 | 奶茶热销中活动与经营自动化（历史基线） | — |
+| v2.7.1 | 历史 | 2026-09-24 | 秋祈良愿与快乐不独享活动（历史基线） | — |
+| v2.7.0 | 历史 | 2026-09-10 | 萌宠成长日记与变异效果补全（历史基线） | — |
+
 ## 更新流水图
 
 ```mermaid
@@ -30,6 +43,16 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-09 · v2.9.0（#1） · 新增版本号功能 + 快成熟判定默认值改为 60 秒
+
+- **版本号单一真源 `version.json`**：仓库根新增版本文件，记录 `MAJOR.MINOR.PATCH`、累计更新次数 `build`、更新时间、最近提交与完整 `history`；根 / `core` / `web` 三个 `package.json` 的 `version` 由脚本统一同步（原来是静态日期串 `20261104`，从不递增）。基线从历史版本 `v2.8.0` 起算。
+- **`scripts/version.mjs` 按「更新内容 + 更新次数」递增**：新增功能（`feat` / 新增 / 移植 / 上线等）→ `MINOR` 进 1、`PATCH` 归零；修复 / 优化 / 回滚 / 去除 → `PATCH` 进 1；重大不兼容变更 → `MAJOR` 进 1（手动 `--type major`）。无论哪类，累计更新次数 `build` 每次都 +1。支持 `--message` / `--type` / `--dry-run` / `--root`，`pnpm version:show` 查看当前版本、`pnpm version:bump` 手动递增。
+- **每次提交后自动递增**：新增 `.githooks/post-commit`，执行 `pnpm hooks:install` 后（`git config core.hooksPath .githooks`）每次提交自动运行 `bump --from-commit --auto-commit`，生成 `chore(version): vX.Y.Z · 第 N 次更新` 提交；hook 对版本提交本身、以及已带 `version.json` 的手动 bump 提交做了去重，不会递归或重复递增。
+- **更新日志带上版本号**：`docs/CHANGELOG.md` 顶部新增「版本总览」表（版本 / 更新序号 / 日期 / 更新内容 / 提交），每次递增自动加一行并写明规则；「详细记录」里最新一条未标记的标题自动带上 `vX.Y.Z（#N）`，历史记录保持原样、不编造旧版本号。
+- **界面版本号显示**：`vite.config.ts` 由 `version.json` 注入 `__APP_VERSION_LABEL__` / `__APP_BUILD__`，侧栏底部从 `v20261104` 改为 `v2.9.0 · 第 1 次更新`，登录页底部同步显示；构建时读不到版本文件会安全降级。
+- **快成熟判定默认值 300 → 60 秒**：按上一轮化肥分析结论（巡查间隔 20~25 秒、有机肥按剩余生长时间精确扣费）把推荐值落到默认配置 —— `shared-state.ts` 默认值与 clamp 回退、`account-config.ts` 回退、`planting.ts` 的 `|| 60`、`land-analysis.ts` 的 `getFastMatureLands` 默认阈值、设置页 4 处默认值、功能模块「快成熟判定」显示回退与说明文案全部同步。30~3600 秒可调范围不变；旧账号若之前保存过 300 秒，需在该输入框手动改成 60 秒（不擅自覆盖用户已保存的配置）。
+- **测试与验证**：新增 `web/tests/version.test.mjs`（版本判定 / 递增 / CHANGELOG 渲染 / CLI 端到端 / 接线静态断言），重写 `core/tests/fertilizer-smart-fixed.test.js` 覆盖前后端默认值 60 秒；版本号与更新日志由脚本真实运行生成，非手写。
+
 ### 2026-11-09 · 首页诊断移除 + 快成熟回滚 + 神秘商人来访横幅 + 日志刷屏治理 + 奶茶支撑时间修正
 
 - **首页运行诊断模块整体移除**：按用户要求把上一提交完整回滚 —— `RuntimeDiagnosticsCard.vue`、前后端 `runtime-diagnostics` 服务 / 路由 / store / utils、`scheduler` 与 `worker` 埋点及对应测试全部删除，首页右侧列恢复「自动巡查 → 今日统计」。

@@ -1,0 +1,43 @@
+{
+  "major": 2,
+  "minor": 9,
+  "patch": 0,
+  "build": 1,
+  "version": "2.9.0",
+  "updatedAt": "2026-11-08T21:41:43.466Z",
+  "lastCommit": "—",
+  "history": [
+    {
+      "version": "2.9.0",
+      "build": 1,
+      "date": "2026-11-09",
+      "summary": "新增版本号功能 + 快成熟默认 60 秒",
+      "commit": "—",
+      "type": "minor"
+    },
+    {
+      "version": "2.8.0",
+      "build": 0,
+      "date": "2026-10-15",
+      "summary": "奶茶热销中活动与经营自动化（历史基线）",
+      "commit": "—",
+      "type": "baseline"
+    },
+    {
+      "version": "2.7.1",
+      "build": 0,
+      "date": "2026-09-24",
+      "summary": "秋祈良愿与快乐不独享活动（历史基线）",
+      "commit": "—",
+      "type": "baseline"
+    },
+    {
+      "version": "2.7.0",
+      "build": 0,
+      "date": "2026-09-10",
+      "summary": "萌宠成长日记与变异效果补全（历史基线）",
+      "commit": "—",
+      "type": "baseline"
+    }
+  ]
+}

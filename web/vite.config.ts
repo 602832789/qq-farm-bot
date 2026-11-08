@@ -6,7 +6,18 @@ import UnoCSS from 'unocss/vite'
 import { defineConfig } from 'vite'
 import viteCompression from 'vite-plugin-compression'
 
-const corePackageJson = JSON.parse(readFileSync('../core/package.json', 'utf-8'))
+function readJson(file: string, fallback: any): any {
+  try {
+    return JSON.parse(readFileSync(file, 'utf-8'))
+  }
+  catch {
+    return fallback
+  }
+}
+
+const corePackageJson = readJson(fileURLToPath(new URL('../core/package.json', import.meta.url)), { version: '0.0.0' })
+// 版本号单一真源：仓库根 version.json（由 scripts/version.mjs 在每次更新提交后递增）
+const versionMeta = readJson(fileURLToPath(new URL('../version.json', import.meta.url)), { version: corePackageJson.version, build: 0 })
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -79,6 +90,8 @@ export default defineConfig(({ mode }) => {
     },
     define: {
       __APP_VERSION__: JSON.stringify(corePackageJson.version),
+      __APP_BUILD__: JSON.stringify(String(versionMeta.build ?? 0)),
+      __APP_VERSION_LABEL__: JSON.stringify(`v${corePackageJson.version} · 第 ${versionMeta.build ?? 0} 次更新`),
     },
     resolve: {
       alias: {

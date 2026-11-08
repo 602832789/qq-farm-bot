@@ -6,10 +6,10 @@ import BaseInput from '@/components/ui/BaseInput.vue'
 import BrandMark from '@/components/ui/BrandMark.vue'
 import { useUserStore } from '@/stores/user'
 
-declare const __APP_VERSION__: string
+declare const __APP_VERSION_LABEL__: string
 
 const userStore = useUserStore()
-const appVersion = __APP_VERSION__
+const appVersionLabel = __APP_VERSION_LABEL__
 const gameVersion = ref('')
 const wxGameVersion = ref('')
 const username = ref('')
@@ -198,7 +198,7 @@ onMounted(fetchGameVersion)
 
       <footer class="card-footer">
         <div class="footer-info">
-          <span>Web v{{ appVersion }}</span>
+          <span>Web {{ appVersionLabel }}</span>
           <span v-if="gameVersion">QQ {{ gameVersion }}</span>
           <span v-if="wxGameVersion">微信 {{ wxGameVersion }}</span>
         </div>

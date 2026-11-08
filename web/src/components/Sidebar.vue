@@ -154,7 +154,7 @@ watch(sidebarOpen, async (open) => {
 })
 watch(desktop, () => appStore.closeSidebar())
 
-const version = __APP_VERSION__
+const versionLabel = __APP_VERSION_LABEL__
 
 watch(
   () => route.path,
@@ -216,7 +216,7 @@ watch(
         <span class="text-[11px] text-[var(--muted-text)] tabular-nums">{{ formattedTime }}</span>
       </div>
       <div class="mt-2 flex items-center justify-between text-[11px] text-[var(--muted-text)]">
-        <span>v{{ version }}</span>
+        <span>{{ versionLabel }}</span>
         <a href="https://github.com/602832789/qq-farm-bot" target="_blank" rel="noopener noreferrer" aria-label="打开 GitHub 项目主页">GitHub ↗</a>
       </div>
     </div>
