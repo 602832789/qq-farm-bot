@@ -30,6 +30,19 @@ export interface AccountLog {
   reason?: string
 }
 
+/** 账号 Code 自动监听快照，字段与 core/services/code-watch.ts 对齐。 */
+export interface CodeHealthItem {
+  accountId: string
+  name: string
+  platform: string
+  level: 'ok' | 'unknown' | 'expiring' | 'expired' | 'refresh_failed' | 'offline'
+  reason: string
+  autoFixable: boolean
+  needsManual: boolean
+  remainingMs: number
+  latestLogAction: string
+}
+
 export function getPlatformLabel(p?: string) {
   if (p === 'qq')
     return 'QQ'
@@ -60,6 +73,8 @@ export const useAccountStore = defineStore('account', () => {
   const currentAccountId = useStorage('current_account_id', '')
   const loading = ref(false)
   const logs = ref<AccountLog[]>([])
+  const codeHealth = ref<CodeHealthItem[]>([])
+  const codeHealthLoaded = ref(false)
   let accountsRequestSequence = 0
 
   const currentAccount = computed(() =>
@@ -175,6 +190,28 @@ export const useAccountStore = defineStore('account', () => {
     return res.data
   }
 
+  /** Code 健康快照：由侧栏 10 秒轮询驱动，账号管理页据此自动监听过期。 */
+  async function fetchCodeHealth() {
+    try {
+      const res = await api.get('/api/accounts/code-health')
+      const items = res.data?.data?.items
+      codeHealth.value = Array.isArray(items) ? items as CodeHealthItem[] : []
+      codeHealthLoaded.value = true
+    }
+    catch {
+      // 快照拉取失败时保留上次的判定，避免网络抖动把状态清空后重复自动补码。
+    }
+    return codeHealth.value
+  }
+
+  /** 自动补 Code（微信免扫码换码 / QQ 尽力重签），并同步刷新账号与快照。 */
+  async function autoFixCode(id: string) {
+    const res = await api.post(`/api/accounts/${id}/auto-fix-code`)
+    await fetchAccounts()
+    await fetchCodeHealth()
+    return res.data
+  }
+
   async function updateAccount(id: string, payload: any) {
     try {
       // core uses POST /api/accounts for both add and update (if id is present)
@@ -193,6 +230,8 @@ export const useAccountStore = defineStore('account', () => {
     currentAccount,
     loading,
     logs,
+    codeHealth,
+    codeHealthLoaded,
     fetchAccounts,
     selectAccount,
     startAccount,
@@ -202,6 +241,8 @@ export const useAccountStore = defineStore('account', () => {
     addAccount,
     updateAccount,
     refreshWxCodes,
+    fetchCodeHealth,
+    autoFixCode,
     setCurrentAccount,
     syncAccountAvatar,
   }

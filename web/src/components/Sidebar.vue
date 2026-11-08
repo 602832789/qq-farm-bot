@@ -59,6 +59,7 @@ async function refreshStatusFallback() {
 
 onMounted(() => {
   accountStore.fetchAccounts()
+  accountStore.fetchCodeHealth()
   checkConnection()
 })
 
@@ -70,6 +71,7 @@ useIntervalFn(checkConnection, 30000)
 useIntervalFn(() => {
   refreshStatusFallback()
   accountStore.fetchAccounts()
+  accountStore.fetchCodeHealth()
 }, 10000)
 
 watch(() => currentAccount.value?.id || currentAccount.value?.uin || '', () => {

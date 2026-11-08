@@ -30,6 +30,16 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-08 · 今日统计去掉单位「次」 + 账号管理 Code 过期自动监听与自动补码
+
+- **首页「今日统计」去掉数值后面的「次」**：金币、经验与各动作项三处 `<small>次</small>` 全部移除；数字、负数配色（`ov-today-gold.is-down`）与动作统计列表不变，运行日志「连续重复 N 次」文案不受影响。
+- **账号管理自动监听 Code 过期并补 Code**：
+  - 新增 `core/src/services/code-watch.ts`：微信按 `expires_at`（兼容秒/毫秒）、`wxCredentialRefreshedAt`、续期失败标记判定「即将过期 / 已过期 / 续期失败」；QQ 没有到期时间，按账号最新一条日志是否为 Code 失效类掉线（`disconnect_stop` / `kickout_stop` / `auto_code_refresh_failed` / `login_failed`）判定，用户手动停止后不会被历史掉线日志误判。
+  - 新增 `GET /api/accounts/code-health`（每账号状态快照）与 `POST /api/accounts/:id/auto-fix-code`（微信免扫码换 Code / QQ 尽力重签）。补码成功后运行中账号立刻用新 Code 重连、掉线停下的账号直接拉起，统一走 `restartAccount`，不再二次触发「启动前换码」，避免重复消耗一次性滚动凭证；失败返回 `needsManual`，同时写局内通知与账号日志。
+  - 侧栏 10 秒轮询同时刷新账号与 Code 健康快照，所以不打开账号管理页也在监听；账号管理页新增「Code 自动监听」卡片，列出异常账号与原因，可自动补的直接自动补（同一状态 10 分钟节流，失败后停止自动重试），不能自动补的提示并提供「立即补 Code」一键打开补码弹窗（清空旧 Code，填新 Code 保存后自动重新登录）。
+- **测试与验证**：新增 core 12 项、web 8 项；core 398/398、web 101/101、`tsc`、`vue-tsc -b`、改动文件 ESLint、`vite build` 全通过。环境无浏览器 / 真机，界面与配色为静态断言 + 构建验证。
+- **上游「首页运行诊断模块」暂不移植**：核查 `liyangpengs/qq-farm-bot` master（HEAD `5bdc029`）首页只有账号/资产/库存、运行日志、下次巡查倒计时、今日统计，未发现独立的「运行诊断」模块；经用户确认本轮跳过。
+
 ### 2026-11-08 · 快成熟判定随机化 + 图鉴每日自动领奖/补种与背包过滤 + 今日金币支持负数
 
 - **「土地与施肥 → 快成熟判定」秒数改为 300 内随机**：原先 `fertilizer_smart_seconds`（默认 300、可配 30~3600）是固定阈值，每轮 smart 施肥都用同一个临界点。新增 `pickSmartMatureThreshold(configuredSec, random)`：每轮巡查在 `[1, min(配置值, 300)]` 内随机取一个整数秒，配置值只作为上限且封顶 300 秒；随机源可注入，便于回归测试。设置页加说明文字，输入框、单位换算、默认值 300、后端 clamp 范围全部不变。

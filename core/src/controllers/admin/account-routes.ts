@@ -19,6 +19,17 @@ const {
     resolveAccId,
 } = require('./middleware');
 
+/** 账号 Code 自动监听：聚合微信凭证到期与 QQ 掉线日志，给出每账号的补 Code 状态。 */
+function buildProviderCodeHealth(ctx: AdminContext): any {
+    const { buildCodeHealthSnapshot } = require('../../services/code-watch');
+    const accounts = ctx.provider.getAccounts().accounts || [];
+    const rawLogs = ctx.provider.getAccountLogs ? ctx.provider.getAccountLogs(200) : [];
+    return buildCodeHealthSnapshot(accounts, {
+        accountLogs: Array.isArray(rawLogs) ? rawLogs : [],
+        isAccountRunning: (id: string) => !!(ctx.provider.isAccountRunning && ctx.provider.isAccountRunning(id)),
+    });
+}
+
 function mountAccountRoutes(app: Application, ctx: AdminContext): void {
 
     // API: 账号管理
@@ -26,6 +37,46 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
         try {
             const data = ctx.provider.getAccounts();
             res.json({ ok: true, data });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    });
+
+    // API: Code 自动监听快照（账号管理页 10 秒轮询；路由必须在 :id 之前注册）
+    app.get('/api/accounts/code-health', (_req: Request, res: Response) => {
+        try {
+            res.json({ ok: true, data: buildProviderCodeHealth(ctx) });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    });
+
+    // API: 自动补 Code（微信免扫码换码 / QQ 尽力重签），失败则引导重新扫码或手填 Code
+    app.post('/api/accounts/:id/auto-fix-code', async (req: Request, res: Response) => {
+        try {
+            const { autoFixAccountCode } = require('../../services/code-watch');
+            const { ensureFreshGameCode } = require('../../services/wx-credential');
+            const { tryRefreshQqGameCode } = require('../../services/qq-credential');
+            const { appendPanelNotification } = require('../../services/panel-notification');
+            const accountId = resolveAccId(ctx, req.params.id) || String(req.params.id || '');
+            const accounts = ctx.provider.getAccounts().accounts || [];
+            const health = buildProviderCodeHealth(ctx);
+            const target = health.items.find((entry: any) => String(entry.accountId) === accountId);
+            const result = await autoFixAccountCode(accountId, {
+                getAccount: (id: string) => accounts.find((account: any) => String(account.id) === id) || null,
+                latestLogAction: String(target?.latestLogAction || ''),
+                ensureFreshGameCode,
+                tryRefreshQqGameCode,
+                isAccountRunning: (id: string) => !!(ctx.provider.isAccountRunning && ctx.provider.isAccountRunning(id)),
+                restartAccount: (id: string) => ctx.provider.restartAccount(id),
+                addAccountLog: (...args: any[]) => {
+                    if (ctx.provider.addAccountLog) ctx.provider.addAccountLog(...args);
+                },
+                notify: (id: string, entry: any) => {
+                    try { appendPanelNotification(id, entry); } catch { /* 通知落盘失败不阻断补码结果 */ }
+                },
+            });
+            res.json({ ok: result.ok, ...(result.ok ? {} : { error: result.error }), data: result });
         } catch (e: any) {
             handleApiError(res, e);
         }

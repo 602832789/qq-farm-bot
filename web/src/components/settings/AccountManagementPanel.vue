@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import type { CodeHealthItem } from '@/stores/account'
 import { useNow } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import AccountModal from '@/components/AccountModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import AccountKeepAliveCard from '@/components/settings/AccountKeepAliveCard.vue'
@@ -15,7 +16,7 @@ const emit = defineEmits<{ openSettings: [account: any] }>()
 
 const accountStore = useAccountStore()
 const statusStore = useStatusStore()
-const { accounts, loading: accountsLoading, currentAccountId } = storeToRefs(accountStore)
+const { accounts, loading: accountsLoading, currentAccountId, codeHealth } = storeToRefs(accountStore)
 const { status: runtimeStatus } = storeToRefs(statusStore)
 
 const now = useNow({ interval: 1000 })
@@ -185,6 +186,102 @@ async function refreshWxCredentials() {
     refreshWxCredentialsLoading.value = false
   }
 }
+
+/* ---------- Code 过期自动监听 ---------- */
+
+/** 同一账号同一状态 10 分钟内只自动补一次，避免 10 秒轮询反复打续期接口。 */
+const AUTO_FIX_COOLDOWN_MS = 10 * 60_000
+const autoFixAttempts = new Map<string, number>()
+const codeFixing = ref<Set<string>>(new Set())
+const codeFixResults = ref<Record<string, { ok: boolean, message: string }>>({})
+const manualAlerted = ref<Set<string>>(new Set())
+const autoFixDisabled = ref<Set<string>>(new Set())
+
+const codeAlerts = computed(() => (codeHealth.value || []).filter(
+  (item: CodeHealthItem) => item.level !== 'ok' && item.level !== 'unknown',
+))
+
+function codeLevelLabel(level: CodeHealthItem['level']) {
+  const labels: Record<string, string> = {
+    expiring: '即将过期',
+    expired: '已过期',
+    refresh_failed: '续期失败',
+    offline: '掉线待补码',
+  }
+  return labels[level] || level
+}
+
+/** 自动补 Code：优先走后端免扫码换码 / 重签；失败后转为「需手动补 Code」。 */
+async function tryAutoFix(item: CodeHealthItem, force = false) {
+  if (codeFixing.value.has(item.accountId))
+    return
+  if (!force && autoFixDisabled.value.has(item.accountId))
+    return
+  const key = `${item.accountId}:${item.level}`
+  const last = autoFixAttempts.get(key) || 0
+  if (!force && Date.now() - last < AUTO_FIX_COOLDOWN_MS)
+    return
+  autoFixAttempts.set(key, Date.now())
+  codeFixing.value = new Set([...codeFixing.value, item.accountId])
+  try {
+    const res = await accountStore.autoFixCode(item.accountId)
+    const ok = !!res?.ok
+    const message = ok
+      ? '已自动补 Code，账号已重新上线'
+      : (res?.error || '自动补 Code 失败，请手动补 Code')
+    codeFixResults.value = { ...codeFixResults.value, [item.accountId]: { ok, message } }
+    const disabled = new Set(autoFixDisabled.value)
+    if (ok) {
+      disabled.delete(item.accountId)
+      manualAlerted.value = new Set([...manualAlerted.value].filter(id => id !== item.accountId))
+    }
+    else {
+      // 失败不再自动重试，等用户点「重试」或手动补 Code，避免每轮轮询都失败一次。
+      disabled.add(item.accountId)
+    }
+    autoFixDisabled.value = disabled
+  }
+  catch (e: any) {
+    codeFixResults.value = {
+      ...codeFixResults.value,
+      [item.accountId]: { ok: false, message: `自动补 Code 异常：${e?.message || '未知错误'}` },
+    }
+    autoFixDisabled.value = new Set([...autoFixDisabled.value, item.accountId])
+  }
+  finally {
+    const next = new Set(codeFixing.value)
+    next.delete(item.accountId)
+    codeFixing.value = next
+  }
+}
+
+/** 打开补 Code 弹窗：清空旧 Code，避免用户误把已失效的 Code 再保存一次。 */
+function openRefillCodeModal(item: CodeHealthItem) {
+  const acc: any = accounts.value.find((account: any) => String(account.id) === item.accountId)
+  editingAccount.value = {
+    ...(acc || { id: item.accountId, name: item.name, platform: item.platform }),
+    code: '',
+  }
+  showModal.value = true
+}
+
+watch(codeAlerts, (list) => {
+  for (const item of list) {
+    if (item.autoFixable && !autoFixDisabled.value.has(item.accountId)) {
+      void tryAutoFix(item)
+      continue
+    }
+    if (item.needsManual && !manualAlerted.value.has(item.accountId)) {
+      manualAlerted.value = new Set([...manualAlerted.value, item.accountId])
+      notify(`账号 ${item.name} 需要补 Code：${item.reason}。请点击「立即补 Code」重新扫码或填写新 Code。`, 'danger')
+    }
+  }
+  const alive = new Set(list.map(item => item.accountId))
+  for (const id of [...manualAlerted.value]) {
+    if (!alive.has(id))
+      manualAlerted.value = new Set([...manualAlerted.value].filter(key => key !== id))
+  }
+}, { immediate: true })
 </script>
 
 <template>
@@ -225,6 +322,67 @@ async function refreshWxCredentials() {
           <span class="i-carbon-add mr-2" />
           添加账号
         </BaseButton>
+      </div>
+    </div>
+
+    <!-- Code 过期自动监听：能自动换码的自动补，不能自动补的一键打开补 Code 弹窗 -->
+    <div
+      class="farm-content-card border border-transparent rounded-lg bg-white p-3 shadow dark:bg-gray-800 sm:p-4"
+      :class="codeAlerts.length ? '!border-amber-200 dark:!border-amber-800' : ''"
+      role="region"
+      aria-label="Code 自动监听"
+    >
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="i-carbon-radar text-base text-amber-500" aria-hidden="true" />
+          <strong class="text-sm text-gray-900 dark:text-gray-100">Code 自动监听</strong>
+          <span class="rounded bg-green-50 px-1.5 py-0.5 text-[10px] text-green-600 dark:bg-green-900/30 dark:text-green-400">
+            已开启 · 每 10 秒检查
+          </span>
+        </div>
+        <span class="text-xs text-gray-500">
+          {{ codeAlerts.length ? `${codeAlerts.length} 个账号需要补 Code` : '所有账号 Code 正常' }}
+        </span>
+      </div>
+      <p class="mt-1.5 text-xs text-gray-500">
+        微信凭证到期前自动换 Code；QQ 掉线时尽力自动重签。补 Code 后账号会自动重新上线，失败时会提示手动补码。
+      </p>
+      <div v-if="codeAlerts.length" class="mt-3 flex flex-col gap-2">
+        <div
+          v-for="item in codeAlerts"
+          :key="item.accountId"
+          class="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-amber-50 px-3 py-2 dark:bg-amber-900/20"
+        >
+          <div class="min-w-0">
+            <p class="flex flex-wrap items-center gap-1.5 text-xs text-gray-800 font-medium dark:text-gray-100">
+              {{ item.name || item.accountId }}
+              <span class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                {{ codeLevelLabel(item.level) }}
+              </span>
+              <span class="text-[10px] text-gray-400">{{ getPlatformLabel(item.platform) }}</span>
+            </p>
+            <p class="mt-0.5 break-words text-xs text-gray-500">
+              {{ item.reason }}
+              <span v-if="codeFixResults[item.accountId]" :class="codeFixResults[item.accountId]?.ok ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'">
+                · {{ codeFixResults[item.accountId]?.message }}
+              </span>
+            </p>
+          </div>
+          <div class="flex shrink-0 gap-2">
+            <BaseButton
+              v-if="item.autoFixable"
+              variant="secondary"
+              size="sm"
+              :loading="codeFixing.has(item.accountId)"
+              @click="tryAutoFix(item, true)"
+            >
+              {{ autoFixDisabled.has(item.accountId) ? '重试自动补' : '自动补 Code' }}
+            </BaseButton>
+            <BaseButton variant="primary" size="sm" @click="openRefillCodeModal(item)">
+              立即补 Code
+            </BaseButton>
+          </div>
+        </div>
       </div>
     </div>
 

@@ -1027,7 +1027,7 @@ useIntervalFn(updateCountdowns, 1000)
                   </div>
                 </div>
                 <div class="ov-today-gold text-sm font-bold 2xl:text-base" :class="{ 'is-down': todayGoldGained < 0 }">
-                  {{ todayGoldGained }}<small class="ml-0.5 text-[10px] text-gray-400 font-normal">次</small>
+                  {{ todayGoldGained }}
                 </div>
               </div>
               <div class="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2 transition-transform hover:scale-105 dark:bg-gray-700/30">
@@ -1038,7 +1038,7 @@ useIntervalFn(updateCountdowns, 1000)
                   </div>
                 </div>
                 <div class="text-sm font-bold 2xl:text-base">
-                  {{ todayExpGained }}<small class="ml-0.5 text-[10px] text-gray-400 font-normal">次</small>
+                  {{ todayExpGained }}
                 </div>
               </div>
             </div>
@@ -1061,7 +1061,7 @@ useIntervalFn(updateCountdowns, 1000)
                   </div>
                 </div>
                 <div class="text-sm font-bold 2xl:text-base">
-                  {{ val }}<small class="ml-0.5 text-[10px] text-gray-400 font-normal">次</small>
+                  {{ val }}
                 </div>
               </div>
             </div>
