@@ -12,8 +12,9 @@ import { useAccountStore } from '@/stores/account'
 import { useCommerceStore } from '@/stores/commerce'
 
 type MallTab = 'mall' | 'svip' | 'mystery' | 'limited' | 'props'
-/** 农场商城默认打开神秘商人，方便直接看到来访横幅与本轮货品。 */
-const DEFAULT_TAB: MallTab = 'mystery'
+const TAB_KEYS: MallTab[] = ['mall', 'limited', 'props', 'mystery', 'svip']
+/** 直接打开 /game-mall 时的默认页签；侧栏「农场商城」入口由 menuLink 带 ?tab=mystery 打开神秘商人。 */
+const DEFAULT_TAB: MallTab = 'mall'
 
 const route = useRoute()
 const router = useRouter()
@@ -28,7 +29,10 @@ const tabs: Array<{ key: MallTab, label: string, icon: string }> = [
   { key: 'mystery', label: '神秘商人', icon: 'i-carbon-store' },
   { key: 'svip', label: 'SVIP 专属商城', icon: 'i-carbon-diamond-outline' },
 ]
-const activeTab = computed<MallTab>(() => route.query.tab === 'limited' || route.query.tab === 'mystery' || route.query.tab === 'svip' || route.query.tab === 'props' ? route.query.tab : DEFAULT_TAB)
+const activeTab = computed<MallTab>(() => {
+  const tab = route.query.tab
+  return typeof tab === 'string' && (TAB_KEYS as string[]).includes(tab) ? tab as MallTab : DEFAULT_TAB
+})
 const purchasing = computed(() => purchasingGoodsId.value !== null || mysteryPurchasing.value)
 
 function selectTab(tab: MallTab) {

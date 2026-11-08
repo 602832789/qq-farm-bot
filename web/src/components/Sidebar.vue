@@ -5,7 +5,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '@/api'
 
-import { isMenuActive, menuGroups, menuPath, visibleMenuRoutes } from '@/router/menu'
+import { isMenuActive, menuGroups, menuLink, visibleMenuRoutes } from '@/router/menu'
 import { useAccountStore } from '@/stores/account'
 import { useAppStore } from '@/stores/app'
 import { useStatusStore } from '@/stores/status'
@@ -196,7 +196,7 @@ watch(
           {{ group.label }}
         </h2>
         <RouterLink
-          v-for="item in group.items" :key="item.name" :to="menuPath(item)"
+          v-for="item in group.items" :key="item.name" :to="menuLink(item)"
           class="farm-nav-item" :class="{ 'is-active': isMenuActive(item, route.path) }"
           :aria-current="isMenuActive(item, route.path) ? 'page' : undefined"
           @click="appStore.closeSidebar"

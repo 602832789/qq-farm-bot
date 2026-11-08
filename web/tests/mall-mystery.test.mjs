@@ -8,11 +8,28 @@ const mall = read('../src/views/GameMall.vue')
 const banner = read('../src/components/commerce/MysteryArrivalBanner.vue')
 const panel = read('../src/components/commerce/MysteryShopPanel.vue')
 const layout = read('../src/layouts/DefaultLayout.vue')
+const menu = read('../src/router/menu.ts')
+const sidebar = read('../src/components/Sidebar.vue')
+const routerIndex = read('../src/router/index.ts')
 
-test('农场商城默认打开神秘商人页签', () => {
-  assert.match(mall, /const DEFAULT_TAB: MallTab = 'mystery'/)
-  assert.match(mall, /\? route\.query\.tab : DEFAULT_TAB\)/)
+test('侧栏「农场商城」入口默认打开神秘商人，直接打开商城仍是游戏商城', () => {
+  assert.match(menu, /defaultTab: 'mystery'/)
+  assert.match(menu, /export function menuLink\(/)
+  assert.match(menu, /query: \{ tab: item\.defaultTab \}/)
+  assert.match(sidebar, /:to="menuLink\(item\)"/)
+  assert.match(layout, /:to="menuLink\(item\)"/)
+  assert.match(sidebar, /isMenuActive\(item, route\.path\)/, '菜单高亮仍用纯路径比对')
+  assert.match(routerIndex, /tab: 'mystery'/, '旧 /mystery-shop 入口仍指向神秘商人')
+  assert.match(mall, /const DEFAULT_TAB: MallTab = 'mall'/)
+  assert.match(mall, /const TAB_KEYS: MallTab\[\] = \['mall', 'limited', 'props', 'mystery', 'svip'\]/)
   assert.match(mall, /tab === DEFAULT_TAB \? undefined : tab/)
+})
+
+test('点击「游戏商城」页签能正常进入，不被弹回神秘商人', () => {
+  assert.match(mall, /\{ key: 'mall', label: '游戏商城'/)
+  assert.match(mall, /\(TAB_KEYS as string\[\]\)\.includes\(tab\)/)
+  assert.match(mall, /<MallCatalogPanel v-else :slot-type=/)
+  assert.doesNotMatch(mall, /const DEFAULT_TAB: MallTab = 'mystery'/)
 })
 
 test('来访未购买横幅只在农场商城页面顶部出现', () => {

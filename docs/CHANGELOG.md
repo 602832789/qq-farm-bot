@@ -45,6 +45,13 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-09 · 修复「游戏商城」页签被弹回神秘商人 + 默认页签作用域收窄
+
+- **问题**：`GameMall.vue` 的 `activeTab` 白名单只列了 `limited / mystery / svip / props`，漏掉 `mall`；上轮把 `DEFAULT_TAB` 改成 `mystery` 后，点「游戏商城」页签写入 `?tab=mall` 识别不了，回退成默认神秘商人，表现为点了没反应。
+- **修复**：`activeTab` 改用完整 `TAB_KEYS` 集合（与页签数组同源、5 个页签全覆盖），任何合法 `?tab=` 都按参数切换；`DEFAULT_TAB` 恢复 `mall`，直接打开 `/game-mall` 时是游戏商城。
+- **默认神秘商人只作用于导航入口**：`menu.ts` 的 `game-mall` 菜单项新增 `defaultTab: 'mystery'`，新增 `menuLink()` 让侧栏 / 手机端导航链接带 `?tab=mystery`；`menuPath()` 仍返回纯路径供菜单高亮与面包屑比对。于是点侧栏「农场商城」→ 神秘商人，而页面内任何页签点击（含游戏商城）都按点击结果显示，不再被强制回神秘商人。旧 `/mystery-shop` 重定向保持不变。
+- **测试**：`mall-tab-order.test.mjs` 断言白名单与页签数组完全一致；`mall-mystery.test.mjs` 新增入口作用域与「游戏商城可正常进入」断言。
+
 ### 2026-11-09 · v2.9.2（#3） · 修复容器部署时首页显示「第 0 次更新」
 
 - **根因**：`core/Dockerfile` 的 `web-builder` 阶段只 `COPY web ./web`，没有把仓库根 `version.json`（版本号单一真源）拷进镜像；`web/vite.config.ts` 读不到它时回退 `build: 0`，侧栏 / 登录页于是显示 `v2.9.1 · 第 0 次更新`。本地直接构建有根文件所以正常，只有容器构建会复现。

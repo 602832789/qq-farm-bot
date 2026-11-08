@@ -11,6 +11,8 @@ export interface MenuItem {
   /** 手机底部导航使用的短名称，未设置则不出现在底部导航。 */
   mobileLabel?: string
   showInNav?: boolean
+  /** 从导航菜单进入时附带的默认页签参数（如农场商城默认神秘商人），不影响菜单高亮用的纯路径。 */
+  defaultTab?: string
   meta?: {
     fullBleed?: boolean
   }
@@ -72,6 +74,7 @@ export const menuRoutes: MenuItem[] = [
     navLabel: '农场商城',
     label: '商城',
     icon: 'i-carbon-shopping-cart',
+    defaultTab: 'mystery',
     component: () => import('@/views/GameMall.vue'),
   },
   {
@@ -117,6 +120,13 @@ export function visibleMenuRoutes(_isAdmin = true) {
 
 export function menuPath(item: Pick<MenuItem, 'path'>) {
   return item.path ? `/${item.path}` : '/'
+}
+
+/** 导航菜单链接：带默认页签的页面用 query 打开；menuPath 仍返回纯路径供高亮 / 面包屑比对。 */
+export function menuLink(item: Pick<MenuItem, 'path' | 'defaultTab'>) {
+  return item.defaultTab
+    ? { path: menuPath(item), query: { tab: item.defaultTab } }
+    : menuPath(item)
 }
 
 /**

@@ -7,7 +7,7 @@ import Sidebar from '@/components/Sidebar.vue'
 import ThemeSwitcher from '@/components/ThemeSwitcher.vue'
 import TopAccountMenu from '@/components/TopAccountMenu.vue'
 import { useAccountSwitchScrollPreserve } from '@/composables/useAccountSwitchScroll'
-import { isMenuActive, matchMenu, menuGroups, menuPath, visibleMenuRoutes } from '@/router/menu'
+import { isMenuActive, matchMenu, menuGroups, menuLink, visibleMenuRoutes } from '@/router/menu'
 import { useAppStore } from '@/stores/app'
 import { useToastStore } from '@/stores/toast'
 import { useUserStore } from '@/stores/user'
@@ -87,7 +87,7 @@ async function logout() {
         </RouterView>
       </main>
       <nav class="farm-mobile-nav" aria-label="快捷导航">
-        <RouterLink v-for="item in mobileItems" :key="item.name" :to="menuPath(item)" :class="{ 'is-active': isMenuActive(item, route.path) }" :aria-current="isMenuActive(item, route.path) ? 'page' : undefined">
+        <RouterLink v-for="item in mobileItems" :key="item.name" :to="menuLink(item)" :class="{ 'is-active': isMenuActive(item, route.path) }" :aria-current="isMenuActive(item, route.path) ? 'page' : undefined">
           <span :class="item.icon" aria-hidden="true" /><span>{{ item.mobileLabel }}</span>
         </RouterLink>
         <button type="button" :class="{ 'is-active': moreActive }" :aria-expanded="sidebarOpen" aria-controls="farm-sidebar" @click="appStore.openSidebar">
