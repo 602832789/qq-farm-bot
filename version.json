@@ -1,12 +1,20 @@
 {
   "major": 2,
   "minor": 9,
-  "patch": 0,
-  "build": 1,
-  "version": "2.9.0",
-  "updatedAt": "2026-11-08T21:41:43.466Z",
-  "lastCommit": "—",
+  "patch": 1,
+  "build": 2,
+  "version": "2.9.1",
+  "updatedAt": "2026-11-08T23:01:38.642Z",
+  "lastCommit": "ae83736",
   "history": [
+    {
+      "version": "2.9.1",
+      "build": 2,
+      "date": "2026-11-09",
+      "summary": "fix(farm): 快成熟判定默认值改回 300 秒（附阈值命中率模拟）",
+      "commit": "ae83736",
+      "type": "patch"
+    },
     {
       "version": "2.9.0",
       "build": 1,
