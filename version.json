@@ -1,12 +1,20 @@
 {
   "major": 2,
   "minor": 9,
-  "patch": 3,
-  "build": 4,
-  "version": "2.9.3",
-  "updatedAt": "2026-11-08T23:46:47.266Z",
-  "lastCommit": "c6105dc",
+  "patch": 5,
+  "build": 5,
+  "version": "2.9.5",
+  "updatedAt": "2026-11-08T23:58:40.063Z",
+  "lastCommit": "f1c9397",
   "history": [
+    {
+      "version": "2.9.5",
+      "build": 5,
+      "date": "2026-11-09",
+      "summary": "fix(version): 版本号与更新次数递增时自动跳过数字 4",
+      "commit": "f1c9397",
+      "type": "patch"
+    },
     {
       "version": "2.9.3",
       "build": 4,
