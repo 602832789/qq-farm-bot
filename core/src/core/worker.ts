@@ -25,6 +25,7 @@ const { startPetFeedCheckTimer, stopPetFeedCheckTimer } = require('../services/p
 const { initStatusBar, setStatusPlatform, statusData } = require('../services/status');
 const { setRecordGoldExpHook } = require('../services/status');
 const { cleanupTaskSystem, checkAndClaimTasks, getTaskClaimDailyState, getTaskDailyStateLikeApp, getGrowthTaskStateLikeApp } = require('../services/task');
+const { runIllustratedDailyAutomation, ILLUSTRATED_AUTO_KEYS } = require('../services/illustrated-auto');
 const {
     sellAllFruits,
     getBag,
@@ -144,6 +145,13 @@ async function runDailyRoutines(force: boolean = false): Promise<void> {
         await performDailyVipGift(force);
     } catch (e: any) {
         log('系统', `每日任务调度失败: ${e.message}`, { module: 'system', event: '每日任务', result: 'error' });
+    }
+    // 独立于其它每日任务：前面任一任务失败也不影响图鉴检查。
+    // 收藏图鉴每天只检查一次（服务内部按日期键去重）：自动领奖 + 自动补种未点亮且背包没有的种子。
+    try {
+        await runIllustratedDailyAutomation();
+    } catch (e: any) {
+        logWarn('系统', `图鉴每日检查失败: ${e.message}`, { module: 'system', event: '每日任务', result: 'error' });
     }
 }
 
@@ -641,6 +649,16 @@ function applyRuntimeConfig(snapshot: any, syncNow: boolean = false): number {
             // 对齐老版 mystery_shop_auto_buy_after_save：神秘商人相关开关变化且巡查已启用时，
             // 保存后 2 秒立即巡查一次，不用等下一个 10 分钟周期。
             // 用服务侧的键表，避免新增货币 / 通知开关后这里漏配（钻石、到货提醒、购买通知曾遗漏）。
+            // 图鉴每日自动化的两个开关由关变开时，保存后 2 秒立即检查一次，
+            // 不必等明天或重登；同一天的例行检查仍由服务内部日期键去重。
+            const illustratedSwitchedOn = ILLUSTRATED_AUTO_KEYS.some(key => !(prevAuto && prevAuto[key] === true) && nextAuto && nextAuto[key] === true);
+            if (illustratedSwitchedOn) {
+                workerScheduler.setTimeoutTask('illustrated_auto_after_save', 2000, () => {
+                    if (!loginReady) return;
+                    runExclusiveAutomationTask('illustrated_auto', () => runIllustratedDailyAutomation(true)).catch(() => null);
+                });
+            }
+
             const { isMysteryShopWatchEnabled, mysteryShopConfigChanged } = require('../services/mystery-shop-auto');
             if (isMysteryShopWatchEnabled(nextAuto) && mysteryShopConfigChanged(prevAuto, nextAuto)) {
                 workerScheduler.setTimeoutTask('mystery_shop_after_save', 2000, () => {

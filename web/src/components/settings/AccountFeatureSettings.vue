@@ -441,6 +441,9 @@ function cancel() {
                     <BaseSelect v-model="fertilizerSmartUnit" label="单位" :options="FERTILIZER_TIME_UNITS" class="w-32" />
                   </div>
                 </div>
+                <p v-if="['smart', 'smart_only', 'smart_normal'].includes(automation.automation.fertilizer)" class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  快成熟判定填的是随机上限：每轮巡查会在 1 秒 ~ 设定值之间随机取一个阈值（上限 300 秒），不再是固定秒数。
+                </p>
                 <div class="flex flex-wrap items-center gap-x-6 gap-y-3">
                   <BaseSwitch v-model="automation.automation.fertilizer_2x2_ripen" label="2x2催熟" :disabled="mutationTestActive" />
                   <BaseSwitch v-model="automation.automation.fertilizer_multi_season" label="多季补肥" />
@@ -591,6 +594,22 @@ function cancel() {
                   <BaseSwitch v-model="automation.automation.share_reward_share" label="自动分享" />
                   <BaseSwitch v-model="automation.automation.share_reward_daily" label="自动领取每日快乐值" />
                   <BaseSwitch v-model="automation.automation.share_reward_milestones" label="自动领取档位奖励" />
+                </div>
+              </section>
+
+              <section class="border border-gray-100 rounded-lg p-4 space-y-3 dark:border-gray-700">
+                <div>
+                  <div class="text-sm text-gray-700 font-medium dark:text-gray-300">
+                    收藏图鉴
+                  </div>
+                  <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    每天检查一次：自动领取可领的作物 / 超变图鉴奖励，并自动购买「未点亮 + 可下单 + 背包里没有」的种子（每种 1 个）。开关由关变开后保存会立即检查一次，自动购买会实际消耗金币。
+                  </div>
+                </div>
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <BaseSwitch v-model="automation.automation.illustrated_auto_claim_rewards" label="自动领取图鉴奖励" />
+                  <BaseSwitch v-model="automation.automation.illustrated_auto_buy_missing_seeds" label="自动购买未点亮种子" />
+                  <BaseSwitch v-model="automation.automation.illustrated_buy_skip_bag" label="一键购买跳过背包已有" />
                 </div>
               </section>
 

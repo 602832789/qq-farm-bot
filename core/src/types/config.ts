@@ -49,6 +49,11 @@ export interface AutomationConfig {
   pet_feed_dog_food: boolean;
   pet_feed_dog_food_auto_buy: boolean;
 
+  // ---- 收藏图鉴（每天检查一次） ----
+  illustrated_auto_claim_rewards: boolean;
+  illustrated_auto_buy_missing_seeds: boolean;
+  illustrated_buy_skip_bag: boolean;
+
   // ---- 活动自动化（旧版功能模块「日常与活动」） ----
   task_after_farm: boolean;
   fertilizer_2x2_ripen: boolean;

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { NButton } from 'naive-ui/es/button'
-import BaseButton from '@/components/ui/BaseButton.vue'
 import { NCard } from 'naive-ui/es/card'
 import { NInputNumber } from 'naive-ui/es/input-number'
 import { NModal } from 'naive-ui/es/modal'
@@ -11,19 +10,24 @@ import BookOverview from '@/components/illustrated/BookOverview.vue'
 import BookSection from '@/components/illustrated/BookSection.vue'
 import BookTile from '@/components/illustrated/BookTile.vue'
 import BookToolbar from '@/components/illustrated/BookToolbar.vue'
+import IllustratedAutomationSwitches from '@/components/illustrated/IllustratedAutomationSwitches.vue'
+import BaseButton from '@/components/ui/BaseButton.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import { useAccountStore } from '@/stores/account'
 import { useIllustratedStore } from '@/stores/illustrated'
+import { useSettingStore } from '@/stores/setting'
 import { useStatusStore } from '@/stores/status'
 import { useToastStore } from '@/stores/toast'
 
 const props = withDefaults(defineProps<{ bookType?: 'crop' | 'mutant' }>(), { bookType: 'crop' })
 const accountStore = useAccountStore()
 const illustratedStore = useIllustratedStore()
+const settingStore = useSettingStore()
 const statusStore = useStatusStore()
 const { currentAccountId } = storeToRefs(accountStore)
 const { currentAccountConnected: isConnected } = storeToRefs(statusStore)
 const { data, loading, error } = storeToRefs(illustratedStore)
+const { settings } = storeToRefs(settingStore)
 const currentType = computed(() => props.bookType)
 const isMutant = computed(() => currentType.value === 'mutant')
 const bookName = computed(() => isMutant.value ? '超变图鉴' : '作物图鉴')
@@ -43,8 +47,17 @@ const book = computed(() => data.value?.[currentType.value] || null)
 const items = computed<any[]>(() => Array.isArray(book.value?.items) ? book.value.items : [])
 const collectedCount = computed(() => items.value.filter(item => item.unlocked).length)
 const userLevel = computed(() => Number(statusStore.status?.status?.level) || 0)
-/** 老版语义：可购买数量只统计未点亮（未收藏）且当前可下单的种子。 */
-const buyableMissingItems = computed(() => items.value.filter(item => !item.unlocked && canPurchaseSeed(item)))
+const bagSeedIds = ref<Set<number>>(new Set())
+const bagSeedsReady = ref(false)
+/** 一键购买时是否跳过背包里已有的种子（可在功能模块或奖励详情里关闭）。 */
+const skipBagExisting = computed(() => settings.value.automation?.illustrated_buy_skip_bag !== false)
+const bagSeedSkippedCount = computed(() => items.value.filter(item => !item.unlocked && canPurchaseSeed(item) && bagSeedIds.value.has(Number(item.seedId))).length)
+/** 可购买数量：未点亮 + 可下单 + （开关开启时）背包里没有该种子；背包没读成功就不买，避免重复下单。 */
+const buyableMissingItems = computed(() => {
+  if (skipBagExisting.value && !bagSeedsReady.value)
+    return []
+  return items.value.filter(item => !item.unlocked && canPurchaseSeed(item) && (!skipBagExisting.value || !bagSeedIds.value.has(Number(item.seedId))))
+})
 const purchasableCount = computed(() => buyableMissingItems.value.length)
 const illustratedBuffs = computed(() => Array.isArray(book.value?.buffs) ? book.value.buffs : [])
 const currentIllustratedBuffs = computed(() => Array.isArray(book.value?.currentBuffs) ? book.value.currentBuffs : [])
@@ -232,9 +245,36 @@ async function runBuyAllMissing() {
   }
 }
 
+async function loadBagSeeds() {
+  if (!currentAccountId.value || !isConnected.value) {
+    bagSeedsReady.value = false
+    return
+  }
+  try {
+    const response = await api.get('/api/bag/seeds', {
+      headers: { 'x-account-id': String(currentAccountId.value) },
+      skipErrorToast: true,
+    } as any)
+    const list = Array.isArray(response.data?.data) ? response.data.data : []
+    bagSeedIds.value = new Set(list.map((seed: any) => Number(seed?.seedId)).filter((id: number) => Number.isFinite(id) && id > 0))
+    bagSeedsReady.value = true
+  }
+  catch {
+    bagSeedIds.value = new Set()
+    bagSeedsReady.value = false
+  }
+}
+
 async function refresh() {
-  if (currentAccountId.value && isConnected.value)
-    await illustratedStore.fetch(currentAccountId.value)
+  if (!currentAccountId.value || !isConnected.value)
+    return
+  const id = String(currentAccountId.value)
+  await Promise.all([
+    illustratedStore.fetch(id),
+    loadBagSeeds(),
+  ])
+  if (settingStore.loadedAccountId !== id)
+    await settingStore.fetchSettings(id)
 }
 
 async function claimRewards() {
@@ -292,6 +332,8 @@ watch([currentAccountId, isConnected], () => {
   buyAllRunning.value = false
   detailsOpen.value = false
   illustratedStore.reset()
+  bagSeedIds.value = new Set()
+  bagSeedsReady.value = false
 }, { flush: 'sync' })
 watch([currentAccountId, isConnected], refresh, { immediate: true })
 </script>
@@ -400,9 +442,19 @@ watch([currentAccountId, isConnected], refresh, { immediate: true })
           </p>
           <p class="buy-all-confirm__text">
             可购买数量：<b>{{ buyableMissingItems.length }}</b>
-            <template v-if="buyAllRunning">（进度 {{ buyAllProgress.done }}/{{ buyAllProgress.total }}，成功 {{ buyAllProgress.success }}，失败 {{ buyAllProgress.fail }}）</template>
+            <template v-if="buyAllRunning">
+              （进度 {{ buyAllProgress.done }}/{{ buyAllProgress.total }}，成功 {{ buyAllProgress.success }}，失败 {{ buyAllProgress.fail }}）
+            </template>
           </p>
           <p class="buy-all-confirm__hint">
+            <template v-if="skipBagExisting">
+              已按背包跳过 <b>{{ bagSeedSkippedCount }}</b> 个已有种子<template v-if="!bagSeedsReady">
+                ；背包读取失败，暂时不能一键购买，请刷新重试
+              </template>。
+            </template>
+            <template v-else>
+              当前未开启「跳过背包已有」，可能重复购买背包里已有的种子。
+            </template>
             购买后种子会进入背包，需种植/收获后图鉴才会点亮；已达限购或等级不足的种子会自动跳过并计为失败。
           </p>
           <template #footer>
@@ -485,6 +537,7 @@ watch([currentAccountId, isConnected], refresh, { immediate: true })
               </span>
             </div>
           </div>
+          <IllustratedAutomationSwitches />
           <template v-if="book.claimable" #footer>
             <NButton block type="primary" :loading="claiming" :disabled="loading || claiming" @click="claimRewards">
               领取奖励

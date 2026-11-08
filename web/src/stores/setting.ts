@@ -33,6 +33,9 @@ export interface AutomationConfig {
   fertilizer_2x2_ripen?: boolean
   fertilizer_land_types?: string[]
   fertilizer_smart_seconds?: number
+  illustrated_auto_claim_rewards?: boolean
+  illustrated_auto_buy_missing_seeds?: boolean
+  illustrated_buy_skip_bag?: boolean
   friend_steal?: boolean
   friend_help?: boolean
   friend_bad?: boolean

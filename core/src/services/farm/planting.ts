@@ -4,7 +4,7 @@ export {};
  */
 
 const protobuf = require('protobufjs');
-const { getPlantNameBySeedId, formatGrowTime, getPlantGrowTime, getAllSeeds, getPlantBySeedId, getPlantById } = require('../../config/gameConfig');
+const { getPlantNameBySeedId, formatGrowTime, getPlantGrowTime, getAllSeeds, getPlantBySeedId } = require('../../config/gameConfig');
 const { getPreferredSeed, getAutomation, getPlantingStrategy, getBagSeedPriority, getBagSeedMultiLandReservationEnabled, getBagSeedLandTypes, getBagSeedFallbackStrategy, getPrioritize2x2Crops } = require('../../models/store');
 const { PlantPhase } = require('../../config/config');
 const { getUserState, getWsErrorState, sendMsgAsync } = require('../../utils/network');
@@ -31,6 +31,7 @@ const {
     getOrganicFertilizerTargetsFromLands,
     filterLandIdsForNormalFertilizer,
     getFastMatureLands,
+    pickSmartMatureThreshold,
     getCurrentPhase,
     pickRipen2x2Lands,
     normalizeFertilizerLandTypes,
@@ -1197,7 +1198,8 @@ async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNo
     }
     else if (fertilizerConfig === 'smart') {
         let organicTargets: number[] = [];
-        const smartSeconds = toNum(automation.fertilizer_smart_seconds) || 300;
+        // 快成熟阈值每轮在 [1, min(配置值, 300)] 秒内随机取，避免固定临界点。
+        const smartSeconds = pickSmartMatureThreshold(automation.fertilizer_smart_seconds);
         try {
             // smart 要先补普通肥，再按最新状态挑快成熟的地块，必须重新读一次。
             const latest = await getAllLands();

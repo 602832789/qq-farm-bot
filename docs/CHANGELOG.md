@@ -30,6 +30,20 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-08 · 快成熟判定随机化 + 图鉴每日自动领奖/补种与背包过滤 + 今日金币支持负数
+
+- **「土地与施肥 → 快成熟判定」秒数改为 300 内随机**：原先 `fertilizer_smart_seconds`（默认 300、可配 30~3600）是固定阈值，每轮 smart 施肥都用同一个临界点。新增 `pickSmartMatureThreshold(configuredSec, random)`：每轮巡查在 `[1, min(配置值, 300)]` 内随机取一个整数秒，配置值只作为上限且封顶 300 秒；随机源可注入，便于回归测试。设置页加说明文字，输入框、单位换算、默认值 300、后端 clamp 范围全部不变。
+- **收藏图鉴自动化**（按用户确认同时做「后台每天检查一次」与「一键购买加背包判断」，两项都带开关）：
+  - 新增 `core/src/services/illustrated-auto.ts`：挂在 worker 每日例行 `runDailyRoutines`，服务内用 `getSystemDateKey()` 做同一天去重 —— 登录 / 跨天各检查一次，不是每轮农场巡查。
+  - `illustrated_auto_claim_rewards`（默认关）：有可领奖励时自动领取作物（type=1）与超变（type=2）两本图鉴。
+  - `illustrated_auto_buy_missing_seeds`（默认关）：自动购买「未点亮 + 可下单 + 背包里没有该种子」的作物种子，每种买 1 个；单个失败不中断，购买前过滤等级锁 / 限购 / 解锁卡 / 无元数据。会实际消耗金币，所以默认关闭。
+  - 两个后台开关由关变开时，保存配置后 **2 秒立即检查一次**，不用等明天或重登（`illustrated_auto_after_save`）。
+  - `illustrated_buy_skip_bag`（默认开）：前端「一键购买未解锁」先读 `/api/bag/seeds`，跳过背包里已有的种子；背包读取失败时禁用一键购买，避免重复下单；确认弹窗显示已跳过数量。购买成功刷新时会重新读取背包。
+  - 开关有两个入口：功能模块 → 日常与活动 → 收藏图鉴（保存并关闭生效），以及收藏图鉴 → 奖励详情弹窗内的「每日自动托管」（`IllustratedAutomationSwitches.vue`，改完立即保存），共用同一份配置。
+- **首页「今日统计」金币偶发显示 0**：后端 `session.goldGained = 当前金币 - 当日基线` 是净值，买种子 / 买化肥等消费高于收益时为负；前端 `Math.max(0, ...)` 把负数夹成 0，且空态判断 `<= 0` 会让负数落进「等待第一份收获」。现改为保留负数、空态只在 `=== 0` 时出现，负数数字用 `var(--ui-danger)`（与「资产 → 金币 → 本次运行」的 `.ov-tile__delta.is-down` 同一个 token）。经验只增不减，仍保持非负。
+- **测试**：新增 core 11 项（`fertilizer-smart-threshold.test.js` 3 + `illustrated-auto.test.js` 8）、web 11 项（3 个文件），全部做过反向验证：固定阈值 / 恢复夹零 / 删开关各 fail 1，去掉背包过滤 fail 2，恢复后全绿。顺带修 `planting.ts` 一处既有未使用导入。
+- **验证**：core 386/386、web 93/93、`vue-tsc -b`、改动文件 ESLint、`vite build` 全通过。环境无浏览器 / 真机，图鉴弹窗与负数配色为静态断言 + 构建验证，无截图。
+
 ### 2026-11-07 · 运行日志筛选手机端显示完整 + 神秘商人页签移到第 4 + 催熟时间核查
 
 - **首页运行日志「所有事件」按钮手机端显示不全**：`.dashboard-log-toolbar` 手机端是 `minmax(0, 1fr) minmax(0, 1fr) 32px` 三列，两个下拉各只分到约 140px，还要给常驻的 32px 重置按钮列让位，选中标签（「所有事件」以及较长的事件名）会被省略号截断。改为两列 `minmax(0, 1fr) 32px` + 显式 `grid-row` 重排：搜索独占第 1 行整宽、模块筛选与重置按钮第 2 行、**事件筛选独占第 3 行整行宽度**。两个 `BaseSelect` 各包一层带 class 的容器以便栅格定位；PC 端（`@container runtime-log (min-width: 640px)`）仍是一行四列，完全不变。手机端工具栏只比原来多一行。

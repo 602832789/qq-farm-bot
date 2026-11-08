@@ -94,6 +94,11 @@ const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
         pet_feed_dog_food: true,
         pet_feed_dog_food_auto_buy: true,
 
+        // ---- 收藏图鉴（每天检查一次；自动领奖/补种默认关闭，一键购买跳过背包已有种子默认开启） ----
+        illustrated_auto_claim_rewards: false,
+        illustrated_auto_buy_missing_seeds: false,
+        illustrated_buy_skip_bag: true,
+
         // ---- 活动自动化（旧版功能模块「日常与活动」，默认关闭） ----
         task_after_farm: false,
         fertilizer_2x2_ripen: false,
