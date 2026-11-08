@@ -16,8 +16,16 @@ function readJson(file: string, fallback: any): any {
 }
 
 const corePackageJson = readJson(fileURLToPath(new URL('../core/package.json', import.meta.url)), { version: '0.0.0' })
-// 版本号单一真源：仓库根 version.json（由 scripts/version.mjs 在每次更新提交后递增）
-const versionMeta = readJson(fileURLToPath(new URL('../version.json', import.meta.url)), { version: corePackageJson.version, build: 0 })
+// 版本号单一真源：仓库根 version.json（由 scripts/version.mjs 在每次更新提交后递增）。
+// 容器构建只 COPY web/ 时根文件不在上下文里，用脚本同步的 web/version.json 镜像兜底。
+const rootVersionMeta = readJson(fileURLToPath(new URL('../version.json', import.meta.url)), null)
+const webVersionMeta = readJson(fileURLToPath(new URL('./version.json', import.meta.url)), null)
+const versionMeta = rootVersionMeta?.version ? rootVersionMeta : (webVersionMeta?.version ? webVersionMeta : null)
+const appVersion = String(versionMeta?.version || corePackageJson.version || '0.0.0')
+const appBuild = Number(versionMeta?.build)
+const hasBuild = Number.isFinite(appBuild) && appBuild > 0
+// 完全读不到版本文件时只显示版本号，避免把更新次数回退成 0。
+const appVersionLabel = hasBuild ? `v${appVersion} · 第 ${appBuild} 次更新` : `v${appVersion}`
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -89,9 +97,9 @@ export default defineConfig(({ mode }) => {
       chunkSizeWarningLimit: 1000,
     },
     define: {
-      __APP_VERSION__: JSON.stringify(corePackageJson.version),
-      __APP_BUILD__: JSON.stringify(String(versionMeta.build ?? 0)),
-      __APP_VERSION_LABEL__: JSON.stringify(`v${corePackageJson.version} · 第 ${versionMeta.build ?? 0} 次更新`),
+      __APP_VERSION__: JSON.stringify(appVersion),
+      __APP_BUILD__: JSON.stringify(hasBuild ? String(appBuild) : ''),
+      __APP_VERSION_LABEL__: JSON.stringify(appVersionLabel),
     },
     resolve: {
       alias: {

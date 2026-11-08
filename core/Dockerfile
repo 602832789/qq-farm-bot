@@ -37,6 +37,10 @@ RUN --mount=type=cache,id=qq-farm-pnpm-store,target=/pnpm/store,sharing=locked \
 # independently instead of rebuilding Web after a Core-only source change.
 FROM workspace-deps AS web-builder
 
+# 根目录 version.json 是版本号单一真源，界面上的「第 N 次更新」由它注入。
+# 不拷进来时 vite 读不到会回退成 0；版本每次递增让该层缓存失效，正是期望行为。
+COPY version.json ./version.json
+
 # Web 有一个文件跨目录引用 core 的配置，必须在 COPY web 之前显式拷进来，
 # 否则本阶段没有 ./core，Vite 会报 Could not resolve "../../../core/...":
 #   web/src/utils/notification-template.ts -> core/src/config/notification-templates.json

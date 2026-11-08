@@ -14,8 +14,10 @@ import {
   DEFAULT_ROOT,
   markLatestChangelogTitle,
   renderVersionSection,
+  renderWebVersionMeta,
   summarizeTitle,
   upsertVersionSection,
+  VERSION_FILES,
   versionLabel,
 } from '../../scripts/version.mjs'
 
@@ -110,6 +112,10 @@ test('CLI 端到端：递增版本、同步三个 package.json、写入更新日
   for (const file of ['package.json', 'core/package.json', 'web/package.json']) {
     assert.equal(JSON.parse(readFileSync(join(tmp, file), 'utf8')).version, '2.9.0')
   }
+  const mirror1 = JSON.parse(readFileSync(join(tmp, 'web/version.json'), 'utf8'))
+  assert.equal(mirror1.version, '2.9.0')
+  assert.equal(mirror1.build, 1)
+  assert.equal(mirror1.label, 'v2.9.0 · 第 1 次更新')
   const log1 = readFileSync(join(tmp, 'docs/CHANGELOG.md'), 'utf8')
   assert.match(log1, /## 版本总览/)
   assert.match(log1, /\| v2\.9\.0 \| #1 \| 2026-11-09 \| 新增版本号功能 \| `abc1234` \|/)
@@ -120,6 +126,10 @@ test('CLI 端到端：递增版本、同步三个 package.json、写入更新日
   assert.equal(meta2.version, '2.9.1')
   assert.equal(meta2.build, 2)
   assert.equal(meta2.history.length, 2)
+  const mirror2 = JSON.parse(readFileSync(join(tmp, 'web/version.json'), 'utf8'))
+  assert.equal(mirror2.version, '2.9.1')
+  assert.equal(mirror2.build, 2)
+  assert.equal(mirror2.label, 'v2.9.1 · 第 2 次更新')
   const log2 = readFileSync(join(tmp, 'docs/CHANGELOG.md'), 'utf8')
   assert.equal((log2.match(/## 版本总览/g) || []).length, 1)
   assert.match(log2, /\| v2\.9\.1 \| #2 \| 2026-11-10 \| 修复一个开关 \| `def5678` \|/)
@@ -162,6 +172,32 @@ test('版本号真源、构建注入与界面显示接线完整', () => {
   assert.match(changelog, /## 版本总览/)
   assert.match(changelog, new RegExp(`\\| v${meta.version.replace(/\./g, '\\.')} \\| #${meta.build} \\|`))
   assert.match(changelog, /^### 2026-11-09 · v2\.9\.0（#1） · /m)
+})
+
+test('web/version.json 镜像与真源一致，容器只 COPY web/ 也能显示更新次数', () => {
+  const meta = JSON.parse(read('version.json'))
+  const mirror = JSON.parse(read('web/version.json'))
+  assert.equal(mirror.version, meta.version)
+  assert.equal(mirror.build, meta.build)
+  assert.equal(mirror.label, versionLabel(meta))
+  assert.equal(mirror.source, 'version.json')
+  assert.ok(mirror.build > 0)
+  assert.deepEqual(renderWebVersionMeta(meta), mirror)
+  assert.ok(VERSION_FILES.includes('web/version.json'))
+})
+
+test('vite 注入优先根版本文件、回退 web 镜像，读不到时不显示第 0 次更新', () => {
+  const viteConfig = read('web/vite.config.ts')
+  assert.match(viteConfig, /\.\.\/version\.json/)
+  assert.match(viteConfig, /\.\/version\.json/)
+  assert.match(viteConfig, /rootVersionMeta\?\.version \? rootVersionMeta : \(webVersionMeta/)
+  assert.match(viteConfig, /hasBuild/)
+  assert.match(viteConfig, /: `v\$\{appVersion\}`/)
+  assert.doesNotMatch(viteConfig, /build \?\? 0/)
+  assert.doesNotMatch(viteConfig, /第 0 次更新/)
+
+  const dockerfile = read('core/Dockerfile')
+  assert.match(dockerfile, /web-builder[\s\S]*?COPY version\.json \.\/version\.json[\s\S]*?COPY web \.\/web/)
 })
 
 test('快成熟判定默认值恢复为 300 秒', () => {

@@ -29,6 +29,7 @@ export const VERSION_FILES = [
     'package.json',
     'core/package.json',
     'web/package.json',
+    'web/version.json',
     'docs/CHANGELOG.md',
 ];
 
@@ -90,6 +91,19 @@ export function bumpVersion(current, type = 'patch') {
 /** 界面显示用完整版本标签。 */
 export function versionLabel(meta) {
     return `v${meta.version} · 第 ${meta.build} 次更新`;
+}
+
+/** 生成 web 目录内的版本镜像：Docker 只 COPY web/ 时也能读到版本号与更新次数。 */
+export function renderWebVersionMeta(meta = {}) {
+    const version = String(meta?.version || '0.0.0');
+    const build = Number(meta?.build) || 0;
+    return {
+        version,
+        build,
+        label: versionLabel({ version, build }),
+        updatedAt: meta?.updatedAt || null,
+        source: 'version.json',
+    };
 }
 
 /** 更新日志标题 / 表格里用的紧凑标记。 */
@@ -279,6 +293,11 @@ export function bump(root = DEFAULT_ROOT, opts = {}) {
         writeJson(path, pkg);
     }
     writeFileSync(changelogPath, changelog, 'utf8');
+    // web/ 目录内保留一份镜像：容器构建只 COPY web/ 时也不会丢掉更新次数。
+    const webDir = join(root, 'web');
+    if (existsSync(webDir)) {
+        writeJson(join(webDir, 'version.json'), renderWebVersionMeta(meta));
+    }
 
     if (opts.autoCommit) {
         const changed = VERSION_FILES.filter(file => existsSync(join(root, file)));

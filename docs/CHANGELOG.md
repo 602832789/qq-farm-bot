@@ -44,6 +44,14 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-09 · 修复容器部署时首页显示「第 0 次更新」
+
+- **根因**：`core/Dockerfile` 的 `web-builder` 阶段只 `COPY web ./web`，没有把仓库根 `version.json`（版本号单一真源）拷进镜像；`web/vite.config.ts` 读不到它时回退 `build: 0`，侧栏 / 登录页于是显示 `v2.9.1 · 第 0 次更新`。本地直接构建有根文件所以正常，只有容器构建会复现。
+- **Docker 补齐**：`web-builder` 阶段新增 `COPY version.json ./version.json`；版本每次递增让该层缓存失效，正是期望行为（版本号必须随镜像重建）。
+- **web 目录镜像兜底**：`scripts/version.mjs` 每次递增同步写 `web/version.json`（`version` / `build` / `label` / `updatedAt`），并纳入 `VERSION_FILES` 随版本提交一起更新；`vite.config.ts` 优先读根 `version.json`，读不到再读 `web/version.json`，只分发 `web/` 目录的构建方式也不会丢次数。
+- **回退不再产生 0**：版本号与更新次数统一由同一份 meta 计算；完全读不到版本文件时只显示 `vX.Y.Z`（不显示次数）、`__APP_BUILD__` 为空串，不再出现无效的「第 0 次更新」。
+- **测试与验证**：`web/tests/version.test.mjs` 新增镜像渲染 / 真源一致性 / 回退链 / Dockerfile 断言，CLI 端到端用例验证连续两次递增都会同步镜像；另实测三种构建场景（根版本文件存在、仅 web 镜像、两者皆无）的产物标签。
+
 ### 2026-11-09 · v2.9.1（#2） · 快成熟判定默认值改回 300 秒 + 阈值命中率模拟结论
 
 - **默认值 60 → 300 秒全链路同步**：按用户决定把上一轮的默认值改回 300 秒 —— `shared-state.ts` 默认值与 clamp 回退、`account-config.ts` 回退、`planting.ts` 的 `|| 300`、`land-analysis.ts` 的 `getFastMatureLands` 默认阈值、设置页 3 处默认值与 1 处未定义兜底、功能模块「快成熟判定」显示回退及说明文案。30~3600 秒可调范围不变；用户已保存的配置不会被自动覆盖。
