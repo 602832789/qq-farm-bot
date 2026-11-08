@@ -482,6 +482,13 @@ onUnmounted(() => {
   background: var(--ui-surface);
   box-shadow: var(--ui-shadow-sm);
 }
+
+/* PC 端：购买历史与上方「神秘商人暂未来访」空状态卡片等宽；手机端保持原样。 */
+@media (min-width: 761px) {
+  .merchant-history {
+    max-width: none;
+  }
+}
 .merchant-history__head {
   display: flex;
   flex-wrap: wrap;

@@ -5,7 +5,6 @@ import { storeToRefs } from 'pinia'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import api, { getApiErrorMessage } from '@/api'
 import LevelForecast from '@/components/LevelForecast.vue'
-import RuntimeDiagnosticsCard from '@/components/RuntimeDiagnosticsCard.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
@@ -998,9 +997,6 @@ useIntervalFn(updateCountdowns, 1000)
           </div>
         </section>
 
-        <!-- 运行诊断：进程 / 队列 / 事件循环指标 -->
-        <RuntimeDiagnosticsCard />
-
         <!-- Operations Grid -->
         <div class="farm-card rounded-2xl bg-white p-5 shadow-md dark:bg-gray-800">
           <h3 class="mb-3 flex items-center justify-between gap-2 text-lg font-display font-medium">
@@ -1894,9 +1890,10 @@ useIntervalFn(updateCountdowns, 1000)
     grid-column: 1;
   }
 
+  /* 手机端「所有事件」与上面的「所有模块」同列同宽；PC 端布局不受影响。 */
   .dashboard-log-event {
     grid-row: 3;
-    grid-column: 1 / -1;
+    grid-column: 1;
   }
 
   .dashboard-log-reset {

@@ -442,7 +442,7 @@ function cancel() {
                   </div>
                 </div>
                 <p v-if="['smart', 'smart_only', 'smart_normal'].includes(automation.automation.fertilizer)" class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                  快成熟判定填的是随机上限：每轮巡查会在 1 秒 ~ 设定值之间随机取一个阈值（上限 300 秒），不再是固定秒数。
+                  快成熟判定填的是固定秒数：作物剩余生长时间不超过该值时才用有机化肥催熟，默认 300 秒。
                 </p>
                 <div class="flex flex-wrap items-center gap-x-6 gap-y-3">
                   <BaseSwitch v-model="automation.automation.fertilizer_2x2_ripen" label="2x2催熟" :disabled="mutationTestActive" />

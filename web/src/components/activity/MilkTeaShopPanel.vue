@@ -35,7 +35,8 @@ const allRecipes = computed(() => [...(props.state.recipes || [])].sort((a, b) =
   || Number(b.recipe_id) - Number(a.recipe_id)))
 const inventory = computed(() => allRecipes.value.filter(recipe => recipe.unlocked && recipe.is_advanced))
 const estimate = computed(() => teaInventoryEstimate(props.state, props.now))
-const estimateRemaining = computed(() => estimate.value.until ? Math.max(0, estimate.value.until - props.now) : null)
+// 直接用「库存 ÷ 销售速度」算出的可售秒数，不再读被营业截止截断的 until。
+const estimateRemaining = computed(() => estimate.value.seconds !== null ? Math.max(0, estimate.value.seconds) : null)
 const activeSlots = computed(() => (shop.value?.slots || []).filter(slot => Number(slot.end_at) > props.now))
 const automationOptions = computed(() => MILK_TEA_AUTOMATION_OPTIONS.filter(option => !option.businessOnly || business.value))
 const enabledCount = computed(() => automationOptions.value.filter(option => props.automation?.[option.key]).length)
@@ -91,7 +92,7 @@ function materialCount(recipe: TeaRecipe) {
       <p>库存预估券收益</p><strong class="tea-number">{{ teaNumber(estimate.tokens) }}<small>券</small></strong><small>仅计已制作的高级奶茶</small>
     </div>
     <div class="tea-metric">
-      <p>高级库存预计支撑至</p><strong class="tea-stock-until">{{ estimate.cups === '0' ? '等待补货' : estimateRemaining !== null ? teaCountdown(estimateRemaining) : '暂不可估算' }}</strong><small>当前 {{ teaNumber(shop.effective_cups_per_hour) }} 杯 / 小时 · {{ business ? '营业中' : '结算期' }}</small>
+      <p>高级库存预计支撑至</p><strong class="tea-stock-until">{{ estimate.cups === '0' ? '等待补货' : estimateRemaining !== null ? teaCountdown(estimateRemaining) : '暂不可估算' }}</strong><small>当前 {{ teaNumber(shop.effective_cups_per_hour) }} 杯 / 小时 · {{ business ? '营业中' : '结算期' }}<span v-if="estimate.capped"> · 超过本次营业截止</span></small>
     </div>
   </div>
   <div class="tea-shop-columns">
@@ -144,7 +145,7 @@ function materialCount(recipe: TeaRecipe) {
         </button>
       </div>
       <p class="tea-estimate-note">
-        收益按当前售价估算；支撑时间为高级总库存 ÷ 当前总销售速度，不代表各款实际售罄顺序，不含补货、喇叭及员工变动。{{ estimate.capped ? '库存可能无法在营业截止前售完。' : '' }}
+        收益按当前售价估算；支撑时间为高级总库存 ÷ 当前总销售速度，不代表各款实际售罄顺序，不含补货、喇叭及员工变动。{{ estimate.capped ? '预计支撑时间超过本次营业截止，营业结束后不再销售，实际以活动结算时间为准。' : '' }}
       </p>
       <div class="tea-actions">
         <button type="button" class="tea-link" :disabled="blocked" @click="emit('open', 'automation')">

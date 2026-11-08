@@ -657,22 +657,6 @@ function filterLandIdsForNormalFertilizer(landIds: number[], lands: any[]): numb
     return ids.filter(id => applyable.has(id) || !knownPlanted.has(id));
 }
 
-/** 快成熟判定每轮随机阈值上限（秒）：配置值只作为上限，最多取 300。 */
-const SMART_MATURE_RANDOM_CAP_SEC = 300;
-
-/**
- * smart 施肥策略的「快成熟判定」阈值不再固定：每轮巡查在
- * [1, min(配置秒数, 300)] 内随机取一个整数秒，避免每轮都用同一个临界点。
- * random 可注入，便于回归测试锁定边界。
- */
-function pickSmartMatureThreshold(configuredSec: number, random: () => number = Math.random): number {
-    const configured = Math.floor(toNum(configuredSec) || SMART_MATURE_RANDOM_CAP_SEC);
-    const upper = Math.max(1, Math.min(SMART_MATURE_RANDOM_CAP_SEC, configured));
-    const ratio = Number(random());
-    const safeRatio = Number.isFinite(ratio) ? Math.min(1, Math.max(0, ratio)) : 0;
-    return Math.min(upper, 1 + Math.floor(safeRatio * upper));
-}
-
 function getFastMatureLands(lands: any[], thresholdSec: number = 300): number[] {
     const list: any[] = Array.isArray(lands) ? lands : [];
     const targets: number[] = [];
@@ -1295,8 +1279,6 @@ module.exports = {
     filterLandIdsForNormalFertilizer,
     canApplyNormalFertilizer,
     getFastMatureLands,
-    pickSmartMatureThreshold,
-    SMART_MATURE_RANDOM_CAP_SEC,
     getSlaveLandIds,
     hasPlantData,
     getLinkedMasterLand,

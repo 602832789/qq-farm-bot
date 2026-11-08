@@ -41,7 +41,7 @@ test('运行日志筛选：两个下拉各自有可定位的栅格容器', () =>
   assert.match(toolbar, /:options="events"/)
 })
 
-test('手机端「所有事件」下拉独占整行，不再被 32px 重置按钮列挤压', () => {
+test('手机端「所有事件」与「所有模块」同列同宽，不再被 32px 重置按钮列挤压', () => {
   const toolbar = rule(phone, '.dashboard-log-toolbar')
   assert.match(toolbar, /grid-template-columns:\s*minmax\(0, 1fr\) 32px/, '手机端只留「内容 + 重置按钮」两列')
   assert.doesNotMatch(toolbar, /minmax\(0, 1fr\) minmax\(0, 1fr\) 32px/, '旧三列排布已撤销')
@@ -56,7 +56,8 @@ test('手机端「所有事件」下拉独占整行，不再被 32px 重置按�
 
   const eventRule = rule(phone, '.dashboard-log-event')
   assert.match(eventRule, /grid-row:\s*3/, '事件下拉独立一行')
-  assert.match(eventRule, /grid-column:\s*1 \/ -1/, '事件下拉占满整行，文字不会被截断')
+  assert.match(eventRule, /grid-column:\s*1/, '事件下拉与模块下拉同列同宽')
+  assert.doesNotMatch(eventRule, /grid-column:\s*1 \/ -1/, '不再独占整行，长度与「所有模块」一致')
 
   const reset = rule(phone, '.dashboard-log-reset')
   assert.match(reset, /grid-row:\s*2/, '重置按钮与模块筛选同行，不额外占一行')

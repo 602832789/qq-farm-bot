@@ -235,12 +235,16 @@ export function teaInventoryEstimate(state: TeaState, now: number) {
   const tokens = recipes.reduce((sum, recipe) => sum + teaInteger(recipe.stock_cups) * teaInteger(recipe.token_price), 0n)
   const speed = Number(state.shop?.effective_cups_per_hour)
   const seconds = cups <= BigInt(Number.MAX_SAFE_INTEGER) && Number.isFinite(speed) && speed > 0 ? Number(cups) / speed * 3600 : null
-  const rawUntil = seconds !== null && Number.isFinite(seconds) && Number.isFinite(now) ? now + seconds : null
-  const until = rawUntil !== null && Number.isFinite(state.settleTime) && state.settleTime > now
-    && Number.isFinite(new Date(Math.min(rawUntil, state.settleTime) * 1000).getTime())
-    ? Math.min(rawUntil, state.settleTime)
+  // 支撑时间按「高级总库存 ÷ 当前总销售速度」如实估算，不再截断到营业截止：
+  // 旧实现一律取 min(rawUntil, settleTime)，库存相差很大的账号会显示完全相同的
+  // 「距结算还有多久」，看起来像坏掉。超过结算只做 capped 标记，由界面说明。
+  const until = seconds !== null && Number.isFinite(seconds) && Number.isFinite(now)
+    && Number.isFinite(new Date((now + seconds) * 1000).getTime())
+    ? now + seconds
     : null
-  return { cups: cups.toString(), tokens: tokens.toString(), seconds, until, capped: rawUntil !== null && rawUntil > state.settleTime }
+  const capped = until !== null && Number.isFinite(state.settleTime) && state.settleTime > now
+    && until > state.settleTime
+  return { cups: cups.toString(), tokens: tokens.toString(), seconds, until, capped }
 }
 export function teaQuickEntries(state: TeaState, now: number) {
   const shift = state.work?.my_shift

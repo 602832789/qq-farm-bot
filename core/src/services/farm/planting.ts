@@ -31,7 +31,6 @@ const {
     getOrganicFertilizerTargetsFromLands,
     filterLandIdsForNormalFertilizer,
     getFastMatureLands,
-    pickSmartMatureThreshold,
     getCurrentPhase,
     pickRipen2x2Lands,
     normalizeFertilizerLandTypes,
@@ -56,8 +55,19 @@ interface PlantSeedsResult {
     uncertain: boolean;
 }
 
+const { createPlantingLogThrottle, suppressedSuffix } = require('./planting-log-throttle');
+
 const NORMAL_FERTILIZER_ID: number = 1011;
 const ORGANIC_FERTILIZER_ID: number = 1012;
+
+// 种植诊断日志按「状态签名」节流：同一状态 5 分钟内只写一条，累计次数随下一条带出。
+const plantingLogThrottle = createPlantingLogThrottle();
+
+function logPlantingThrottled(key: string, signature: string, message: string, meta: any): void {
+    const decision = plantingLogThrottle.check(key, signature);
+    if (!decision.emit) return;
+    log('种植', `${message}${suppressedSuffix(decision.suppressed)}`, meta);
+}
 
 function confirmsPlantedFootprint(
     expectedLandIds: Set<number>,
@@ -347,7 +357,7 @@ async function plantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<number,
             const scope = seed.landTypes ? `[仅${formatFertilizerLandTypes(seed.landTypes).join('/')}]` : '';
             return `${index + 1}.${seed.name}(${seed.seedId})x${toNum(seed && seed.count)}${scope}`;
         }).join(' -> ');
-        log('种植', `背包种子执行顺序: ${orderedSeeds}`, {
+        logPlantingThrottled('bag_priority_order', orderedSeeds, `背包种子执行顺序: ${orderedSeeds}`, {
             module: 'farm', event: '种植种子', result: 'bag_priority_order', strategy: 'bag_priority',
             priority: priorityList, seedIds: plantingOrder.map((seed: any) => seed.seedId),
         });
@@ -385,7 +395,9 @@ async function plantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<number,
         const allLayouts: PlantingLayout[] = buildPlantingLayouts(allowedLandIds, plantSize);
         const layouts: PlantingLayout[] = selectNonOverlappingLayouts(allLayouts, toNum(seed.count));
         const scopeLog = seed.landTypes ? ` 限${formatFertilizerLandTypes(seed.landTypes).join('/')}=${allowedLandIds.length}` : '';
-        log('种植', `背包种子 ${seed.name}(${seed.seedId}) size=${plantSize} count=${seed.count} 剩余=${remainingLandIds.length}${scopeLog} allLayouts=${allLayouts.length} selected=${layouts.length}`, {
+        const layoutMessage = `背包种子 ${seed.name}(${seed.seedId}) size=${plantSize} count=${seed.count} 剩余=${remainingLandIds.length}${scopeLog} allLayouts=${allLayouts.length} selected=${layouts.length}`;
+        const layoutSignature = [plantSize, seed.count, remainingLandIds.length, allowedLandIds.length, allLayouts.length, layouts.length].join('|');
+        logPlantingThrottled(`layout_check:${seed.seedId}`, layoutSignature, layoutMessage, {
             module: 'farm', event: '种植种子', result: 'layout_check', strategy: 'bag_priority',
             seedId: seed.seedId, plantSize, count: seed.count, emptyCount: remainingLandIds.length,
             landTypes: seed.landTypes || null, allowedCount: allowedLandIds.length,
@@ -422,7 +434,9 @@ async function plantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<number,
                 reservation.reservedLandIds.forEach((id: number) => deferredLandIds.add(id));
                 const reserved = new Set(reservation.reservedLandIds);
                 remainingLandIds = remainingLandIds.filter(id => !reserved.has(id));
-                log('种植', `背包种子 ${seed.name} ${reason}，已预留空地 ${reservation.reservedLandIds.join(',')}，等待布局 ${reservation.layout.landIds.join(',')}`, {
+                const reserveMessage = `背包种子 ${seed.name} ${reason}，已预留空地 ${reservation.reservedLandIds.join(',')}，等待布局 ${reservation.layout.landIds.join(',')}`;
+                const reserveSignature = [reason, reservation.reservedLandIds.join(','), reservation.layout.landIds.join(','), remainingLandIds.length].join('|');
+                logPlantingThrottled(`reserve_future_layout:${seed.seedId}`, reserveSignature, reserveMessage, {
                     module: 'farm', event: '种植种子', result: 'reserve_future_layout', strategy: 'bag_priority',
                     seedId: seed.seedId, plantSize, emptyCount: remainingLandIds.length + reservation.reservedLandIds.length,
                     landTypes: seed.landTypes || null, allowedCount: allowedLandIds.length,
@@ -430,7 +444,7 @@ async function plantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<number,
                     targetLandIds: reservation.layout.landIds,
                 });
             } else {
-                log('种植', `背包种子 ${seed.name} ${reason}，已跳过`, {
+                logPlantingThrottled(`skip_no_layout:${seed.seedId}`, [reason, remainingLandIds.length, allowedLandIds.length].join('|'), `背包种子 ${seed.name} ${reason}，已跳过`, {
                     module: 'farm', event: '种植种子', result: 'skip_no_layout', strategy: 'bag_priority',
                     seedId: seed.seedId, plantSize, emptyCount: remainingLandIds.length,
                     landTypes: seed.landTypes || null, allowedCount: allowedLandIds.length,
@@ -1198,8 +1212,8 @@ async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNo
     }
     else if (fertilizerConfig === 'smart') {
         let organicTargets: number[] = [];
-        // 快成熟阈值每轮在 [1, min(配置值, 300)] 秒内随机取，避免固定临界点。
-        const smartSeconds = pickSmartMatureThreshold(automation.fertilizer_smart_seconds);
+        // 快成熟判定使用配置的固定秒数（默认 300），每轮按同一临界点判断。
+        const smartSeconds = toNum(automation.fertilizer_smart_seconds) || 300;
         try {
             // smart 要先补普通肥，再按最新状态挑快成熟的地块，必须重新读一次。
             const latest = await getAllLands();

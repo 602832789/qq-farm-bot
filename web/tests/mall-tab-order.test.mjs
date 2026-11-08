@@ -19,5 +19,7 @@ test('调整顺序后路由判定与面板绑定保持完整', () => {
     assert.match(mall, new RegExp(`route\\.query\\.tab === '${key}'`), `${key} 仍在 activeTab 白名单里`)
   assert.match(mall, /<MysteryShopPanel v-if="activeTab === 'mystery'" \/>/)
   assert.match(mall, /<NTab v-for="tab in tabs" :key="tab\.key" :name="tab\.key"/, '页签仍按数组顺序渲染')
-  assert.match(mall, /tab === 'mall' \? undefined : tab/, '默认页签仍是游戏商城且不写 query')
+  assert.match(mall, /const DEFAULT_TAB: MallTab = 'mystery'/, '默认页签改为神秘商人')
+  assert.match(mall, /tab === DEFAULT_TAB \? undefined : tab/, '默认页签不写 query')
+  assert.match(mall, /\? route\.query\.tab : DEFAULT_TAB\)/, '无 query 时回退到默认页签')
 })

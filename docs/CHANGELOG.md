@@ -30,13 +30,18 @@ flowchart TB
 ```
 
 ## 详细记录
-### 2026-11-08 · 首页新增「运行诊断」模块（截图对照自建）
+### 2026-11-09 · 首页诊断移除 + 快成熟回滚 + 神秘商人来访横幅 + 日志刷屏治理 + 奶茶支撑时间修正
 
-- **现成代码核查**：按截图逐项检索本地三套源码、legacy bundle、`_preview` 旧产物，以及 `liyangpengs/qq-farm-bot` 的 master / `test_20260828` 全部分支与首页提交历史，均未发现「运行诊断 / 队列空闲 / 事件循环 P99」实现；上游首页只有运行日志、巡查倒计时、今日统计。因此不移植，改用项目已有的 `/api/scheduler` 调度器任务快照作数据源，其余完整自建。
-- **后端采集**：新增 `core/src/services/runtime-diagnostics.ts`（10 分钟滚动窗口、2 秒采样、200ms 事件循环探针）——CPU 区间平均按 `process.cpuUsage()` 差值 / CPU 核数换算、堆内存趋势、事件循环延迟 P99、当前排队 / 256 与峰值、近 10 分钟完成 / 失败 / 排队超时统计，自动判定「队列空闲 / 运行中 / 需要关注 / 队列积压」。`scheduler.ts` 在 `runTask` 用 `trackScheduledTask` 统一埋点（同步任务仍保持同步返回），`worker.ts` 的 `getSchedulers` 附带账号 Worker 进程读数。
-- **接口**：新增 `GET /api/runtime-diagnostics`（`runtime-diagnostics-routes.ts`），账号 Worker 读数 5 秒缓存避免首页轮询放大 IPC；采样器随 admin server 启动，定时器全部 `unref()` 不阻塞进程退出。
-- **前端卡片**：新增 `RuntimeDiagnosticsCard.vue`，按截图还原状态点 + 更新时间 + 2×2 指标（当前排队进度条 / CPU 区间平均 / 账号堆内存面积折线 / 事件循环 P99 实线与警戒虚线）+ 近 10 分钟汇总 + 「更多指标」展开 12 项辅助指标；10 秒自动刷新、请求序列竞态保护、错误重试；`Dashboard.vue` 右侧列挂在自动巡查与今日统计之间，手机端与暗色主题适配。
-- **测试与验证**：新增 core 15 项、web 12 项；core 413/413、web 113/113、`tsc`、`vue-tsc -b`、改动文件 ESLint、`vite build` 全通过。环境无浏览器 / 真机，界面与配色为静态断言 + 构建验证；`vite build` 清空既有 `dist` 时被工作区批量删除保护拦截，移走旧产物后构建成功。
+- **首页运行诊断模块整体移除**：按用户要求把上一提交完整回滚 —— `RuntimeDiagnosticsCard.vue`、前后端 `runtime-diagnostics` 服务 / 路由 / store / utils、`scheduler` 与 `worker` 埋点及对应测试全部删除，首页右侧列恢复「自动巡查 → 今日统计」。
+- **快成熟判定回滚为固定秒数**：撤销 300 内随机化，`land-analysis.ts` 移除 `pickSmartMatureThreshold` / `SMART_MATURE_RANDOM_CAP_SEC`，`planting.ts` 恢复 `toNum(automation.fertilizer_smart_seconds) || 300`，设置页说明改回「固定秒数」，删除随机化测试并补固定阈值回归。
+- **去除右上角红点通知**：顶栏不再挂载 `PanelNotificationBell`（含未读红点角标），组件删除；后端 `/api/panel-notifications` 与 store 保留，避免牵连自动补码失败 / 自动购买事件的写入。神秘商人提示改由商城页内横幅承担。
+- **手机端运行日志筛选**：「所有事件」下拉由独占整行（`grid-column: 1 / -1`）改为与「所有模块」同列同宽（`grid-column: 1`），PC / 宽容器布局不变；同步更新旧断言。
+- **农场商城**：默认页签改为「神秘商人」（无 query 时回退 `DEFAULT_TAB`，切回默认页不写 query）；PC 端（≥761px）「购买历史」去掉 `max-width: 760px`，与「神秘商人暂未来访」空状态卡片等宽，手机端保持原样。
+- **神秘商人来访横幅**：新增 `MysteryArrivalBanner.vue`，只在商城页顶部显示。样式参考老版本 `CommerceShopBar` 的 `is-violet` 状态条与 `shop-message` 提示条；运行逻辑参考老版本 `visitKey` 去重：有商人来访、本轮按 `npcId + activeTime` 查不到购买记录、且未到 `expireTime` 时显示货品与离开倒计时；购买后本轮不再提示，商人离开或新一轮来访重新判定。不写局内消息、不发外部推送。停在其它页签时商城页每 30 秒拉一次来访状态与购买历史。
+- **种植日志刷屏治理**：新增 `planting-log-throttle.ts`，按「key + 状态签名」5 分钟窗口节流；`背包种子执行顺序`、`size=... allLayouts=... selected=...`、`已预留空地...等待布局`、`已跳过` 四类日志同一状态只输出一次，被合并的轮数在下一条日志里带出「（同样状态重复 N 次，已合并）」，状态变化立即放行。
+- **奶茶「高级库存预计支撑至」修正**：`teaInventoryEstimate` 原来用 `Math.min(rawUntil, settleTime)` 把支撑时间截断到营业结算，导致 15,991 杯与 82,097 杯都显示「5天18小时57分后」。改为按「库存 ÷ `effective_cups_per_hour`」如实返回 `seconds` / `until`，`capped` 只标记「超过本次营业截止」，面板直接展示可售秒数并在超限时提示「营业结束后不再销售」。
+- **化肥与阈值分析（只读结论，未改默认配置）**：`ItemInfo.json` 1011 普通化肥「仅限单阶段无限施肥」、每季每株 1 次（`left_inorc_fert_times`）；`Plant.json` 318 种作物第一段（种子期）最长 17,280 秒 = **4 小时 48 分**，即普通化肥单次最多催熟约 4.8 小时。跨阶段必须靠有机肥（1012 不限次数），`ripen-all.ts` 按阶段秒数累计消耗印证「扣多少生长时间就耗多少容器时长」。巡查间隔 20~25 秒、有机肥按剩余生长时间精确扣费，因此快成熟阈值建议 **60~120 秒（推荐 60 秒）**：≥2 倍巡查上限保证命中，每株只多耗 1~2 分钟有机肥；默认 300 秒命中率最高但每株多耗 5 分钟容器时间。被偷窗口由「成熟 → 收获」的巡查延迟（≤25 秒）决定，加大阈值并不能缩短它，防偷更有效的做法是把巡查间隔调小。
+- **测试与验证**：新增 core 12 项、web 11 项回归，更新 2 组旧断言；最终 core 406/406、web 106/106、`tsc`、`vue-tsc -b`、改动文件 ESLint、`vite build` 全通过。环境无浏览器 / 真机，界面与配色为静态断言 + 构建验证。
 
 ### 2026-11-08 · 今日统计去掉单位「次」 + 账号管理 Code 过期自动监听与自动补码
 
