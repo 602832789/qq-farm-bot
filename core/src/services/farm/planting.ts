@@ -1212,8 +1212,8 @@ async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNo
     }
     else if (fertilizerConfig === 'smart') {
         let organicTargets: number[] = [];
-        // 快成熟判定使用配置的固定秒数（默认 60，巡查 20~25 秒下命中率高且更省有机肥），每轮按同一临界点判断。
-        const smartSeconds = toNum(automation.fertilizer_smart_seconds) || 60;
+        // 快成熟判定使用配置的固定秒数（默认 300，巡查周期变长时仍能保证催熟命中、缩短成熟后等待收获的被偷窗口），每轮按同一临界点判断。
+        const smartSeconds = toNum(automation.fertilizer_smart_seconds) || 300;
         try {
             // smart 要先补普通肥，再按最新状态挑快成熟的地块，必须重新读一次。
             const latest = await getAllLands();

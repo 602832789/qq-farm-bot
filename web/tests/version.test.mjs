@@ -1,15 +1,17 @@
-import { execFileSync } from 'node:child_process'
+// web 测试由 `node --test` 运行（见 package.json），此处刻意使用 node:test 而非 vitest。
+/* eslint-disable test/no-import-node-test */
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import {
-  DEFAULT_ROOT,
   bumpVersion,
   changelogTag,
   classifyUpdate,
+  DEFAULT_ROOT,
   markLatestChangelogTitle,
   renderVersionSection,
   summarizeTitle,
@@ -84,7 +86,12 @@ test('CLI 端到端：递增版本、同步三个 package.json、写入更新日
   mkdirSync(join(tmp, 'web'), { recursive: true })
   mkdirSync(join(tmp, 'docs'), { recursive: true })
   writeFileSync(join(tmp, 'version.json'), JSON.stringify({
-    major: 2, minor: 8, patch: 0, build: 0, version: '2.8.0', history: [],
+    major: 2,
+    minor: 8,
+    patch: 0,
+    build: 0,
+    version: '2.8.0',
+    history: [],
   }, null, 2))
   for (const file of ['package.json', 'core/package.json', 'web/package.json']) {
     writeFileSync(join(tmp, file), `${JSON.stringify({ name: file, version: '2.8.0' }, null, 2)}\n`)
@@ -157,10 +164,10 @@ test('版本号真源、构建注入与界面显示接线完整', () => {
   assert.match(changelog, /^### 2026-11-09 · v2\.9\.0（#1） · /m)
 })
 
-test('快成熟判定默认值已改为推荐的 60 秒', () => {
-  assert.match(read('web/src/components/settings/AccountFeatureSettings.vue'), /fertilizer_smart_seconds \?\? 60/)
-  assert.match(read('web/src/components/settings/AccountFeatureSettings.vue'), /默认 \/ 推荐 60 秒/)
-  assert.match(read('web/src/views/Settings.vue'), /fertilizer_smart_seconds: 60,/)
+test('快成熟判定默认值恢复为 300 秒', () => {
+  assert.match(read('web/src/components/settings/AccountFeatureSettings.vue'), /fertilizer_smart_seconds \?\? 300/)
+  assert.match(read('web/src/components/settings/AccountFeatureSettings.vue'), /默认 300 秒/)
+  assert.match(read('web/src/views/Settings.vue'), /fertilizer_smart_seconds: 300,/)
 })
 
 test('DEFAULT_ROOT 指向仓库根且版本脚本存在', () => {

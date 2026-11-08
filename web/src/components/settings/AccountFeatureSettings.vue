@@ -38,7 +38,7 @@ const showMilkTeaActivity = computed(() => true)
 const milkTeaSettings = computed(() => MILK_TEA_AUTOMATION_OPTIONS)
 const fertilizerSmartUnit = ref<FertilizerTimeUnit>('seconds')
 const fertilizerSmartValue = computed({
-  get: () => fertilizerTimeValue(automation.value.automation.fertilizer_smart_seconds ?? 60, fertilizerSmartUnit.value),
+  get: () => fertilizerTimeValue(automation.value.automation.fertilizer_smart_seconds ?? 300, fertilizerSmartUnit.value),
   set: (value: number) => { automation.value.automation.fertilizer_smart_seconds = fertilizerTimeSeconds(value, fertilizerSmartUnit.value) },
 })
 
@@ -442,7 +442,7 @@ function cancel() {
                   </div>
                 </div>
                 <p v-if="['smart', 'smart_only', 'smart_normal'].includes(automation.automation.fertilizer)" class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                  快成熟判定填的是固定秒数：作物剩余生长时间不超过该值时才用有机化肥催熟，默认 / 推荐 60 秒（巡查间隔 20~25 秒下命中率高，且每株更省有机肥）。旧账号若之前保存过 300 秒，请手动改成 60 秒。
+                  快成熟判定填的是固定秒数：作物剩余生长时间不超过该值时才用有机化肥催熟，默认 300 秒。模拟显示常规巡查负载下 60 秒与 300 秒的有机肥消耗相同，但巡查周期变长时 300 秒仍保持 100% 催熟命中、缩短成熟后等待收获的被偷窗口。旧账号若手动改过 60 秒，请改回 300 秒。
                 </p>
                 <div class="flex flex-wrap items-center gap-x-6 gap-y-3">
                   <BaseSwitch v-model="automation.automation.fertilizer_2x2_ripen" label="2x2催熟" :disabled="mutationTestActive" />

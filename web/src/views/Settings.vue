@@ -250,7 +250,7 @@ const localAutomationSettings = ref({
     skip_own_weed_bug: false,
     fertilizer_multi_season: false,
     fertilizer_land_types: [...defaultFertilizerLandTypes],
-    fertilizer_smart_seconds: 60,
+    fertilizer_smart_seconds: 300,
     show_manual_fertilizer: true,
     pet_feed_dog_food: true,
     pet_feed_dog_food_auto_buy: true,
@@ -306,7 +306,7 @@ function syncLocalAutomationSettings() {
         skip_own_weed_bug: false,
         fertilizer_multi_season: false,
         fertilizer_land_types: [...allFertilizerLandTypes],
-        fertilizer_smart_seconds: 60,
+        fertilizer_smart_seconds: 300,
         show_manual_fertilizer: true,
         pet_feed_dog_food: true,
         pet_feed_dog_food_auto_buy: true,
@@ -341,7 +341,7 @@ function syncLocalAutomationSettings() {
         skip_own_weed_bug: false,
         fertilizer_multi_season: false,
         fertilizer_land_types: [...allFertilizerLandTypes],
-        fertilizer_smart_seconds: 60,
+        fertilizer_smart_seconds: 300,
         show_manual_fertilizer: true,
         pet_feed_dog_food: true,
         pet_feed_dog_food_auto_buy: true,
@@ -353,7 +353,7 @@ function syncLocalAutomationSettings() {
     }
     localAutomationSettings.value.automation.fertilizer_land_types = normalizeFertilizerLandTypes(localAutomationSettings.value.automation.fertilizer_land_types)
     if (localAutomationSettings.value.automation.fertilizer_smart_seconds === undefined) {
-      localAutomationSettings.value.automation.fertilizer_smart_seconds = 60
+      localAutomationSettings.value.automation.fertilizer_smart_seconds = 300
     }
     if (localAutomationSettings.value.automation.show_manual_fertilizer === undefined) {
       localAutomationSettings.value.automation.show_manual_fertilizer = true

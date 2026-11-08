@@ -86,7 +86,7 @@ const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
         fertilizer: 'smart',
         fertilizer_multi_season: true,
         fertilizer_land_types: [...DEFAULT_FERTILIZER_LAND_TYPES],
-        fertilizer_smart_seconds: 60,
+        fertilizer_smart_seconds: 300,
         skip_own_weed_bug: true,
         show_manual_fertilizer: true,
 
@@ -487,7 +487,7 @@ function normalizeAccountConfig(input: unknown, fallback: AccountConfig = accoun
             } else if (k === 'fertilizer_land_types') {
                 cfg.automation.fertilizer_land_types = normalizeFertilizerLandTypes(v, cfg.automation.fertilizer_land_types);
             } else if (k === 'fertilizer_smart_seconds') {
-                cfg.automation.fertilizer_smart_seconds = Math.max(30, Math.min(3600, Number(v) || 60));
+                cfg.automation.fertilizer_smart_seconds = Math.max(30, Math.min(3600, Number(v) || 300));
             } else if (AUTOMATION_NUMBER_KEYS.has(k)) {
                 const n = Number(v);
                 if (Number.isFinite(n)) (cfg.automation as any)[k] = Math.max(0, Math.floor(n));

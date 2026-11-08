@@ -160,7 +160,7 @@ function applyConfigSnapshot(snapshot: Record<string, any> | undefined, options:
             } else if (k === 'fertilizer_land_types') {
                 (next.automation as any)[k] = normalizeFertilizerLandTypes(v, next.automation.fertilizer_land_types);
             } else if (k === 'fertilizer_smart_seconds') {
-                (next.automation as any)[k] = Math.max(30, Math.min(3600, Number(v) || 60));
+                (next.automation as any)[k] = Math.max(30, Math.min(3600, Number(v) || 300));
             } else if (AUTOMATION_NUMBER_KEYS.has(k)) {
                 const n = Number(v);
                 if (Number.isFinite(n)) (next.automation as any)[k] = Math.max(0, Math.floor(n));
