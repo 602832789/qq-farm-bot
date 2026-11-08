@@ -1,12 +1,20 @@
 {
   "major": 2,
   "minor": 9,
-  "patch": 2,
-  "build": 3,
-  "version": "2.9.2",
-  "updatedAt": "2026-11-08T23:34:09.764Z",
-  "lastCommit": "e2b965a",
+  "patch": 3,
+  "build": 4,
+  "version": "2.9.3",
+  "updatedAt": "2026-11-08T23:46:47.266Z",
+  "lastCommit": "c6105dc",
   "history": [
+    {
+      "version": "2.9.3",
+      "build": 4,
+      "date": "2026-11-09",
+      "summary": "fix(web): 修复游戏商城页签被弹回神秘商人并收窄默认页签作用域",
+      "commit": "c6105dc",
+      "type": "patch"
+    },
     {
       "version": "2.9.2",
       "build": 3,
