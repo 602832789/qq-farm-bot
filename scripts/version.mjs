@@ -7,6 +7,9 @@
  *   - 每次更新提交后自动递增：新增功能 -> MINOR+1、PATCH 归零；
  *     修复 / 优化 / 回滚 -> PATCH+1；重大不兼容变更 -> MAJOR+1（--type major）。
  *     无论哪种类型，build（更新次数）每次都 +1。
+ *   - 数字 4 规避：版本号的 MAJOR/MINOR/PATCH 三段与更新次数 build，
+ *     十进制表示里任意位置出现 4 就自动跳到下一个不含 4 的整数
+ *     （4→5、14→15、39→50、399→500），界面与日志里不再出现 4。
  *   - 同步写回根 / core / web 三个 package.json 的 version 字段。
  *   - 更新日志 docs/CHANGELOG.md：顶部「版本总览」表每次加一行，
  *     最新一条详细记录标题自动带上「vX.Y.Z（#N）」。
@@ -35,7 +38,8 @@ export const VERSION_FILES = [
 
 export const VERSION_RULES_NOTE = [
     '> **版本号规则**：采用 `MAJOR.MINOR.PATCH`，每次更新提交后自动递增 —— 新增功能 → `MINOR` 进 1、`PATCH` 归零；修复 / 优化 / 回滚 → `PATCH` 进 1；重大不兼容变更 → `MAJOR` 进 1（手动 `--type major`）。',
-    '> **更新序号**：累计更新次数，每次提交无条件 +1；`v2.8.0` 及更早为历史版本，自 `v2.9.0` 起每条更新日志都带版本号。',
+    '> **跳过数字 4**：版本号三段与更新序号在递增时，只要十进制表示任意位置含 `4` 就继续跳到下一个不含 `4` 的整数（`4 → 5`、`14 → 15`、`39 → 50`）；此前已发布的历史记录按原样保留。',
+    '> **更新序号**：累计更新次数，每次提交无条件 +1（遇到含 `4` 的序号自动跳过）；`v2.8.0` 及更早为历史版本，自 `v2.9.0` 起每条更新日志都带版本号。',
     '> 版本号由 `version.json` 统一维护，可用 `pnpm version:bump` 手动递增，安装 `pnpm hooks:install` 后每次提交自动递增；提交前手动递增的首条记录没有提交号（显示 `—`），由 hook 自动递增的记录会带上对应提交号。',
 ].join('\n');
 
@@ -56,6 +60,20 @@ export function classifyUpdate(message = '') {
     if (/\bbreaking\b|重大变更|不兼容|架构重构/.test(text)) return 'major';
     if (/\bfeat\b|新增|新功能|新模块|首次|上线|接入|移植|实现|支持/.test(text)) return 'minor';
     return 'patch';
+}
+
+/** 需要规避的数字：十进制表示中任意位置出现 4 都要避开。 */
+export const SKIPPED_DIGIT = '4';
+
+export function containsSkippedDigit(value) {
+    return String(value ?? '').includes(SKIPPED_DIGIT);
+}
+
+/** 返回 >= value 的最小不含 4 的整数：4→5、14→15、39→50、399→500。 */
+export function nextAllowedNumber(value) {
+    let n = Math.max(0, Math.trunc(Number(value) || 0));
+    while (containsSkippedDigit(n)) n += 1;
+    return n;
 }
 
 /** 计算下一个版本号；type 支持 major / minor / patch，其余按 patch 处理。 */
@@ -79,11 +97,17 @@ export function bumpVersion(current, type = 'patch') {
     else {
         nextPatch += 1;
     }
+    // 三段与更新序号统一跳过含 4 的数字：归零的段本身合法（0 不含 4），
+    // 历史 / 手工写入的含 4 段也会在这里被修正，保证输出版本号与序号都不含 4。
+    nextMajor = nextAllowedNumber(nextMajor);
+    nextMinor = nextAllowedNumber(nextMinor);
+    nextPatch = nextAllowedNumber(nextPatch);
+    const nextBuild = nextAllowedNumber(build + 1);
     return {
         major: nextMajor,
         minor: nextMinor,
         patch: nextPatch,
-        build: build + 1,
+        build: nextBuild,
         version: `${nextMajor}.${nextMinor}.${nextPatch}`,
     };
 }

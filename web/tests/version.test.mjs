@@ -11,10 +11,13 @@ import {
   bumpVersion,
   changelogTag,
   classifyUpdate,
+  containsSkippedDigit,
   DEFAULT_ROOT,
   markLatestChangelogTitle,
+  nextAllowedNumber,
   renderVersionSection,
   renderWebVersionMeta,
+  SKIPPED_DIGIT,
   summarizeTitle,
   upsertVersionSection,
   VERSION_FILES,
@@ -43,6 +46,55 @@ test('新增功能进 MINOR、修复进 PATCH，更新次数每次都 +1', () =>
   const breaking = bumpVersion(fix, 'major')
   assert.deepEqual(breaking, { major: 3, minor: 0, patch: 0, build: 3, version: '3.0.0' })
   assert.equal(bumpVersion(breaking, 'unknown').version, '3.0.1')
+})
+
+test('跳过数字 4：工具函数覆盖个位、十位、整段区间与边界', () => {
+  assert.equal(SKIPPED_DIGIT, '4')
+  for (const value of [4, 14, 40, 104, '2.9.4'])
+    assert.equal(containsSkippedDigit(value), true, `${value} 含 4`)
+  for (const value of [0, 3, 39, 399, '2.9.5'])
+    assert.equal(containsSkippedDigit(value), false, `${value} 不含 4`)
+  assert.equal(nextAllowedNumber(0), 0)
+  assert.equal(nextAllowedNumber(3), 3)
+  assert.equal(nextAllowedNumber(4), 5)
+  assert.equal(nextAllowedNumber(14), 15)
+  assert.equal(nextAllowedNumber(24), 25)
+  assert.equal(nextAllowedNumber(39), 39)
+  assert.equal(nextAllowedNumber(40), 50)
+  assert.equal(nextAllowedNumber(49), 50)
+  assert.equal(nextAllowedNumber(399), 399)
+  assert.equal(nextAllowedNumber(400), 500)
+  assert.equal(nextAllowedNumber(-1), 0)
+})
+
+test('版本号三段与更新序号递增时都跳过数字 4', () => {
+  const cases = [
+    [{ major: 2, minor: 9, patch: 3, build: 4 }, 'patch', '2.9.5', 5],
+    [{ major: 2, minor: 9, patch: 3, build: 3 }, 'patch', '2.9.5', 5],
+    [{ major: 2, minor: 9, patch: 13, build: 13 }, 'patch', '2.9.15', 15],
+    [{ major: 2, minor: 13, patch: 9, build: 39 }, 'minor', '2.15.0', 50],
+    [{ major: 2, minor: 39, patch: 9, build: 0 }, 'minor', '2.50.0', 1],
+    [{ major: 3, minor: 9, patch: 9, build: 3 }, 'major', '5.0.0', 5],
+    [{ major: 2, minor: 4, patch: 9, build: 0 }, 'patch', '2.5.10', 1],
+  ]
+  for (const [current, type, version, build] of cases) {
+    const next = bumpVersion(current, type)
+    assert.equal(next.version, version, `${type} 从 ${JSON.stringify(current)} 递增`)
+    assert.equal(next.build, build)
+    assert.equal(containsSkippedDigit(next.version), false)
+    assert.equal(containsSkippedDigit(next.build), false)
+    assert.equal(next.version, `${next.major}.${next.minor}.${next.patch}`)
+  }
+})
+
+test('连续 200 次递增，版本号与更新序号始终不出现 4', () => {
+  let meta = { major: 2, minor: 9, patch: 3, build: 4 }
+  for (let i = 0; i < 200; i++) {
+    meta = bumpVersion(meta, i % 7 === 0 ? 'minor' : 'patch')
+    assert.equal(containsSkippedDigit(meta.version), false, `第 ${i + 1} 轮版本号：${meta.version}`)
+    assert.equal(containsSkippedDigit(meta.build), false, `第 ${i + 1} 轮序号：${meta.build}`)
+  }
+  assert.ok(meta.build > 200, '序号仍持续递增，不会卡住')
 })
 
 test('版本标签与日志标记', () => {
@@ -135,6 +187,65 @@ test('CLI 端到端：递增版本、同步三个 package.json、写入更新日
   assert.match(log2, /\| v2\.9\.1 \| #2 \| 2026-11-10 \| 修复一个开关 \| `def5678` \|/)
   // 已打过版本号的旧记录不被覆盖
   assert.match(log2, /^### 2026-11-09 · v2\.9\.0（#1） · 新增版本号功能$/m)
+})
+
+test('CLI 端到端：从 2.9.3 #4 递增时版本号、序号、日志与镜像同时跳过 4', (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'farm-version-skip4-'))
+  t.after(() => rmSync(tmp, { recursive: true, force: true }))
+  for (const dir of ['core', 'web', 'docs']) mkdirSync(join(tmp, dir), { recursive: true })
+  writeFileSync(join(tmp, 'version.json'), `${JSON.stringify({
+    major: 2,
+    minor: 9,
+    patch: 3,
+    build: 4,
+    version: '2.9.3',
+    history: [],
+  }, null, 2)}\n`)
+  for (const file of ['package.json', 'core/package.json', 'web/package.json'])
+    writeFileSync(join(tmp, file), `${JSON.stringify({ name: file, version: '2.9.3' }, null, 2)}\n`)
+  writeFileSync(join(tmp, 'docs/CHANGELOG.md'), '# 更新日志\n\n## 详细记录\n### 2026-11-09 · 版本号与更新次数自动跳过数字 4\n')
+
+  const script = join(ROOT, 'scripts/version.mjs')
+  const run = (...args) => execFileSync(process.execPath, [script, 'bump', '--root', tmp, ...args], { encoding: 'utf8' })
+
+  run('--message', '修复版本递增', '--type', 'patch', '--date', '2026-11-09', '--commit', 'aaa1111')
+  const meta = JSON.parse(readFileSync(join(tmp, 'version.json'), 'utf8'))
+  assert.equal(meta.version, '2.9.5')
+  assert.equal(meta.build, 5)
+  for (const file of ['package.json', 'core/package.json', 'web/package.json'])
+    assert.equal(JSON.parse(readFileSync(join(tmp, file), 'utf8')).version, '2.9.5')
+  const mirror = JSON.parse(readFileSync(join(tmp, 'web/version.json'), 'utf8'))
+  assert.equal(mirror.label, 'v2.9.5 · 第 5 次更新')
+  assert.equal(containsSkippedDigit(mirror.label), false)
+  const log = readFileSync(join(tmp, 'docs/CHANGELOG.md'), 'utf8')
+  assert.match(log, /\| v2\.9\.5 \| #5 \| 2026-11-09 \| 修复版本递增 \| `aaa1111` \|/)
+  assert.match(log, /^### 2026-11-09 · v2\.9\.5（#5） · /m)
+
+  // 连续递增跨过 14 / 40 等区间，history 与真源都不允许出现 4
+  for (let i = 0; i < 10; i++)
+    run('--message', '修复问题', '--type', 'patch', '--date', '2026-11-09', '--commit', `bbb${i}`)
+  const meta2 = JSON.parse(readFileSync(join(tmp, 'version.json'), 'utf8'))
+  assert.equal(containsSkippedDigit(meta2.version), false)
+  assert.equal(containsSkippedDigit(meta2.build), false)
+  for (const item of meta2.history) {
+    assert.equal(containsSkippedDigit(item.version), false, `history 版本号含 4：${item.version}`)
+    assert.equal(containsSkippedDigit(item.build), false, `history 序号含 4：${item.build}`)
+  }
+})
+
+test('递增链统一走跳过函数，更新日志规则说明写明跳过数字 4', () => {
+  const script = read('scripts/version.mjs')
+  assert.match(script, /export const SKIPPED_DIGIT = '4'/)
+  assert.match(script, /export function nextAllowedNumber\(/)
+  assert.match(script, /nextMajor = nextAllowedNumber\(nextMajor\)/)
+  assert.match(script, /nextMinor = nextAllowedNumber\(nextMinor\)/)
+  assert.match(script, /nextPatch = nextAllowedNumber\(nextPatch\)/)
+  assert.match(script, /const nextBuild = nextAllowedNumber\(build \+ 1\)/)
+  const section = renderVersionSection([])
+  assert.match(section, /\*\*跳过数字 4\*\*/)
+  assert.match(section, /`4 → 5`/)
+  assert.match(section, /`39 → 50`/)
+  assert.match(read('docs/CHANGELOG.md'), /\*\*跳过数字 4\*\*/)
 })
 
 test('版本号真源、构建注入与界面显示接线完整', () => {
