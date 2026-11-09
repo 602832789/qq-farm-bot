@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 9,
-  "patch": 3,
-  "build": 95,
-  "version": "3.9.3",
-  "updatedAt": "2026-11-09T13:28:32.549Z",
-  "lastCommit": "880b4c6",
+  "patch": 5,
+  "build": 96,
+  "version": "3.9.5",
+  "updatedAt": "2026-11-09T18:29:48.310Z",
+  "lastCommit": "aaaaee5",
   "history": [
+    {
+      "version": "3.9.5",
+      "build": 96,
+      "date": "2026-11-10",
+      "summary": "refactor(web/core): 去除账号管理内 Code 自动监听",
+      "commit": "aaaaee5",
+      "type": "patch"
+    },
     {
       "version": "3.9.3",
       "build": 95,

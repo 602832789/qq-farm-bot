@@ -14,6 +14,7 @@
 
 | 版本 | 更新序号 | 日期 | 更新内容 | 提交 |
 | --- | --- | --- | --- | --- |
+| v3.9.5 | #96 | 2026-11-10 | refactor(web/core): 去除账号管理内 Code 自动监听 | `aaaaee5` |
 | v3.9.3 | #95 | 2026-11-09 | style(web): 手机端头像放大到与三行文字等高，PC 端不变 | `880b4c6` |
 | v3.9.2 | #93 | 2026-11-09 | style(web): 首页头像改为圆形 + 全站头像风格统一 | `843a62a` |
 | v3.9.1 | #92 | 2026-11-09 | fix(test): 修正版本总览重渲染后的一次性迁移说明断言 | `6f04aad` |
@@ -117,7 +118,7 @@ flowchart TB
 ```
 
 ## 详细记录
-### 2026-11-10 · 去除账号管理内 Code 自动监听
+### 2026-11-10 · v3.9.5（#96） · 去除账号管理内 Code 自动监听
 
 - **需求**：账号管理页不再进行 Code 过期自动监听与自动补码。本次按整条功能链路移除，手动补 Code、扫码登录、微信授权续期等原有能力保持不变。
 - **前端**：`AccountManagementPanel.vue` 删除「Code 自动监听」卡片（异常账号列表 / 自动补 Code / 立即补 Code / 每 10 秒检查标签）及配套的 `codeAlerts` watch、10 分钟节流、失败停用与弹窗提示逻辑；`Sidebar.vue` 的挂载与 10 秒轮询不再调用 `fetchCodeHealth()`，仅保留账号列表与运行状态刷新；`stores/account.ts` 删除 `CodeHealthItem`、`codeHealth` / `codeHealthLoaded` 状态、`fetchCodeHealth()` 与 `autoFixCode()`。
