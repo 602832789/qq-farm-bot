@@ -1332,6 +1332,7 @@ useIntervalFn(updateCountdowns, 1000)
   flex-shrink: 0;
 }
 
+/* 与右上角账号菜单、个人页弹窗的头像统一：正圆 + 一圈细描边。 */
 .ov-avatar {
   position: relative;
   width: 52px;
@@ -1342,16 +1343,19 @@ useIntervalFn(updateCountdowns, 1000)
   appearance: none;
   padding: 0;
   border: 0;
-  border-radius: 16px;
+  border-radius: 999px;
   color: var(--ui-subtle);
   background: var(--ui-surface-soft);
   font-size: 26px;
   cursor: pointer;
+  box-shadow: 0 0 0 1px var(--ui-border);
   transition: box-shadow 0.16s ease;
 }
 
 .ov-avatar:hover:not(:disabled) {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--theme-primary) 45%, transparent);
+  box-shadow:
+    0 0 0 1px var(--ui-border),
+    0 0 0 3px color-mix(in srgb, var(--theme-primary) 45%, transparent);
 }
 
 .ov-avatar:focus-visible {
@@ -1370,10 +1374,11 @@ useIntervalFn(updateCountdowns, 1000)
   object-fit: cover;
 }
 
+/* 正圆头像没有方角，状态点贴到右下 45° 的圆周上。 */
 .ov-avatar__dot {
   position: absolute;
-  right: -3px;
-  bottom: -3px;
+  right: 0;
+  bottom: 0;
   width: 14px;
   height: 14px;
   border: 3px solid var(--ui-surface-strong);

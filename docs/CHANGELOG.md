@@ -115,6 +115,15 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-09 · 首页头像改为圆形 + 全站头像风格统一
+
+- **形状**：首页「在线状态」卡片的 52×52 头像由圆角方形（`border-radius: 16px`）改为正圆（`999px`）；头像图片沿用 `object-fit: cover` 与 `border-radius: inherit`，自动裁成圆形，加载失败时的占位图标保持不变。
+- **风格统一**：与右上角账号菜单（`rounded-full` + `ring-1`）、个人页弹窗（`rounded-full` + `ring-2`）的圆形头像对齐，补一圈 `0 0 0 1px var(--ui-border)` 主题细描边，浅色 / 深色模式都跟随主题变量；hover 时细描边与主色外圈叠加显示，focus-visible 主色描边、disabled 态和原有点击行为不变。
+- **在线小圆点**：正圆没有方角，状态点从 `right / bottom: -3px`（角外）移到 `right / bottom: 0`，贴在右下 45° 圆周上；保留 3px 卡片底色描边和在线绿色，看起来与其他圆形头像的状态标识一致。
+- **布局不变**：头像尺寸、grid 居中、「我的农场」入口、账号名 / 在线 / 已运行信息以及 PC / 手机端断点样式均未改动；右上角账号菜单仍只负责切换 / 管理账号，个人页入口仍只有首页头像。
+- **测试**：`web/tests/account-career-modal.test.mjs` 更新「尺寸与布局」断言并新增「圆形头像风格统一」用例，校验正圆半径、细描边、hover 叠加、图片裁剪、状态点贴圆周，并对照账号菜单与个人页弹窗的圆形样式；web 130 项、core 412 项全通过，ESLint、vue-tsc、vite build 通过。
+- 说明：界面为静态断言 + 构建验证，无浏览器 / 真机实测；部署后需重新构建 Docker 镜像或强刷浏览器缓存查看效果。
+
 ### 2026-11-09 · v3.9.1（#92） · 修正版本测试的待发布记录与一次性迁移说明断言
 
 - post-commit hook 递增版本时调用 `renderVersionSection()` 重渲染「版本总览」规则说明，迁移脚本追加在规则行末尾的「本次由 `scripts/rebuild-version-history.mjs` 全量重算」属于一次性说明，会被覆盖；`web/tests/version.test.mjs` 改为校验迁移脚本本身存在且引用 `BASELINE_META`，不再要求 CHANGELOG 持久化这句话。
