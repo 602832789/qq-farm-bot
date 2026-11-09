@@ -1,4 +1,10 @@
-# syntax=docker/dockerfile:1.7
+# 刻意不声明外部的 syntax=docker/dockerfile:x.y 指令：那是 Dockerfile parser
+# directive，BuildKit 会先去 docker.io 把对应镜像拉下来当解析器，再读本文件。
+# 部分国内镜像加速站（如 docker.fnnas.com）不代理 docker/dockerfile 这个
+# namespace，HEAD manifest 返回 401，构建会在第一步直接失败。本文件只用多阶段
+# 构建、ARG before FROM、COPY --from、RUN --mount=type=cache（Dockerfile 1.2
+# 起即内置支持）和 HEALTHCHECK，交给 Docker 引擎自带的解析器即可，无需外部镜像。
+# 如确需升级 frontend，请改用能访问该镜像的 registry，不要直接加回这一行。
 
 ARG NODE_IMAGE=node:20.19.6-alpine3.21
 ARG PNPM_VERSION=10.30.2

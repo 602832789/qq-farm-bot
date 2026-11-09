@@ -123,6 +123,15 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-10 · 修复国内镜像站下 Docker 构建第一步 401（去掉外部 frontend 指令）
+
+- **现象**：在飞牛 NAS 上执行 `docker compose up -d --build`，构建卡 166 秒后第一步就失败：`failed to resolve source metadata for docker.io/docker/dockerfile:1.7: unexpected status from HEAD request to https://docker.fnnas.com/v2/docker/dockerfile/manifests/1.7?ns=docker.io: 401 Unauthorized`。
+- **根因**：`core/Dockerfile` 第 1 行的 `# syntax=docker/dockerfile:1.7` 不是普通注释，而是 Dockerfile parser directive —— BuildKit 会先去 registry 把 `docker/dockerfile:1.7` 镜像拉下来当解析器，之后才开始读 Dockerfile 正文。国内镜像加速站（`docker.fnnas.com`）不代理或需要认证 `docker/dockerfile` 这个 namespace，manifest 的 HEAD 请求返回 401，于是整个构建在解析阶段就挂掉。与项目代码、`node` 基础镜像、`pnpm` 都无关，也不是代码有错。
+- **修复**：删掉该 directive，改用 Docker 引擎**内置**的 `dockerfile.v0` 解析器，构建不再需要拉取任何外部 frontend 镜像。核查确认本文件实际只用到多阶段构建、`ARG` before `FROM`、`COPY --from`、`RUN --mount=type=cache`（Dockerfile 1.2 起即内置支持）与 `HEALTHCHECK`，**没有任何 1.7 独有语法**，因此构建行为与产物完全不变。文件头补了说明注释，避免以后被误加回来；`napcat/Dockerfile` 本来就没有该指令，不受影响。
+- **防回归**：`web/tests/version.test.mjs` 新增断言，禁止 Dockerfile 再出现行首 `syntax=` directive，同时确认仍保留多阶段起点与 cache mount。
+- **验证**：core **452/452**、web **142/142**，改动文件 ESLint、`core tsc --noEmit`、`vue-tsc -b`、`vite build` 全通过。本地无 Docker 守护进程，无法实测 `docker build`，需在有 Docker 的机器上重新执行 `docker compose up -d --build` 确认。
+- **部署提示**：服务器上若暂不方便 `git pull`，可直接 `sed -i '/^# syntax=docker\/dockerfile:/d' core/Dockerfile` 后重建，效果相同。若后续基础镜像 `node:20.19.6-alpine3.21` 也被镜像站拒绝，可用 compose 的 `NODE_IMAGE` 构建参数换成可拉取的镜像。极老的 Docker 若在 `RUN --mount` 上报 `Unknown flag: mount`，去掉两处 `--mount=type=cache,...` 参数即可（依赖层隔离仍在，只是少了 pnpm store 跨构建缓存）。
+
 ### 2026-11-10 · v3.10.3（#101） · 2×2 预留时间策略完整落地：修掉「部分空出就一直重复请求」
 
 - **需求**：分析老版本「预留 2×2 种子」的运行逻辑，并结合其策略做一个完整方案；起因是现版本在「目标 2×2 只空出一部分」时，短时间内会一直重复发请求。

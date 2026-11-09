@@ -373,6 +373,15 @@ test('vite 注入优先根版本文件、回退 web 镜像，读不到时不显�
   assert.match(dockerfile, /web-builder[\s\S]*?COPY version\.json \.\/version\.json[\s\S]*?COPY web \.\/web/)
 })
 
+test('Dockerfile 不声明外部 frontend，国内镜像站也能构建', () => {
+  const dockerfile = read('core/Dockerfile')
+  // syntax= 是 parser directive：BuildKit 会先去 docker.io 拉 docker/dockerfile:x.y
+  // 当解析器，国内镜像加速站常对该 namespace 返回 401，构建第一步就失败。
+  assert.doesNotMatch(dockerfile, /^#\s*syntax\s*=/m)
+  assert.match(dockerfile, /^FROM \$\{NODE_IMAGE\} AS pnpm-base/m)
+  assert.match(dockerfile, /RUN --mount=type=cache/)
+})
+
 test('快成熟判定默认值恢复为 300 秒', () => {
   assert.match(read('web/src/components/settings/AccountFeatureSettings.vue'), /fertilizer_smart_seconds \?\? 300/)
   assert.match(read('web/src/components/settings/AccountFeatureSettings.vue'), /默认 300 秒/)
