@@ -229,9 +229,6 @@ export interface DeviceInfo {
 }
 
 export interface AutoCodeRefreshConfig {
-  /** 定时重登：按间隔刷新微信授权并重启账号，保持登录态。 */
-  enabled: boolean;
-  intervalMinutes: number;
   /** 掉线重登：账号掉线后等待一段时间自动续期并重登。 */
   offlineEnabled: boolean;
   offlineDelaySeconds: number;

@@ -17,9 +17,6 @@ interface DevicePreset {
 }
 
 interface AutoCodeRefreshConfig {
-    /** 定时重登：按间隔刷新微信授权并重启账号，保持登录态。 */
-    enabled: boolean;
-    intervalMinutes: number;
     /** 掉线重登：账号掉线后等待一段时间自动续期并重登。 */
     offlineEnabled: boolean;
     offlineDelaySeconds: number;
@@ -213,20 +210,20 @@ const DEFAULT_SYSTEM_CONFIG: SystemConfig = {
     os: DEFAULT_DEVICE_INFO.os,
     timeZone: DEFAULT_TIME_ZONE,
     deviceInfo: { ...DEFAULT_DEVICE_INFO },
-    autoCodeRefresh: { enabled: false, intervalMinutes: 60, offlineEnabled: false, offlineDelaySeconds: 60 },
+    autoCodeRefresh: { offlineEnabled: false, offlineDelaySeconds: 60 },
     // 服务重启后自动拉起已保存账号，避免每次重启都要手动点启动。
     autoStartAccounts: true,
 };
 
-/** 账号保活配置归一化：重登间隔 1~1440 分钟，掉线等待 1~86400 秒。 */
+/**
+ * 账号在线配置归一化：掉线等待 1~86400 秒。
+ * 定时重登已下线，旧 store.json 里的 enabled / intervalMinutes 会被直接丢弃，
+ * 不会再把已保存过该开关的账号拉回定时重登。
+ */
 function normalizeAutoCodeRefresh(input: unknown): AutoCodeRefreshConfig {
     const src: any = (input && typeof input === 'object') ? input : {};
-    const interval = Number(src.intervalMinutes);
     const delay = Number(src.offlineDelaySeconds);
     return {
-        enabled: src.enabled === true,
-        // 只开掉线重登时也要保留一个可用的间隔值，避免保存后回到默认。
-        intervalMinutes: Number.isFinite(interval) ? Math.max(1, Math.min(1440, Math.round(interval))) : 60,
         offlineEnabled: src.offlineEnabled === true,
         offlineDelaySeconds: Number.isFinite(delay) ? Math.max(1, Math.min(86400, Math.round(delay))) : 60,
     };
@@ -337,7 +334,7 @@ function getRuntimeConfig(): SystemConfig {
  */
 function resolveAutoStartAccounts(saved: boolean | undefined, envValue: string | undefined = process.env.FARM_AUTO_START_ACCOUNTS): boolean {
     const raw = String(envValue ?? '').trim();
-    if (raw) return !/^(0|false|no|off)$/i.test(raw);
+    if (raw) return !/^(?:0|false|no|off)$/i.test(raw);
     return saved !== false;
 }
 

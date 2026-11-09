@@ -176,8 +176,6 @@ export interface OfflineConfig {
 }
 
 export interface AutoCodeRefreshConfig {
-  enabled: boolean
-  intervalMinutes: number
   offlineEnabled: boolean
   offlineDelaySeconds: number
 }
@@ -344,7 +342,7 @@ function createDefaultSettings(): SettingsState {
     intervals: {},
     friendQuietHours: { enabled: false, start: '23:00', end: '07:00', continueFarm: true },
     automation: {},
-    autoCodeRefresh: { enabled: false, intervalMinutes: 60, offlineEnabled: false, offlineDelaySeconds: 60 },
+    autoCodeRefresh: { offlineEnabled: false, offlineDelaySeconds: 60 },
     friendMonitor: createDefaultFriendMonitor(),
     ui: {},
     offlineReminder: createDefaultOfflineReminder(),

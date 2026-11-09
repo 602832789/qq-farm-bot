@@ -39,7 +39,7 @@ function hasRenewableCredential(account: any): boolean {
 }
 
 /**
- * 同一账号的续期串行化。refreshtoken 是一次性滚动凭证：手动按钮、定时重登、
+ * 同一账号的续期串行化。refreshtoken 是一次性滚动凭证：手动按钮、到期前预防续期、
  * 掉线重登、启动前换码并发时都会拿同一个旧 token 去刷新，第二个必然被服务端
  * 拒绝，且旧 token 已作废却没落盘新值 —— 之后所有续期都会持续失败。
  * 串行后第二个任务会在第一个结束后重新读取账号，拿到的是最新 token。

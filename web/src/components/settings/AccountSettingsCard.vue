@@ -10,6 +10,8 @@ defineProps<{
   disabled: boolean
   status: string
   tags: string[]
+  /** 卡片内部自带具名开关时隐藏右上角总开关，避免出现两个含义不清的开关。 */
+  hideSwitch?: boolean
 }>()
 const emit = defineEmits<{ toggle: [enabled: boolean], configure: [] }>()
 </script>
@@ -28,11 +30,12 @@ const emit = defineEmits<{ toggle: [enabled: boolean], configure: [] }>()
           </p>
         </div>
       </div>
-      <BaseSwitch :aria-label="title" :model-value="enabled" :disabled="disabled" @update:model-value="emit('toggle', !!$event)" />
+      <BaseSwitch v-if="!hideSwitch" :aria-label="title" :model-value="enabled" :disabled="disabled" @update:model-value="emit('toggle', !!$event)" />
     </div>
     <div class="mt-4 min-h-[56px] flex flex-wrap content-start gap-2">
       <span v-for="tag in tags" :key="tag" class="max-w-full break-words rounded-md bg-gray-50 px-2.5 py-1 text-xs text-gray-600 dark:bg-gray-900/40 dark:text-gray-300">{{ tag }}</span>
     </div>
+    <slot name="extra" />
     <div class="mt-auto flex items-center justify-between gap-3 pt-4">
       <span class="min-w-0 flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
         <span class="h-2 w-2 shrink-0 rounded-full" :class="enabled ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'" />

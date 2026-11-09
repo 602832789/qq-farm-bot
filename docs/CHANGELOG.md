@@ -121,6 +121,16 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-10 · 去除定时重登 + 账号保活卡片改名合并 + 修复种植日志合并
+
+- **需求**：去掉「定时重登」开关与整套功能；把卡片下方独立的「服务启动自动登录」并入卡片内部；给卡片重新取一个贴切名称；另外反馈「背包种子执行顺序 / size=... allLayouts=... / 已预留空地等待布局」三条日志虽带「（同样状态重复 13 次，已合并）」但仍在刷屏，要求日志合并真正生效。
+- **定时重登整体下线**：`core/src/config/config.ts` 的 `AutoCodeRefreshConfig` 删掉 `enabled` / `intervalMinutes` 与默认值，`normalizeAutoCodeRefresh()` 会直接丢弃旧 `store.json` 里残留的这两个字段；`core/src/types/config.ts`、`web/src/stores/setting.ts` 的类型与默认同步收敛为只有 `offlineEnabled` / `offlineDelaySeconds`。`core/src/services/wx-keepalive.ts` 移除 `tick()` 里按间隔遍历续期重启的分支、`lastRefreshAt`、`'timer'` reason；30 秒巡检现在只跑常开的 `runCodePreflight()`（到期前预防续期），掉线重登完全不受影响。`applyWxKeepAliveConfig()` 改为只记录当前生效策略。
+- **卡片改名与合并**：账号管理页该分区由「账号保活」更名为 **「账号登录与重连」**（分区标题 / 卡片标题 / 配置弹窗标题 / 状态文案一致），对应三项能力：服务启动自动登录、掉线自动重登、微信授权到期前常开续期。`AccountSettingsCard.vue` 新增 `#extra` 插槽和 `hideSwitch`：卡片内部自带两个具名开关后，隐藏右上角含义不清的总开关；原先卡片下方那条灰底「服务启动自动登录」整块删除，改为卡片内的具名行。状态标签同时展示两项开关状态与「到期前自动续期 常开」。配置弹窗只保留「掉线后等待（秒）」，不再出现任何定时重登控件。
+- **日志合并为什么之前没生效**：旧实现给四类诊断各自按「key + 状态签名」做 5 分钟窗口节流，窗口到期会**各自重新播报一次**，于是每个 5 分钟窗口开头又同时冒出三条带「同样状态重复 13 次，已合并」的日志；三条内容不同，前端 `compactRuntimeLogs` 也合不到一起，看起来就像没合并。
+- **修复**：`planting-log-throttle.ts` 新增 `checkStateChange()`（状态变化才放行，不做周期性重新播报）；`planting.ts` 用 `plantFromBagSeeds()` 包一层 `try/finally`，把**一轮巡查内的全部诊断先缓存**，收尾时合成一个整轮签名、只输出**一条**合并日志（正文最多带前 5 条，完整明细在 `meta.diagnostics`），状态不变就一条都不写前端面板；提前 return / 抛错 / 嵌套调用都有兜底。前端 `runtime-log.ts` 的 `repeatSignature()` 剥掉「（同样状态重复 N 次，已合并）」后缀再比较，避免计数不同把同一状态当成两条。
+- **测试与验证**：新增 `web/tests/account-online-card.test.mjs`（5 项）与 `web/tests/runtime-log-merge.test.mjs`（2 项）；扩展 `core/tests/planting-log-throttle.test.js`（+2 项状态变化用例 + 整轮合并接线断言）与 `core/tests/code-preflight.test.js`（定时重登链路移除断言）。顺手修掉 `config.ts` 里 `^(0|false|no|off)$` 的未使用捕获组 ESLint 报错（改为非捕获组，行为不变）。最终 core **430/430**、web **141/141**，改动文件 ESLint、`core tsc --noEmit`、`vue-tsc -b`、`vite build` 全通过。
+- **边界**：旧配置里保存过「定时重登已开启」的账号升级后该字段自动失效，无需手动改 `store.json`；掉线重登与到期前预防续期的开关状态不受影响。日志合并为运行期行为，需重启服务（重建前端镜像并强刷浏览器）后生效；环境无运行中服务 / 真机协议实测。
+
 ### 2026-11-10 · v3.10.1（#99） · 日熔断额度改为只统计失败，成功续期不再占用额度
 
 - **需求**：`v3.10.0` 把老版本「日 8 次」原样用在常规预防续期上，但凭证按 2 小时滚动时一个账号一天可能触发十几次，成功也占额度会导致当天后段被误熔断，反而更容易 Code 过期。要求改为「只有失败才计数、成功不占额度」。

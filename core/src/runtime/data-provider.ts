@@ -303,7 +303,7 @@ function createDataProvider(options: DataProviderOptions) {
         doAnalytics: (accountRef: string, sortBy: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getAnalytics', sortBy),
         buyFertilizer: (accountRef: string, type: string, count: number) => callWorkerApi(resolveAccountRefId(accountRef), 'buyFertilizer', type, count, true),
         checkAndBuyFertilizer: (accountRef: string, options: any) => callWorkerApi(resolveAccountRefId(accountRef), 'checkAndBuyFertilizer', options, true),
-        // 账号保活配置变更后重新校准定时器（配置本身存在系统设置里）。
+        // 掉线重登配置变更后重新读取一次生效策略（配置本身存在系统设置里）。
         applyAccountKeepAliveConfig: () => {
             const { applyWxKeepAliveConfig } = require('../services/wx-keepalive');
             applyWxKeepAliveConfig();

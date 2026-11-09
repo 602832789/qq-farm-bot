@@ -1,6 +1,6 @@
 export {};
 /**
- * 账号保活（微信账号）。
+ * 账号在线保障（微信账号）。
  *
  * - 到期前预防性续期（常开）：后端自主按 expires_at 在到期前主动滚动续期并重启，
  *   不依赖浏览器是否打开、也不依赖用户是否停在「账号管理」页。这是老版本
@@ -8,7 +8,6 @@ export {};
  *   执行器换成现版本更稳的 refreshAccountCredential（自带同账号串行锁、
  *   滚动 token 落盘、expires_at 写回）。日熔断额度只统计失败，成功的常规
  *   续期不占额度，避免凭证按 2 小时滚动时一天内被过早限流。
- * - 定时重登（可选）：每隔 N 分钟续期一次微信授权并重启账号。
  * - 掉线重登（可选）：账号因断开或被踢下线而停止后，等待 N 秒自动续期并重新启动。
  *
  * 所有模式都只对“具备微信刷新凭证（wxid + refreshtoken）”的账号生效；
@@ -42,8 +41,6 @@ interface KeepAliveDeps {
 let deps: KeepAliveDeps = {};
 let timer: any = null;
 let running = false;
-/** 上一轮定时重登的时间；首次进入时从当前时间起算，避免一启动就集体重登。 */
-const lastRefreshAt = new Map<string, number>();
 const inFlight = new Set<string>();
 const offlineTimers = new Map<string, any>();
 
@@ -150,7 +147,7 @@ function isRunning(accountId: unknown): boolean {
 /**
  * 续期 + 按需重启。同一账号同时只允许一个续期任务，避免滚动 token 互相覆盖。
  */
-async function refreshAndMaybeRestart(accountId: unknown, reason: 'timer' | 'offline' | 'manual' | 'preflight', now: number = Date.now()): Promise<boolean> {
+async function refreshAndMaybeRestart(accountId: unknown, reason: 'offline' | 'manual' | 'preflight', now: number = Date.now()): Promise<boolean> {
     const key = String(accountId);
     if (inFlight.has(key)) return false;
     const account = findAccount(key);
@@ -158,7 +155,6 @@ async function refreshAndMaybeRestart(accountId: unknown, reason: 'timer' | 'off
     inFlight.add(key);
     try {
         const result = await refreshAccountCredential(key);
-        lastRefreshAt.set(key, now);
         const isPreflight = reason === 'preflight';
         if (!result.ok) {
             const message = `账号 ${result.accountName} 续期失败：${result.error || '未知错误'}`;
@@ -172,7 +168,7 @@ async function refreshAndMaybeRestart(accountId: unknown, reason: 'timer' | 'off
         if (isPreflight) preflight.recordSuccess(key, now);
         addAccountLog(isPreflight ? 'auto_code_preflight' : 'auto_code_refresh', message, key, result.accountName, { reason });
 
-        // 预防性续期 / 定时重登 / 掉线重登都要立刻用新 Code 重新上线；手动续期只更新 Code。
+        // 预防性续期 / 掉线重登都要立刻用新 Code 重新上线；手动续期只更新 Code。
         const shouldRestart = reason !== 'manual' && typeof deps.restartWorker === 'function';
         if (shouldRestart) {
             const latest = findAccount(key);
@@ -192,8 +188,7 @@ async function refreshAndMaybeRestart(accountId: unknown, reason: 'timer' | 'off
 
 /**
  * 常开的到期前预防性续期通道。返回被触发的账号 id，便于回归测试断言。
- * 与「定时重登」共享 inFlight / lastRefreshAt / 账号串行锁，因此用户即使开了
- * 定时重登也不会重复刷新；滚动续期成功后 expires_at 推进，下一轮自然跳过。
+ * 与掉线重登共享 inFlight 去重和账号串行锁；滚动续期成功后 expires_at 推进，下一轮自然跳过。
  */
 function runCodePreflight(now: number = Date.now()): Promise<string[]> {
     const triggered: string[] = [];
@@ -217,27 +212,8 @@ function tick(): void {
     if (running) return;
     running = true;
     try {
-        const config = getConfig();
-        const now = Date.now();
-        // 不受 config.enabled 控制：预防性续期默认常开，关掉网页后端照样工作。
-        void runCodePreflight(now).catch(() => {});
-        if (!config.enabled) return;
-        const intervalMs = Math.max(1, Number(config.intervalMinutes) || 60) * 60_000;
-        for (const account of listWxAccounts()) {
-            const key = String(account.id);
-            if (!hasWxCredential(account) || !isRunning(key)) {
-                lastRefreshAt.delete(key);
-                continue;
-            }
-            const last = lastRefreshAt.get(key);
-            if (!last) {
-                lastRefreshAt.set(key, now);
-                continue;
-            }
-            if (now - last < intervalMs) continue;
-            lastRefreshAt.set(key, now);
-            void refreshAndMaybeRestart(key, 'timer');
-        }
+        // 到期前预防性续期常开：不看任何开关、不依赖浏览器，关掉网页后端照样工作。
+        void runCodePreflight(Date.now()).catch(() => {});
     } finally {
         running = false;
     }
@@ -273,7 +249,7 @@ function startWxKeepAlive(options: KeepAliveDeps = {}): void {
     timer = setInterval(tick, TICK_MS);
     if (typeof timer.unref === 'function') timer.unref();
     const config = getConfig();
-    log('系统', `账号保活已启动：到期前预防性续期常开（每 ${Math.round(TICK_MS / 1000)} 秒检查、到期前 ${Math.round(PREFLIGHT_WINDOW_MS / 60000)} 分钟续期，当日失败上限 ${MAX_DAILY_PREFLIGHT_FAILURES} 次（成功不占额度） / 连续失败 ${MAX_CONSECUTIVE_FAILURES} 次熔断），定时重登${config.enabled ? `每 ${config.intervalMinutes} 分钟` : '关闭'}，掉线重登${config.offlineEnabled ? `等待 ${config.offlineDelaySeconds} 秒` : '关闭'}`);
+    log('系统', `账号在线保障已启动：到期前预防性续期常开（每 ${Math.round(TICK_MS / 1000)} 秒检查、到期前 ${Math.round(PREFLIGHT_WINDOW_MS / 60000)} 分钟续期，当日失败上限 ${MAX_DAILY_PREFLIGHT_FAILURES} 次（成功不占额度） / 连续失败 ${MAX_CONSECUTIVE_FAILURES} 次熔断），掉线重登${config.offlineEnabled ? `等待 ${config.offlineDelaySeconds} 秒` : '关闭'}`);
 }
 
 function stopWxKeepAlive(): void {
@@ -283,16 +259,14 @@ function stopWxKeepAlive(): void {
     }
     for (const handle of offlineTimers.values()) clearTimeout(handle);
     offlineTimers.clear();
-    lastRefreshAt.clear();
     inFlight.clear();
     preflight.reset();
 }
 
-/** 配置变更后重新校准：关闭定时重登时清空计时，重新开启从当前时间重新计数。 */
+/** 掉线重登配置变更后重新读取一次，把当前生效策略写进系统日志。 */
 function applyWxKeepAliveConfig(): void {
-    lastRefreshAt.clear();
     const config = getConfig();
-    log('系统', `账号保活配置已更新：定时重登${config.enabled ? `每 ${config.intervalMinutes} 分钟` : '关闭'}，掉线重登${config.offlineEnabled ? `等待 ${config.offlineDelaySeconds} 秒` : '关闭'}`);
+    log('系统', `账号在线保障配置已更新：掉线重登${config.offlineEnabled ? `等待 ${config.offlineDelaySeconds} 秒` : '关闭'}，到期前预防性续期常开`);
 }
 
 module.exports = {

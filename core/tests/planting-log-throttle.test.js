@@ -57,7 +57,27 @@ test('合并次数只在大于 0 时追加文案', () => {
     assert.match(suppressedSuffix(3), /已合并/);
 });
 
-test('种植引擎的三类刷屏日志都接入节流（反向验证：不再直接 log）', () => {
+test('checkStateChange：状态不变时永不周期性重新播报', () => {
+    const throttle = createPlantingLogThrottle(60_000);
+    assert.deepEqual(throttle.checkStateChange('round', 'A', 0), { emit: true, suppressed: 0 });
+    for (let i = 1; i <= 20; i++) {
+        const at = i * 10 * 60_000; // 累计 200 分钟，远超 5 分钟窗口
+        assert.deepEqual(throttle.checkStateChange('round', 'A', at), { emit: false, suppressed: i });
+    }
+    assert.deepEqual(throttle.checkStateChange('round', 'B', 201 * 60_000), { emit: true, suppressed: 0 }, '状态变化立即放行');
+    assert.deepEqual(throttle.checkStateChange('round', 'A', 202 * 60_000), { emit: true, suppressed: 0 }, '切回旧状态也算变化');
+});
+
+test('check 仍保留 5 分钟窗口播报，checkStateChange 与 check 共用同一份状态', () => {
+    const throttle = createPlantingLogThrottle(60_000);
+    assert.equal(throttle.checkStateChange('k', 's', 0).emit, true);
+    assert.equal(throttle.check('k', 's', 61_000).emit, true, 'check 到期仍放行');
+    assert.equal(throttle.checkStateChange('k', 's', 122_000).emit, false, '状态没变就不再放行');
+    throttle.reset();
+    assert.equal(throttle.checkStateChange('k', 's', 123_000).emit, true);
+});
+
+test('种植引擎的三类刷屏日志都接入整轮合并（反向验证：不再各自输出）', () => {
     const planting = readFileSync(path.join(__dirname, '../src/services/farm/planting.ts'), 'utf8');
     assert.match(planting, /logPlantingThrottled\('bag_priority_order', orderedSeeds/);
     assert.match(planting, /logPlantingThrottled\(`layout_check:\$\{seed\.seedId\}`/);
@@ -66,4 +86,11 @@ test('种植引擎的三类刷屏日志都接入节流（反向验证：不再�
     assert.doesNotMatch(planting, /log\('种植', `背包种子执行顺序/);
     assert.doesNotMatch(planting, /log\('种植', `背包种子 \$\{seed\.name\}\(\$\{seed\.seedId\}\) size=/);
     assert.match(planting, /suppressedSuffix\(decision\.suppressed\)/);
+    // 整轮合并：入口开启缓冲、收尾用状态变化判定、finally 保证提前 return 也收尾
+    assert.match(planting, /if \(!nested\) plantingRound = \[\]/);
+    assert.match(planting, /try \{\s*return await runPlantFromBagSeeds\(/);
+    assert.match(planting, /finally \{\s*if \(!nested\) flushPlantingRound\(\);/);
+    assert.match(planting, /checkStateChange\('bag_planting_round', signature\)/);
+    assert.match(planting, /shown\.join\('；'\)/, '一轮的多条诊断合成一条正文');
+    assert.match(planting, /if \(plantingRound\) \{\s*plantingRound\.push/, '巡查内只入队、不单独输出');
 });

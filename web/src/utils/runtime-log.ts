@@ -114,8 +114,12 @@ export function isQuietRuntimeLog(log: RuntimeLogEntry) {
   return /暂无|无需|跳过|等待|未发现|没有可|本轮无|检查完成/.test(log.msg)
 }
 
+// 后端节流会在文案末尾追加「（同样状态重复 N 次，已合并）」，N 每次都不同。
+// 比较重复日志时必须剥掉它，否则同一条状态的两次播报会因为计数不同而被当成两条。
+const MERGED_SUFFIX_RE = /（同样状态重复 \d+ 次，已合并）\s*$/
+
 function repeatSignature(log: RuntimeLogEntry) {
-  return [log.source, log.level, log.module, log.event, log.tag, log.msg].join('|')
+  return [log.source, log.level, log.module, log.event, log.tag, log.msg.replace(MERGED_SUFFIX_RE, '')].join('|')
 }
 
 export function compactRuntimeLogs(logs: RuntimeLogEntry[], windowMs = 2 * 60 * 1000) {

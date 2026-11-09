@@ -156,7 +156,7 @@ test('governor：连续 12 次成功不消耗任何日额度', () => {
     assert.equal(g.canAttempt('s', NOW + 12 * 6 * MINUTE + 6 * MINUTE), true);
 });
 
-test('后端自主：保活配置默认全关时，到期账号仍会续期并重启', async () => {
+test('后端自主：掉线重登默认关闭时，到期账号仍会续期并重启', async () => {
     reset();
     const acc = wxAccount({ expires_at: NOW + 20 * MINUTE });
     mocks.accounts = [acc];
@@ -165,7 +165,8 @@ test('后端自主：保活配置默认全关时，到期账号仍会续期并�
         acc.expires_at = NOW + 2 * HOUR + 20 * MINUTE; // 模拟滚动续期写回新到期时间
         return { ok: true, accountId: id, accountName: '微信一号' };
     };
-    assert.equal(ka.getConfig().enabled, false, '系统配置默认关闭定时重登');
+    assert.equal(ka.getConfig().offlineEnabled, false, '系统配置默认关闭掉线重登');
+    assert.equal('enabled' in ka.getConfig(), false, '定时重登开关已整体移除');
     assert.deepEqual(await ka.runCodePreflight(NOW), ['1']);
     assert.deepEqual(mocks.restarts, ['1'], '运行中账号立刻用新 Code 重新上线');
     assert.ok(mocks.logs.some(entry => entry.action === 'auto_code_preflight'));
@@ -255,13 +256,13 @@ test('同一账号续期在途时不会重复触发（inFlight 去重）', async
     assert.deepEqual(await first, ['1']);
 });
 
-test('接线断言：预防通道写在 enabled 判断之前，且定时器由 runtime-engine 启动', () => {
+test('接线断言：定时重登链路已移除，预防通道常开且定时器由 runtime-engine 启动', () => {
     const keepAlive = fs.readFileSync(path.join(SRC, 'services/wx-keepalive.ts'), 'utf8');
     const engine = fs.readFileSync(path.join(SRC, 'runtime/runtime-engine.ts'), 'utf8');
-    assert.match(keepAlive, /void runCodePreflight\(now\)\.catch/);
-    const idxPre = keepAlive.indexOf('void runCodePreflight(now)');
-    const idxEnabled = keepAlive.indexOf('if (!config.enabled) return;', idxPre);
-    assert.ok(idxPre > -1 && idxEnabled > idxPre, '预防性续期必须不受 config.enabled 控制');
+    assert.match(keepAlive, /void runCodePreflight\(Date\.now\(\)\)\.catch/);
+    assert.doesNotMatch(keepAlive, /if \(!config\.enabled\) return;/, '预防性续期不能再受定时重登总开关控制');
+    assert.doesNotMatch(keepAlive, /intervalMinutes|'timer'|"timer"/, '定时重登的间隔与 reason 必须清空');
+    assert.doesNotMatch(keepAlive, /定时重登/, '定时重登文案不得残留');
     assert.match(engine, /startWxKeepAlive\(/);
     assert.match(engine, /startAccountKeepAlive\(\)/);
     const attemptStart = keepAlive.indexOf('recordAttempt(id: string');

@@ -60,13 +60,53 @@ const { createPlantingLogThrottle, suppressedSuffix } = require('./planting-log-
 const NORMAL_FERTILIZER_ID: number = 1011;
 const ORGANIC_FERTILIZER_ID: number = 1012;
 
-// 种植诊断日志按「状态签名」节流：同一状态 5 分钟内只写一条，累计次数随下一条带出。
-const plantingLogThrottle = createPlantingLogThrottle();
+interface PlantingDiagnostic {
+    key: string;
+    signature: string;
+    message: string;
+    meta: any;
+}
+
+/**
+ * 一轮「背包优先种植」的诊断日志先全部缓存，收尾时合并成一条再决定要不要写面板。
+ * 旧实现是三类日志各自节流、各自在 5 分钟窗口到期时重新播报，于是每个窗口开头
+ * 又会同时冒出三条「同样状态重复 N 次，已合并」，看起来就像合并根本没生效。
+ */
+const plantingRoundThrottle = createPlantingLogThrottle();
+let plantingRound: PlantingDiagnostic[] | null = null;
 
 function logPlantingThrottled(key: string, signature: string, message: string, meta: any): void {
-    const decision = plantingLogThrottle.check(key, signature);
+    // 在一轮巡查内：只入队，不单独输出。
+    if (plantingRound) {
+        plantingRound.push({ key, signature, message, meta });
+        return;
+    }
+    // 兜底：脱离巡查上下文调用时仍按单条节流处理。
+    const decision = plantingRoundThrottle.check(key, signature);
     if (!decision.emit) return;
     log('种植', `${message}${suppressedSuffix(decision.suppressed)}`, meta);
+}
+
+/** 整轮状态签名：任何一条诊断变了都算这一轮有变化。 */
+function flushPlantingRound(): void {
+    const round = plantingRound;
+    plantingRound = null;
+    if (!round || round.length === 0) return;
+    const signature = round.map(item => `${item.key}=${item.signature}`).join('\u0001');
+    const decision = plantingRoundThrottle.checkStateChange('bag_planting_round', signature);
+    // 状态没变化：整轮都不写前端日志面板，也不按时间窗口周期性重复播报。
+    if (!decision.emit) return;
+    // 一轮里可能因多个种子凑不齐布局而产生很多条，正文只带前几条，完整明细放 meta。
+    const shown = round.slice(0, 5).map(item => item.message);
+    const rest = round.length - shown.length;
+    const message = `${shown.join('；')}${rest > 0 ? `；…等共 ${round.length} 条诊断` : ''}`;
+    log('种植', `${message}${suppressedSuffix(decision.suppressed)}`, {
+        module: 'farm',
+        event: '种植种子',
+        result: 'bag_planting_round',
+        strategy: 'bag_priority',
+        diagnostics: round.map(item => ({ ...item.meta, key: item.key })),
+    });
 }
 
 function confirmsPlantedFootprint(
@@ -268,7 +308,31 @@ function resolveSeedLandTypes(bagSeedLandTypes: any, seedId: any): string[] | nu
     return types;
 }
 
+/**
+ * 一轮巡查的入口：开启诊断日志合并缓冲，finally 保证提前返回或抛错都能收尾。
+ * 嵌套调用时沿用外层缓冲，避免把一轮拆成多条。
+ */
 async function plantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<number, string>, options: {
+    propagateErrors?: boolean;
+    allUnlockedLandIds?: number[];
+} = {}): Promise<{
+    remainingLandIds: number[];
+    fallbackAllowed: boolean;
+    plantedLandIds: number[];
+    totalPlanted: number;
+    occupiedCount: number;
+    deferredLandIds: number[];
+}> {
+    const nested = plantingRound !== null;
+    if (!nested) plantingRound = [];
+    try {
+        return await runPlantFromBagSeeds(landsToPlant, landTypeById, options);
+    } finally {
+        if (!nested) flushPlantingRound();
+    }
+}
+
+async function runPlantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<number, string>, options: {
     propagateErrors?: boolean;
     allUnlockedLandIds?: number[];
 } = {}): Promise<{
