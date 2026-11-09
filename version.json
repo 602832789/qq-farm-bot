@@ -1,12 +1,20 @@
 {
   "major": 3,
-  "minor": 10,
-  "patch": 6,
-  "build": 103,
-  "version": "3.10.6",
-  "updatedAt": "2026-11-09T22:01:31.068Z",
-  "lastCommit": "50269f7d",
+  "minor": 11,
+  "patch": 0,
+  "build": 105,
+  "version": "3.11.0",
+  "updatedAt": "2026-11-09T22:55:52.291Z",
+  "lastCommit": "edff9d1c",
   "history": [
+    {
+      "version": "3.11.0",
+      "build": 105,
+      "date": "2026-11-10",
+      "summary": "feat(web/core): 账号管理页新增免扫码续期标记，账号列表不再下发凭证明文",
+      "commit": "edff9d1c",
+      "type": "minor"
+    },
     {
       "version": "3.10.6",
       "build": 103,
