@@ -1,12 +1,20 @@
 {
   "major": 3,
-  "minor": 9,
-  "patch": 6,
-  "build": 97,
-  "version": "3.9.6",
-  "updatedAt": "2026-11-09T18:41:12.485Z",
-  "lastCommit": "2a1ffa0",
+  "minor": 10,
+  "patch": 0,
+  "build": 98,
+  "version": "3.10.0",
+  "updatedAt": "2026-11-09T19:11:08.339Z",
+  "lastCommit": "a52e05b",
   "history": [
+    {
+      "version": "3.10.0",
+      "build": 98,
+      "date": "2026-11-10",
+      "summary": "fix(core): 参考老版本新增后端自主到期前预防性续期与失败熔断",
+      "commit": "a52e05b",
+      "type": "minor"
+    },
     {
       "version": "3.9.6",
       "build": 97,
