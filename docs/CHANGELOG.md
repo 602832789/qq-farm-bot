@@ -120,6 +120,13 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-10 · 日熔断额度改为只统计失败，成功续期不再占用额度
+
+- **需求**：`v3.10.0` 把老版本「日 8 次」原样用在常规预防续期上，但凭证按 2 小时滚动时一个账号一天可能触发十几次，成功也占额度会导致当天后段被误熔断，反而更容易 Code 过期。要求改为「只有失败才计数、成功不占额度」。
+- **改动**（`core/src/services/wx-keepalive.ts`）：`PreflightState.attempts` 改为 `failuresToday`（当日累计失败次数），常量 `MAX_DAILY_PREFLIGHT` 更名为 `MAX_DAILY_PREFLIGHT_FAILURES`；`recordAttempt()` 不再累加额度，只记 `lastAttemptAt` 保留两次续期之间 5 分钟最短间隔（防止 `expires_at` 未写回时每 30 秒狂刷一次性刷新凭证）；额度改由 `recordFailure()` 累加，`recordSuccess()` 只清零连续失败、不动日额度。启动日志文案同步改为「当日失败上限 8 次（成功不占额度）」。
+- **效果**：成功的常规预防续期不再有次数上限，只要凭证按时写回 `expires_at` 就能一直工作；只有当日累计 8 次失败、连续 3 次失败或凭证明确失效才会熔断，北京时间零点换日重置。连续失败 3 次与「穿插成功的累计 8 次失败」是两条独立的刹车。
+- **验证**：`core/tests/code-preflight.test.js` 14 → 16 项，新增「连续 12 次成功不消耗任何日额度」的 governor 单测与端到端用例（旧逻辑第 9 次就会被拦下），日上限用例改为「8 次失败 + 穿插成功不减免」，接线断言补静态守卫防止 `recordAttempt` 再次占用额度。core 428/428、web 134/134，改动文件 ESLint、`core tsc --noEmit`、`vue-tsc -b`、`vite build` 全通过。
+
 ### 2026-11-10 · v3.10.0（#98） · 参考老版本优化 Code 续期：后端自主到期前预防性续期 + 失败熔断
 
 - **需求**：现版本仍容易 Code 过期，要求参考老版本（`legacy-qq-farm-bot-20261101.bundle`，HEAD `e8edb59`）优化。

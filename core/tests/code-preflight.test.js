@@ -81,9 +81,9 @@ function reset() {
     });
 }
 
-test('移植老版本阈值：45 分钟窗口 / 日 8 次 / 连续 3 次 / 失败冷却 5 分钟', () => {
+test('移植老版本阈值：45 分钟窗口 / 当日失败 8 次 / 连续 3 次 / 冷却 5 分钟', () => {
     assert.equal(ka.PREFLIGHT_WINDOW_MS, 45 * MINUTE);
-    assert.equal(ka.MAX_DAILY_PREFLIGHT, 8);
+    assert.equal(ka.MAX_DAILY_PREFLIGHT_FAILURES, 8, '日额度只统计失败次数');
     assert.equal(ka.MAX_CONSECUTIVE_FAILURES, 3);
     assert.equal(ka.PREFLIGHT_RETRY_MS, 5 * MINUTE);
 });
@@ -99,7 +99,7 @@ test('isCredentialDue：凭证充足不刷，到期前 45 分钟 / 已过期 / �
     assert.equal(ka.isCredentialDue(wxAccount({ expires_at: (NOW + 2 * HOUR) / 1000 }), NOW), false);
 });
 
-test('governor：失败 5 分钟冷却、连续 3 次熔断、成功清零', () => {
+test('governor：失败 5 分钟冷却、连续 3 次熔断、成功清零且不占额度', () => {
     const g = ka.createPreflightGovernor(() => NOW);
     assert.equal(g.canAttempt('x', NOW), true);
     g.recordAttempt('x', NOW);
@@ -111,6 +111,7 @@ test('governor：失败 5 分钟冷却、连续 3 次熔断、成功清零', () 
     g.recordFailure('x', '网络超时', NOW + 5 * MINUTE);
     g.recordSuccess('x', NOW + 5 * MINUTE + 1);
     assert.equal(g.snapshot('x', NOW + 5 * MINUTE + 1).failures, 0, '成功后连续失败计数清零');
+    assert.equal(g.snapshot('x', NOW + 5 * MINUTE + 1).failuresToday, 2, '成功不占日额度，仍只记 2 次失败');
 
     g.recordAttempt('x', NOW + 11 * MINUTE);
     g.recordFailure('x', '网络超时', NOW + 11 * MINUTE);
@@ -129,18 +130,30 @@ test('governor：凭证明确失效直接熔断，UTC+8 换日后重新放行', 
     assert.equal(g.canAttempt('y', NOW + DAY), true, '跨 UTC+8 自然日后重新计数');
 });
 
-test('governor：日上限 8 次，换日后重置', () => {
+test('governor：当日累计 8 次失败才熔断，穿插成功不减免日额度', () => {
     const g = ka.createPreflightGovernor(() => NOW);
     for (let i = 0; i < 8; i++) {
         const at = NOW + i * 6 * MINUTE;
-        assert.equal(g.canAttempt('z', at), true, `第 ${i + 1} 次应放行`);
+        assert.equal(g.canAttempt('z', at), true, `第 ${i + 1} 次失败应放行`);
         g.recordAttempt('z', at);
         g.recordFailure('z', '网络超时', at);
-        g.recordSuccess('z', at);
+        g.recordSuccess('z', at + 1); // 只清连续失败，不清当日累计失败
     }
-    assert.equal(g.snapshot('z', NOW + 7 * 6 * MINUTE).attempts, 8);
-    assert.equal(g.canAttempt('z', NOW + 9 * 6 * MINUTE), false, '当日超过 8 次熔断');
+    assert.equal(g.snapshot('z', NOW + 7 * 6 * MINUTE).failuresToday, 8);
+    assert.equal(g.canAttempt('z', NOW + 9 * 6 * MINUTE), false, '当日累计 8 次失败后熔断');
     assert.equal(g.canAttempt('z', NOW + DAY), true, '换日后重新计数');
+});
+
+test('governor：连续 12 次成功不消耗任何日额度', () => {
+    const g = ka.createPreflightGovernor(() => NOW);
+    for (let i = 0; i < 12; i++) {
+        const at = NOW + i * 6 * MINUTE;
+        assert.equal(g.canAttempt('s', at), true, `第 ${i + 1} 次成功不应被日额度拦下`);
+        g.recordAttempt('s', at);
+        g.recordSuccess('s', at);
+    }
+    assert.equal(g.snapshot('s', NOW + 12 * 6 * MINUTE).failuresToday, 0);
+    assert.equal(g.canAttempt('s', NOW + 12 * 6 * MINUTE + 6 * MINUTE), true);
 });
 
 test('后端自主：保活配置默认全关时，到期账号仍会续期并重启', async () => {
@@ -173,6 +186,24 @@ test('成功续期推进 expires_at 后，下一轮不再重复消耗滚动 toke
     assert.deepEqual(await ka.runCodePreflight(NOW), ['1']);
     assert.deepEqual(await ka.runCodePreflight(NOW + 6 * MINUTE), [], '已过冷却期仍不触发');
     assert.equal(calls, 1);
+});
+
+test('端到端：一天内连续 12 次成功续期仍继续放行，日额度不再被成功耗尽', async () => {
+    reset();
+    const acc = wxAccount({ expires_at: NOW + 20 * MINUTE });
+    mocks.accounts = [acc];
+    mocks.running.add('1');
+    let calls = 0;
+    mocks.refreshImpl = async id => {
+        calls++;
+        return { ok: true, accountId: id, accountName: '微信一号' };
+    };
+    for (let i = 0; i < 12; i++) {
+        const at = NOW + i * 6 * MINUTE;
+        acc.expires_at = at + 10 * MINUTE; // 每轮重新进入 45 分钟预警窗口
+        assert.deepEqual(await ka.runCodePreflight(at), ['1'], `第 ${i + 1} 次成功后续期仍应放行`);
+    }
+    assert.equal(calls, 12, '旧逻辑第 9 次就会被成功次数误熔断');
 });
 
 test('onlyIfDue：凭证充足的账号完全不调用续期接口', async () => {
@@ -233,6 +264,14 @@ test('接线断言：预防通道写在 enabled 判断之前，且定时器由 r
     assert.ok(idxPre > -1 && idxEnabled > idxPre, '预防性续期必须不受 config.enabled 控制');
     assert.match(engine, /startWxKeepAlive\(/);
     assert.match(engine, /startAccountKeepAlive\(\)/);
+    const attemptStart = keepAlive.indexOf('recordAttempt(id: string');
+    const attemptEnd = keepAlive.indexOf('\n        },', attemptStart);
+    const attemptBody = attemptStart > -1 && attemptEnd > attemptStart
+        ? keepAlive.slice(attemptStart, attemptEnd)
+        : '';
+    assert.match(attemptBody, /lastAttemptAt = now/, '尝试仍要记时间做最短间隔防抖');
+    assert.doesNotMatch(attemptBody, /failuresToday \+= 1|\.attempts \+= 1/, '开始尝试不能占用日额度');
+    assert.match(keepAlive, /state\.failuresToday \+= 1/, '日额度只在续期失败时累加');
 });
 
 test('Code 失效信号：ws_400（worker 实际写入）与预防续期失败日志均已纳入判定', () => {
