@@ -14,6 +14,7 @@
 
 | 版本 | 更新序号 | 日期 | 更新内容 | 提交 |
 | --- | --- | --- | --- | --- |
+| v3.10.5 | #102 | 2026-11-10 | fix(docker): 去掉外部 frontend 指令，修复国内镜像站构建 401 | `780c34c` |
 | v3.10.3 | #101 | 2026-11-10 | fix(core): 2×2 预留时间策略完整落地，消除部分空出时的重复请求 | `7a8366e` |
 | v3.10.2 | #100 | 2026-11-10 | fix(web/core): 去除定时重登 + 账号保活卡片改名合并 + 修复种植日志合并 | `b0fe642` |
 | v3.10.1 | #99 | 2026-11-10 | fix(core): 日熔断额度只统计失败，成功续期不占额度 | `ee43f58` |
@@ -123,7 +124,7 @@ flowchart TB
 ```
 
 ## 详细记录
-### 2026-11-10 · 修复国内镜像站下 Docker 构建第一步 401（去掉外部 frontend 指令）
+### 2026-11-10 · v3.10.5（#102） · 修复国内镜像站下 Docker 构建第一步 401（去掉外部 frontend 指令）
 
 - **现象**：在飞牛 NAS 上执行 `docker compose up -d --build`，构建卡 166 秒后第一步就失败：`failed to resolve source metadata for docker.io/docker/dockerfile:1.7: unexpected status from HEAD request to https://docker.fnnas.com/v2/docker/dockerfile/manifests/1.7?ns=docker.io: 401 Unauthorized`。
 - **根因**：`core/Dockerfile` 第 1 行的 `# syntax=docker/dockerfile:1.7` 不是普通注释，而是 Dockerfile parser directive —— BuildKit 会先去 registry 把 `docker/dockerfile:1.7` 镜像拉下来当解析器，之后才开始读 Dockerfile 正文。国内镜像加速站（`docker.fnnas.com`）不代理或需要认证 `docker/dockerfile` 这个 namespace，manifest 的 HEAD 请求返回 401，于是整个构建在解析阶段就挂掉。与项目代码、`node` 基础镜像、`pnpm` 都无关，也不是代码有错。
