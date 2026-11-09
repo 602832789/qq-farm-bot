@@ -8,6 +8,7 @@ import { join, resolve } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import {
+  BASELINE_META,
   bumpVersion,
   changelogTag,
   classifyUpdate,
@@ -251,6 +252,24 @@ test('递增链统一走跳过函数，更新日志规则说明写明跳过数�
   assert.ok(existsSync(join(ROOT, 'scripts/rebuild-version-history.mjs')))
 })
 
+test('全量重排起点为 3.0.0，脚本与规则说明共用单一常量', () => {
+  assert.equal(BASELINE_META.version, '3.0.0')
+  assert.equal(BASELINE_META.major, 3)
+  assert.equal(BASELINE_META.minor, 0)
+  assert.equal(BASELINE_META.patch, 0)
+  assert.equal(containsSkippedDigit(BASELINE_META.version), false)
+  const script = read('scripts/version.mjs')
+  assert.match(script, /export const BASELINE_META = Object\.freeze\(/)
+  assert.match(script, /version: '3\.0\.0'/)
+  assert.match(script, /\.\.\.BASELINE_META/)
+  const migration = read('scripts/rebuild-version-history.mjs')
+  assert.match(migration, /BASELINE_META/)
+  assert.match(migration, /current = \{ \.\.\.BASELINE_META, build: 1, type: 'baseline' \}/)
+  assert.doesNotMatch(migration, /version: '2\.0\.0'/)
+  assert.match(renderVersionSection([]), /以 `v3\.0\.0 · 第 1 次更新` 为起点/)
+  assert.match(read('docs/CHANGELOG.md'), /以 `v3\.0\.0 · 第 1 次更新` 为起点/)
+})
+
 test('全部历史记录都带版本号，版本号与更新序号都不含 4', () => {
   const changelog = read('docs/CHANGELOG.md')
   const titles = changelog.split('\n').filter(line => /^###\s/.test(line))
@@ -278,7 +297,7 @@ test('全部历史记录都带版本号，版本号与更新序号都不含 4', 
   assert.equal(Number(firstRow[2]), meta.build)
   for (const version of versions)
     assert.ok(changelog.includes(`| v${version} |`), `总览表缺少 ${version} 对应行`)
-  assert.equal(versions[versions.length - 1], '2.0.0', '最早一条是重算起点')
+  assert.equal(versions[versions.length - 1], BASELINE_META.version, '最早一条是重算起点 v3.0.0')
   assert.equal(builds[builds.length - 1], 1)
   for (const item of meta.history) {
     assert.equal(containsSkippedDigit(item.version), false)

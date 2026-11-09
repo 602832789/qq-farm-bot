@@ -5,9 +5,9 @@
  * 规则：
  *   - 解析「## 详细记录」下所有 `### YYYY-MM-DD · ...` 标题，剥掉已有版本标记得到纯摘要。
  *   - 按时间正序编号：日期升序，同一天内文档位置靠后的先编号（文档本身是最新在前）。
- *   - 以 `v2.0.0 · 第 1 次更新` 为起点，之后每条按摘要内容判定 minor / patch，
- *     复用 version.mjs 的 bumpVersion（含「跳过数字 4」规则）。
- *   - 旧的 v2.7.x / v2.8.x / v2.9.x 版本号作废；近期记录的真实提交号按旧版本号映射保留。
+ *   - 以 `v3.0.0 · 第 1 次更新` 为起点（取自 version.mjs 的 BASELINE_META，单一真源），
+ *     之后每条按摘要内容判定 minor / patch，复用 bumpVersion（含「跳过数字 4」规则）。
+ *   - 旧的 v2.x / v2.9.x 版本号作废；近期记录的真实提交号按旧版本号映射保留。
  *   - 同步写回标题、版本总览表、更新流水图节点、version.json、三个 package.json、web/version.json。
  *
  * 用法：
@@ -17,6 +17,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import {
+  BASELINE_META,
   bumpVersion,
   changelogTag,
   classifyUpdate,
@@ -73,11 +74,11 @@ if (!records.length) throw new Error('没有找到任何详细记录标题')
 // 时间正序：日期升序；同一天按文档位置倒序（文档最新在前，靠后的记录更早）。
 records.sort((a, b) => a.date.localeCompare(b.date) || b.lineIndex - a.lineIndex)
 
-let previous = { major: 2, minor: 0, patch: 0, build: 0 }
+let previous = { ...BASELINE_META, build: 0 }
 const numbered = records.map((record, index) => {
   let current
   if (index === 0) {
-    current = { major: 2, minor: 0, patch: 0, build: 1, version: '2.0.0', type: 'baseline' }
+    current = { ...BASELINE_META, build: 1, type: 'baseline' }
   }
   else {
     const type = classifyUpdate(record.summary)
