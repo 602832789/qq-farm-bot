@@ -119,6 +119,18 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-10 · 参考老版本优化 Code 续期：后端自主到期前预防性续期 + 失败熔断
+
+- **需求**：现版本仍容易 Code 过期，要求参考老版本（`legacy-qq-farm-bot-20261101.bundle`，HEAD `e8edb59`）优化。
+- **根因**：现版本后端唯一的自主定时器 `wx-keepalive` 默认「定时重登 / 掉线重登」全关（`autoCodeRefresh.enabled=false`）；真正会换 Code 的 `autoFixAccountCode` 由前端驱动——侧栏每 10 秒只拉健康快照，必须打开「账号管理」页，`watch(codeAlerts)` 才会 `POST /auto-fix-code`。关掉浏览器或停在别的页面，后端完全不会主动续期；补码还是事后的（已过期 / 掉线），且带 10 分钟节流 + 失败即永久停用。老版本相反：`auto-code-refresh` 是后端 scheduler 自主跑，60 秒一查、`onlyIfDue` 只在到期前 45 分钟滚动续期。
+- **做法（只借鉴调度与保护，不搬整套 `auto-code-refresh`）**：老版本那套存在已核实的断链（`prepareRestartCode` / `isRestartGenerationCurrent` 引用未定义变量、`wx-login-adapter` 调用未定义函数、`POST /api/settings/auto-code-refresh` 返回 410），因此只移植机制，执行器复用现版本更稳的 `refreshAccountCredential`（同账号串行锁、滚动 token 落盘、`expires_at` 写回）。
+- **实现**（`core/src/services/wx-keepalive.ts`）：在现有 30 秒巡检里新增**不受 `config.enabled` 控制、默认常开**的 `runCodePreflight()`——按 `code-watch.inspectAccountCodeHealth` 的 `remainingMs` 判定，只在到期前 45 分钟（`PREFLIGHT_WINDOW_MS`）对**运行中**的微信账号滚动续期，成功后 `restartWorker` 立刻用新 Code 上线；成功会写回新 `expires_at`，天然脱离预警窗口，不会每轮重复刷新。与「定时重登」共享 `inFlight` / `lastRefreshAt` / 账号串行锁，避免重复消耗一次性 `refreshtoken`。
+- **熔断（移植老版本）**：`createPreflightGovernor()` 按 UTC+8 自然日限制单账号日 8 次（`MAX_DAILY_PREFLIGHT`）、连续失败 3 次（`MAX_CONSECUTIVE_FAILURES`）熔断、失败后 5 分钟冷却（`PREFLIGHT_RETRY_MS`，对齐老版 `WX_CREDENTIAL_RETRY_MS`）；错误含「重新扫码 / 凭证失效 / token expired」直接熔断到换日；成功清零连续失败。只续期运行中账号，等价于老版本 `versions` 代次锁 / `manuallyStopped`，**不会把用户手动停止的账号拉起**。新增账号日志 `auto_code_preflight` / `auto_code_preflight_failed`，与既有 `auto_code_refresh` 区分便于诊断。
+- **配套修复**：`code-watch.ts` 的 `OFFLINE_LOG_ACTIONS` 加入 `ws_400` 与 `auto_code_preflight_failed`。原先集合里的 `login_failed` 全仓没有写入点，而 worker-manager 在 WS 400（登录失效，请更新 Code）时实际写的是 `ws_400`，导致这条最直接的 Code 失效信号被忽略，只能等后续 `disconnect_stop` 才被识别。
+- **边界**：只对具备 `wxid + refreshtoken` 的微信账号生效；扫码时未回传 `refreshtoken`、仅有 `loginBuffer` 的账号无法滚动续期，仍需重新扫码。QQ 没有长效凭证与到期时间，无法做「到期前续期」，保留现有启动前尽力重签与前端掉线兜底。前端「Code 自动监听」完整保留，与后端形成「到期前预防 + 掉线后兜底」双保险；未新增 UI 开关、未引入 Bark 外推、未改账号日志落盘策略。
+- **验证**：新增 `core/tests/code-preflight.test.js` 14 项（阈值 / `isCredentialDue` 秒毫秒兼容 / 冷却与三种熔断 / 换日重置 / 默认配置关闭仍触发 / 成功后不重刷 / onlyIfDue / 不拉起停止账号 / 缺 refreshtoken 跳过 / 失败冷却 / inFlight 去重 / 接线与 `ws_400` 断言）；core 426/426、web 134/134，改动文件 ESLint、`core tsc --noEmit`、`vue-tsc -b`、`vite build` 全通过。
+- 说明：预防性续期成功后会重启运行中的微信账号（约每 2 小时一次，随凭证到期时间推进），属预期行为；无浏览器 / 真机与运行中服务的协议实测，部署需重新构建前端 / 重建 Docker 镜像并强刷浏览器。
+
 ### 2026-11-10 · v3.9.6（#97） · 回滚「去除账号管理内 Code 自动监听」，恢复完整链路
 
 - **需求**：回滚上一次（`v3.9.5 · #96`）的移除，账号管理内 Code 过期自动监听与自动补 Code 恢复到 `v3.9.3 · #95` 时的完整状态。

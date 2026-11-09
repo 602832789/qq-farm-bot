@@ -38,6 +38,11 @@ const OFFLINE_LOG_ACTIONS = new Set([
     'disconnect_stop',
     'kickout_stop',
     'auto_code_refresh_failed',
+    'auto_code_preflight_failed',
+    // worker-manager 在 WS 400（登录失效，请更新 Code）时实际写入的动作；
+    // 以前集合里只有 login_failed，而该动作全仓没有写入点，导致这条最直接的
+    // Code 失效信号被忽略，只能等后续 disconnect_stop 才被识别。
+    'ws_400',
     'login_failed',
 ]);
 
