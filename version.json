@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 10,
-  "patch": 2,
-  "build": 100,
-  "version": "3.10.2",
-  "updatedAt": "2026-11-09T20:31:23.032Z",
-  "lastCommit": "b0fe642",
+  "patch": 3,
+  "build": 101,
+  "version": "3.10.3",
+  "updatedAt": "2026-11-09T21:09:02.279Z",
+  "lastCommit": "7a8366e",
   "history": [
+    {
+      "version": "3.10.3",
+      "build": 101,
+      "date": "2026-11-10",
+      "summary": "fix(core): 2×2 预留时间策略完整落地，消除部分空出时的重复请求",
+      "commit": "7a8366e",
+      "type": "patch"
+    },
     {
       "version": "3.10.2",
       "build": 100,
