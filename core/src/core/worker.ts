@@ -1012,6 +1012,10 @@ async function handleApiCall(msg: any): Promise<void> {
             case 'getLands':
                 result = await getLandsDetail(args[0] === true);
                 break;
+            case 'getCareerProfile':
+                // 个人页（角色生涯）：按当前账号自己的 GID 拉取完整收获明细。
+                result = await require('../services/career').getCareerProfile(getUserState().gid);
+                break;
             case 'getIllustratedSnapshot':
                 result = await require('../services/illustrated').getIllustratedSnapshot();
                 break;

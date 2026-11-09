@@ -113,6 +113,15 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-09 · 移植老版本个人页（角色生涯）+ 入口改为首页头像
+
+- **入口调整**：老版本从右上角账号头像打开的个人页，这次移植后**只从首页「在线状态」卡片里的头像打开**；右上角账号菜单保持原来的「切换 / 管理账号」用途，不新增入口。首页头像由 `div` 改为 `button`，保留 52×52 尺寸、圆角、在线小圆点与图片加载失败回退，只增加 hover / 焦点反馈；PC 与手机端布局不变，「我的农场」入口不受影响。
+- **个人页内容**：移植老版本 `AccountCareerModal.vue` 的完整结构 —— 角色头像 / 名称 / 等级 / 经验 / 角色编号、「历史累计收获」「摘取好友作物（官方生涯统计）」两张汇总卡（紧凑数值 + 精确数量悬浮提示）、收获 Top3 与全部收获明细网格，以及加载中、读取失败与「重新加载」状态；沿用 `useModalFocus` 的焦点、Esc 关闭与背景锁定。账号切换时若弹窗仍打开会自动刷新数据。
+- **后端补齐**：当前仓库原本只有给偷菜过滤用的简版 `getCareerInfo()`（仅收获 / 偷菜总数）。现在 `core/src/services/career.ts` 拆分出 `requestCareerReply()` 与纯函数 `buildCareerProfile()`，按 `careerpb.proto` 解析 `harvest_items`、`total_harvest_count`、`total_steal_count`、`avatar_url`、`exp`、`gid`、`platform`、`open_id`，并用 `gameConfig` 把果实 ID 映射成作物名与图标；简版接口行为不变。新增 `GET /api/career`（`admin/career-routes.ts`），经 `data-provider → worker.handleApiCall('getCareerProfile')` 按当前账号自己的 GID 拉取，前端 `x-account-id` 由 api 拦截器自动带上。
+- **素材**：沿用仓库已有的 `web/public/game-config/career/harvest.png` / `steal.png`。
+- **测试**：新增 `core/tests/career-profile.test.js`（5 项：真实执行 `buildCareerProfile` 验证字段映射 / 作物名兜底 / 驼峰与空回包、proto 字段、路由与 provider / worker 接线及挂载顺序）与 `web/tests/account-career-modal.test.mjs`（3 项：弹窗数据区与状态、入口唯一性与首页头像可点击、样式与原有布局保持）。
+- 说明：生涯数据来自游戏官方协议，账号未运行或未连接时接口会报错，弹窗内可点「重新加载」重试；无浏览器 / 真机实测，界面为静态断言 + 构建验证。
+
 ### 2026-11-09 · v3.8.5（#90） · 版本号与更新次数自动跳过数字 4
 
 - **规则**：`scripts/version.mjs` 新增 `SKIPPED_DIGIT = '4'` / `containsSkippedDigit()` / `nextAllowedNumber()`，返回不小于目标值的最小不含 `4` 的整数。递增时版本号的 `MAJOR` / `MINOR` / `PATCH` 三段与累计更新次数 `build` 统一走该函数，十进制表示中任意位置含 `4` 都自动跳过：`4 → 5`、`14 → 15`、`39 → 50`、`400 → 500`。

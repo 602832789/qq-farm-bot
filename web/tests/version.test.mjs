@@ -270,18 +270,22 @@ test('全量重排起点为 3.0.0，脚本与规则说明共用单一常量', ()
   assert.match(read('docs/CHANGELOG.md'), /以 `v3\.0\.0 · 第 1 次更新` 为起点/)
 })
 
-test('全部历史记录都带版本号，版本号与更新序号都不含 4', () => {
+test('已发布记录都带版本号，提交前允许最新一条待打版本号', () => {
   const changelog = read('docs/CHANGELOG.md')
   const titles = changelog.split('\n').filter(line => /^###\s/.test(line))
   const rows = changelog.split('\n').filter(line => /^\| v\d/.test(line))
   const meta = JSON.parse(read('version.json'))
+  const versionedTitle = /^###\s+\d{4}-\d{2}-\d{2}\s*·\s*v\d+\.\d+\.\d+（#\d+）\s*·\s*/
+  // 写更新日志时最新一条还没提交，版本号与总览表行由 post-commit hook 补上。
+  const pendingTitle = titles.length > 0 && !versionedTitle.test(titles[0])
+  const publishedTitles = pendingTitle ? titles.slice(1) : titles
   assert.ok(titles.length >= 72, '全量重排后的历史记录全部保留')
-  assert.ok(rows.length >= titles.length, '版本总览表覆盖全部详细记录')
+  assert.ok(rows.length >= publishedTitles.length, '版本总览表覆盖全部已发布记录')
   assert.equal(meta.history.length, rows.length, 'history 与总览表行数一致')
 
   const versions = []
   const builds = []
-  for (const title of titles) {
+  for (const title of publishedTitles) {
     const matched = /^###\s+\d{4}-\d{2}-\d{2}\s*·\s*v(\d+\.\d+\.\d+)（#(\d+)）\s*·\s*/.exec(title)
     assert.ok(matched, `标题缺版本号：${title}`)
     assert.equal(containsSkippedDigit(matched[1]), false, `版本号含 4：${title}`)

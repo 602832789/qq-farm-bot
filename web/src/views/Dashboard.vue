@@ -4,6 +4,7 @@ import { useIntervalFn } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import api, { getApiErrorMessage } from '@/api'
+import AccountCareerModal from '@/components/AccountCareerModal.vue'
 import LevelForecast from '@/components/LevelForecast.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
@@ -717,6 +718,45 @@ watch(filteredLogs, (next, previous) => {
   })
 }, { deep: true })
 
+// 个人页（角色生涯）：入口只在首页头像，右上角账号菜单保持切换账号用途。
+const showCareerModal = ref(false)
+const careerLoading = ref(false)
+const careerError = ref('')
+const careerProfile = ref<Record<string, any>>({})
+const careerItems = ref<any[]>([])
+
+async function loadCareer() {
+  if (!currentAccountId.value)
+    return
+  careerLoading.value = true
+  careerError.value = ''
+  try {
+    const { data } = await api.get('/api/career')
+    if (!data?.ok)
+      throw new Error(getApiErrorMessage(data, '生涯记录读取失败'))
+    careerProfile.value = data.data || {}
+    careerItems.value = data.data?.items || []
+  }
+  catch (e: any) {
+    careerError.value = getApiErrorMessage(e, '生涯记录读取失败')
+  }
+  finally {
+    careerLoading.value = false
+  }
+}
+
+function openCareer() {
+  if (!currentAccountId.value)
+    return
+  showCareerModal.value = true
+  void loadCareer()
+}
+
+watch(currentAccountId, () => {
+  if (showCareerModal.value)
+    void loadCareer()
+})
+
 onMounted(async () => {
   statusStore.setRealtimeLogsEnabled(!hasActiveLogFilter.value)
   await refresh()
@@ -737,11 +777,19 @@ useIntervalFn(updateCountdowns, 1000)
       <!-- 账号：身份、在线状态与等级进度 -->
       <section class="ov-card ov-account">
         <div class="ov-account__head">
-          <div class="ov-avatar" :class="{ 'is-online': isOnline }">
+          <button
+            type="button"
+            class="ov-avatar"
+            :class="{ 'is-online': isOnline }"
+            :disabled="!currentAccountId"
+            aria-label="查看角色生涯"
+            title="查看角色生涯"
+            @click="openCareer"
+          >
             <img v-if="accountAvatar && accountAvatar !== failedAccountAvatar" :key="accountAvatar" :src="accountAvatar" alt="" @error="handleAccountAvatarError">
             <span v-else class="i-carbon-user-avatar" />
             <i class="ov-avatar__dot" />
-          </div>
+          </button>
           <div class="min-w-0 flex-1">
             <div class="ov-account__name-row">
               <strong class="ov-account__name" :title="displayName">{{ displayName }}</strong>
@@ -1078,6 +1126,19 @@ useIntervalFn(updateCountdowns, 1000)
         </div>
       </div>
     </div>
+
+    <Teleport to="body">
+      <AccountCareerModal
+        :show="showCareerModal"
+        :account="currentAccount"
+        :profile="careerProfile"
+        :items="careerItems"
+        :loading="careerLoading"
+        :error="careerError"
+        @close="showCareerModal = false"
+        @refresh="loadCareer"
+      />
+    </Teleport>
   </div>
 </template>
 
@@ -1278,10 +1339,28 @@ useIntervalFn(updateCountdowns, 1000)
   display: grid;
   flex: none;
   place-items: center;
+  appearance: none;
+  padding: 0;
+  border: 0;
   border-radius: 16px;
   color: var(--ui-subtle);
   background: var(--ui-surface-soft);
   font-size: 26px;
+  cursor: pointer;
+  transition: box-shadow 0.16s ease;
+}
+
+.ov-avatar:hover:not(:disabled) {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--theme-primary) 45%, transparent);
+}
+
+.ov-avatar:focus-visible {
+  outline: 2px solid var(--theme-primary);
+  outline-offset: 2px;
+}
+
+.ov-avatar:disabled {
+  cursor: default;
 }
 
 .ov-avatar img {
