@@ -127,6 +127,17 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-10 · NAS 反复部署的空间维护脚本与清理说明
+
+- **需求**：用户在 NAS 上每更新一次就 `docker compose up -d --build` 重新测试一遍，占用从 30G 涨到 35G，需要既能把已占空间收回来，又能让以后每次部署不再继续累积。
+- **根因**：每次重建都给新镜像打 `qq-farm-bot:latest`，旧镜像变成 `<none>` 悬空镜像；BuildKit 把每一层构建缓存留在磁盘上，而本项目的 `version.json` 每次提交都变，会连带让 `web-builder` 及其后的层重新生成，所以增量特别明显。另有一个隐形增长点：`qq-farm-logs` 卷里的 `combined.log` / `error.log` 由 `core/src/services/logger.ts` 直接 append，**没有任何轮转或清理**；容器控制台日志反而已经受 compose 的 `json-file 10m × 3` 限制，不是主因。
+- **新增**：`scripts/nas-deploy.sh` 一键部署 —— `git pull --ff-only` → `docker compose up -d --build` → `docker image prune -f`（只删悬空镜像）→ `docker builder prune -f --filter until=24h`（保留最近一次可复用层），部署前后各打印一次 `docker system df` 便于看到回收量。可选 `--prune-logs` 截断应用日志卷里的两个大文件：winston 持有文件句柄，所以用 `: > file` 截断而不是 `rm`，容器不用重启。
+- **文档**：README「Docker 部署」下新增「NAS 反复部署时的空间维护」小节，写清「先 `docker system df -v` 诊断 → 备份 `qq-farm-data` → 分级 `image prune` / `builder prune` / `container prune` → 日志卷截断 → 复核」，并用醒目警告列出 `docker compose down -v`、`--volumes`、`docker volume prune` 等会删掉账号数据的禁区。
+- **数据安全**：脚本只删没有任何东西引用的悬空镜像与过期构建缓存，**绝不含** `-v` / `--volumes` / `volume prune` / `rm -rf`；`qq-farm-data`（账号、Code、refreshtoken）与 `qq-farm-logs` 永远保留。备份命令直接复用已有镜像 `qq-farm-bot:latest`，不额外拉 `alpine`，避开国内镜像站对 `library/*` 返回 401 的问题。
+- **防回归**：新增 `web/tests/nas-deploy.test.mjs` 4 项，锁住脚本完整流程、危险命令零出现（检查时剥掉列举禁令的注释行）、日志清理只截断不删除、README 与 compose 的卷/日志上限仍在。
+- **验证**：`sh -n scripts/nas-deploy.sh` 语法通过，core **459/459**、web **155/155**（+4），改动文件 ESLint、`vue-tsc -b`、`vite build` 全通过。脚本在 NAS 上的实际执行效果待用户 `git pull` 后验证。
+- **生效**：服务器 `git pull` 后，以后更新用 `bash scripts/nas-deploy.sh` 代替手工 `docker compose up -d --build`；想一次把历史缓存清干净，按 README 里的分级命令手动跑一次即可。
+
 ### 2026-11-10 · v3.11.1（#106） · PC 端「账号登录与重连」卡片开关移到说明文字下方
 
 - **需求**：PC 端卡片里「掉线自动重登」开关原先和标题、说明文字并排挤在同一行右侧，文字被压窄、两个开关视觉位置不齐；要求把开关放到文字的最下面，并保持整体美观统一。

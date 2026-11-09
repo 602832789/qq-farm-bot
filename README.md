@@ -138,6 +138,48 @@ docker compose down
 
 `docker compose down` 不会删除命名卷，除非确认要清空数据，不要加 `-v`。更新时先 `git pull --ff-only`，再执行 `docker compose up -d --build`。
 
+### 📦 NAS 反复部署时的空间维护
+
+每次 `docker compose up -d --build` 都会给新镜像打上 `qq-farm-bot:latest`，上一轮的镜像就变成 `<none>` 悬空镜像；BuildKit 还会把每一层的构建缓存留在磁盘上。本项目 `version.json` 每次提交都变，会连带让 `web-builder` 之后的层重新生成，所以反复更新测试时占用会稳定上涨。此外应用自己往 `qq-farm-logs` 卷里追加 `combined.log` / `error.log`，没有轮转（容器控制台日志另有 `json-file` 的 `10m × 3` 上限，不是增长来源）。
+
+**以后每次更新用一键脚本，空间不再累积**（只删没人引用的东西，绝不碰数据卷）：
+
+```bash
+bash scripts/nas-deploy.sh                 # git pull → 重建 → 清悬空镜像 → 清 24h 前的构建缓存
+bash scripts/nas-deploy.sh --prune-logs   # 额外截断应用日志卷里的旧日志
+```
+
+脚本会打印部署前后的 `docker system df`，方便直接看到回收了多少。
+
+**已经涨上去的空间，按这个顺序清**（先诊断再动手，别一上来就 `prune -a`）：
+
+```bash
+# 1) 先看 5G 花在哪：镜像 / 容器 / 卷 / 构建缓存各占多少
+docker system df -v
+
+# 2) 先备份账号数据到宿主机（内含账号凭据，别外传）
+mkdir -p ~/qq-farm-backup
+docker run --rm --entrypoint sh \
+  -v qq-farm-data:/src -v ~/qq-farm-backup:/backup \
+  qq-farm-bot:latest -c 'tar czf /backup/data-$(date +%F).tar.gz -C /src .'
+
+# 3) 分级回收，随时可以停在某一步
+docker image prune -f        # 只删 <none> 悬空镜像，最安全，通常回收最多
+docker builder prune -f      # 清空全部构建缓存；下次构建会慢一点，但一次回收最干净
+docker container prune -f    # 删所有已停止容器：先 docker ps -a 确认 NAS 上没有别的项目
+
+# 4) 日志卷单独处理：只截断文件，不删卷、不重启容器
+docker exec qq-farm-bot sh -c 'du -sh /app/core/data/logs'
+docker exec qq-farm-bot sh -c ': > /app/core/data/logs/combined.log; : > /app/core/data/logs/error.log'
+
+# 5) 复核
+docker system df
+```
+
+> **⚠️ 以下操作会不可逆地删掉账号数据，不要执行**：`docker compose down -v`、`docker system prune --volumes`、`docker system prune -a --volumes`、`docker volume prune -f`、`rm -rf /var/lib/docker`。它们会删除「当前没有被容器引用」的命名卷；容器一旦处于停止状态，`qq-farm-data` 里的账号、Code、refreshtoken 就会一起消失。
+
+如果 `docker system df -v` 四块加起来明显不足涨出来的 5G，再去查 fnOS 自己的回收站 / 快照，那部分不属于 Docker。
+
 QQ 扫码登录所需的 NapCat 服务默认不随 Compose 启动，需要时用 `napcat/Dockerfile` 自行构建。其余环境变量、构建参数与镜像细节见 [详细参考](docs/detailed-reference.md#部署细节)。
 
 <a name="账号登录"></a>
