@@ -248,8 +248,9 @@ test('递增链统一走跳过函数，更新日志规则说明写明跳过数�
   assert.match(section, /`39 → 50`/)
   assert.match(section, /\*\*全量重排\*\*/)
   assert.match(read('docs/CHANGELOG.md'), /\*\*跳过数字 4\*\*/)
-  assert.match(read('docs/CHANGELOG.md'), /本次由 `scripts\/rebuild-version-history\.mjs`/)
+  // hook 每次递增都会重渲染规则说明段，迁移脚本追加的一次性说明不持久化；校验脚本本身即可。
   assert.ok(existsSync(join(ROOT, 'scripts/rebuild-version-history.mjs')))
+  assert.match(read('scripts/rebuild-version-history.mjs'), /BASELINE_META/)
 })
 
 test('全量重排起点为 3.0.0，脚本与规则说明共用单一常量', () => {
