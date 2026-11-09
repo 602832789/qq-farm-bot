@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 10,
-  "patch": 5,
-  "build": 102,
-  "version": "3.10.5",
-  "updatedAt": "2026-11-09T21:45:16.898Z",
-  "lastCommit": "780c34c",
+  "patch": 6,
+  "build": 103,
+  "version": "3.10.6",
+  "updatedAt": "2026-11-09T22:01:31.068Z",
+  "lastCommit": "50269f7d",
   "history": [
+    {
+      "version": "3.10.6",
+      "build": 103,
+      "date": "2026-11-10",
+      "summary": "fix(docker): 基础镜像默认走全限定地址，无需改动环境配置即可构建",
+      "commit": "50269f7d",
+      "type": "patch"
+    },
     {
       "version": "3.10.5",
       "build": 102,
