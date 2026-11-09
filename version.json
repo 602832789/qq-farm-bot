@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 11,
-  "patch": 1,
-  "build": 106,
-  "version": "3.11.1",
-  "updatedAt": "2026-11-09T23:06:00.018Z",
-  "lastCommit": "b5910d3e",
+  "patch": 2,
+  "build": 107,
+  "version": "3.11.2",
+  "updatedAt": "2026-11-09T23:15:43.330Z",
+  "lastCommit": "f0ebb42d",
   "history": [
+    {
+      "version": "3.11.2",
+      "build": 107,
+      "date": "2026-11-10",
+      "summary": "docs(deploy): NAS 反复部署的空间维护脚本与清理说明",
+      "commit": "f0ebb42d",
+      "type": "patch"
+    },
     {
       "version": "3.11.1",
       "build": 106,
