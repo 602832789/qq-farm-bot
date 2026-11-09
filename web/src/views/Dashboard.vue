@@ -790,7 +790,7 @@ useIntervalFn(updateCountdowns, 1000)
             <span v-else class="i-carbon-user-avatar" />
             <i class="ov-avatar__dot" />
           </button>
-          <div class="min-w-0 flex-1">
+          <div class="ov-account__info min-w-0 flex-1">
             <div class="ov-account__name-row">
               <strong class="ov-account__name" :title="displayName">{{ displayName }}</strong>
               <span class="ov-level">Lv.{{ status?.status?.level || 0 }}</span>
@@ -1939,10 +1939,46 @@ useIntervalFn(updateCountdowns, 1000)
 }
 
 @media (max-width: 639px) {
+  /* 手机端文字是三行（名称 / 在线 / 已运行），实测高 71.8px；
+     PC 端两行 51.3px 对应 52px 头像，PC 端保持原样。
+     这里只在手机端把头像等比放大到 72px，与三行文字等高，仍是正圆。 */
+  .ov-account__head {
+    --ov-avatar-size: 72px;
+    gap: 10px;
+  }
+
+  .ov-avatar {
+    width: var(--ov-avatar-size);
+    height: var(--ov-avatar-size);
+    font-size: 34px;
+  }
+
+  /* 圆周变大，在线点同步内移，仍落在右下 45° 圆周上。 */
+  .ov-avatar__dot {
+    right: 3px;
+    bottom: 3px;
+  }
+
+  .ov-account__info {
+    min-height: var(--ov-avatar-size);
+  }
+
+  /* 头像变宽后文字区变窄：收紧间距、禁止「已运行」被挤成第四行，
+     让文字块高度稳定在 72px，头像与文字始终等高。 */
+  .ov-presence {
+    column-gap: 6px;
+  }
+
+  .ov-presence__item {
+    white-space: nowrap;
+  }
+
   /* 手机端：「在线」占第一行，「已运行 + 平台标签」整组落到下面一行；
      PC 端不触发，仍与在线图标同处一行。字号略缩，保证跨天时长也能完整一行显示。 */
   .ov-presence__meta {
     flex: 0 0 100%;
+    column-gap: 6px;
+    overflow: hidden;
     font-size: 11px;
   }
 
