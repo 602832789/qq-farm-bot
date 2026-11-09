@@ -117,6 +117,15 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-10 · 去除账号管理内 Code 自动监听
+
+- **需求**：账号管理页不再进行 Code 过期自动监听与自动补码。本次按整条功能链路移除，手动补 Code、扫码登录、微信授权续期等原有能力保持不变。
+- **前端**：`AccountManagementPanel.vue` 删除「Code 自动监听」卡片（异常账号列表 / 自动补 Code / 立即补 Code / 每 10 秒检查标签）及配套的 `codeAlerts` watch、10 分钟节流、失败停用与弹窗提示逻辑；`Sidebar.vue` 的挂载与 10 秒轮询不再调用 `fetchCodeHealth()`，仅保留账号列表与运行状态刷新；`stores/account.ts` 删除 `CodeHealthItem`、`codeHealth` / `codeHealthLoaded` 状态、`fetchCodeHealth()` 与 `autoFixCode()`。
+- **后端**：`account-routes.ts` 删除 `GET /api/accounts/code-health`、`POST /api/accounts/:id/auto-fix-code` 两个路由及 `buildProviderCodeHealth()`；删除 `core/src/services/code-watch.ts`（微信凭证到期 / QQ 掉线判定、自动换码与重签、补码日志与局内通知写入）。账号 CRUD、账号日志、备注、设置、启动前续期 Code（`auto_code_refresh_failed`）与局内通知服务本身均未改动。
+- **保留的手动通道**：账号卡片「编辑」按钮打开的 `AccountModal` 仍可重新扫码或填写新 Code；顶部「续期全部微信授权」与「添加账号」照常可用。
+- **测试**：删除 `core/tests/code-watch.test.js`；将 `web/tests/code-health.test.mjs` 重写为 `web/tests/code-watch-removed.test.mjs` 负向守卫（6 项），断言前后端源码、状态、轮询、路由不再含自动监听痕迹，且服务文件与旧测试已删除、手动能力仍在。
+- **验证**：core / web 全量测试、改动文件 ESLint、`vue-tsc -b`、`vite build` 全通过；构建产物不含已移除的卡片文案与接口路径。
+
 ### 2026-11-09 · v3.9.3（#95） · 手机端头像放大到与三行文字等高（PC 端不变）
 
 - **需求**：PC 端两行文字配 52px 头像大小合适；手机端文字是三行（名称 / 在线 / 已运行），52px 头像显得偏小。要求只在手机端把头像高度调到与文字块一致，PC 端完全不动。
