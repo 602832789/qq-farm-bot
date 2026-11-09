@@ -118,6 +118,14 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-10 · 回滚「去除账号管理内 Code 自动监听」，恢复完整链路
+
+- **需求**：回滚上一次（`v3.9.5 · #96`）的移除，账号管理内 Code 过期自动监听与自动补 Code 恢复到 `v3.9.3 · #95` 时的完整状态。
+- **做法**：改动已推送到远端，因此不重写历史，改为新的回滚提交。以 `7c008d1`（`v3.9.3 · #95`）为基准恢复 7 个文件；删除上一轮新增的 `web/tests/code-watch-removed.test.mjs`。版本文件与 `#96` 历史记录按版本体系保留，本次回滚本身作为一次新更新继续递增。
+- **恢复内容**：`AccountManagementPanel.vue` 的「Code 自动监听」卡片与 `codeAlerts` watch / 10 分钟节流 / 失败停用 / 立即补 Code；`Sidebar.vue` 挂载与 10 秒轮询的 `fetchCodeHealth()`；`stores/account.ts` 的 `CodeHealthItem`、健康快照状态、`fetchCodeHealth()` / `autoFixCode()`；`account-routes.ts` 的 `GET /api/accounts/code-health`、`POST /api/accounts/:id/auto-fix-code` 与 `buildProviderCodeHealth()`；`core/src/services/code-watch.ts`；`core/tests/code-watch.test.js` 与 `web/tests/code-health.test.mjs` 两套正向回归测试。
+- **验证**：core / web 全量测试回到移除前的通过数，改动文件 ESLint、`vue-tsc -b`、`core tsc --noEmit`、`vite build` 全通过；构建产物重新包含「Code 自动监听」卡片文案与健康快照接口路径。
+- 说明：`#96` 的移除记录作为历史保留，代码状态以其之前为准；部署需重新 build 前端 / 重建镜像并强刷浏览器。
+
 ### 2026-11-10 · v3.9.5（#96） · 去除账号管理内 Code 自动监听
 
 - **需求**：账号管理页不再进行 Code 过期自动监听与自动补码。本次按整条功能链路移除，手动补 Code、扫码登录、微信授权续期等原有能力保持不变。
