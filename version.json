@@ -1,12 +1,20 @@
 {
   "major": 3,
-  "minor": 8,
-  "patch": 5,
-  "build": 90,
-  "version": "3.8.5",
-  "updatedAt": "2026-11-09T00:47:11.923Z",
-  "lastCommit": "f1c9397",
+  "minor": 9,
+  "patch": 0,
+  "build": 91,
+  "version": "3.9.0",
+  "updatedAt": "2026-11-09T10:23:16.786Z",
+  "lastCommit": "4e0321c",
   "history": [
+    {
+      "version": "3.9.0",
+      "build": 91,
+      "date": "2026-11-09",
+      "summary": "feat(web): 移植老版本个人页（角色生涯）并把入口改为首页头像",
+      "commit": "4e0321c",
+      "type": "minor"
+    },
     {
       "version": "3.8.5",
       "build": 90,
