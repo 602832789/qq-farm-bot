@@ -88,8 +88,11 @@ test('种植引擎的三类刷屏日志都接入整轮合并（反向验证：�
     assert.match(planting, /suppressedSuffix\(decision\.suppressed\)/);
     // 整轮合并：入口开启缓冲、收尾用状态变化判定、finally 保证提前 return 也收尾
     assert.match(planting, /if \(!nested\) plantingRound = \[\]/);
-    assert.match(planting, /try \{\s*return await runPlantFromBagSeeds\(/);
+    assert.match(planting, /try \{\s*const result = await runPlantFromBagSeeds\(/);
     assert.match(planting, /finally \{\s*if \(!nested\) flushPlantingRound\(\);/);
+    // 整轮状态闸门：土地状态没变时复用上一轮结论，不读背包也不发种植请求。
+    assert.match(planting, /plantingRoundGate\.cached\(roundSignature\)/);
+    assert.match(planting, /reservationWindow\.hasExpiredWindow\(/);
     assert.match(planting, /checkStateChange\('bag_planting_round', signature\)/);
     assert.match(planting, /shown\.join\('；'\)/, '一轮的多条诊断合成一条正文');
     assert.match(planting, /if \(plantingRound\) \{\s*plantingRound\.push/, '巡查内只入队、不单独输出');

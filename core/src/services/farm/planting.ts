@@ -20,7 +20,15 @@ const {
     getRegisteredLayout,
     registerLayout,
     clearRegisteredLayout,
+    layoutKey,
 } = require('./layout-reservation');
+const {
+    occupantsOf,
+    createReservationWindow,
+    createFailureCooldown,
+    buildPlantingRoundSignature,
+    createPlantingRoundGate,
+} = require('./reservation-window');
 const {
     ALL_FERTILIZER_LAND_TYPES,
     buildLandDetail,
@@ -74,6 +82,24 @@ interface PlantingDiagnostic {
  */
 const plantingRoundThrottle = createPlantingLogThrottle();
 let plantingRound: PlantingDiagnostic[] | null = null;
+
+/**
+ * 2×2 预留状态：每个账号在独立 worker 进程里跑，模块级实例天然按账号隔离。
+ * - 60 秒资格窗口 + 首次预留 60 秒硬期限（服务器时钟，轮询不续期）
+ * - 资格变化/到期释放并记住占用者身份，防同一停滞组合反复圈地
+ * - 整轮土地状态签名不变时跳过整个种植分支（不读背包、不发商店/种植请求）
+ */
+const reservationWindow = createReservationWindow();
+const reservationCooldown = createFailureCooldown();
+const plantingRoundGate = createPlantingRoundGate();
+
+/** 供回归测试/账号切换时复位全部跨轮状态。 */
+function resetPlantingRoundState(): void {
+    reservationWindow.clear();
+    reservationCooldown.clear();
+    plantingRoundGate.clear();
+    plantingRoundThrottle.reset();
+}
 
 function logPlantingThrottled(key: string, signature: string, message: string, meta: any): void {
     // 在一轮巡查内：只入队，不单独输出。
@@ -315,6 +341,9 @@ function resolveSeedLandTypes(bagSeedLandTypes: any, seedId: any): string[] | nu
 async function plantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<number, string>, options: {
     propagateErrors?: boolean;
     allUnlockedLandIds?: number[];
+    lands?: any[];
+    /** 手动触发的一键种植不走整轮闸门，用户重复点击必须真的重试。 */
+    force?: boolean;
 } = {}): Promise<{
     remainingLandIds: number[];
     fallbackAllowed: boolean;
@@ -323,10 +352,32 @@ async function plantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<number,
     occupiedCount: number;
     deferredLandIds: number[];
 }> {
+    // 整轮状态闸门：土地状态完全没变时（典型场景：2×2 只空出一部分、剩余植株还在长），
+    // 直接复用上一轮的「无动作」结论，连背包/商店/种植请求都不发。
+    const gateEnabled = !options.force && Array.isArray(options.lands) && options.lands.length > 0;
+    const roundSignature = gateEnabled
+        ? buildPlantingRoundSignature(landsToPlant, options.allUnlockedLandIds, options.lands)
+        : '';
+    const cached = gateEnabled ? plantingRoundGate.cached(roundSignature) : null;
+    // 有等待组已经越过硬期限时必须放行，让本轮 evaluate 立刻释放空地，不能拖到 30 秒重查。
+    if (cached && !reservationWindow.hasExpiredWindow(getServerTimeSec())) return { ...cached };
+
     const nested = plantingRound !== null;
     if (!nested) plantingRound = [];
     try {
-        return await runPlantFromBagSeeds(landsToPlant, landTypeById, options);
+        const result = await runPlantFromBagSeeds(landsToPlant, landTypeById, options);
+        // 只缓存「本轮没有任何实际种植」的结论；有种植则立即失效，下一轮照常重算。
+        if (gateEnabled) {
+            plantingRoundGate.commit(roundSignature, {
+                remainingLandIds: [],
+                fallbackAllowed: false,
+                plantedLandIds: [],
+                totalPlanted: 0,
+                occupiedCount: 0,
+                deferredLandIds: result.deferredLandIds,
+            });
+        }
+        return result;
     } finally {
         if (!nested) flushPlantingRound();
     }
@@ -335,6 +386,8 @@ async function plantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<number,
 async function runPlantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<number, string>, options: {
     propagateErrors?: boolean;
     allUnlockedLandIds?: number[];
+    lands?: any[];
+    force?: boolean;
 } = {}): Promise<{
     remainingLandIds: number[];
     fallbackAllowed: boolean;
@@ -480,40 +533,85 @@ async function runPlantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<numb
                 && plantSize > 1
                 && !explicitPrioritySeedIds.has(toNum(seed.seedId))
                 && !waiting2x2ReservationUsed;
-            const reservation = (multiLandReservationEnabled || allow2x2WaitReservation)
+            const canReserve = (multiLandReservationEnabled || allow2x2WaitReservation)
                 && !reservedSeedIds.has(toNum(seed.seedId))
                 && plantSize > 1
-                && (explicitPrioritySeedIds.has(toNum(seed.seedId)) || allow2x2WaitReservation)
+                && (explicitPrioritySeedIds.has(toNum(seed.seedId)) || allow2x2WaitReservation);
+
+            // 老版本时间闸门：只用服务端最新土地快照判定「多久能清空」。
+            const nowSec = getServerTimeSec();
+            const snapshotLands: any[] = Array.isArray(options.lands) ? options.lands : [];
+            const landMap = buildLandMap(snapshotLands);
+            const qualifyEmptyIds = new Set<number>(remainingLandIds.map((id: any) => toNum(id)));
+            reservationCooldown.prune();
+
+            const reservation = canReserve
                 ? selectFutureLayoutReservation(allowedLandIds, allEligibleLandIds, plantSize, {
                     registered: getRegisteredLayout(seed.seedId),
                     excludeLandIds: claimedLayoutLandIds,
+                    timeWindow: {
+                        lands: snapshotLands,
+                        emptyLandIds: [...qualifyEmptyIds],
+                        nowSec,
+                        cooldownKeys: reservationCooldown.blockedKeys(),
+                    },
                 })
                 : null;
-            if (!reservation) clearRegisteredLayout(seed.seedId);
-            if (reservation) {
-                registerLayout(seed.seedId, reservation.layout);
-                reservation.layout.landIds.forEach((id: number) => claimedLayoutLandIds.add(toNum(id)));
-                reservedSeedIds.add(toNum(seed.seedId));
-                if (allow2x2WaitReservation) waiting2x2ReservationUsed = true;
-                reservation.reservedLandIds.forEach((id: number) => deferredLandIds.add(id));
-                const reserved = new Set(reservation.reservedLandIds);
-                remainingLandIds = remainingLandIds.filter(id => !reserved.has(id));
-                const reserveMessage = `背包种子 ${seed.name} ${reason}，已预留空地 ${reservation.reservedLandIds.join(',')}，等待布局 ${reservation.layout.landIds.join(',')}`;
-                const reserveSignature = [reason, reservation.reservedLandIds.join(','), reservation.layout.landIds.join(','), remainingLandIds.length].join('|');
-                logPlantingThrottled(`reserve_future_layout:${seed.seedId}`, reserveSignature, reserveMessage, {
-                    module: 'farm', event: '种植种子', result: 'reserve_future_layout', strategy: 'bag_priority',
-                    seedId: seed.seedId, plantSize, emptyCount: remainingLandIds.length + reservation.reservedLandIds.length,
-                    landTypes: seed.landTypes || null, allowedCount: allowedLandIds.length,
-                    reservedLandIds: reservation.reservedLandIds,
-                    targetLandIds: reservation.layout.landIds,
-                });
-            } else {
-                logPlantingThrottled(`skip_no_layout:${seed.seedId}`, [reason, remainingLandIds.length, allowedLandIds.length].join('|'), `背包种子 ${seed.name} ${reason}，已跳过`, {
+
+            // 60 秒硬期限 + 释放标记：不合格/到期/已释放的组合一律不再圈住空地，
+            // 空地留在 remainingLandIds，交给后续种子或第二优先策略立即种植。
+            const occupants = reservation
+                ? occupantsOf(reservation.layout.landIds, landMap, qualifyEmptyIds)
+                : new Map<number, string>();
+            const decision = reservation
+                ? reservationWindow.evaluate(String(reservation.key), occupants, nowSec)
+                : null;
+            if (!decision || !decision.allowed) {
+                if (reservation) {
+                    reservationWindow.release(String(reservation.key), occupants);
+                } else if (canReserve) {
+                    // 之前在等的组已经不合格：逐组释放并记住各自占用者，防资格恢复后立刻重圈。
+                    for (const key of reservationWindow.activeKeys()) {
+                        const ids = key.split(',').map(Number);
+                        reservationWindow.release(key, occupantsOf(ids, landMap, qualifyEmptyIds));
+                    }
+                }
+                clearRegisteredLayout(seed.seedId);
+                const skipReason = !reservation
+                    ? `${reason}（等待组不在 60 秒窗口内或已被 2×2 占用）`
+                    : decision!.reason === 'expired'
+                        ? `${reason}（60 秒等待期限已到，释放空地）`
+                        : `${reason}（该组合已释放，暂不重复圈地）`;
+                logPlantingThrottled(`skip_no_layout:${seed.seedId}`, [
+                    reason, remainingLandIds.length, allowedLandIds.length,
+                    reservation ? reservation.key : '', decision ? decision.reason : 'unqualified',
+                ].join('|'), `背包种子 ${seed.name} ${skipReason}，已跳过`, {
                     module: 'farm', event: '种植种子', result: 'skip_no_layout', strategy: 'bag_priority',
                     seedId: seed.seedId, plantSize, emptyCount: remainingLandIds.length,
                     landTypes: seed.landTypes || null, allowedCount: allowedLandIds.length,
+                    windowReason: decision ? decision.reason : 'unqualified',
                 });
+                continue;
             }
+
+            registerLayout(seed.seedId, reservation!.layout);
+            reservation!.layout.landIds.forEach((id: number) => claimedLayoutLandIds.add(toNum(id)));
+            reservedSeedIds.add(toNum(seed.seedId));
+            if (allow2x2WaitReservation) waiting2x2ReservationUsed = true;
+            reservation!.reservedLandIds.forEach((id: number) => deferredLandIds.add(id));
+            const reserved = new Set(reservation!.reservedLandIds);
+            remainingLandIds = remainingLandIds.filter(id => !reserved.has(id));
+            const waitSeconds = Math.max(0, Math.round(decision.deadlineSec - nowSec));
+            const reserveMessage = `背包种子 ${seed.name} ${reason}，已预留空地 ${reservation!.reservedLandIds.join(',')}，等待布局 ${reservation!.layout.landIds.join(',')}（剩余期限 ${waitSeconds} 秒）`;
+            const reserveSignature = [reason, reservation!.reservedLandIds.join(','), reservation!.layout.landIds.join(','), remainingLandIds.length].join('|');
+            logPlantingThrottled(`reserve_future_layout:${seed.seedId}`, reserveSignature, reserveMessage, {
+                module: 'farm', event: '种植种子', result: 'reserve_future_layout', strategy: 'bag_priority',
+                seedId: seed.seedId, plantSize, emptyCount: remainingLandIds.length + reservation!.reservedLandIds.length,
+                landTypes: seed.landTypes || null, allowedCount: allowedLandIds.length,
+                reservedLandIds: reservation!.reservedLandIds,
+                targetLandIds: reservation!.layout.landIds,
+                clearAt: reservation!.clearAt, deadlineSec: decision.deadlineSec,
+            });
             continue;
         }
 
@@ -529,6 +627,11 @@ async function runPlantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<numb
         ].map((id: any) => toNum(id)).filter(Boolean));
         consumed.forEach(id => occupiedIds.add(id));
         remainingLandIds = remainingLandIds.filter(id => !consumed.has(id));
+
+        // 老版本失败冷却：同一布局连续种植失败时，30 秒内不再把它选为等待预留目标。
+        if (result.planted <= 0) {
+            layouts.forEach((layout: PlantingLayout) => reservationCooldown.mark(layoutKey(layout)));
+        }
 
         if (result.planted > 0) {
             totalPlanted += result.planted;
@@ -834,6 +937,8 @@ async function resolveLandTypeMapForBagSeeds(knownLands: any[]): Promise<Map<num
 async function autoPlantEmptyLands(deadLandIds: number[], emptyLandIds: number[], options: {
     propagateErrors?: boolean;
     knownLands?: any[];
+    /** 手动操作跳过整轮状态闸门。 */
+    force?: boolean;
 } = {}): Promise<any> {
     let landsToPlant: number[] = [...new Set<number>((Array.isArray(emptyLandIds) ? emptyLandIds : [])
         .map((id: any) => toNum(id)).filter((id: number) => id > 0))];
@@ -881,6 +986,8 @@ async function autoPlantEmptyLands(deadLandIds: number[], emptyLandIds: number[]
             bagResult = await plantFromBagSeeds(landsToPlant, landTypeById, {
                 propagateErrors: options.propagateErrors,
                 allUnlockedLandIds,
+                lands: latestLands,
+                force: options.force,
             });
         } catch (e: any) {
             logWarn('种植', `读取背包种子失败，本轮跳过第二优先策略以避免误购: ${e.message}`, {
@@ -1379,4 +1486,5 @@ module.exports = {
     plantFromShop,
     runFertilizerByConfig,
     fertilizeOwnLand,
+    resetPlantingRoundState,
 };

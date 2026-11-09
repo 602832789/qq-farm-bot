@@ -320,14 +320,14 @@ async function runFarmOperation(
         // 注意：如果是单纯点"一键种植"，harvestedLandIds 为空，只种当前的空地/死地
         if (allDeadLands.length > 0 || allEmptyLands.length > 0) {
             try {
-                const plantResult = await autoPlantEmptyLands(allDeadLands, allEmptyLands, { propagateErrors, knownLands: lands });
+                const plantResult = await autoPlantEmptyLands(allDeadLands, allEmptyLands, { propagateErrors, knownLands: lands, force: opType !== 'all' });
                 const plantedCount = Array.isArray(plantResult?.plantedLands) ? plantResult.plantedLands.length : 0;
-                const deferredCount = Array.isArray(plantResult?.deferredLandIds) ? plantResult.deferredLandIds.length : 0;
                 if (plantedCount > 0) {
                     actions.push(`种植${plantedCount}`);
                     recordOperation('plant', plantedCount);
                 }
-                if (deferredCount > 0) actions.push(`预留${deferredCount}`);
+                // 「预留 N 块地」不是实际动作，计入 hadWork 会让上层误判为本轮有进展、
+                // 提前拉起下一轮巡田，从而造成 2×2 部分空出时的高频重复请求。
             } catch (e: any) {
                 logWarn('种植', e.message);
                 if (propagateErrors) throw e;
