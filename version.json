@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 9,
-  "patch": 1,
-  "build": 92,
-  "version": "3.9.1",
-  "updatedAt": "2026-11-09T10:25:57.019Z",
-  "lastCommit": "6f04aad",
+  "patch": 2,
+  "build": 93,
+  "version": "3.9.2",
+  "updatedAt": "2026-11-09T11:00:11.372Z",
+  "lastCommit": "843a62a",
   "history": [
+    {
+      "version": "3.9.2",
+      "build": 93,
+      "date": "2026-11-09",
+      "summary": "style(web): 首页头像改为圆形 + 全站头像风格统一",
+      "commit": "843a62a",
+      "type": "patch"
+    },
     {
       "version": "3.9.1",
       "build": 92,
