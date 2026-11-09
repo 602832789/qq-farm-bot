@@ -125,6 +125,17 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-10 · 账号管理页新增「免扫码续期」能力标记，账号列表不再下发长效凭证明文
+
+- **需求**：上一轮解释「得是有 wxid + refreshtoken 的微信账号」时，需要不敲命令就能一眼看出每个微信账号具不具备免扫码续期能力，因此在账号管理页加「支持 / 不支持」标签。
+- **判定口径**：后端复用 `wx-credential.hasWxCredential()` —— `platform === 'wx'` 且 `wxid` 与 `refreshtoken` 都非空，与 `wx-keepalive` 里到期前预防续期（常开）和掉线重登的准入条件完全一致。「支持」= 关掉网页也能自动续期；「不支持」= 只有 `loginBuffer` 或只剩 Code，长效凭证到期后仍需重新扫码。
+- **新增**：`core/src/services/account-visibility.ts` 把 `/api/accounts` 的响应做对外投影，每个账号只多一个布尔 `wxPreflightSupported`；`web/src/utils/credential-status.ts` 新增 `getWxPreflightBadge()` 纯函数，微信账号渲染绿色「支持」/ 琥珀色「不支持」/ 灰色「未知」，QQ 账号不渲染。「未知」用于旧后端尚未更新的场景，避免误报「不支持」；标签带悬停说明，PC 端另有一行小字解释，手机端只显示短标签不影响排版。
+- **顺带修的安全问题**：`/api/accounts` 被浏览器每 10 秒轮询，之前直接把 store 里的账号对象整个返回，`refreshtoken` / `accesstoken` / `loginBuffer` 这些能直接换游戏登录 Code 的长效凭证明文在 F12 网络面板里可见。现在只在 HTTP 响应副本上剥掉这三个字段；`code` / `wxid` / `expires_at` 等展示与编辑所需字段保留，`provider.getAccounts()` 及所有后端调用方仍拿完整对象，续期 / 补 Code / 启动换码链路不受影响。
+- **兼容性**：编辑账号弹窗读的是 `editData.code`，本次保留；前端本来就不读 `loginBuffer` 等字段，剥离无副作用。旧后端 + 新前端组合时标签显示「未知」并提示更新服务。
+- **防回归**：新增 `core/tests/account-visibility.test.js` 7 项（明文剥离、判定三要素、原对象不变、判定函数降级、顶层字段保留、异常数据兜底、路由接线静态断言）与 `web/tests/wx-preflight-badge.test.mjs` 7 项（三种状态、QQ 不渲染、卡片绑定、类型与后端接线、前端不读明文）。
+- **验证**：core **459/459**、web **150/150**，改动文件 ESLint、`core tsc` 编译、`vue-tsc -b`、`vite build` 全通过。
+- **生效方式**：服务器 `git pull && docker compose up -d --build` 后打开「设置 → 账号管理」，每个微信账号卡片「访问凭证」下方即显示该标记；不需要改任何配置，也不影响已有账号数据。
+
 ### 2026-11-10 · v3.10.6（#103） · 基础镜像改走全限定地址，不改服务器任何环境配置即可构建
 
 - **需求**：上一轮删掉 `# syntax=` 后，构建能走到 `FROM node:20.19.6-alpine3.21`，但仍报 `load metadata for docker.io/library/node → https://docker.fnnas.com/v2/library/node/manifests/... → 401 Unauthorized`。用户要求**不改动服务器上的任何环境配置**（不改 `daemon.json` / 镜像站、不设环境变量、不建 `.env`），只在仓库代码里修好。

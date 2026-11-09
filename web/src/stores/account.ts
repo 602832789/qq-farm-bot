@@ -15,6 +15,8 @@ export interface Account {
   reloginAt?: number | null
   /** 微信 openid（续期微信授权用）。 */
   wxid?: string
+  /** 后端判定的「wxid + refreshtoken 齐备、可免扫码续期」标记；接口不下发凭证明文。 */
+  wxPreflightSupported?: boolean
   /** 微信授权到期信息，用于展示剩余时间。 */
   expires_at?: number
   expires_in?: number

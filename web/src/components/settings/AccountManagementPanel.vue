@@ -10,7 +10,7 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import { getPlatformClass, getPlatformLabel, useAccountStore } from '@/stores/account'
 import { useStatusStore } from '@/stores/status'
 import { getAccountRuntimeStatus, isAccountActive } from '@/utils/account-runtime'
-import { getCredentialStatus } from '@/utils/credential-status'
+import { getCredentialStatus, getWxPreflightBadge } from '@/utils/credential-status'
 
 const emit = defineEmits<{ openSettings: [account: any] }>()
 
@@ -70,6 +70,11 @@ function runtimeState(acc: any) {
 /** 访问凭证剩余时间；判定逻辑抽到纯函数里，便于回归测试。 */
 function credentialStatus(acc: any) {
   return getCredentialStatus(acc, now.value.getTime())
+}
+
+/** 免扫码续期能力标记；QQ 账号返回 null 不渲染。 */
+function wxPreflightBadge(acc: any) {
+  return getWxPreflightBadge(acc)
 }
 
 function selectAccount(account: any) {
@@ -465,6 +470,17 @@ watch(codeAlerts, (list) => {
         <p v-if="acc.platform === 'wx'" class="mt-3 break-words text-xs tabular-nums" :class="credentialStatus(acc).color">
           {{ credentialStatus(acc).text }}
         </p>
+
+        <div v-if="wxPreflightBadge(acc)" class="mt-1.5 flex flex-wrap items-center gap-1.5">
+          <span
+            class="rounded px-1.5 py-0.5 text-[10px] leading-tight font-medium"
+            :class="wxPreflightBadge(acc)?.badgeClass"
+            :title="wxPreflightBadge(acc)?.hint"
+          >
+            免扫码续期：{{ wxPreflightBadge(acc)?.text }}
+          </span>
+          <span class="hidden text-[10px] text-gray-400 sm:inline">{{ wxPreflightBadge(acc)?.hint }}</span>
+        </div>
 
         <div class="mt-3 flex items-center justify-between border-t border-gray-100 pt-3 sm:mt-4 dark:border-gray-700 sm:pt-4">
           <div class="hidden items-center gap-2 text-xs text-gray-500 sm:flex">

@@ -18,6 +18,33 @@ export interface CredentialStatus {
   color: string
 }
 
+export interface WxPreflightBadge {
+  text: string
+  hint: string
+  badgeClass: string
+}
+
+const BADGE_SUPPORTED = 'bg-green-50 text-green-600 dark:bg-green-900/30 dark:text-green-400'
+const BADGE_UNSUPPORTED = 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+const BADGE_UNKNOWN = 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300'
+
+/**
+ * 账号卡片「免扫码续期」标记。
+ *
+ * 判定完全由后端给的布尔字段决定（wxid + refreshtoken 齐备），前端不接触
+ * 任何凭证明文。字段缺失说明服务还是旧版本，给「未知」而不是误报「不支持」。
+ * QQ 账号不适用这套微信续期机制，返回 null 不渲染。
+ */
+export function getWxPreflightBadge(acc: any): WxPreflightBadge | null {
+  if (String(acc?.platform || '') !== 'wx')
+    return null
+  if (acc.wxPreflightSupported === true)
+    return { text: '支持', hint: '关掉网页也会自动续期', badgeClass: BADGE_SUPPORTED }
+  if (acc.wxPreflightSupported === false)
+    return { text: '不支持', hint: '缺刷新凭证，到期需重新扫码', badgeClass: BADGE_UNSUPPORTED }
+  return { text: '未知', hint: '更新服务后可查看', badgeClass: BADGE_UNKNOWN }
+}
+
 /** 兼容秒级 / 毫秒级到期时间戳；老数据可能由外部写成秒。 */
 function normalizeExpiry(value: number): number {
   if (!Number.isFinite(value) || value <= 0)
