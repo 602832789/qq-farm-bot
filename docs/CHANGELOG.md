@@ -14,6 +14,7 @@
 
 | 版本 | 更新序号 | 日期 | 更新内容 | 提交 |
 | --- | --- | --- | --- | --- |
+| v3.10.2 | #100 | 2026-11-10 | fix(web/core): 去除定时重登 + 账号保活卡片改名合并 + 修复种植日志合并 | `b0fe642` |
 | v3.10.1 | #99 | 2026-11-10 | fix(core): 日熔断额度只统计失败，成功续期不占额度 | `ee43f58` |
 | v3.10.0 | #98 | 2026-11-10 | fix(core): 参考老版本新增后端自主到期前预防性续期与失败熔断 | `a52e05b` |
 | v3.9.6 | #97 | 2026-11-10 | revert: 回滚「去除账号管理内 Code 自动监听」，恢复完整链路 | `2a1ffa0` |
@@ -121,7 +122,7 @@ flowchart TB
 ```
 
 ## 详细记录
-### 2026-11-10 · 去除定时重登 + 账号保活卡片改名合并 + 修复种植日志合并
+### 2026-11-10 · v3.10.2（#100） · 去除定时重登 + 账号保活卡片改名合并 + 修复种植日志合并
 
 - **需求**：去掉「定时重登」开关与整套功能；把卡片下方独立的「服务启动自动登录」并入卡片内部；给卡片重新取一个贴切名称；另外反馈「背包种子执行顺序 / size=... allLayouts=... / 已预留空地等待布局」三条日志虽带「（同样状态重复 13 次，已合并）」但仍在刷屏，要求日志合并真正生效。
 - **定时重登整体下线**：`core/src/config/config.ts` 的 `AutoCodeRefreshConfig` 删掉 `enabled` / `intervalMinutes` 与默认值，`normalizeAutoCodeRefresh()` 会直接丢弃旧 `store.json` 里残留的这两个字段；`core/src/types/config.ts`、`web/src/stores/setting.ts` 的类型与默认同步收敛为只有 `offlineEnabled` / `offlineDelaySeconds`。`core/src/services/wx-keepalive.ts` 移除 `tick()` 里按间隔遍历续期重启的分支、`lastRefreshAt`、`'timer'` reason；30 秒巡检现在只跑常开的 `runCodePreflight()`（到期前预防续期），掉线重登完全不受影响。`applyWxKeepAliveConfig()` 改为只记录当前生效策略。

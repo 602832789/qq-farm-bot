@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 10,
-  "patch": 1,
-  "build": 99,
-  "version": "3.10.1",
-  "updatedAt": "2026-11-09T19:30:10.734Z",
-  "lastCommit": "ee43f58",
+  "patch": 2,
+  "build": 100,
+  "version": "3.10.2",
+  "updatedAt": "2026-11-09T20:31:23.032Z",
+  "lastCommit": "b0fe642",
   "history": [
+    {
+      "version": "3.10.2",
+      "build": 100,
+      "date": "2026-11-10",
+      "summary": "fix(web/core): 去除定时重登 + 账号保活卡片改名合并 + 修复种植日志合并",
+      "commit": "b0fe642",
+      "type": "patch"
+    },
     {
       "version": "3.10.1",
       "build": 99,
