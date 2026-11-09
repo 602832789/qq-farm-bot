@@ -245,7 +245,45 @@ test('递增链统一走跳过函数，更新日志规则说明写明跳过数�
   assert.match(section, /\*\*跳过数字 4\*\*/)
   assert.match(section, /`4 → 5`/)
   assert.match(section, /`39 → 50`/)
+  assert.match(section, /\*\*全量重排\*\*/)
   assert.match(read('docs/CHANGELOG.md'), /\*\*跳过数字 4\*\*/)
+  assert.match(read('docs/CHANGELOG.md'), /本次由 `scripts\/rebuild-version-history\.mjs`/)
+  assert.ok(existsSync(join(ROOT, 'scripts/rebuild-version-history.mjs')))
+})
+
+test('全部历史记录都带版本号，版本号与更新序号都不含 4', () => {
+  const changelog = read('docs/CHANGELOG.md')
+  const titles = changelog.split('\n').filter(line => /^###\s/.test(line))
+  const rows = changelog.split('\n').filter(line => /^\| v\d/.test(line))
+  const meta = JSON.parse(read('version.json'))
+  assert.ok(titles.length >= 72, '全量重排后的历史记录全部保留')
+  assert.ok(rows.length >= titles.length, '版本总览表覆盖全部详细记录')
+  assert.equal(meta.history.length, rows.length, 'history 与总览表行数一致')
+
+  const versions = []
+  const builds = []
+  for (const title of titles) {
+    const matched = /^###\s+\d{4}-\d{2}-\d{2}\s*·\s*v(\d+\.\d+\.\d+)（#(\d+)）\s*·\s*/.exec(title)
+    assert.ok(matched, `标题缺版本号：${title}`)
+    assert.equal(containsSkippedDigit(matched[1]), false, `版本号含 4：${title}`)
+    assert.equal(containsSkippedDigit(matched[2]), false, `序号含 4：${title}`)
+    versions.push(matched[1])
+    builds.push(Number(matched[2]))
+  }
+  assert.equal(new Set(versions).size, versions.length, '版本号不重复')
+  assert.equal(new Set(builds).size, builds.length, '更新序号不重复')
+  const firstRow = /^\| v(\d+\.\d+\.\d+) \| #(\d+) \|/.exec(rows[0])
+  assert.ok(firstRow, '版本总览表首行格式正确')
+  assert.equal(firstRow[1], meta.version, '总览表首行就是当前版本')
+  assert.equal(Number(firstRow[2]), meta.build)
+  for (const version of versions)
+    assert.ok(changelog.includes(`| v${version} |`), `总览表缺少 ${version} 对应行`)
+  assert.equal(versions[versions.length - 1], '2.0.0', '最早一条是重算起点')
+  assert.equal(builds[builds.length - 1], 1)
+  for (const item of meta.history) {
+    assert.equal(containsSkippedDigit(item.version), false)
+    assert.equal(containsSkippedDigit(item.build), false)
+  }
 })
 
 test('版本号真源、构建注入与界面显示接线完整', () => {
@@ -282,7 +320,7 @@ test('版本号真源、构建注入与界面显示接线完整', () => {
   const changelog = read('docs/CHANGELOG.md')
   assert.match(changelog, /## 版本总览/)
   assert.match(changelog, new RegExp(`\\| v${meta.version.replace(/\./g, '\\.')} \\| #${meta.build} \\|`))
-  assert.match(changelog, /^### 2026-11-09 · v2\.9\.0（#1） · /m)
+  assert.match(changelog, new RegExp(`^### \\d{4}-\\d{2}-\\d{2} · v${meta.version.replace(/\./g, '\\.')}（#${meta.build}） · `, 'm'))
 })
 
 test('web/version.json 镜像与真源一致，容器只 COPY web/ 也能显示更新次数', () => {

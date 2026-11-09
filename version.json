@@ -1,73 +1,585 @@
 {
   "major": 2,
-  "minor": 9,
+  "minor": 8,
   "patch": 5,
-  "build": 5,
-  "version": "2.9.5",
-  "updatedAt": "2026-11-08T23:58:40.063Z",
+  "build": 90,
+  "version": "2.8.5",
+  "updatedAt": "2026-11-09T00:32:57.340Z",
   "lastCommit": "f1c9397",
   "history": [
     {
-      "version": "2.9.5",
-      "build": 5,
+      "version": "2.8.5",
+      "build": 90,
       "date": "2026-11-09",
-      "summary": "fix(version): 版本号与更新次数递增时自动跳过数字 4",
+      "summary": "版本号与更新次数自动跳过数字 4",
       "commit": "f1c9397",
       "type": "patch"
     },
     {
-      "version": "2.9.3",
-      "build": 4,
+      "version": "2.8.3",
+      "build": 89,
       "date": "2026-11-09",
-      "summary": "fix(web): 修复游戏商城页签被弹回神秘商人并收窄默认页签作用域",
+      "summary": "修复「游戏商城」页签被弹回神秘商人 + 默认页签作用域收窄",
       "commit": "c6105dc",
       "type": "patch"
     },
     {
-      "version": "2.9.2",
-      "build": 3,
+      "version": "2.8.2",
+      "build": 88,
       "date": "2026-11-09",
-      "summary": "fix(web): 修复容器部署首页更新次数显示为 0（补版本文件与镜像兜底）",
+      "summary": "修复容器部署时首页显示「第 0 次更新」",
       "commit": "e2b965a",
       "type": "patch"
     },
     {
-      "version": "2.9.1",
-      "build": 2,
+      "version": "2.8.1",
+      "build": 87,
       "date": "2026-11-09",
-      "summary": "fix(farm): 快成熟判定默认值改回 300 秒（附阈值命中率模拟）",
+      "summary": "快成熟判定默认值改回 300 秒 + 阈值命中率模拟结论",
       "commit": "ae83736",
       "type": "patch"
     },
     {
-      "version": "2.9.0",
-      "build": 1,
+      "version": "2.8.0",
+      "build": 86,
       "date": "2026-11-09",
-      "summary": "新增版本号功能 + 快成熟默认 60 秒",
+      "summary": "新增版本号功能 + 快成熟判定默认值改为 60 秒",
       "commit": "—",
       "type": "minor"
     },
     {
-      "version": "2.8.0",
-      "build": 0,
-      "date": "2026-10-15",
-      "summary": "奶茶热销中活动与经营自动化（历史基线）",
+      "version": "2.7.2",
+      "build": 85,
+      "date": "2026-11-09",
+      "summary": "首页诊断移除 + 快成熟回滚 + 神秘商人来访横幅 + 日志刷屏治理 + 奶茶支撑时间修正",
       "commit": "—",
-      "type": "baseline"
+      "type": "patch"
     },
     {
       "version": "2.7.1",
-      "build": 0,
-      "date": "2026-09-24",
-      "summary": "秋祈良愿与快乐不独享活动（历史基线）",
+      "build": 83,
+      "date": "2026-11-08",
+      "summary": "今日统计去掉单位「次」 + 账号管理 Code 过期自动监听与自动补码",
       "commit": "—",
-      "type": "baseline"
+      "type": "patch"
     },
     {
       "version": "2.7.0",
-      "build": 0,
+      "build": 82,
+      "date": "2026-11-08",
+      "summary": "快成熟判定随机化 + 图鉴每日自动领奖/补种与背包过滤 + 今日金币支持负数",
+      "commit": "—",
+      "type": "minor"
+    },
+    {
+      "version": "2.6.1",
+      "build": 81,
+      "date": "2026-11-07",
+      "summary": "运行日志筛选手机端显示完整 + 神秘商人页签移到第 4 + 催熟时间核查",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.6.0",
+      "build": 80,
+      "date": "2026-11-07",
+      "summary": "新增面板内消息（局内通知）：顶栏铃铛 + 本地持久化",
+      "commit": "—",
+      "type": "minor"
+    },
+    {
+      "version": "2.5.15",
+      "build": 79,
+      "date": "2026-11-07",
+      "summary": "补齐神秘商人「到货提醒 / 购买通知」开关与保存后立即巡查",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.5.13",
+      "build": 78,
+      "date": "2026-11-07",
+      "summary": "节令日历手机端可下滑 + 神秘商人购买历史回归 + 自动化开关验证",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.5.12",
+      "build": 77,
+      "date": "2026-11-06",
+      "summary": "功能模块「土地与施肥」2x2催熟开关间距",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.5.11",
+      "build": 76,
+      "date": "2026-11-06",
+      "summary": "同步上游 muyuewang/qq-farm-bot-404（ed75089..3b3608c，PR #119–#121）并保留本地改动",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.5.10",
+      "build": 75,
+      "date": "2026-11-06",
+      "summary": "图鉴标题与收藏计数等高 + 奶茶两行左对齐",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.5.9",
+      "build": 73,
+      "date": "2026-11-06",
+      "summary": "奶茶页返回按钮文案简化为「活动中心」",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.5.8",
+      "build": 72,
+      "date": "2026-11-06",
+      "summary": "首页已运行手机端换行 + 去除奶茶侧栏「活动中心」/「快乐不独享」日期",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.5.7",
+      "build": 71,
+      "date": "2026-11-06",
+      "summary": "土地等级二级弹窗缩小，与作物气泡同尺寸同风格",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.5.6",
+      "build": 70,
+      "date": "2026-11-06",
+      "summary": "奶茶头部返回按钮合并 + 恢复「剩余时间」靠右对齐",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.5.5",
+      "build": 69,
+      "date": "2026-11-06",
+      "summary": "首页状态行再退一格 + 回滚「剩余时间」靠右对齐",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.5.3",
+      "build": 68,
+      "date": "2026-11-06",
+      "summary": "手机端排版再调整：首页恢复原方案 + 领取收益 PC/手机同排",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.5.2",
+      "build": 67,
+      "date": "2026-11-06",
+      "summary": "手机端固定排版：首页已运行状态行 + 奶茶活动三处对齐",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.5.1",
+      "build": 66,
+      "date": "2026-11-06",
+      "summary": "土地气泡收益跟随变异叠加 + 奶茶活动 4 个新开关",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.5.0",
+      "build": 65,
+      "date": "2026-11-06",
+      "summary": "首页「已运行」不再跳位 + 重新登录后自动上线",
+      "commit": "—",
+      "type": "minor"
+    },
+    {
+      "version": "2.3.18",
+      "build": 63,
+      "date": "2026-11-06",
+      "summary": "微信授权续期稳定性 + 土地详情恢复老版作物气泡",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.3.17",
+      "build": 62,
+      "date": "2026-11-06",
+      "summary": "任意页面切换账号后保持原页面与原滚动位置",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.3.16",
+      "build": 61,
+      "date": "2026-11-06",
+      "summary": "修复背包种子页仍每 10 秒自动刷新",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.3.15",
+      "build": 60,
+      "date": "2026-11-05",
+      "summary": "同步上游 20261104 更新（PR #117-#118 至 ed75089）",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.3.13",
+      "build": 59,
+      "date": "2026-11-05",
+      "summary": "今日统计卡片样式统一 + 增量逻辑分离 + 农场页整体刷新治理",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.3.12",
+      "build": 58,
+      "date": "2026-11-05",
+      "summary": "今日统计加金币/经验增量 + 背包排序 + 农场自动刷新开关 + 移动端导航调整",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.3.11",
+      "build": 57,
+      "date": "2026-11-05",
+      "summary": "切换账号后保持在所有活动页面",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.3.10",
+      "build": 56,
+      "date": "2026-11-05",
+      "summary": "切换账号后保持在奶茶热销中页面",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.3.9",
+      "build": 55,
+      "date": "2026-11-05",
+      "summary": "活动中心默认进入奶茶热销中",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.3.8",
+      "build": 53,
+      "date": "2026-11-05",
+      "summary": "营业记录数据链路对齐老版（补回 normalizeWireMaps）",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.3.7",
+      "build": 52,
+      "date": "2026-11-05",
+      "summary": "再次恢复 milk_tea_work_interaction_type / milk_tea_hire_policy 接线",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.3.6",
+      "build": 51,
+      "date": "2026-11-05",
+      "summary": "再次撤销 milk_tea_work_interaction_type / milk_tea_hire_policy 接线",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.3.5",
+      "build": 50,
+      "date": "2026-11-05",
+      "summary": "恢复 milk_tea_work_interaction_type / milk_tea_hire_policy 两项接线",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.3.3",
+      "build": 39,
+      "date": "2026-11-05",
+      "summary": "页面闪烁治理 + 策略预览秒开 + 背包默认页签",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.3.2",
+      "build": 38,
+      "date": "2026-11-05",
+      "summary": "营业记录图标补全 + 图鉴搜索框位置调整",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.3.1",
+      "build": 37,
+      "date": "2026-11-05",
+      "summary": "四页控件显示效果统一（对齐全站 BaseButton 规范）",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.3.0",
+      "build": 36,
+      "date": "2026-11-05",
+      "summary": "15 项功能开关失效修复（老版方案移植）",
+      "commit": "—",
+      "type": "minor"
+    },
+    {
+      "version": "2.2.12",
+      "build": 35,
+      "date": "2026-11-05",
+      "summary": "回滚 3 项开关接线（milk_tea_work_interaction_type / milk_tea_seed_policy / milk_tea_hire_policy）",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.2.11",
+      "build": 33,
+      "date": "2026-11-05",
+      "summary": "2×2 催熟功能修复与背包多格种子角标",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.2.10",
+      "build": 32,
+      "date": "2026-11-05",
+      "summary": "服务启动自动登录与登录 Code 续期修复",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.2.9",
+      "build": 31,
+      "date": "2026-11-05",
+      "summary": "回滚硬预算期的省请求改动 + 修复奶茶手动兑换",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.2.8",
+      "build": 30,
+      "date": "2026-11-05",
+      "summary": "网关流量机制重构：前台操作不再被限额",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.2.7",
+      "build": 29,
+      "date": "2026-11-05",
+      "summary": "手机端账号入口与操作按钮统一",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.2.6",
+      "build": 28,
+      "date": "2026-10-15",
+      "summary": "奶茶热销中活动与经营自动化",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.2.5",
+      "build": 27,
+      "date": "2026-09-24",
+      "summary": "秋祈良愿与快乐不独享活动",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.2.3",
+      "build": 26,
       "date": "2026-09-10",
-      "summary": "萌宠成长日记与变异效果补全（历史基线）",
+      "summary": "萌宠成长日记与变异效果补全",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.2.2",
+      "build": 25,
+      "date": "2026-09-08",
+      "summary": "NapCat QQ 扫码登录与 Docker 部署",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.2.1",
+      "build": 23,
+      "date": "2026-09-08",
+      "summary": "NapCat QQ 扫码登录与 Docker 部署",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.2.0",
+      "build": 22,
+      "date": "2026-09-01",
+      "summary": "公益小红花活动支持",
+      "commit": "—",
+      "type": "minor"
+    },
+    {
+      "version": "2.1.1",
+      "build": 21,
+      "date": "2026-09-01",
+      "summary": "好友成熟调度与访问治理",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.1.0",
+      "build": 20,
+      "date": "2026-09-01",
+      "summary": "公益小红花活动支持",
+      "commit": "—",
+      "type": "minor"
+    },
+    {
+      "version": "2.0.18",
+      "build": 19,
+      "date": "2026-09-01",
+      "summary": "好友成熟调度与访问治理",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.0.17",
+      "build": 18,
+      "date": "2026-08-26",
+      "summary": "雨落成诗活动适配",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.0.16",
+      "build": 17,
+      "date": "2026-08-26",
+      "summary": "限时活动下线与开关防回启",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.0.15",
+      "build": 16,
+      "date": "2026-08-25",
+      "summary": "低配服务器资源治理与线程调度优化",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.0.13",
+      "build": 15,
+      "date": "2026-08-21",
+      "summary": "背包种子排序与选种策略精简",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.0.12",
+      "build": 13,
+      "date": "2026-08-20",
+      "summary": "活动礼包与钻石余额",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.0.11",
+      "build": 12,
+      "date": "2026-08-19",
+      "summary": "内置微信扫码、版本同步与运行自愈",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.0.10",
+      "build": 11,
+      "date": "2026-08-18",
+      "summary": "鹊桥寄情活动",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.0.9",
+      "build": 10,
+      "date": "2026-08-17",
+      "summary": "未来活动分析",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.0.8",
+      "build": 9,
+      "date": "2026-08-14",
+      "summary": "土地变异效果",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.0.7",
+      "build": 8,
+      "date": "2026-08-13",
+      "summary": "青酿换万金活动",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.0.6",
+      "build": 7,
+      "date": "2026-08-07",
+      "summary": "手机抓包登录",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.0.5",
+      "build": 6,
+      "date": "2026-08-03",
+      "summary": "土地展示重做",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.0.3",
+      "build": 5,
+      "date": "2026-08-03",
+      "summary": "生涯统计与体验优化",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.0.2",
+      "build": 3,
+      "date": "2026-08-03",
+      "summary": "心许千灯星垂野活动",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.0.1",
+      "build": 2,
+      "date": "2026-08-03",
+      "summary": "TSDK/WASM 协议更新",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "2.0.0",
+      "build": 1,
+      "date": "2026-08-03",
+      "summary": "2×2 作物种植",
       "commit": "—",
       "type": "baseline"
     }
