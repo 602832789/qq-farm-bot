@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 9,
-  "patch": 2,
-  "build": 93,
-  "version": "3.9.2",
-  "updatedAt": "2026-11-09T11:00:11.372Z",
-  "lastCommit": "843a62a",
+  "patch": 3,
+  "build": 95,
+  "version": "3.9.3",
+  "updatedAt": "2026-11-09T13:28:32.549Z",
+  "lastCommit": "880b4c6",
   "history": [
+    {
+      "version": "3.9.3",
+      "build": 95,
+      "date": "2026-11-09",
+      "summary": "style(web): 手机端头像放大到与三行文字等高，PC 端不变",
+      "commit": "880b4c6",
+      "type": "patch"
+    },
     {
       "version": "3.9.2",
       "build": 93,
