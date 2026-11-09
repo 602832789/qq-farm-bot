@@ -6,7 +6,14 @@
 # 起即内置支持）和 HEALTHCHECK，交给 Docker 引擎自带的解析器即可，无需外部镜像。
 # 如确需升级 frontend，请改用能访问该镜像的 registry，不要直接加回这一行。
 
-ARG NODE_IMAGE=node:20.19.6-alpine3.21
+# NODE_IMAGE 默认写成全限定名而不是短名 node:...：短名会被补成
+# docker.io/library/node，一旦宿主机配了失效的 registry mirror（如飞牛 fnOS 的
+# docker.fnnas.com），metadata 阶段就返回 401，构建第一步直接失败。带域名的地址
+# 不经过 docker.io，也就不受 mirror 影响，无需改动宿主机任何配置。
+# DaoCloud public-image-mirror 按需同步，镜像 sha256 与 Docker Hub 源站一致。
+# 想切回官方源：NODE_IMAGE=node:20.19.6-alpine3.21 docker compose up -d --build
+# （compose 已用 ${NODE_IMAGE:-...} 注入；这里的 ARG 默认值须与 compose 保持一致）。
+ARG NODE_IMAGE=docker.m.daocloud.io/library/node:20.19.6-alpine3.21
 ARG PNPM_VERSION=10.30.2
 ARG NPM_REGISTRY=https://registry.npmjs.org/
 

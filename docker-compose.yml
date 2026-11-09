@@ -3,8 +3,13 @@ services:
     build:
       context: .
       dockerfile: core/Dockerfile
+      # 默认基础镜像用全限定地址，避开 docker.io 与失效的 registry mirror
+      # （如 fnOS 的 docker.fnnas.com 对 library/* 返回 401）。不需要改宿主机
+      # 的 daemon.json / 镜像站 / .env；想切回官方源只需重建时传环境变量：
+      #   NODE_IMAGE=node:20.19.6-alpine3.21 docker compose up -d --build
+      # 此默认值须与 core/Dockerfile 的 ARG NODE_IMAGE 保持一致。
       args:
-        NODE_IMAGE: ${NODE_IMAGE:-node:20.19.6-alpine3.21}
+        NODE_IMAGE: ${NODE_IMAGE:-docker.m.daocloud.io/library/node:20.19.6-alpine3.21}
         PNPM_VERSION: ${PNPM_VERSION:-10.30.2}
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org/}
     image: qq-farm-bot:latest

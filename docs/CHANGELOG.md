@@ -124,6 +124,17 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-10 · 基础镜像改走全限定地址，不改服务器任何环境配置即可构建
+
+- **需求**：上一轮删掉 `# syntax=` 后，构建能走到 `FROM node:20.19.6-alpine3.21`，但仍报 `load metadata for docker.io/library/node → https://docker.fnnas.com/v2/library/node/manifests/... → 401 Unauthorized`。用户要求**不改动服务器上的任何环境配置**（不改 `daemon.json` / 镜像站、不设环境变量、不建 `.env`），只在仓库代码里修好。
+- **为什么短名会中招**：`node:...` 会被补成 `docker.io/library/node`，而 `registry-mirrors` 恰好只对 `docker.io` 生效，宿主机那个失效的 fnOS 加速站 `docker.fnnas.com` 就会把请求拦下并返回 401。**带域名的全限定地址不走 `docker.io`，因此完全不经过 mirror** —— 这是唯一无需碰环境配置的解法。
+- **候选源实测**（按 Docker Registry v2 的 Bearer token 流程真实请求 `library/node:20.19.6-alpine3.21` 的 manifest）：`docker.m.daocloud.io` 连续三次 **HTTP 200**、`Docker-Content-Digest: sha256:eb0b81f6…` 稳定；`docker.1ms.run` 带 token 的 manifest 请求返回 000（超时）；`docker.xuanyuan.me` 返回 403。因此选 **DaoCloud public-image-mirror**（按需同步、镜像 sha256 与 Docker Hub 源站一致）作为默认。
+- **改动**：`core/Dockerfile` 的 `ARG NODE_IMAGE` 默认值与 `docker-compose.yml` 的 `${NODE_IMAGE:-...}` 默认值同步改为 `docker.m.daocloud.io/library/node:20.19.6-alpine3.21`，两处都补了原因注释和切回官方源的方法。两个 `FROM ${NODE_IMAGE}`（pnpm-base / runner）自动生效，`web-builder` / `core-builder` / `prod-deps` 都是本地 stage，没有别的外部镜像。默认值仍可用环境变量覆盖，只是**不再需要**覆盖。
+- **效果**：`git pull` 后直接 `docker compose up -d --build` 即可，无需改 `daemon.json`、无需重启 Docker、无需镜像站配置、无需任何环境变量。想切回官方源：`NODE_IMAGE=node:20.19.6-alpine3.21 docker compose up -d --build`。
+- **防回归**：`web/tests/version.test.mjs` 新增断言，锁住 Dockerfile 与 compose 的默认值一致、必须是全限定名、不得退回短名；与上一轮「禁止 syntax directive」的断言并存。
+- **验证**：core **452/452**、web **143/143**，改动文件 ESLint、`core tsc --noEmit`、`vue-tsc -b`、`vite build` 全通过，compose YAML 解析正常。本地无 Docker 守护进程，**未实测 `docker build`**，需在有 Docker 的机器上确认。
+- **边界**：DaoCloud 是按需同步的白名单源，若将来该源不可用，可临时用 `NODE_IMAGE` 指向其他可达源，或改上述两处默认值。下一个潜在国内网络卡点是 `apk add tzdata` 走 Alpine CDN（`dl-cdn.alpinelinux.org`），与本次的 registry 401 不是同一环节。
+
 ### 2026-11-10 · v3.10.5（#102） · 修复国内镜像站下 Docker 构建第一步 401（去掉外部 frontend 指令）
 
 - **现象**：在飞牛 NAS 上执行 `docker compose up -d --build`，构建卡 166 秒后第一步就失败：`failed to resolve source metadata for docker.io/docker/dockerfile:1.7: unexpected status from HEAD request to https://docker.fnnas.com/v2/docker/dockerfile/manifests/1.7?ns=docker.io: 401 Unauthorized`。

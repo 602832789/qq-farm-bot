@@ -382,6 +382,18 @@ test('Dockerfile 不声明外部 frontend，国内镜像站也能构建', () => 
   assert.match(dockerfile, /RUN --mount=type=cache/)
 })
 
+test('基础镜像默认走全限定地址，失效 mirror 下无需改环境配置', () => {
+  const dockerfile = read('core/Dockerfile')
+  const compose = read('docker-compose.yml')
+  const image = 'docker.m.daocloud.io/library/node:20.19.6-alpine3.21'
+  // 短名 node:... 会被补成 docker.io/library/node，宿主机的 registry mirror
+  // 一旦返回 401，metadata 阶段就构建失败；全限定域名不经过 docker.io mirror。
+  assert.ok(dockerfile.includes(`ARG NODE_IMAGE=${image}`), 'Dockerfile 默认基础镜像必须是全限定名')
+  assert.ok(compose.includes(`NODE_IMAGE: \${NODE_IMAGE:-${image}}`), 'compose 默认值需与 Dockerfile 一致')
+  assert.doesNotMatch(dockerfile, /^ARG NODE_IMAGE=node:/m)
+  assert.doesNotMatch(compose, /:-node:/)
+})
+
 test('快成熟判定默认值恢复为 300 秒', () => {
   assert.match(read('web/src/components/settings/AccountFeatureSettings.vue'), /fertilizer_smart_seconds \?\? 300/)
   assert.match(read('web/src/components/settings/AccountFeatureSettings.vue'), /默认 300 秒/)
