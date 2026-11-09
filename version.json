@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 11,
-  "patch": 0,
-  "build": 105,
-  "version": "3.11.0",
-  "updatedAt": "2026-11-09T22:55:52.291Z",
-  "lastCommit": "edff9d1c",
+  "patch": 1,
+  "build": 106,
+  "version": "3.11.1",
+  "updatedAt": "2026-11-09T23:06:00.018Z",
+  "lastCommit": "b5910d3e",
   "history": [
+    {
+      "version": "3.11.1",
+      "build": 106,
+      "date": "2026-11-10",
+      "summary": "style(web): PC 端账号登录与重连卡片开关移到说明文字下方",
+      "commit": "b5910d3e",
+      "type": "patch"
+    },
     {
       "version": "3.11.0",
       "build": 105,
