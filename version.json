@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 9,
-  "patch": 5,
-  "build": 96,
-  "version": "3.9.5",
-  "updatedAt": "2026-11-09T18:29:48.310Z",
-  "lastCommit": "aaaaee5",
+  "patch": 6,
+  "build": 97,
+  "version": "3.9.6",
+  "updatedAt": "2026-11-09T18:41:12.485Z",
+  "lastCommit": "2a1ffa0",
   "history": [
+    {
+      "version": "3.9.6",
+      "build": 97,
+      "date": "2026-11-10",
+      "summary": "revert: 回滚「去除账号管理内 Code 自动监听」，恢复完整链路",
+      "commit": "2a1ffa0",
+      "type": "patch"
+    },
     {
       "version": "3.9.5",
       "build": 96,
