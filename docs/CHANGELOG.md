@@ -126,6 +126,15 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-10 · PC 端「账号登录与重连」卡片开关移到说明文字下方
+
+- **需求**：PC 端卡片里「掉线自动重登」开关原先和标题、说明文字并排挤在同一行右侧，文字被压窄、两个开关视觉位置不齐；要求把开关放到文字的最下面，并保持整体美观统一。
+- **改动**：`web/src/components/settings/AccountKeepAliveCard.vue` 的 `#extra` 两行（服务启动自动登录 / 掉线自动重登）在 `md:`（≥768px，PC 端）断点统一改为 `flex-col + items-start + gap-2`，按「标题 → 说明 → 开关」自上而下左对齐排列。两行同步处理，避免只挪一个造成左右不对称；手机端（<768px）保留原来的 `flex-wrap / items-center / justify-between` 并排布局，手机端观感不动。
+- **范围**：只调样式类，未改开关绑定（`saveAutoStart` / `toggleOffline`）、配置字段、状态标签与后端逻辑；卡片仍保持 `hide-switch`，不会冒出第二个含义不清的总开关。
+- **防回归**：`web/tests/account-online-card.test.mjs` 加断言，校验卡片内恰好两行具名设置、手机端基线类仍在、PC 端纵向类已加且没有 `md:flex-row` 反向覆盖，并确认「掉线自动重登」开关的 DOM 顺序确实排在标题与说明文字之后。
+- **验证**：core **459/459**、web **151/151**（+1），改动文件 ESLint、`vue-tsc -b`、`vite build` 全通过；构建产物 CSS 里已确认生成 `@media(min-width:768px)` 下的 `md:flex-col / md:items-start / md:gap-2`，样式确实生效而非只写在模板里。
+- **生效方式**：服务器 `git pull && docker compose up -d --build` 后刷新页面即可；纯前端样式调整，不需要改配置、不影响已有账号数据。
+
 ### 2026-11-10 · v3.11.0（#105） · 账号管理页新增「免扫码续期」能力标记，账号列表不再下发长效凭证明文
 
 - **需求**：上一轮解释「得是有 wxid + refreshtoken 的微信账号」时，需要不敲命令就能一眼看出每个微信账号具不具备免扫码续期能力，因此在账号管理页加「支持 / 不支持」标签。

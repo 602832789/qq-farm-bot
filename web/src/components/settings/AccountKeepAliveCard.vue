@@ -150,7 +150,7 @@ onMounted(load)
         @configure="configure"
       >
         <template #extra>
-          <div class="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-3 dark:border-gray-700">
+          <div class="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-3 md:flex-col md:items-start md:gap-2 dark:border-gray-700">
             <div class="min-w-0">
               <h5 class="text-xs text-gray-900 font-semibold dark:text-gray-100">
                 服务启动自动登录
@@ -166,7 +166,7 @@ onMounted(load)
               @update:model-value="saveAutoStart"
             />
           </div>
-          <div class="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-3 dark:border-gray-700">
+          <div class="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-3 md:flex-col md:items-start md:gap-2 dark:border-gray-700">
             <div class="min-w-0">
               <h5 class="text-xs text-gray-900 font-semibold dark:text-gray-100">
                 掉线自动重登
