@@ -34,6 +34,8 @@ const foodPercent = computed(() => {
   const maximum = Math.max(maxSeconds.value || 0, 1)
   return Math.min(100, Math.max(0, (remainSeconds.value / maximum) * 100))
 })
+// 上游 PR #125 的 durationLow：守护剩余不足一天时给出醒目提示，避免宠物断粮。
+const durationLow = computed(() => !!deployed.value && remainSeconds.value < 86400)
 
 function getFeedCount(foodId: number) {
   return feedCounts[foodId] ?? 1
@@ -47,6 +49,17 @@ function setFeedCount(foodId: number, value: number, available: number) {
 function invalidFeedCount(foodId: number, available: number) {
   const count = getFeedCount(foodId)
   return !Number.isInteger(count) || count < 1 || count > Math.min(available, 99)
+}
+
+/** 上游 PR #125 的 feedTitle：按钮灰着时告诉用户具体原因，可用时说明本次份数。 */
+function feedTitle(food: { id: number, count: number }) {
+  if (food.count <= 0)
+    return '狗盆中没有该狗粮'
+  if (usingFood.value)
+    return '正在喂食中'
+  if (invalidFeedCount(food.id, food.count))
+    return '喂食份数需为 1–库存之间的整数'
+  return `立即喂食 ${getFeedCount(food.id)} 份`
 }
 
 function duration(seconds: number) {
@@ -258,13 +271,24 @@ onMounted(load)
                 <p class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
                   <span class="i-carbon-time" />守护剩余时长
                 </p>
-                <strong class="mt-1 block truncate text-xl text-gray-900 font-mono font-bold dark:text-gray-100" :title="duration(remainSeconds)">{{ duration(remainSeconds) }}</strong>
+                <strong
+                  class="mt-1 block truncate text-xl font-mono font-bold"
+                  :class="durationLow ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-gray-100'"
+                  :title="duration(remainSeconds)"
+                >{{ duration(remainSeconds) }}</strong>
               </div>
               <span class="rounded-md bg-gray-100 px-2 py-1 text-xs text-gray-500 dark:bg-gray-700 dark:text-gray-300">上限 {{ duration(maxSeconds) }}</span>
             </div>
             <div class="mt-3 h-1.5 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
-              <div class="h-full rounded-full bg-[var(--theme-primary)] transition-all" :style="{ width: `${foodPercent}%` }" />
+              <div
+                class="h-full rounded-full transition-all"
+                :class="durationLow ? 'bg-red-500 dark:bg-red-400' : 'bg-[var(--theme-primary)]'"
+                :style="{ width: `${foodPercent}%` }"
+              />
             </div>
+            <p v-if="durationLow" class="mt-2 flex items-center gap-1 text-xs text-red-600 dark:text-red-400">
+              <span class="i-carbon-warning-alt" />守护剩余不足 1 天，建议补充狗粮
+            </p>
           </div>
 
           <div class="flex shrink-0 items-center justify-between px-3 pb-1 pt-3 sm:px-4">
@@ -321,7 +345,7 @@ onMounted(load)
                     <span class="i-carbon-add" />
                   </button>
                 </div>
-                <BaseButton size="sm" class="h-8 shrink-0 px-3!" :disabled="!food.count || usingFood || invalidFeedCount(food.id, food.count)" @click="action(() => petStore.useDogFood(String(currentAccountId), food.id, getFeedCount(food.id)), '喂食成功')">
+                <BaseButton size="sm" class="h-8 shrink-0 px-3!" :title="feedTitle(food)" :disabled="!food.count || usingFood || invalidFeedCount(food.id, food.count)" @click="action(() => petStore.useDogFood(String(currentAccountId), food.id, getFeedCount(food.id)), '喂食成功')">
                   喂食
                 </BaseButton>
               </div>

@@ -136,6 +136,33 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-10 · 同步上游 20261110（PR #125）评估：不采纳组件重写，等价落地宠物页两处可用性改进
+
+**上游范围**：`b9375ec..47fa669b`，3 个提交（`7f38536e` 实现 + merge/sync），**只改 1 个文件** —— `web/src/components/PetPanel.vue`（+715 / -572），PR #125「优化宠物页面布局与移动端图标对齐」。
+
+**评估结论：组件重写整体不采纳**。本地在 `4dacc149`（宠物小屋恢复资本模式）里已刻意删除 `components/PetPanel.vue`，改用自研的 `web/src/views/Pet.vue`（650 行，含「宠物管理 / 守护记录 / 资本模式」三页签、`BaseButton` + UnoCSS + `--theme-*` 变量）。上游新版依赖 naive-ui 的 `NButton` 插槽、`--ui-*` 变量与容器查询，且没有资本模式；原样取回会抹掉本地核心特性与 UI 体系。
+
+**逐项核对上游新增点**：
+
+| 上游改动 | 本地情况 | 处理 |
+| --- | --- | --- |
+| `ownedCount`（已获得 X/Y 只宠物） | `views/Pet.vue` 早已有同名 computed 与「已拥有 X / Y」 | 已具备，无需改 |
+| `rarityTone` 稀有度徽章（金/蓝/绿/灰） | 本地宠物卡片只显示等级，没有稀有度标签位 | 未落地（会改视觉，留待需求） |
+| 移动端图标对齐 | 上游修的是 `:deep(.n-button__icon)` 在窄屏的对齐；本地页签用 `flex items-center gap-1.5`，本就对齐，`BaseButton` 无该插槽 | 无此问题，不照搬 |
+| 工具栏 / 看家状态 / 宠物名册整体重排 | 本地是双栏 `pet-workspace` + 独立页签结构 | 不采纳 |
+| **狗粮不足 1 天预警 `durationLow`** | 本地只有进度条，没有低量提示 | **等价落地** |
+| **喂食按钮禁用原因 `feedTitle`** | 本地按钮灰着但无解释 | **等价落地** |
+
+**等价落地（落到本地组件，不动上游文件）**：
+
+- `web/src/views/Pet.vue`：新增 `durationLow`（`!!deployed && remainSeconds < 86400`），守护时长数字与进度条在不足 1 天时转红，并在进度条下加一行「守护剩余不足 1 天，建议补充狗粮」；新增 `feedTitle(food)`，按「库存为 0 / 正在喂食 / 份数非法 / 可喂食 N 份」四种情况给出按钮 `title`。
+- `web/src/components/ui/BaseButton.vue`：新增可选 `title?: string` prop，并在普通按钮与 `RouterLink` 两条分支都绑定 `:title="title"`（不靠 attrs 隐式透传，确保提示真能显示）。
+- 新增 `web/tests/pet-page-usability.test.mjs` 4 项：锁住「本地仍是 `views/Pet.vue`、不得重新引入 `PetPanel.vue`」这一决策；断言 `durationLow` 判定与两处变色绑定、低量提示位置；断言 `feedTitle` 四条文案与模板绑定；断言 `BaseButton` 的 `title` prop 与两处绑定。
+
+**保留的本地特性自查**：资本模式页签 / `capitalDraft` / `saveCapitalSettings`、双栏 `pet-workspace`、`farm-page-tabs`、`BaseButton` 体系、2×2 预留窗口、种植轮闸门、preflight 续期账本、全量中文日志均未受影响。
+
+**验证**：core **500/500**、web **179/179**（+4）、`pnpm lint` 全仓 0 问题、core `build:ts`、`vue-tsc -b`、`vite build`（25.29s）全过；另核对构建产物，确认 `i-carbon-warning-alt` / `bg-red-500` / `text-red-600` / 两个 dark 变体均生成，新文案已进 `Pet-*.js`。
+
 ### 2026-11-10 · v3.15.6（#116） · 补齐 tests 与样式文件的检查范围，格式化后 web 全仓 lint 清零
 
 - **问题（检查机制本身有盲区）**：`web` 的 lint 脚本写的是 `eslint "src/**/*.{ts,vue}" --fix`，于是 `src/styles/*.css` 与整个 `tests/` 从来没被检查过。手动跑一次全量才发现堆了 **654 个问题**（650 error）：`src/styles/milk-tea-workbench.css` 一个文件 604（全部是 prettier 要求的「每行一条声明」，而该文件通篇用紧凑单行写法）、`tests/` 38、`index.html` 7、`public/activity/milk-tea/assets.json` 1（缺末尾换行）、`MilkTeaExchangePanel.vue` 4。范围外的文件只会越积越多，等于没在检查。
