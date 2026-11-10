@@ -145,7 +145,7 @@ docker compose down
 **以后每次更新用一键脚本，空间不再累积**（只删没人引用的东西，绝不碰数据卷）：
 
 ```bash
-bash scripts/nas-deploy.sh                 # git pull → 重建 → 清悬空镜像 → 清 24h 前的构建缓存
+bash scripts/nas-deploy.sh                 # git pull → 重建 → 清悬空镜像 → 清 1 分钟前的构建缓存
 bash scripts/nas-deploy.sh --prune-logs   # 额外截断应用日志卷里的旧日志
 ```
 

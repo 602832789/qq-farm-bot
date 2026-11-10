@@ -31,8 +31,10 @@ docker compose up -d --build
 echo "==== 回收上一轮留下的悬空镜像 ===="
 docker image prune -f
 
-echo "==== 回收 24 小时前的构建缓存（保留最近一次的可复用层）===="
-docker builder prune -f --filter "until=24h" \
+# 只保留刚这次构建产生的层（<1 分钟），更早的构建缓存全部回收。
+# 一天装很多遍时 24h 等于完全不清，缓存会稳定上涨，所以收到 1 分钟。
+echo "==== 回收 1 分钟前的构建缓存（只保留刚构建的这一层）===="
+docker builder prune -f --filter "until=1m" \
   || echo "[提示] 当前 Docker 不支持 until 过滤，本次跳过构建缓存清理。"
 
 if [ "${1:-}" = "--prune-logs" ]; then

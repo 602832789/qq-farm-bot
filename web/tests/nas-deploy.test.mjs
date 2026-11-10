@@ -15,7 +15,7 @@ test('NAS 部署脚本完成完整更新流程并报告空间变化', () => {
   assert.match(deploy, /git pull --ff-only/)
   assert.match(deploy, /docker compose up -d --build/)
   assert.match(deploy, /docker image prune -f/, '回收上一轮的悬空镜像')
-  assert.match(deploy, /docker builder prune -f --filter "until=24h"/, '回收过期构建缓存')
+  assert.match(deploy, /docker builder prune -f --filter "until=1m"/, '回收过期构建缓存（1 分钟前的都清）')
   assert.equal((deploy.match(/docker system df/g) || []).length, 2, '部署前后各打印一次占用')
   assert.match(deploy, /docker compose ps/)
 })
