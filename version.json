@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 17,
-  "patch": 1,
-  "build": 121,
-  "version": "3.17.1",
-  "updatedAt": "2026-11-10T19:28:42.876Z",
-  "lastCommit": "1a1be415",
+  "patch": 2,
+  "build": 122,
+  "version": "3.17.2",
+  "updatedAt": "2026-11-10T20:08:36.213Z",
+  "lastCommit": "c4a1640f",
   "history": [
+    {
+      "version": "3.17.2",
+      "build": 122,
+      "date": "2026-11-11",
+      "summary": "fix(core): 复核运行完整性，补修 v3.17.1 分项开关实时性回归",
+      "commit": "c4a1640f",
+      "type": "patch"
+    },
     {
       "version": "3.17.1",
       "build": 121,
