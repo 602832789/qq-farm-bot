@@ -18,7 +18,14 @@
  * 用法：
  *   node scripts/version.mjs show
  *   node scripts/version.mjs bump --message "新增版本号功能" [--type minor] [--dry-run]
- *   node scripts/version.mjs bump --from-commit --auto-commit   # 供 post-commit hook 使用
+ *   node scripts/version.mjs bump --auto-stage            # 只暂存不提交：供 pre-commit 钩子合并进本次提交
+ *   node scripts/version.mjs bump --message-file <path> --auto-stage  # 从提交说明文件取摘要（手动/CI 场景）
+ *   node scripts/version.mjs bump --from-commit --auto-stage          # 按当前 HEAD 提交说明补 bump
+ *
+ * 关于「一条提交」：版本递增在 pre-commit 阶段完成并 git add，与功能改动同属一次提交，
+ * 不再额外产生 chore(version) 提交。实测只有 pre-commit 阶段能改写本次提交内容，
+ * prepare-commit-msg / commit-msg 阶段 git add 只会进暂存区、不会进这次提交。
+ * 因为此时提交对象尚未生成，本次记录的「提交」列写 `—`（就是这次提交自身）。
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -42,7 +49,7 @@ export const VERSION_RULES_NOTE = [
     '> **跳过数字 4**：版本号三段与更新序号在递增时，只要十进制表示任意位置含 `4` 就继续跳到下一个不含 `4` 的整数（`4 → 5`、`14 → 15`、`39 → 50`）。',
     '> **全量重排**：全部历史记录已按时间正序重新编号，以 `v3.0.0 · 第 1 次更新` 为起点；此前 `v2.x` / `v2.9.x` 等旧版本序列的对应关系已作废，一律以本表为准。详细记录正文里提到的旧版本号属于当时的叙述，同样已作废。',
     '> **更新序号**：累计更新次数，每次提交无条件 +1（遇到含 `4` 的序号自动跳过）；所有详细记录都带版本号与更新序号。',
-    '> 版本号由 `version.json` 统一维护，可用 `pnpm version:bump` 手动递增，安装 `pnpm hooks:install` 后每次提交自动递增；提交前手动递增的首条记录没有提交号（显示 `—`），由 hook 自动递增的记录会带上对应提交号。',
+    '> 版本号由 `version.json` 统一维护，可用 `pnpm version:bump` 手动递增，安装 `pnpm hooks:install` 后每次提交自动递增。**版本号与更新内容合并进同一次提交**，不再单独产生 `chore(version)` 提交；因此「提交」列显示 `—` 即代表这次提交自身（早期分批提交的历史记录同样是 `—`）。',
 ].join('\n');
 
 /** 全量重排的初始版本：历史最早一条记录固定为 v3.0.0 · 第 1 次更新。 */
@@ -250,6 +257,21 @@ export function git(root, args) {
     }
 }
 
+/** 从 git 的提交说明文件（.git/COMMIT_EDITMSG）取首行有效内容作为摘要。 */
+export function readCommitSubject(file) {
+    try {
+        const raw = readFileSync(file, 'utf8');
+        const line = raw
+            .split('\n')
+            .map(text => text.trim())
+            .find(text => text && !text.startsWith('#'));
+        return line || '';
+    }
+    catch {
+        return '';
+    }
+}
+
 /** 收集本次更新摘要：显式 message > 最新提交 > CHANGELOG 最新未标记标题。 */
 export function collectSummary(root, opts = {}) {
     if (opts.message) return String(opts.message).trim();
@@ -274,11 +296,20 @@ export function collectSummary(root, opts = {}) {
 export function bump(root = DEFAULT_ROOT, opts = {}) {
     const versionPath = join(root, 'version.json');
     const current = readJson(versionPath, DEFAULT_META) || DEFAULT_META;
-    const summary = collectSummary(root, opts);
+    // prepare-commit-msg 阶段提交对象尚未生成，用说明文件取本次提交的首行。
+    const effective = { ...opts };
+    if (!effective.message && effective.messageFile) {
+        const subject = readCommitSubject(effective.messageFile);
+        if (subject) effective.message = subject;
+    }
+    const summary = collectSummary(root, effective);
     const type = opts.type || classifyUpdate(summary);
     const next = bumpVersion(current, type);
     const date = opts.date || formatDate();
-    const commit = opts.commit || git(root, ['rev-parse', '--short', 'HEAD']) || '—';
+    // autoStage 表示版本文件并入「本次」提交，HEAD 此刻仍是父提交，不能当本次提交号。
+    const commit = opts.commit
+        || (opts.autoStage ? '—' : git(root, ['rev-parse', '--short', 'HEAD']))
+        || '—';
     const entry = {
         version: next.version,
         build: next.build,
@@ -333,9 +364,13 @@ export function bump(root = DEFAULT_ROOT, opts = {}) {
         writeJson(join(webDir, 'version.json'), renderWebVersionMeta(meta));
     }
 
-    if (opts.autoCommit) {
+    // autoStage：只把版本文件加入暂存区，跟随调用方的这次提交一起落库（推荐）。
+    // autoCommit：旧行为，额外产生一条 chore(version) 提交（保留仅用于手动补提交场景）。
+    if (opts.autoStage || opts.autoCommit) {
         const changed = VERSION_FILES.filter(file => existsSync(join(root, file)));
         git(root, ['add', '--', ...changed]);
+    }
+    if (opts.autoCommit) {
         git(root, ['commit', '-m', `chore(version): ${versionLabel(meta)}`]);
     }
     return result;
@@ -346,10 +381,12 @@ function parseArgs(argv) {
     const positional = [];
     for (let i = 0; i < argv.length; i++) {
         const arg = argv[i];
-        if (arg === '--message' || arg === '--type' || arg === '--root' || arg === '--date' || arg === '--commit') {
-            opts[arg.slice(2)] = argv[++i] ?? '';
+        if (arg === '--message' || arg === '--message-file' || arg === '--type' || arg === '--root' || arg === '--date' || arg === '--commit') {
+            const key = arg === '--message-file' ? 'messageFile' : arg.slice(2);
+            opts[key] = argv[++i] ?? '';
         }
         else if (arg === '--dry-run') opts.dryRun = true;
+        else if (arg === '--auto-stage') opts.autoStage = true;
         else if (arg === '--auto-commit') opts.autoCommit = true;
         else if (arg === '--from-commit') opts.fromCommit = true;
         else positional.push(arg);

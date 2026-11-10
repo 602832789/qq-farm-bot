@@ -9,6 +9,7 @@ import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import {
   BASELINE_META,
+  bump,
   bumpVersion,
   changelogTag,
   classifyUpdate,
@@ -16,6 +17,7 @@ import {
   DEFAULT_ROOT,
   markLatestChangelogTitle,
   nextAllowedNumber,
+  readCommitSubject,
   renderVersionSection,
   renderWebVersionMeta,
   SKIPPED_DIGIT,
@@ -277,7 +279,7 @@ test('已发布记录都带版本号，提交前允许最新一条待打版本�
   const rows = changelog.split('\n').filter(line => /^\| v\d/.test(line))
   const meta = JSON.parse(read('version.json'))
   const versionedTitle = /^###\s+\d{4}-\d{2}-\d{2}\s*·\s*v\d+\.\d+\.\d+（#\d+）\s*·\s*/
-  // 写更新日志时最新一条还没提交，版本号与总览表行由 post-commit hook 补上。
+  // 写更新日志时最新一条还没提交，版本号与总览表行由 prepare-commit-msg hook 在提交时补上。
   const pendingTitle = titles.length > 0 && !versionedTitle.test(titles[0])
   const publishedTitles = pendingTitle ? titles.slice(1) : titles
   assert.ok(titles.length >= 72, '全量重排后的历史记录全部保留')
@@ -352,17 +354,60 @@ test('版本号真源、构建注入与界面显示接线完整', () => {
   assert.match(read('web/src/components/Sidebar.vue'), /\{\{ versionLabel \}\}/)
   assert.match(read('web/src/views/Login.vue'), /Web \{\{ appVersionLabel \}\}/)
 
-  assert.ok(existsSync(join(ROOT, '.githooks/post-commit')))
-  const hook = read('.githooks/post-commit')
-  assert.match(hook, /chore\(version\)/)
+  // 版本号与更新内容合并进同一次提交：主逻辑在 pre-commit（唯一能改写本次提交内容的阶段），
+  // post-commit 只做兜底提示，不得再自动追加 chore(version) 提交。
+  assert.ok(existsSync(join(ROOT, '.githooks/pre-commit')))
+  const hook = read('.githooks/pre-commit')
   assert.match(hook, /version\.json/)
-  assert.match(hook, /--auto-commit/)
+  assert.match(hook, /--auto-stage/)
   assert.match(hook, /FARM_VERSION_BUMP_RUNNING/)
+  assert.match(hook, /git diff --cached --quiet/, '空提交不递增')
+  assert.match(hook, /MERGE_HEAD/, '合并提交不递增')
+  assert.match(hook, /GIT_REFLOG_ACTION/, 'amend 提交不递增')
+  assert.doesNotMatch(hook, /--auto-commit/, '不得再单独产生版本提交')
+  assert.equal(
+    existsSync(join(ROOT, '.githooks/prepare-commit-msg')),
+    false,
+    '该阶段 git add 进不了本次提交，不能用来合并版本号',
+  )
+
+  assert.ok(existsSync(join(ROOT, '.githooks/post-commit')))
+  const fallback = read('.githooks/post-commit')
+  assert.match(fallback, /chore\(version\)/)
+  assert.match(fallback, /version\.json/)
+  assert.doesNotMatch(fallback, /--auto-commit/, '兜底钩子不得自动提交第二条')
+  assert.match(fallback, /pre-commit/, '兜底钩子说明版本号已合并进本次提交')
 
   const changelog = read('docs/CHANGELOG.md')
   assert.match(changelog, /## 版本总览/)
   assert.match(changelog, new RegExp(`\\| v${meta.version.replace(/\./g, '\\.')} \\| #${meta.build} \\|`))
   assert.match(changelog, new RegExp(`^### \\d{4}-\\d{2}-\\d{2} · v${meta.version.replace(/\./g, '\\.')}（#${meta.build}） · `, 'm'))
+})
+
+test('版本号并入本次提交：摘要取提交说明首行，提交号写占位 —', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'farm-msg-'))
+  try {
+    const file = join(dir, 'COMMIT_EDITMSG')
+    // 空行与注释行必须跳过，只取真正的那一行提交说明
+    writeFileSync(file, '\n\nfeat(web): 版本号与更新内容合并为一条提交\n\n# Please enter the commit message\n', 'utf8')
+    assert.equal(readCommitSubject(file), 'feat(web): 版本号与更新内容合并为一条提交')
+
+    const merged = bump(ROOT, { messageFile: file, autoStage: true, dryRun: true })
+    assert.equal(merged.summary, 'feat(web): 版本号与更新内容合并为一条提交')
+    assert.equal(merged.type, 'minor')
+    // 提交对象尚未生成，HEAD 仍是父提交，不能冒充本次提交号
+    assert.equal(merged.meta.history[0].commit, '—')
+    assert.equal(merged.meta.lastCommit, '—')
+    assert.equal(containsSkippedDigit(merged.meta.version), false, '版本号不得含 4')
+    assert.equal(containsSkippedDigit(merged.meta.build), false, '更新序号不得含 4')
+
+    // 全是注释时视为没有摘要，不能把 # 行当提交说明
+    writeFileSync(file, '# 只有注释\n#\n', 'utf8')
+    assert.equal(readCommitSubject(file), '')
+  }
+  finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
 
 test('web/version.json 镜像与真源一致，容器只 COPY web/ 也能显示更新次数', () => {

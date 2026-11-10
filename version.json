@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 17,
-  "patch": 5,
-  "build": 125,
-  "version": "3.17.5",
-  "updatedAt": "2026-11-10T22:27:00.670Z",
-  "lastCommit": "ce55f8b1",
+  "patch": 6,
+  "build": 126,
+  "version": "3.17.6",
+  "updatedAt": "2026-11-10T22:36:22.328Z",
+  "lastCommit": "—",
   "history": [
+    {
+      "version": "3.17.6",
+      "build": 126,
+      "date": "2026-11-11",
+      "summary": "版本号与更新内容合并为同一条提交，不再单独产生 chore(version) 记录",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.17.5",
       "build": 125,

@@ -1,27 +1,18 @@
 #!/bin/sh
-# 每次提交后自动递增版本号（chore(version) 提交本身跳过，避免递归）。
+# 版本号已在 pre-commit 阶段并入本次提交（见同目录 pre-commit）。
+# 这里只做兜底检查，不再单独创建 chore(version) 提交 —— GitHub 上每次更新只保留一条记录。
 # 启用方式：pnpm hooks:install  （git config core.hooksPath .githooks）
-set -e
 
 msg=$(git log -1 --pretty=%s)
 case "$msg" in
   "chore(version)"*) exit 0 ;;
 esac
 
-if [ -n "$FARM_VERSION_BUMP_RUNNING" ]; then
-  exit 0
-fi
-
-# 本次提交已经带上 version.json（手动执行过 version:bump）时不重复递增
+# 本次提交已带上 version.json，说明 prepare-commit-msg 正常生效
 if git show --pretty=format: --name-only HEAD | grep -qx 'version.json'; then
   exit 0
 fi
 
-if [ ! -f scripts/version.mjs ]; then
-  exit 0
-fi
-
-FARM_VERSION_BUMP_RUNNING=1 node scripts/version.mjs bump --from-commit --auto-commit || {
-  echo "[version] 自动递增失败，可手动执行 pnpm version:bump" >&2
-  exit 0
-}
+echo "[version] 本次提交没有带 version.json，可能是用了 --no-verify 或钩子未安装。" >&2
+echo "[version] 未推送前可执行：pnpm version:bump && git commit --amend --no-edit" >&2
+exit 0
