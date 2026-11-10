@@ -36,6 +36,8 @@ interface KeepAliveDeps {
     isAccountRunning?: (accountId: string) => boolean;
     log?: (tag: string, msg: string, extra?: any) => void;
     addAccountLog?: (action: string, msg: string, accountId?: string, accountName?: string, extra?: any) => void;
+    /** 持久化「自动续期结果」账本，供账号卡片展示；由 runtime-engine 注入，测试可留空。 */
+    recordPreflightResult?: (accountId: string, ok: boolean, now: number) => void;
 }
 
 let deps: KeepAliveDeps = {};
@@ -135,6 +137,21 @@ function findAccount(accountId: unknown): any {
     return (store.getAccounts().accounts || []).find((account: any) => String(account.id) === String(accountId)) || null;
 }
 
+/**
+ * 把一次「后端自动发起」的续期结果写进持久化账本。
+ * 只记 preflight（到期前预防，常开）和 offline（掉线重登）；用户在面板上
+ * 手动点「续期全部微信授权」不算无人值守，不进账。账本异常不影响续期结果。
+ */
+function recordAutomaticResult(accountId: string, reason: 'offline' | 'manual' | 'preflight', ok: boolean, now: number): void {
+    if (reason === 'manual' || typeof deps.recordPreflightResult !== 'function') return;
+    try {
+        deps.recordPreflightResult(accountId, ok, now);
+    }
+    catch {
+        // 账本只用于面板展示，写失败不阻断账号续期与重启。
+    }
+}
+
 function isRunning(accountId: unknown): boolean {
     if (typeof deps.isAccountRunning !== 'function') return false;
     try {
@@ -160,12 +177,14 @@ async function refreshAndMaybeRestart(accountId: unknown, reason: 'offline' | 'm
             const message = `账号 ${result.accountName} 续期失败：${result.error || '未知错误'}`;
             log('错误', message, { accountId: key, accountName: result.accountName, reason });
             if (isPreflight) preflight.recordFailure(key, result.error, now);
+            recordAutomaticResult(key, reason, false, now);
             addAccountLog(isPreflight ? 'auto_code_preflight_failed' : 'auto_code_refresh_failed', message, key, result.accountName, { reason });
             return false;
         }
         const message = `账号 ${result.accountName} 微信授权已续期`;
         log('系统', message, { accountId: key, accountName: result.accountName, reason });
         if (isPreflight) preflight.recordSuccess(key, now);
+        recordAutomaticResult(key, reason, true, now);
         addAccountLog(isPreflight ? 'auto_code_preflight' : 'auto_code_refresh', message, key, result.accountName, { reason });
 
         // 预防性续期 / 掉线重登都要立刻用新 Code 重新上线；手动续期只更新 Code。

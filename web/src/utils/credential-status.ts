@@ -24,6 +24,24 @@ export interface WxPreflightBadge {
   badgeClass: string
 }
 
+/** 后端持久化账本快照：只有时间戳与次数，没有任何凭证内容。 */
+export interface WxPreflightStats {
+  date?: string
+  lastSuccessAt?: number
+  lastFailureAt?: number
+  successesToday?: number
+  failuresToday?: number
+}
+
+export interface WxPreflightSummary {
+  /** 手机端与 PC 端共用的主文案，保持简短。 */
+  text: string
+  /** PC 端追加的补充信息（今日成功次数）。 */
+  detail: string
+  color: string
+  hint: string
+}
+
 const BADGE_SUPPORTED = 'bg-green-50 text-green-600 dark:bg-green-900/30 dark:text-green-400'
 const BADGE_UNSUPPORTED = 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
 const BADGE_UNKNOWN = 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300'
@@ -43,6 +61,73 @@ export function getWxPreflightBadge(acc: any): WxPreflightBadge | null {
   if (acc.wxPreflightSupported === false)
     return { text: '不支持', hint: '缺刷新凭证，到期需重新扫码', badgeClass: BADGE_UNSUPPORTED }
   return { text: '未知', hint: '更新服务后可查看', badgeClass: BADGE_UNKNOWN }
+}
+
+/** 凭证约 2 小时到期、到期前 45 分钟续期，超过 3 小时没有成功记录就值得提醒。 */
+const PREFLIGHT_STALE_MS = 3 * 3600_000
+
+/** 毫秒时间戳（兼容老数据可能写成的秒级），无效值返回 0。 */
+function normalizeTimestamp(value: unknown): number {
+  const n = Number(value)
+  if (!Number.isFinite(n) || n <= 0)
+    return 0
+  return n < 1e11 ? n * 1000 : n
+}
+
+function formatAgo(ts: number, now: number): string {
+  const diff = Math.max(0, now - ts)
+  if (diff < 60_000)
+    return '刚刚'
+  if (diff < 3600_000)
+    return `${Math.floor(diff / 60_000)} 分钟前`
+  if (diff < 24 * 3600_000)
+    return `${Math.floor(diff / 3600_000)} 小时前`
+  return `${Math.floor(diff / (24 * 3600_000))} 天前`
+}
+
+/**
+ * 账号卡片「上次自动续期 / 今日失败次数」。
+ *
+ * 数据来自后端持久化的自动续期账本（preflight-stats.json），字段缺失说明服务
+ * 还是旧版本，返回 null 不渲染，避免把「还没更新」误报成「没在续期」。
+ * 只统计后端自动发起的到期前续期与掉线重登，手动点按钮不计入。
+ */
+export function getWxPreflightSummary(acc: any, now: number = Date.now()): WxPreflightSummary | null {
+  if (String(acc?.platform || '') !== 'wx')
+    return null
+  if (acc.wxPreflightSupported !== true)
+    return null
+  const stats = acc.wxPreflightStats
+  if (!stats || typeof stats !== 'object')
+    return null
+
+  const lastSuccessAt = normalizeTimestamp(stats.lastSuccessAt)
+  const lastFailureAt = normalizeTimestamp(stats.lastFailureAt)
+  const successesToday = Math.max(0, Number(stats.successesToday) || 0)
+  const failuresToday = Math.max(0, Number(stats.failuresToday) || 0)
+  const hintBase = '只统计后端自动发起的到期前续期与掉线重登，手动续期不计入；按北京时间自然日计数，容器重启不丢失。'
+  const hint = lastSuccessAt
+    ? `${hintBase} 最近一次成功：${new Date(lastSuccessAt).toLocaleString('zh-CN', { hour12: false })}`
+    : hintBase
+
+  const detail = `今日成功 ${successesToday} 次`
+  if (!lastSuccessAt) {
+    return {
+      text: `上次自动续期：暂无记录 · 今日失败 ${failuresToday} 次`,
+      detail,
+      color: failuresToday > 0 ? COLOR_RED : COLOR_GRAY,
+      hint,
+    }
+  }
+
+  const when = formatAgo(lastSuccessAt, now)
+  const text = `上次自动续期：${when} · 今日失败 ${failuresToday} 次`
+  const color = failuresToday > 0 && lastFailureAt > lastSuccessAt
+    ? COLOR_RED
+    : failuresToday > 0 || now - lastSuccessAt > PREFLIGHT_STALE_MS
+      ? COLOR_AMBER
+      : COLOR_GREEN
+  return { text, detail, color, hint }
 }
 
 /** 兼容秒级 / 毫秒级到期时间戳；老数据可能由外部写成秒。 */

@@ -89,7 +89,8 @@ test('/api/accounts 走对外投影，不再把 store 数据原样发给浏览�
         source.indexOf("app.get('/api/accounts/code-health'"),
     );
     assert.ok(listRoute.length > 0);
-    assert.match(listRoute, /toPublicAccountsData\(data, hasWxCredential\)/);
+    assert.match(listRoute, /toPublicAccountsData\(data, hasWxCredential, getPreflightStatsSnapshot\(\)\)/);
     assert.match(listRoute, /require\('..\/..\/services\/wx-credential'\)/);
+    assert.match(source, /const \{ getPreflightStatsSnapshot \} = require\('..\/..\/services\/preflight-stats'\)/);
     assert.doesNotMatch(listRoute, /res\.json\(\{ ok: true, data \}\)/);
 });

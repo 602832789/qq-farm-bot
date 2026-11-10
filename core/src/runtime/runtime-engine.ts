@@ -10,6 +10,7 @@ const { createReloginReminderService } = require('./relogin-reminder');
 const { createRuntimeState } = require('./runtime-state');
 const { createWorkerManager } = require('./worker-manager');
 const { startWxKeepAlive, stopWxKeepAlive, applyWxKeepAliveConfig, notifyAccountOffline } = require('../services/wx-keepalive');
+const { recordAutoRefreshSuccess, recordAutoRefreshFailure } = require('../services/preflight-stats');
 
 const OPERATION_KEYS = ['harvest', 'water', 'weed', 'bug', 'farming', 'fertilize', 'plant', 'steal', 'helpWater', 'helpWeed', 'helpBug', 'goldenBugClear', 'goldenBugPut', 'taskClaim', 'sell', 'upgrade', 'levelUp', 'tongQiGift'];
 
@@ -111,6 +112,11 @@ function createRuntimeEngine(options: RuntimeEngineOptions = {}) {
             isAccountRunning: (accountId: string) => !!workers[String(accountId)],
             log,
             addAccountLog,
+            // 自动续期账本：只记到期前预防 / 掉线重登，供账号卡片展示无人值守结果。
+            recordPreflightResult: (accountId: string, ok: boolean, at: number) => {
+                if (ok) recordAutoRefreshSuccess(accountId, at);
+                else recordAutoRefreshFailure(accountId, at);
+            },
         });
     }
     const dataProvider = createDataProvider({

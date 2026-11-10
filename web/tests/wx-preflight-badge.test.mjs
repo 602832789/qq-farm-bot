@@ -56,7 +56,7 @@ test('QQ 账号与空对象不渲染这个微信专属标记', () => {
 
 test('账号卡片确实渲染了标记，且只在微信账号上出现', () => {
   const panel = read('../src/components/settings/AccountManagementPanel.vue')
-  assert.match(panel, /import \{ getCredentialStatus, getWxPreflightBadge \}/)
+  assert.match(panel, /import \{ getCredentialStatus, getWxPreflightBadge, getWxPreflightSummary \}/)
   assert.match(panel, /v-if="wxPreflightBadge\(acc\)"/)
   assert.match(panel, /免扫码续期：\{\{ wxPreflightBadge\(acc\)\?\.text \}\}/)
   assert.match(panel, /:class="wxPreflightBadge\(acc\)\?\.badgeClass"/)
@@ -69,7 +69,7 @@ test('账号类型与后端投影接线：只暴露布尔标记，不下发凭�
   assert.match(store, /接口不下发凭证明文/)
 
   const routes = read('../../core/src/controllers/admin/account-routes.ts')
-  assert.match(routes, /toPublicAccountsData\(data, hasWxCredential\)/)
+  assert.match(routes, /toPublicAccountsData\(data, hasWxCredential, getPreflightStatsSnapshot\(\)\)/)
 
   const visibility = read('../../core/src/services/account-visibility.ts')
   assert.match(visibility, /\['refreshtoken', 'accesstoken', 'loginBuffer'\]/)

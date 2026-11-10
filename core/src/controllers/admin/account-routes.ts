@@ -10,6 +10,7 @@ const store = require('../../models/store');
 const { addOrUpdateAccount, deleteAccount } = store;
 const { findAccountByRef } = require('../../services/account-resolver');
 const { toPublicAccountsData } = require('../../services/account-visibility');
+const { getPreflightStatsSnapshot } = require('../../services/preflight-stats');
 const { updateRuntimeConfig, getRuntimeConfig, getDefaultSystemConfig, getDevicePresets, getTimeZoneOptions } = require('../../config/config');
 
 const {
@@ -39,8 +40,9 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
             const data = ctx.provider.getAccounts();
             // 只把「能否免扫码续期」的判定结果发给浏览器，不下发长效凭证明文。
             // 判定口径与 wx-keepalive 一致：wx 账号 + wxid + refreshtoken 三者齐备。
+            // 同时附带自动续期账本快照（仅时间戳与次数），供卡片显示无人值守结果。
             const { hasWxCredential } = require('../../services/wx-credential');
-            res.json({ ok: true, data: toPublicAccountsData(data, hasWxCredential) });
+            res.json({ ok: true, data: toPublicAccountsData(data, hasWxCredential, getPreflightStatsSnapshot()) });
         } catch (e: any) {
             handleApiError(res, e);
         }

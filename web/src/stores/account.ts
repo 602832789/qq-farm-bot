@@ -17,6 +17,14 @@ export interface Account {
   wxid?: string
   /** 后端判定的「wxid + refreshtoken 齐备、可免扫码续期」标记；接口不下发凭证明文。 */
   wxPreflightSupported?: boolean
+  /** 自动续期账本快照：只有时间戳与次数，无任何凭证内容；字段缺失代表服务尚未更新。 */
+  wxPreflightStats?: {
+    date?: string
+    lastSuccessAt?: number
+    lastFailureAt?: number
+    successesToday?: number
+    failuresToday?: number
+  }
   /** 微信授权到期信息，用于展示剩余时间。 */
   expires_at?: number
   expires_in?: number

@@ -18,6 +18,7 @@ const mocks = {
     restarts: [],
     logs: [],
     printed: [],
+    preflightResults: [],
     systemConfig: null,
     refreshImpl: null,
 };
@@ -70,6 +71,7 @@ function reset() {
     mocks.restarts = [];
     mocks.logs = [];
     mocks.printed = [];
+    mocks.preflightResults = [];
     mocks.systemConfig = null;
     mocks.refreshImpl = async id => ({ ok: true, accountId: id, accountName: '微信一号' });
     ka.stopWxKeepAlive(); // 清掉定时器、inFlight 与熔断计数
@@ -78,6 +80,7 @@ function reset() {
         restartWorker: acc => mocks.restarts.push(String(acc.id)),
         log: (tag, msg) => mocks.printed.push({ tag, msg }),
         addAccountLog: (action, msg, id) => mocks.logs.push({ action, msg, id: String(id || '') }),
+        recordPreflightResult: (id, ok, at) => mocks.preflightResults.push({ id: String(id), ok, at }),
     });
 }
 
@@ -240,6 +243,40 @@ test('续期失败写 auto_code_preflight_failed 并进入 5 分钟冷却', asyn
     assert.deepEqual(mocks.restarts, [], '失败不重启账号');
     assert.ok(mocks.logs.some(entry => entry.action === 'auto_code_preflight_failed'));
     assert.deepEqual(await ka.runCodePreflight(NOW + MINUTE), [], '冷却期内不重试');
+});
+
+test('自动续期结果写入账本：成功记 true、失败记 false，供账号卡片展示', async () => {
+    reset();
+    mocks.accounts = [wxAccount({ expires_at: NOW + 10 * MINUTE })];
+    mocks.running.add('1');
+    await ka.runCodePreflight(NOW);
+    assert.deepEqual(mocks.preflightResults, [{ id: '1', ok: true, at: NOW }]);
+
+    reset();
+    mocks.accounts = [wxAccount({ expires_at: NOW + 10 * MINUTE })];
+    mocks.running.add('1');
+    mocks.refreshImpl = async id => ({ ok: false, accountId: id, accountName: '微信一号', error: '网络超时' });
+    await ka.runCodePreflight(NOW);
+    assert.deepEqual(mocks.preflightResults, [{ id: '1', ok: false, at: NOW }]);
+});
+
+test('手动点「续期全部微信授权」不计入无人值守账本', async () => {
+    reset();
+    mocks.accounts = [wxAccount({ expires_at: NOW + 10 * MINUTE })];
+    mocks.running.add('1');
+    assert.equal(await ka.refreshAndMaybeRestart('1', 'manual', NOW), true);
+    assert.deepEqual(mocks.preflightResults, []);
+    assert.deepEqual(mocks.restarts, [], '手动续期本来就不重启账号');
+});
+
+test('账本注入函数抛错也不会中断续期与重启', async () => {
+    reset();
+    mocks.accounts = [wxAccount({ expires_at: NOW + 10 * MINUTE })];
+    mocks.running.add('1');
+    ka.startWxKeepAlive({ recordPreflightResult: () => { throw new Error('磁盘满'); } });
+    assert.deepEqual(await ka.runCodePreflight(NOW), ['1']);
+    assert.deepEqual(mocks.restarts, ['1']);
+    assert.ok(mocks.logs.some(entry => entry.action === 'auto_code_preflight'));
 });
 
 test('同一账号续期在途时不会重复触发（inFlight 去重）', async () => {
