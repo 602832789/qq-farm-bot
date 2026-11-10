@@ -37,6 +37,49 @@ test('提供只读诊断与深度清理两个显式开关', () => {
   assert.match(deployCode, /docker image prune -a -f/, '--deep 才回收未使用镜像')
 })
 
+test('--report 列全镜像/容器/卷并给出读法，不写死「构建缓存占大头」', () => {
+  // 曾经的缺陷：report 结尾硬编码「Build cache 一行占大头」。实测 Build Cache
+  // 只有 193MB（占 0%），真正占满的是被容器引用的镜像，文案把人指错了方向。
+  assert.match(deploy, /show_report_detail/, '要输出镜像/容器/卷全量清单')
+  assert.match(deploy, /docker images --format/, '列出镜像，看哪条被谁引用')
+  assert.match(deploy, /docker ps -a --format/, '列出容器，解释镜像为何删不掉')
+  assert.match(deploy, /LINKS=0 的卷/, '标出无人引用的残留卷')
+  assert.doesNotMatch(deploy, /Build cache 一行占大头/, '不能再写死这个结论')
+  assert.doesNotMatch(deploy, /head -n 6/, '卷列表不能截断，否则看不到残留卷')
+
+  const report = deploy.slice(deploy.indexOf('show_read_guide'), deploy.indexOf('prune_build_cache'))
+  assert.match(report, /RECLAIMABLE 很小/, '解释「可回收≈0」的真实含义')
+  assert.match(report, /ACTIVE 数量 > 1/, '多个容器同时在线要作为重点提示')
+  assert.match(report, /du -sh \/var\/lib\/docker/, '给出与 system df 对照的兜底排查')
+})
+
+test('--prune-orphans 只删已停止容器，绝不误删数据卷', () => {
+  assert.match(deploy, /--prune-orphans/)
+  assert.match(deployCode, /PRUNE_ORPHANS/)
+
+  const fn = deploy.slice(deploy.indexOf('# 清理历史残留'), deploy.indexOf('if [ "$REPORT_ONLY"'))
+  // 只留真正会执行的行：注释和 echo/printf 的提示文案里出现的命令不算执行。
+  const fnCode = fn
+    .split('\n')
+    .filter(line => !line.trimStart().startsWith('#'))
+    .filter(line => !/^\s*echo\b/.test(line))
+    .join('\n')
+  assert.match(fn, /status=exited/, '只筛已停止容器')
+  // 删之前要再确认一次不在运行，避免竞态下停掉刚起来的容器
+  assert.match(fnCode, /docker ps -q --filter "name=\^\$\{name\}\$"/, '删除前二次确认未运行')
+  assert.match(fnCode, /grep -vx 'qq-farm-bot'/, '当前实例不进入删除候选')
+  // 残留卷只报告不删：里面可能装着早期账号数据
+  assert.doesNotMatch(fnCode, /docker volume rm/, '脚本不得自动删卷')
+  assert.match(fn, /docker volume rm <上面列出的卷名>/, '只打印命令让用户自己确认')
+})
+
+test('无 docker 时给出清晰错误，但 --help 仍可查看用法', () => {
+  const helpAt = deploy.indexOf('sed -n \'2,26p\' "$0"')
+  const dockerCheckAt = deploy.indexOf('command -v docker')
+  assert.ok(helpAt > 0 && dockerCheckAt > helpAt, 'help 必须在 docker 检查之前处理')
+  assert.match(deploy, /没找到 docker 命令/)
+})
+
 test('部署脚本绝不触碰命名卷，日志清理只截断不删文件', () => {
   const dangerous = [
     /compose down -v\b/,

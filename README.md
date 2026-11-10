@@ -140,32 +140,50 @@ docker compose down
 
 ### 📦 NAS 反复部署时的空间维护
 
-每次 `docker compose up -d --build` 都会给新镜像打上 `qq-farm-bot:latest`，上一轮的镜像就变成 `<none>` 悬空镜像；BuildKit 还会把每一层的构建缓存留在磁盘上。本项目 `version.json` 每次提交都变，会连带让 `web-builder` 之后的层重新生成（`COPY version.json` → `COPY web` → `pnpm -C web build`），每部署一次大约新增 100–200MB 缓存，所以反复更新时占用会稳定上涨。
+反复 `docker compose up -d --build` 确实会让占用上涨，但**大头不是构建缓存**。实测一台反复部署的 fnOS，`docker system df` 给出的是这组数字：
 
-**以前「清了也不干净」的原因**：`docker builder prune` 不带 `-a` 时**只删 dangling 缓存记录**，而每次重建产生的层缓存都不算 dangling —— 等于几乎没删。实测表现就是清理前 37G、清理后 35G，只回收了个零头。现在脚本统一带 `-a`，并用 `--keep-storage` 设容量上限，超出部分按「最久未使用」顺序删除，既回收得掉也不会下次又涨回来。
+```
+TYPE            TOTAL     ACTIVE    SIZE      RECLAIMABLE
+Images          11        11        4.965GB   8.442MB (0%)
+Containers      11        11        915.3MB   0B (0%)
+Local Volumes   11        5         1.505GB   15.12MB (1%)
+Build Cache     23        0         0B        0B
+```
 
-另外应用自己往 `qq-farm-logs` 卷里写 `combined.log` / `error.log`，现在已加轮转（默认单文件 50MB、保留 5 份，可用 `LOG_MAX_SIZE_MB` / `LOG_MAX_FILES` 调整），容器控制台日志另有 `json-file` 的 `10m × 3` 上限。
+- **构建缓存只占 193MB（约 0%）**，`docker buildx du` 才是它的真实值（`system df` 那一行只统计默认 builder）。
+- **镜像 4.965GB 全部 ACTIVE、可回收只有 8.4MB**：因为还有容器引用着它们，被引用的镜像不算 dangling，`docker image prune` 一条都删不掉。
+- **11 个容器全在跑**，而本项目只需要 1 个。多出来的是历史上换过 compose project 名 / 换过目录后留下的实例，它们各自占一份镜像和一层可写空间。
+
+所以「清了只掉 2G」的真因是**镜像被容器钉住**，不是清理命令写错了。先看容器，再谈镜像。
+
+**以前踩过的坑**：`docker builder prune` 不带 `-a` 只删 dangling 缓存记录，每次重建产生的层都不算 dangling，等于几乎没删。现在脚本统一带 `-a` 并用 `--keep-storage` 设上限，但这一项只能回收 100–200MB 量级，别指望靠它解决大头。
+
+另外应用自己往 `qq-farm-logs` 卷里写 `combined.log` / `error.log`，现在已加体积上限（默认 100MB，`LOG_MAX_SIZE_MB` 可调），容器控制台日志另有 `json-file` 的 `10m × 3` 上限。
 
 **以后每次更新用一键脚本**（只删没人引用的东西，绝不碰数据卷）：
 
 ```bash
-bash scripts/nas-deploy.sh                 # 回收构建缓存 → git pull → 重建 → 清悬空镜像
-bash scripts/nas-deploy.sh --prune-logs    # 额外截断应用日志卷里的日志
-bash scripts/nas-deploy.sh --report        # 只看空间明细，不改任何东西
-bash scripts/nas-deploy.sh --deep          # 空间告急：清空全部构建缓存 + 未使用镜像
+bash scripts/nas-deploy.sh                  # 回收构建缓存 → git pull → 重建 → 清悬空镜像
+bash scripts/nas-deploy.sh --report         # 只读诊断：镜像/容器/卷全量 + 怎么读这张表
+bash scripts/nas-deploy.sh --prune-orphans  # 清历史残留：已停止的旧容器 + 悬空镜像
+bash scripts/nas-deploy.sh --prune-logs     # 额外截断应用日志卷里的日志
+bash scripts/nas-deploy.sh --deep           # 空间告急：清空全部构建缓存 + 未使用镜像
 ```
 
-- 构建缓存上限默认 2048MB，`BUILD_CACHE_KEEP_MB=4096 bash scripts/nas-deploy.sh` 可以换更大的预算（构建更快、占盘更多）。
-- 脚本会打印部署前后的 `docker system df`，并列出 `docker buildx du` 缓存明细和卷占用，直接看出回收了多少。
-- **回收在构建之前做**，所以即使盘快满了，老缓存也会先被削下去，构建不会因为 `no space left` 失败。
+- `--report` 会列出**所有**镜像、容器、卷（不截断），并标出 `LINKS=0` 的残留卷，末尾给读法说明。它会提示「属于本项目的容器有几个」，多于 1 个就是要处理的信号。
+- `--prune-orphans` 只删**已停止**的本项目容器（名字以 `qq-farm` 开头、且不是 `qq-farm-bot`），删之前还会再确认一次没在运行。数据卷和残留卷只报告不删——里面可能装着早期账号数据，删错无法恢复。
+- 构建缓存上限默认 2048MB，`BUILD_CACHE_KEEP_MB=4096 bash scripts/nas-deploy.sh` 可换更大预算。
+- **回收在构建之前做**，所以盘快满时老缓存会先被削下去，构建不会因为 `no space left` 失败。
 
 **已经涨上去的空间，按这个顺序清**：
 
 ```bash
-# 1) 先看空间花在哪：镜像 / 容器 / 卷 / 构建缓存各占多少
+# 1) 先看空间花在哪：先看 ACTIVE 数量，再看 SIZE
 docker system df
-docker system df -v
-docker buildx du            # 构建缓存明细；有多个 builder 时用 docker buildx ls 看谁在占
+docker ps -a                            # 有几个容器？本项目应该只有 1 个 qq-farm-bot
+docker images                           # 哪些镜像被谁引用着
+docker system df -v                     # 卷的 LINKS 列，0 = 没人引用
+docker buildx du                        # 构建缓存真实值；有多个 builder 时用 docker buildx ls 看谁在占
 
 # 2) 先备份账号数据到宿主机（内含账号凭据，别外传）
 mkdir -p ~/qq-farm-backup
@@ -174,10 +192,14 @@ docker run --rm --entrypoint sh \
   qq-farm-bot:latest -c 'tar czf /backup/data-$(date +%F).tar.gz -C /src .'
 
 # 3) 分级回收，随时可以停在某一步
-docker image prune -f          # 只删 <none> 悬空镜像，最安全
+docker image prune -f          # 只删 <none> 悬空镜像，最安全；但被容器引用的删不掉
 docker builder prune -a -f     # 清空全部构建缓存：**-a 不能省**，省了就只删 dangling
 docker builder prune -a -f --keep-storage 2147483648   # 或者只保留 2GB，按最久未用删
-docker container prune -f      # 删所有已停止容器：先 docker ps -a 确认 NAS 上没有别的项目
+
+# 3.5) 容器太多时才需要这一步：镜像被旧容器钉住，只能先停容器再清镜像
+docker ps -a                                   # 先逐个确认，别停掉正在用的
+docker stop <多余的容器名> && docker rm <多余的容器名>
+docker image prune -a -f --filter "until=1h"   # 这时旧镜像才真正变成可回收
 
 # 4) 日志卷单独处理：只截断文件，不删卷、不重启容器
 docker exec qq-farm-bot sh -c 'du -sh /app/core/data/logs'
@@ -187,11 +209,9 @@ docker exec qq-farm-bot sh -c 'for f in /app/core/data/logs/*.log; do : > "$f"; 
 docker system df
 ```
 
-> 清完 `docker system df` 四块加起来仍明显小于涨出来的量时，再查两件事：`docker buildx ls` 是否还有别的 builder（每个 builder 的缓存是独立的，`docker buildx prune --builder <名字> -a -f` 单独清），以及 fnOS 自己的回收站 / 快照 —— 那部分不属于 Docker，prune 管不到。
+> 清完 `docker system df` 四块加起来仍明显小于涨出来的量时，再查三件事：`du -sh /var/lib/docker` 与 `system df` 的差额（未统计的层/日志）、`docker buildx ls` 是否还有别的 builder（每个 builder 的缓存独立，`docker buildx prune --builder <名字> -a -f` 单独清）、以及 fnOS 自己的回收站 / 快照 —— 最后这部分不属于 Docker，prune 管不到。
 
 > **⚠️ 以下操作会不可逆地删掉账号数据，不要执行**：`docker compose down -v`、`docker system prune --volumes`、`docker system prune -a --volumes`、`docker volume prune -f`、`rm -rf /var/lib/docker`。它们会删除「当前没有被容器引用」的命名卷；容器一旦处于停止状态，`qq-farm-data` 里的账号、Code、refreshtoken 就会一起消失。
-
-如果 `docker system df -v` 四块加起来明显不足涨出来的 5G，再去查 fnOS 自己的回收站 / 快照，那部分不属于 Docker。
 
 QQ 扫码登录所需的 NapCat 服务默认不随 Compose 启动，需要时用 `napcat/Dockerfile` 自行构建。其余环境变量、构建参数与镜像细节见 [详细参考](docs/detailed-reference.md#部署细节)。
 

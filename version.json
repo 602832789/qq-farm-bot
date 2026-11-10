@@ -1,12 +1,20 @@
 {
   "major": 3,
-  "minor": 17,
-  "patch": 9,
-  "build": 129,
-  "version": "3.17.9",
-  "updatedAt": "2026-11-10T23:10:19.996Z",
+  "minor": 18,
+  "patch": 0,
+  "build": 130,
+  "version": "3.18.0",
+  "updatedAt": "2026-11-10T23:26:30.052Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.18.0",
+      "build": 130,
+      "date": "2026-11-11",
+      "summary": "`--report` 改为全量诊断并新增 `--prune-orphans`，纠正「构建缓存占大头」的误判",
+      "commit": "—",
+      "type": "minor"
+    },
     {
       "version": "3.17.9",
       "build": 129,

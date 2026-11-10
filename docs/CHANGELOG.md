@@ -15,6 +15,7 @@
 
 | 版本 | 更新序号 | 日期 | 更新内容 | 提交 |
 | --- | --- | --- | --- | --- |
+| v3.18.0 | #130 | 2026-11-11 | `--report` 改为全量诊断并新增 `--prune-orphans`，纠正「构建缓存占大头」的误判 | — |
 | v3.17.9 | #129 | 2026-11-11 | 修复 NAS 反复构建后空间清不干净：`builder prune` 补上 `-a`，日志加体积上限 | — |
 | v3.17.8 | #128 | 2026-11-11 | 提交标题改为「版本号 · 第 N 次更新 · 更新内容」，原始说明下沉为正文 | — |
 | v3.17.7 | #127 | 2026-11-11 | 修正钩子文件可执行位，Linux/macOS 上版本递增才会真正执行 | — |
@@ -149,6 +150,36 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-11 · v3.18.0（#130） · `--report` 改为全量诊断并新增 `--prune-orphans`，纠正「构建缓存占大头」的误判
+
+**现象**：按上一版建议跑 `--report`，实测数据推翻了上一版的结论 —— 真正占满空间的不是构建缓存。
+
+```
+TYPE            TOTAL     ACTIVE    SIZE      RECLAIMABLE
+Images          11        11        4.965GB   8.442MB (0%)
+Containers      11        11        915.3MB   0B (0%)
+Local Volumes   11        5         1.505GB   15.12MB (1%)
+Build Cache     23        0         0B        0B          # buildx du 实测 193MB
+```
+
+- 构建缓存只有 **193MB（约 0%）**，不是大头。
+- 镜像 **4.965GB 全部 ACTIVE**、可回收仅 8.4MB：因为还有容器引用着，被引用的镜像不算 dangling，`docker image prune` 一条都删不掉。
+- 容器 **11 个全在跑**，而本项目正常只需 1 个 —— 历史上换过 compose project 名 / 换过目录留下的实例，各自钉住一份镜像 + 一层可写空间。
+- 卷里 `qq-farm-bot-go_qq-farm-bot-data`、`qq-farm-test-data`、`qq-farm-test-logs` 均为 LINKS=0 的历史残留。
+
+**根因**：`--report` 结尾那句「Build cache 一行占大头 → 直接跑 nas-deploy.sh」是**硬编码文案，不看实际数据**，把排查方向指错了；同时卷列表用 `head -n 6` 截断，11 个卷只显示 5 个，看不到残留。
+
+**改动**：
+
+- `--report` 新增 `show_report_detail()`：不截断地列出全部镜像、容器、卷，并单独标出 LINKS=0 的残留卷。
+- `--report` 新增 `show_read_guide()`：只讲怎么看表（可回收≈0 的真实含义、ACTIVE>1 是重点信号、`du -sh /var/lib/docker` 兜底），**不再替用户下结论**；当属于本项目的容器 >1 个时直接点名并给出 `docker stop` / `docker rm` 命令。
+- 新增 `--prune-orphans`：只删**已停止**的本项目容器（名字以 `qq-farm` 开头且不是 `qq-farm-bot`），删前再用 `docker ps -q --filter name=^X$` 二次确认未运行；随后清悬空镜像。
+- **残留卷只报告不删除**：`qq-farm-bot-go_*` / `qq-farm-test-*` 里可能是早期账号数据，删错不可恢复，而这部分实测只有约 13MB，不值得冒风险。脚本只打印 `docker volume rm` 命令供用户自行确认。
+- `--help` 移到 docker 存在性检查之前，没装 Docker 的机器也能看用法；`docker` 缺失时给出明确错误而不是 `command not found`。
+- `README.md` 空间维护章节按实测数据重写：明确「大头是被容器钉住的镜像，不是构建缓存」，补 `--report` / `--prune-orphans` 用法与 `docker ps -a` 先看容器的排查顺序。
+
+**验证**：core 528/528、web 194/194、`pnpm lint` 0、core `tsc --noEmit`、`vue-tsc -b` 全过；`sh -n` 语法通过；用模拟 `docker` 输出实跑了 `--report` 与 `--prune-orphans` 两个分支，并用真实 `docker system df -v` 样本验证卷过滤的 awk 逻辑。
+
 ### 2026-11-11 · v3.17.9（#129） · 修复 NAS 反复构建后空间清不干净：`builder prune` 补上 `-a`，日志加体积上限
 
 **现象**：NAS 上反复 `docker compose up -d --build`，占用一路上涨；跑旧清理脚本只能回收 2G（37G → 35G），远高于安装前的 30G。
