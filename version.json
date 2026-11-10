@@ -1,12 +1,20 @@
 {
   "major": 3,
-  "minor": 16,
-  "patch": 2,
-  "build": 119,
-  "version": "3.16.2",
-  "updatedAt": "2026-11-10T17:56:10.910Z",
-  "lastCommit": "497c226e",
+  "minor": 17,
+  "patch": 0,
+  "build": 120,
+  "version": "3.17.0",
+  "updatedAt": "2026-11-10T19:06:57.366Z",
+  "lastCommit": "9106971f",
   "history": [
+    {
+      "version": "3.17.0",
+      "build": 120,
+      "date": "2026-11-11",
+      "summary": "feat(web): 落地上游 PR #125 稀有度徽章，宠物卡片显示四档稀有度",
+      "commit": "9106971f",
+      "type": "minor"
+    },
     {
       "version": "3.16.2",
       "build": 119,
