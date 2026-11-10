@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 15,
-  "patch": 1,
-  "build": 111,
-  "version": "3.15.1",
-  "updatedAt": "2026-11-10T02:25:16.343Z",
-  "lastCommit": "3b4cd7fb",
+  "patch": 2,
+  "build": 112,
+  "version": "3.15.2",
+  "updatedAt": "2026-11-10T02:38:41.845Z",
+  "lastCommit": "0914db06",
   "history": [
+    {
+      "version": "3.15.2",
+      "build": 112,
+      "date": "2026-11-10",
+      "summary": "fix(core): 好友 tick 不再套自动化锁，修复与内部 detached 调用互相等死的死锁",
+      "commit": "0914db06",
+      "type": "patch"
+    },
     {
       "version": "3.15.1",
       "build": 111,
