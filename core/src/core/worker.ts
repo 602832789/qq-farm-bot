@@ -225,7 +225,7 @@ function randomIntervalMs(minMs: number, maxMs: number): number {
     return sec * 1000;
 }
 
-function resetUnifiedSchedule(): void {
+function resetUnifiedSchedule(options: { preserveSteal?: boolean } = {}): void {
     const farmMs = randomIntervalMs(
         CONFIG.farmCheckIntervalMin || CONFIG.farmCheckInterval || 2000,
         CONFIG.farmCheckIntervalMax || CONFIG.farmCheckInterval || 2000
@@ -239,7 +239,9 @@ function resetUnifiedSchedule(): void {
     // 老版本节奏：帮忙循环保底常规间隔，偷菜首轮给一个短的随机窗口，
     // 后续完全由 runScheduledStealCheck 返回的成熟时间动态决定。
     nextFriendRunAt = now + friendMs;
-    nextStealRunAt = now + randomIntervalMs(5000, 15000);
+    // 配置下发不是重启：偷菜到期时间是按好友作物成熟时刻算出来的，
+    // 只有调度器首次启动时才打回随机窗口，否则会错过成熟瞬间。
+    if (!options.preserveSteal) nextStealRunAt = now + randomIntervalMs(5000, 15000);
     businessBackoffMs.farm = 0;
     businessBackoffMs.friend = 0;
 }
@@ -331,6 +333,7 @@ async function runFarmTick(auto: any): Promise<void> {
         return;
     }
     farmTaskRunning = true;
+    const generation = runtimeGeneration;
     const farmMs = randomIntervalMs(
         CONFIG.farmCheckIntervalMin || CONFIG.farmCheckInterval || 2000,
         CONFIG.farmCheckIntervalMax || CONFIG.farmCheckInterval || 2000
@@ -349,8 +352,12 @@ async function runFarmTick(auto: any): Promise<void> {
     } catch {
         // ignore
     } finally {
-        nextFarmRunAt = Date.now() + farmMs;
-        farmTaskRunning = false;
+        // 与 friend/steal tick 一致：账号停机又立刻重启时，旧轮次不能把新会话
+        // 刚算好的到期时间覆盖掉，也不能提前解除新会话的运行中守卫。
+        if (generation === runtimeGeneration) {
+            nextFarmRunAt = Date.now() + farmMs;
+            farmTaskRunning = false;
+        }
     }
 }
 
@@ -494,6 +501,12 @@ function stopUnifiedScheduler(): void {
     friendTaskRunning = false;
     stealTaskRunning = false;
     workerScheduler.clear('unified_next_tick');
+    // 停机 300ms 内可能被重新拉起，让路/退避状态不带进新会话。
+    businessBackoffMs.farm = 0;
+    businessBackoffMs.friend = 0;
+    foregroundYieldStreak.farm = 0;
+    foregroundYieldStreak.friend = 0;
+    nextStealDelayMs = 0;
 }
 
 function stopMysteryShopTimer(): void {
@@ -600,6 +613,11 @@ function applyRuntimeConfig(snapshot: any, syncNow: boolean = false): number {
         if (syncNow) syncStatus();
         return appliedConfigRevision;
     }
+    // 同一个 revision 的补充下发（好友黑名单 / 已知 GID 同步）只需要把新配置内容
+    // 应用进来，不能重复跑「保存后重排」那一整套副作用：那会反复重置成熟驱动的
+    // 偷菜排程、重建活动定时器、重复安排 after_save 任务。rev=0 是面板开关这类
+    // 不带版本号的局部下发，仍按一次真实变更处理。
+    const freshRevision = rev > appliedConfigRevision;
 
     const prevAuto = getAutomation();
     const { getCapitalMode } = require('../models/store');
@@ -642,10 +660,10 @@ function applyRuntimeConfig(snapshot: any, syncNow: boolean = false): number {
         applyIntervalsToRuntime(incomingIntervals);
     }
 
-    if (loginReady) {
+    if (loginReady && (freshRevision || rev === 0)) {
         refreshFarmCheckLoop(200);
         refreshFriendCheckLoop(200);
-        resetUnifiedSchedule();
+        resetUnifiedSchedule({ preserveSteal: true });
         scheduleUnifiedNextTick();
 
         const hasAutomationPayload = !!(snapshot && snapshot.automation && typeof snapshot.automation === 'object');
@@ -974,6 +992,13 @@ function quiesceBot(reason: string): void {
     stopPetFeedCheckTimer();
     stopDailyRoutineTimer();
     cleanupTaskSystem();
+    // 2×2 预留窗口、整轮闸门、已注册布局都是模块级跨轮状态；
+    // 停机/重登时统一复位，避免 thread 复用时把上一轮的身份签名带进新会话。
+    try {
+        require('../services/farm/planting').resetPlantingRoundState();
+    } catch {
+        // 种植引擎尚未加载时无需复位
+    }
     workerScheduler.clearAll();
     detachRuntimeListeners();
     cleanup(reason);

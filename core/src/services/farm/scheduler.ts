@@ -46,9 +46,10 @@ function canContinueFarm(generation: number): boolean {
         && !!getUserState().gid && isAutomationOn('farm') && !inFarmQuietHours();
 }
 
-function schedulePlantContinuation(generation: number, pacing: any, delayMs?: number): void {
+function schedulePlantContinuation(generation: number, pacing: any): void {
     if (!farmLoopRunning || !canContinueFarm(generation) || pacing !== automaticPlantPacing || !pacing.deferred) return;
-    farmScheduler.setTimeoutTask('farm_plant_continue', delayMs ?? getRemainingPlantDelayMs(pacing), async () => {
+    // 延迟只能由「配置种植间隔 - 本轮已耗时」决定，外部刷新不得覆盖。
+    farmScheduler.setTimeoutTask('farm_plant_continue', getRemainingPlantDelayMs(pacing), async () => {
         // 计时器会继承创建时的异步上下文，必须独立入队，不能当作旧锁的重入。
         await runExclusiveAutomationTask('farm_plant_continue', async () => {
             if (!farmLoopRunning || !canContinueFarm(generation) || pacing !== automaticPlantPacing) return;
@@ -561,10 +562,11 @@ function stopFarmCheckLoop(): void {
 
 function refreshFarmCheckLoop(delayMs: number = 200): void {
     if (!farmLoopRunning) return;
-    // 种植续跑还挂着的话，跟着刷新的间隔一起重排，不要把旧计时器留在那儿。
+    // 分次种植的续跑有自己的计时（配置间隔减已耗时），配置下发不能把它压成 200ms，
+    // 否则每轮 config_sync 都会提前叫醒一整轮巡田。setTimeoutTask 同名会先清旧计时器，
+    // 所以这里不手动 clear：守卫不通过时旧计时器原样保留，剩余地块不会被晾到下一轮。
     if (farmScheduler.has('farm_plant_continue')) {
-        farmScheduler.clear('farm_plant_continue');
-        schedulePlantContinuation(farmLoopGeneration, automaticPlantPacing, delayMs);
+        schedulePlantContinuation(farmLoopGeneration, automaticPlantPacing);
     }
     scheduleNextFarmCheck(delayMs);
 }

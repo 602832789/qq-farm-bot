@@ -224,8 +224,11 @@ function isTransientGatewaySkip(error: any): boolean {
     if (!error) return false;
     if (String(error.name || '') === 'GatewayBusyError') return true;
     const msg = String(error.message || error || '');
-    return msg.includes('网关请求超预算')
-        || msg.includes('自动任务请求已达流量上限')
+    // 与 utils/network.ts、net-diagnosis-text.ts 中文化后的真实文案对齐；
+    // 旧版预算文案已不再产生，budget_total 作为历史兼容保留。
+    return msg.includes('自动任务请求已达流量上限')
+        || msg.includes('总量额度用尽')
+        || msg.includes('单方法额度用尽')
         || msg.includes('请求等待队列已满')
         || msg.includes('budget_total');
 }

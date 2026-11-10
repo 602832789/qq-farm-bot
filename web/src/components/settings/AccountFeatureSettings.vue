@@ -513,23 +513,6 @@ function cancel() {
               </section>
             </div>
 
-            <div v-else-if="activeModule === 'activity'" class="space-y-4">
-              <section class="border border-gray-100 rounded-lg bg-gray-50/70 p-4 space-y-3 dark:border-gray-700 dark:bg-gray-900/25">
-                <div class="text-sm text-gray-700 font-medium dark:text-gray-300">
-                  每日邮箱奖励
-                </div>
-                <p class="text-xs text-gray-500 dark:text-gray-400">
-                  每天到设定时刻检查一次邮箱并领取可领邮件；当天检查完（含无奖励、失败）就不再重复请求，次日同一时刻再来。
-                </p>
-                <HourInput
-                  v-model="automation.emailClaimHour"
-                  class="w-full sm:max-w-xs"
-                  label="自动邮箱领取（时）"
-                  help="默认 10 时，0 时为午夜；加减到边界会循环。"
-                />
-              </section>
-            </div>
-
             <div v-else-if="activeModule === 'merchant'" class="space-y-4">
               <section class="border border-gray-100 rounded-lg p-4 space-y-3 dark:border-gray-700">
                 <div>
@@ -575,7 +558,22 @@ function cancel() {
               </section>
             </div>
 
-            <div v-else class="space-y-4">
+            <div v-else-if="activeModule === 'activity'" class="space-y-4">
+              <section class="border border-gray-100 rounded-lg bg-gray-50/70 p-4 space-y-3 dark:border-gray-700 dark:bg-gray-900/25">
+                <div class="text-sm text-gray-700 font-medium dark:text-gray-300">
+                  每日邮箱奖励
+                </div>
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                  每天到设定时刻检查一次邮箱并领取可领邮件；当天检查完（含无奖励、失败）就不再重复请求，次日同一时刻再来。
+                </p>
+                <HourInput
+                  v-model="automation.emailClaimHour"
+                  class="w-full sm:max-w-xs"
+                  label="自动邮箱领取（时）"
+                  help="默认 10 时，0 时为午夜；加减到边界会循环。"
+                />
+              </section>
+
               <section class="border border-gray-100 rounded-lg bg-gray-50/70 p-4 space-y-3 dark:border-gray-700 dark:bg-gray-900/25">
                 <div class="text-sm text-gray-700 font-medium dark:text-gray-300">
                   日常任务

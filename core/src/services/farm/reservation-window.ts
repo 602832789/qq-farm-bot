@@ -158,6 +158,9 @@ function occupantsOf(
 }
 
 function isNewPlantingCycle(previous: Map<number, string>, current: Map<number, string>): boolean {
+    // 占用者全部消失（整组空出）同样算新一轮：否则 released 记录会一直挡着，
+    // 这个 key 直到进程重启都失去重新预留的能力。
+    if (previous.size > 0 && current.size === 0) return true;
     for (const [id, identity] of current) {
         if (previous.get(id) !== identity) return true;
     }
@@ -171,6 +174,9 @@ function isNewPlantingCycle(previous: Map<number, string>, current: Map<number, 
 function createReservationWindow() {
     // 按组独立记账：同一轮可能出现多个等待组，不能让后一组重置前一组的期限。
     const active = new Map<string, number>();          // key -> deadlineSec
+    // 记录每组最近一次 evaluate 的占用者：窗口超时被整轮闸门清理时，
+    // 仍要按老版本口径把「同一批占用者」写进 released，防止资格恢复后立刻重圈。
+    const activeOccupants = new Map<string, Map<number, string>>();
     const released = new Map<string, Map<number, string>>(); // key -> 占用者身份
 
     function evaluate(
@@ -189,42 +195,59 @@ function createReservationWindow() {
         if (deadlineSec === undefined) {
             const next = nowSec + WAIT_DEADLINE_SEC;
             active.set(key, next);
+            activeOccupants.set(key, new Map(occupants));
             return { allowed: true, reason: 'new', deadlineSec: next };
         }
         if (nowSec > deadlineSec) {
             released.set(key, occupants);
             active.delete(key);
+            activeOccupants.delete(key);
             return { allowed: false, reason: 'expired', deadlineSec: 0 };
         }
+        activeOccupants.set(key, new Map(occupants));
         return { allowed: true, reason: 'active', deadlineSec };
     }
 
     /** 资格变化或整组已清空时主动释放，并记录占用者身份防止立刻重圈。 */
     function release(key: string, occupants: Map<number, string> = new Map()): void {
         active.delete(key);
+        activeOccupants.delete(key);
         released.set(key, occupants);
     }
 
     /** 本轮没有合格候选时，把正在等待的组转成释放态（不再续期、不再圈地）。 */
     function invalidate(occupants: Map<number, string> = new Map()): void {
-        for (const key of active.keys()) released.set(key, occupants);
+        for (const key of active.keys()) released.set(key, activeOccupants.get(key) || occupants);
         active.clear();
+        activeOccupants.clear();
     }
 
     function activeKeys(): string[] {
         return [...active.keys()];
     }
 
-    /** 有等待组已经越过硬期限：整轮状态闸门必须放行，让调用方立即释放空地。 */
+    /**
+     * 有等待组刚越过硬期限：整轮状态闸门必须放行一轮，让空地被释放。
+     *
+     * 这里必须带副作用清理：调用方可能在后续轮次凑齐布局 / 没种子 / 不再预留，
+     * 永远走不到 evaluate()。若把过期窗口留在 active，这个函数会永远返回 true，
+     * 30 秒的整轮节流就被永久击穿，每轮 farm tick 都会重跑背包与商店策略。
+     */
     function hasExpiredWindow(nowSec: number = getServerTimeSec()): boolean {
-        for (const deadlineSec of active.values()) {
-            if (nowSec > deadlineSec) return true;
+        let expired = false;
+        for (const [key, deadlineSec] of [...active.entries()]) {
+            if (nowSec <= deadlineSec) continue;
+            released.set(key, new Map(activeOccupants.get(key) || []));
+            active.delete(key);
+            activeOccupants.delete(key);
+            expired = true;
         }
-        return false;
+        return expired;
     }
 
     function clear(): void {
         active.clear();
+        activeOccupants.clear();
         released.clear();
     }
 

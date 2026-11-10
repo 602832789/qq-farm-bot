@@ -137,6 +137,38 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-10 · 全仓完整性体检：修复 14 处逻辑缺陷并补齐回归测试
+
+对 core / web 全仓做了一次完整体检（自动化验证 + 三路源码审查 + 逐条核实证据），只修确认能造成运行错误的问题，不碰服务器 / NAS 环境配置。
+
+**一、配置与界面接线（用户可见的功能丢失）**
+
+- `web/src/components/settings/AccountFeatureSettings.vue`：「日常与活动」模块被 PR #122 手工合并新增的 `v-else-if="activeModule === 'activity'"`（只有「每日邮箱奖励」一个输入框）顶掉，末尾 `v-else` 里的日常任务 / 节令小札 / 快乐不独享 / 收藏图鉴 / 奶茶店全部开关变成**永远不可达的死代码**。把邮箱 section 并入同一个 activity 分支，七个模块键全部可达。
+- `goldenBugKeepCount` / `goldenBugRoundLimit`（黄金虫保留数量、单轮上限）：UI 有输入框，但 `setting.ts` 的 `SettingsState` / `createDefaultSettings` / `applyFetchedSettings` / `SAVEABLE_SETTINGS_KEYS`、`Settings.vue` 的 `localAutomationSettings` 与 `syncLocalAutomationSettings`、`data-provider.ts` 的 `saveSettings` 白名单、`account-config.ts` 的 `getConfigSnapshot` / `applyConfigSnapshot`、`shared-state.ts` 的 `DEFAULT_ACCOUNT_CONFIG` / `cloneAccountConfig` / `normalizeAccountConfig`、`types/config.ts` 全都没有这两个键 —— 填了不保存、刷新就回默认。现已全链路接通并做 0–10000 / 1–100 的 clamp。
+- `GET /api/settings` 没有下发 `emailClaimHour`（只有保存接口回传），刷新页面后邮箱时刻输入框会退回默认 10 点。连同两个黄金虫字段一起补齐下发。
+
+**二、调度与状态机（会漏跑 / 重复跑 / 卡死）**
+
+- `farm/reservation-window.ts` 的 `hasExpiredWindow()` 是纯读：一个过期窗口若在后续轮次没走到 `evaluate()`（凑齐布局 / 没种子 / 不再预留），就永远留在 `active`，把 30 秒整轮节流**永久击穿**，每轮巡田都重跑背包与商店策略。改为带副作用推进（记录 `activeOccupants`，过期时按原占用者写入 `released` 并清 `active`）；`isNewPlantingCycle()` 补「占用者全部消失也算新周期」，让释放态能自愈。
+- `core/worker.ts` 的 `applyRuntimeConfig()`：同一个 `__revision` 的补充下发（好友黑名单 / 已知 GID 同步）带新内容但版本号没变，却每次都执行整套「保存后重排」副作用。新增 `freshRevision` 判断，只在新版本号或 `rev=0` 的面板开关下发时重排；`resetUnifiedSchedule({ preserveSteal: true })` 让配置下发不再把偷菜的**成熟时刻排程**打回 5–15 秒随机窗口（首次启动仍全量重置）。
+- `friend/scheduler.ts` 的 `runScheduledStealCheck()` 被帮忙巡查的 `isCheckingFriends` 顶掉时返回写死 60 秒，覆盖 `getNextStealDelayMs()` 算出的作物成熟时刻，成熟窗口必被跳过；改为按成熟计划重新唤醒。
+- `farm/scheduler.ts` 的 `refreshFarmCheckLoop()` 把分次种植 `farm_plant_continue` 的「配置间隔 − 已耗时」压成 200ms，且手动 `clear` 后若守卫不通过会丢掉续跑；改由 `getRemainingPlantDelayMs()` 决定，且不再先 clear（同名 `setTimeoutTask` 内部会清）。
+- `worker.ts` 的 `runFarmTick()` finally 缺 `runtimeGeneration` 守卫，停机 300ms 内重启时旧轮次会覆盖新会话排程；`stopUnifiedScheduler()` 补齐退避 / 让路 / `nextStealDelayMs` 复位。
+- `automation-lock.ts`：持锁上下文内 `taskFn` 同步抛错时 `Promise.resolve(taskFn())` 会同步 throw，调用方的 `.catch(() => null)` 接不住；改为 `Promise.resolve().then(taskFn)`。
+- `farm/planting.ts` 的 `resetPlantingRoundState()` 漏了 `resetRegisteredLayouts()` 且生产链路没有调用点；补齐并在 `quiesceBot()` 里停机复位全部 2×2 跨轮状态。
+
+**三、日志中文关键字与邮箱状态**
+
+- `activity-center/error-handler.ts` 判断「请求队列已满」「请求被中断」，而网关实际抛的是「请求**等待**队列已满」「请求**已**中断」，`ACTIVITY_BUSY` / `ACTIVITY_REQUEST_INTERRUPTED` 两个分类永远不命中；兼容修正。`utils.ts` 的 `isTransientGatewaySkip()` 清理中文化前的死关键字，补上「总量额度用尽 / 单方法额度用尽」。
+- `services/email.ts` 的 `markAttempted()` 写盘失败时仍把 `attemptedDateKey` 留在今天，`isDoneToday()` 整天为真，存储恢复后本进程**再也不会补跑**当天邮箱检查；改为回滚当天标记。`finishAttempt()` 静默吞掉写盘失败（磁盘残留 `running`、内存显示完成）改为显式记录存储故障并写日志。
+
+**四、前端草稿与交互**
+
+- `views/Pet.vue` 的 `watch([currentAccountId, tab], load)` 让任何页签切换都重新拉数据并覆盖「资本模式」未保存草稿；改为切账号 / 首次进入 / 手动刷新才同步，切到日志页只单独补拉日志。
+- `views/Settings.vue` 对整个 `settings` 做 deep watch，保存任意功能模块设置都会把「下线提醒」页未保存草稿冲掉；监听源收窄到 `offlineReminder`。同时接住 `AccountFeatureSettings` 的 `emit('save', key, true)` 静默参数，拨卡片开关不再每次弹「已保存」模态框。
+
+**验证**：core **514/514**、web **183/183**、`pnpm lint` 全仓 0 问题、core `build:ts`、`vue-tsc -b`、`vite build`（25.65s）全过。新增 `core/tests/activity-error-classification.test.js`、`core/tests/unified-scheduler-regressions.test.js`、`web/tests/settings-integrity.test.mjs`，并给 `email-daily-persistence` / `reservation-window` / `automation-lock` 三组测试补了失败路径与回归断言。
+
 ### 2026-11-10 · v3.16.0（#117） · 同步上游 20261110（PR #125）评估：不采纳组件重写，等价落地宠物页两处可用性改进
 
 **上游范围**：`b9375ec..47fa669b`，3 个提交（`7f38536e` 实现 + merge/sync），**只改 1 个文件** —— `web/src/components/PetPanel.vue`（+715 / -572），PR #125「优化宠物页面布局与移动端图标对齐」。

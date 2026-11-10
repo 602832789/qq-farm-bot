@@ -184,6 +184,10 @@ export interface AccountConfig {
   fertilizerBuyCheckIntervalMinutes: number;
   /** 每天检查邮箱奖励的时间（0-23 点，默认 10 点）；到点后每天只触发一次。 */
   emailClaimHour: number;
+  /** 放黄金虫时背包里保留不投放的数量。 */
+  goldenBugKeepCount: number;
+  /** 放黄金虫单轮最多投放个数（1-100）。 */
+  goldenBugRoundLimit: number;
   bagSeedPriority: number[];
   /** 是否为明确排在前面的多格背包种子保留尚未连成布局的空地。 */
   bagSeedMultiLandReservationEnabled: boolean;

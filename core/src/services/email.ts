@@ -138,7 +138,10 @@ function markAttempted(): boolean {
     lastClaimed = 0;
     if (!persistState()) {
         // 本次检查状态无法保存，停止请求并展示错误。
-        lastResult = 'error';
+        // 必须回滚「今天已完成」标记：磁盘上没有任何记录，若把 attemptedDateKey
+        // 留在今天，isDoneToday() 会整天为真，存储恢复后本进程也再不会补跑。
+        attemptedDateKey = '';
+        lastResult = '';
         lastError = '无法保存邮箱检查状态';
         return false;
     }
@@ -150,7 +153,16 @@ function finishAttempt(result: string, error: string = '', claimed: number = 0):
     lastResult = result;
     lastError = error;
     lastClaimed = claimed;
-    persistState();
+    if (!persistState()) {
+        // 磁盘此刻仍是 running，重启后会重新检查一次；本进程保持「当天已完成」
+        // 避免每 60 秒重复打网关，但要把存储故障显式暴露出来，不能静默吞掉。
+        lastError = error ? `${error}（检查状态保存失败）` : '邮箱检查状态保存失败';
+        log('邮箱', '邮箱检查状态保存失败，重启后会重新检查一次', {
+            module: 'task',
+            event: DAILY_KEY,
+            result: 'error',
+        });
+    }
 }
 
 /** 仅供测试重置内存状态；不会删除真实账号的落盘文件。 */

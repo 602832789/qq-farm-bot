@@ -510,7 +510,10 @@ function isStealCalibrationDue(now: number = Date.now()): boolean {
 export async function runScheduledStealCheck(): Promise<number> {
     const state: any = getUserState();
     if (!isAutomationOn('friend') || !isAutomationOn('friend_steal')) return getNextStealDelayMs();
-    if (isCheckingFriends || !state.gid || inFriendQuietHours()) return 60 * 1000;
+    // 帮忙/放虫巡查正占着互斥标志：本轮让开没问题，但不能写死 60 秒——
+    // 那会把 runScheduledStealCheck 算出的作物成熟时刻整个跳过。按成熟计划重新唤醒。
+    if (isCheckingFriends) return getNextStealDelayMs();
+    if (!state.gid || inFriendQuietHours()) return 60 * 1000;
 
     isCheckingFriends = true;
     const accountId: string = process.env.FARM_ACCOUNT_ID || '';

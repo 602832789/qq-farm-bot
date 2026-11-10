@@ -13,7 +13,7 @@ function emailHarness(t) {
         assert.equal(path.dirname(dir), dataRoot);
         fs.rmSync(dir, { recursive: true, force: true });
     });
-    const clock = { now: Date.parse('2026-11-09T01:59:59Z'), failLists: false, failWrite: false, emails: { 1: [], 2: [] }, interruptClaim: false };
+    const clock = { now: Date.parse('2026-11-09T01:59:59Z'), failLists: false, failWrite: false, failWriteAtCall: 0, writeCalls: 0, emails: { 1: [], 2: [] }, interruptClaim: false };
     const methods = [];
     const utils = {
         log() {}, toNum: Number,
@@ -46,7 +46,8 @@ function emailHarness(t) {
                 if (name === './json-db') return {
                     ...db,
                     writeJsonFileAtomic(...args) {
-                        if (clock.failWrite) throw new Error('disk full');
+                        clock.writeCalls += 1;
+                        if (clock.failWrite || clock.failWriteAtCall === clock.writeCalls) throw new Error('disk full');
                         db.writeJsonFileAtomic(...args);
                     },
                 };
@@ -174,13 +175,38 @@ test('中断后重新读取邮箱，只领取上次尚未完成的邮件', async
     ]);
 });
 
-test('状态写入失败时不发送邮箱请求', async (t) => {
+test('状态写入失败时不发送邮箱请求，且存储恢复后当天还能补跑', async (t) => {
     const h = emailHarness(t);
     h.clock.failWrite = true;
     const email = h.load();
     email.configureEmailClaim({ accountId: 'first', hour: 0 });
     assert.equal((await email.checkAndClaimEmails()).skipped, 'storage');
     assert.equal(h.methods.length, 0);
+    assert.equal(email.getEmailDailyState().doneToday, false, '写盘失败不能把当天锁成已完成');
+    h.clock.failWrite = false;
+    assert.equal((await email.checkAndClaimEmails()).skipped, undefined);
+    assert.equal(email.getEmailDailyState().doneToday, true);
+    assert.deepEqual(h.methods, [['GetEmailList', 1], ['GetEmailList', 2]]);
+});
+
+test('最终结果写盘失败时暴露存储故障，磁盘仍是 running，重启会重新检查', async (t) => {
+    const h = emailHarness(t);
+    h.clock.failWriteAtCall = 2; // 第一次 markAttempted 成功，第二次 finishAttempt 失败
+    const email = h.load();
+    email.configureEmailClaim({ accountId: 'first', hour: 0 });
+    await email.checkAndClaimEmails();
+    const state = email.getEmailDailyState();
+    assert.equal(state.doneToday, true, '本进程内保持已完成，避免每轮重复打网关');
+    assert.match(state.lastError, /保存失败/);
+    const file = path.join(h.dir, fs.readdirSync(h.dir)[0]);
+    assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).result, 'running');
+
+    h.clock.failWriteAtCall = 0;
+    const restarted = h.load();
+    restarted.configureEmailClaim({ accountId: 'first', hour: 0 });
+    assert.equal(restarted.getEmailDailyState().doneToday, false);
+    await restarted.checkAndClaimEmails();
+    assert.equal(restarted.getEmailDailyState().result, 'none');
 });
 
 test('损坏的当日状态必须暴露读取错误，后续调用也不能绕过记录', async (t) => {

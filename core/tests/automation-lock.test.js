@@ -62,6 +62,27 @@ test('automation lock: 持锁任务内 await 的 detached 子调用就地执行�
     assert.equal(result, 'parent+child');
 });
 
+test('automation lock: 持锁上下文内同步抛错也必须返回 rejected Promise', async () => {
+    await runExclusiveAutomationTask('outer', async () => {
+        let caught = null;
+        const promise = runExclusiveAutomationTask('inner', () => {
+            throw new Error('sync boom');
+        }, { detached: true });
+        assert.equal(typeof promise.catch, 'function');
+        await promise.catch((error) => { caught = error; });
+        assert.equal(caught && caught.message, 'sync boom');
+    });
+});
+
+test('automation lock: 顶层同步抛错不会让锁队列卡死', async () => {
+    await assert.rejects(
+        runExclusiveAutomationTask('bad', () => { throw new Error('sync error'); }),
+        /sync error/,
+    );
+    const value = await withTimeout(runExclusiveAutomationTask('after', async () => 'ok'));
+    assert.equal(value, 'ok');
+});
+
 // detached 真正的用途：定时器继承了已结束任务的异步上下文（active=false），必须重新排队。
 test('automation lock: 任务结束后的定时器调用 detached 仍然重新排队', async () => {
     const order = [];

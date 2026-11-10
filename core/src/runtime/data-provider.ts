@@ -339,6 +339,8 @@ function createDataProvider(options: DataProviderOptions) {
                 'fertilizerBuyNormalThresholdHours',
                 'fertilizerBuyCheckIntervalMinutes',
                 'emailClaimHour',
+                'goldenBugKeepCount',
+                'goldenBugRoundLimit',
                 'bagSeedPriority',
                 'bagSeedMultiLandReservationEnabled',
                 'bagSeedLandTypes',

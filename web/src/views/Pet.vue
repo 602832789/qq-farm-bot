@@ -130,7 +130,15 @@ async function action(run: () => Promise<any>, message: string) {
   }
 }
 
-watch([currentAccountId, tab], load)
+// 切页签不要重新拉整份数据，更不能用服务端值覆盖「资本模式」里还没保存的草稿；
+// 只有切换账号 / 首次进入 / 手动点刷新才重新同步配置。日志页单独补拉一次即可。
+watch(currentAccountId, load)
+watch(tab, (next) => {
+  const id = String(currentAccountId.value || '')
+  if (!id || next !== 'logs')
+    return
+  void Promise.resolve(petStore.fetchProtectLogs(id)).catch(() => null)
+})
 onMounted(load)
 </script>
 

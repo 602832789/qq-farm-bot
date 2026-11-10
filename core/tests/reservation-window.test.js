@@ -212,6 +212,27 @@ test('硬期限越界可被整轮闸门感知，避免到期后仍被跳过', ()
     assert.equal(window.hasExpiredWindow(NOW + 62), false, '已释放的组不再计入');
 });
 
+test('过期窗口被闸门读走后必须清理，否则后续凑齐布局的轮次会被永久放行', () => {
+    const window = createReservationWindow();
+    const occupants = new Map([[2, 'a']]);
+    window.evaluate('1,2,5,6', occupants, NOW);
+    assert.equal(window.hasExpiredWindow(NOW + 61), true);
+    // 模拟后续轮次没走到 evaluate（凑齐布局 / 没有种子 / 不再预留）：
+    // active 里若还留着过期组，hasExpiredWindow 会永远为 true，30 秒整轮节流被击穿。
+    assert.equal(window.hasExpiredWindow(NOW + 62), false);
+    assert.deepEqual(window.activeKeys(), []);
+    assert.equal(window.evaluate('1,2,5,6', occupants, NOW + 63).reason, 'released', '仍按同一批占用者记住释放态');
+});
+
+test('释放态在整组占用者全部清空后可以自愈', () => {
+    const window = createReservationWindow();
+    const occupants = new Map([[2, 'a']]);
+    window.evaluate('1,2,5,6', occupants, NOW);
+    window.release('1,2,5,6', occupants);
+    assert.equal(window.evaluate('1,2,5,6', occupants, NOW + 1).reason, 'released');
+    assert.equal(window.evaluate('1,2,5,6', new Map(), NOW + 2).reason, 'new');
+});
+
 test('多个等待组各自独立记账，不互相重置期限', () => {
     const window = createReservationWindow();
     const a = window.evaluate('1,2,5,6', new Map([[2, 'a']]), NOW);

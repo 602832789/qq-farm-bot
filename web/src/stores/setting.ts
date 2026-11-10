@@ -226,6 +226,8 @@ export interface SettingsState {
   fertilizerBuyNormalThresholdHours: number
   fertilizerBuyCheckIntervalMinutes: number
   emailClaimHour: number
+  goldenBugKeepCount: number
+  goldenBugRoundLimit: number
   autoAcceptFriendMinLevel: number
   autoAcceptRequireOwnLevel: boolean
   autoAcceptHarvestStealEnabled: boolean
@@ -253,6 +255,8 @@ type SaveableSettingsKey
     | 'fertilizerBuyNormalThresholdHours'
     | 'fertilizerBuyCheckIntervalMinutes'
     | 'emailClaimHour'
+    | 'goldenBugKeepCount'
+    | 'goldenBugRoundLimit'
     | 'autoAcceptFriendMinLevel'
     | 'autoAcceptRequireOwnLevel'
     | 'autoAcceptHarvestStealEnabled'
@@ -281,6 +285,8 @@ const SAVEABLE_SETTINGS_KEYS: SaveableSettingsKey[] = [
   'fertilizerBuyNormalThresholdHours',
   'fertilizerBuyCheckIntervalMinutes',
   'emailClaimHour',
+  'goldenBugKeepCount',
+  'goldenBugRoundLimit',
   'autoAcceptFriendMinLevel',
   'autoAcceptRequireOwnLevel',
   'autoAcceptHarvestStealEnabled',
@@ -359,6 +365,8 @@ function createDefaultSettings(): SettingsState {
     fertilizerBuyNormalThresholdHours: 10,
     fertilizerBuyCheckIntervalMinutes: 30,
     emailClaimHour: 10,
+    goldenBugKeepCount: 0,
+    goldenBugRoundLimit: 24,
     autoAcceptFriendMinLevel: 0,
     autoAcceptRequireOwnLevel: false,
     autoAcceptHarvestStealEnabled: true,
@@ -420,6 +428,8 @@ export const useSettingStore = defineStore('setting', () => {
       fertilizerBuyNormalThresholdHours: data.fertilizerBuyNormalThresholdHours ?? defaults.fertilizerBuyNormalThresholdHours,
       fertilizerBuyCheckIntervalMinutes: data.fertilizerBuyCheckIntervalMinutes ?? defaults.fertilizerBuyCheckIntervalMinutes,
       emailClaimHour: data.emailClaimHour ?? defaults.emailClaimHour,
+      goldenBugKeepCount: data.goldenBugKeepCount ?? defaults.goldenBugKeepCount,
+      goldenBugRoundLimit: data.goldenBugRoundLimit ?? defaults.goldenBugRoundLimit,
       autoAcceptFriendMinLevel: data.autoAcceptFriendMinLevel ?? defaults.autoAcceptFriendMinLevel,
       autoAcceptRequireOwnLevel: data.autoAcceptRequireOwnLevel ?? defaults.autoAcceptRequireOwnLevel,
       autoAcceptHarvestStealEnabled: data.autoAcceptHarvestStealEnabled ?? defaults.autoAcceptHarvestStealEnabled,

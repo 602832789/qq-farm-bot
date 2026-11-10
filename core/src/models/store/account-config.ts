@@ -127,6 +127,8 @@ function getConfigSnapshot(accountId?: unknown): AccountConfig & { ui: typeof gl
         fertilizerBuyNormalThresholdHours: Math.max(0, Math.min(990, Number(cfg.fertilizerBuyNormalThresholdHours) || 0)),
         fertilizerBuyCheckIntervalMinutes: Math.max(1, Math.min(1440, Number(cfg.fertilizerBuyCheckIntervalMinutes) || 30)),
         emailClaimHour: normalizeEmailClaimHour(cfg.emailClaimHour, sharedState.DEFAULT_ACCOUNT_CONFIG.emailClaimHour),
+        goldenBugKeepCount: Math.max(0, Math.min(10000, Math.floor(Number(cfg.goldenBugKeepCount) || 0))),
+        goldenBugRoundLimit: Math.max(1, Math.min(100, Math.floor(Number(cfg.goldenBugRoundLimit) || sharedState.DEFAULT_ACCOUNT_CONFIG.goldenBugRoundLimit))),
         bagSeedPriority: [...(cfg.bagSeedPriority || [])],
         bagSeedMultiLandReservationEnabled: !!cfg.bagSeedMultiLandReservationEnabled,
         bagSeedLandTypes: cloneBagSeedLandTypes(cfg.bagSeedLandTypes),
@@ -275,6 +277,14 @@ function applyConfigSnapshot(snapshot: Record<string, any> | undefined, options:
 
     if (cfg.emailClaimHour !== undefined) {
         next.emailClaimHour = normalizeEmailClaimHour(cfg.emailClaimHour, next.emailClaimHour);
+    }
+
+    if (cfg.goldenBugKeepCount !== undefined && cfg.goldenBugKeepCount !== null) {
+        next.goldenBugKeepCount = Math.max(0, Math.min(10000, Math.floor(Number(cfg.goldenBugKeepCount) || 0)));
+    }
+
+    if (cfg.goldenBugRoundLimit !== undefined && cfg.goldenBugRoundLimit !== null) {
+        next.goldenBugRoundLimit = Math.max(1, Math.min(100, Math.floor(Number(cfg.goldenBugRoundLimit) || next.goldenBugRoundLimit)));
     }
 
     if (cfg.bagSeedPriority !== undefined && cfg.bagSeedPriority !== null) {

@@ -262,6 +262,8 @@ const localAutomationSettings = ref({
   fertilizerBuyNormalThresholdHours: 10,
   fertilizerBuyCheckIntervalMinutes: 30,
   emailClaimHour: 10 as number | string,
+  goldenBugKeepCount: 0,
+  goldenBugRoundLimit: 24,
   autoAcceptFriendMinLevel: 0,
   autoAcceptRequireOwnLevel: false,
   autoAcceptHarvestStealEnabled: true,
@@ -366,6 +368,8 @@ function syncLocalAutomationSettings() {
     localAutomationSettings.value.fertilizerBuyNormalThresholdHours = settings.value.fertilizerBuyNormalThresholdHours ?? 10
     localAutomationSettings.value.fertilizerBuyCheckIntervalMinutes = settings.value.fertilizerBuyCheckIntervalMinutes ?? 30
     localAutomationSettings.value.emailClaimHour = settings.value.emailClaimHour ?? 10
+    localAutomationSettings.value.goldenBugKeepCount = settings.value.goldenBugKeepCount ?? 0
+    localAutomationSettings.value.goldenBugRoundLimit = settings.value.goldenBugRoundLimit ?? 24
     localAutomationSettings.value.autoAcceptFriendMinLevel = settings.value.autoAcceptFriendMinLevel ?? 0
     localAutomationSettings.value.autoAcceptRequireOwnLevel = settings.value.autoAcceptRequireOwnLevel ?? false
     localAutomationSettings.value.autoAcceptHarvestStealEnabled = settings.value.autoAcceptHarvestStealEnabled ?? true
@@ -377,7 +381,7 @@ function syncLocalAutomationSettings() {
 // ==================== 功能模块（旧版六模块） ====================
 // 功能模块里既改 automation，也改部分策略字段（策略、巡查间隔、静默时段），
 // 所以保存时把两份模型合并成一次请求，避免用户切换标签后改动丢失。
-async function handleFeatureModuleSave() {
+async function handleFeatureModuleSave(_module?: string, quiet?: boolean) {
   const accountId = currentAccountId.value
   if (!accountId)
     return
@@ -412,7 +416,9 @@ async function handleFeatureModuleSave() {
     if (res.ok) {
       syncLocalStrategySettings()
       syncLocalAutomationSettings()
-      showAlert('功能模块设置已保存', 'primary')
+      // 卡片开关的 emit('save', key, true) 是静默保存，不该每次拨动都弹模态框。
+      if (!quiet)
+        showAlert('功能模块设置已保存', 'primary')
 
       if (payload.automation?.fertilizer_buy_organic || payload.automation?.fertilizer_buy_normal) {
         try {
@@ -585,7 +591,9 @@ function validateDingTalkWebhook(): string {
   return ''
 }
 
-watch(settings, () => {
+// 只监听下线提醒本身：保存功能模块设置会整体更新 settings，
+// 若对整个 store 做 deep watch，会把通知设置页还没保存的草稿冲掉。
+watch(() => settings.value?.offlineReminder, () => {
   syncLocalOfflineSettings()
 }, { deep: true })
 

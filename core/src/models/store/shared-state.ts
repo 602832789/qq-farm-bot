@@ -214,6 +214,8 @@ const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
     fertilizerBuyNormalThresholdHours: 10,
     fertilizerBuyCheckIntervalMinutes: 60,
     emailClaimHour: 10,
+    goldenBugKeepCount: 0,
+    goldenBugRoundLimit: 24,
     bagSeedPriority: [],
     bagSeedMultiLandReservationEnabled: false,
     bagSeedLandTypes: {},
@@ -462,6 +464,8 @@ function cloneAccountConfig(base: Partial<AccountConfig> = DEFAULT_ACCOUNT_CONFI
         fertilizerBuyNormalThresholdHours: Math.max(0, Math.min(990, Number(base.fertilizerBuyNormalThresholdHours) || 0)),
         fertilizerBuyCheckIntervalMinutes: Math.max(1, Math.min(1440, Number(base.fertilizerBuyCheckIntervalMinutes) || 30)),
         emailClaimHour: normalizeEmailClaimHour(base.emailClaimHour, DEFAULT_ACCOUNT_CONFIG.emailClaimHour),
+        goldenBugKeepCount: Math.max(0, Math.min(10000, Math.floor(Number(base.goldenBugKeepCount) || 0))),
+        goldenBugRoundLimit: Math.max(1, Math.min(100, Math.floor(Number(base.goldenBugRoundLimit) || DEFAULT_ACCOUNT_CONFIG.goldenBugRoundLimit))),
         bagSeedPriority: normalizeBagSeedPriority(base.bagSeedPriority),
         bagSeedMultiLandReservationEnabled: base.bagSeedMultiLandReservationEnabled !== undefined
             ? !!base.bagSeedMultiLandReservationEnabled
@@ -604,6 +608,14 @@ function normalizeAccountConfig(input: unknown, fallback: AccountConfig = accoun
 
     if (src.emailClaimHour !== undefined && src.emailClaimHour !== null) {
         cfg.emailClaimHour = normalizeEmailClaimHour(src.emailClaimHour, cfg.emailClaimHour);
+    }
+
+    if (src.goldenBugKeepCount !== undefined && src.goldenBugKeepCount !== null) {
+        cfg.goldenBugKeepCount = Math.max(0, Math.min(10000, Math.floor(Number(src.goldenBugKeepCount) || 0)));
+    }
+
+    if (src.goldenBugRoundLimit !== undefined && src.goldenBugRoundLimit !== null) {
+        cfg.goldenBugRoundLimit = Math.max(1, Math.min(100, Math.floor(Number(src.goldenBugRoundLimit) || DEFAULT_ACCOUNT_CONFIG.goldenBugRoundLimit)));
     }
 
     if (src.bagSeedPriority !== undefined && src.bagSeedPriority !== null) {

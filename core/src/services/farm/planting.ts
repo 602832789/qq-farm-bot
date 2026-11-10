@@ -21,6 +21,7 @@ const {
     getRegisteredLayout,
     registerLayout,
     clearRegisteredLayout,
+    resetRegisteredLayouts,
     layoutKey,
 } = require('./layout-reservation');
 const {
@@ -113,12 +114,14 @@ const reservationWindow = createReservationWindow();
 const reservationCooldown = createFailureCooldown();
 const plantingRoundGate = createPlantingRoundGate();
 
-/** 供回归测试/账号切换时复位全部跨轮状态。 */
+/** 供回归测试/账号停机时复位全部跨轮状态（含已注册的 2×2 布局）。 */
 function resetPlantingRoundState(): void {
     reservationWindow.clear();
     reservationCooldown.clear();
     plantingRoundGate.clear();
     plantingRoundThrottle.reset();
+    // registeredLayouts 同为模块级跨轮状态，漏掉它会让新会话沿用上一个账号的布局选择。
+    resetRegisteredLayouts();
 }
 
 function logPlantingThrottled(key: string, signature: string, message: string, meta: any): void {
