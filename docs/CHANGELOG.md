@@ -14,6 +14,7 @@
 
 | 版本 | 更新序号 | 日期 | 更新内容 | 提交 |
 | --- | --- | --- | --- | --- |
+| v3.17.1 | #121 | 2026-11-11 | fix(core): 收口 visit-strategy 二次开关判断，options 成为单次好友访问唯一决策来源 | `1a1be415` |
 | v3.17.0 | #120 | 2026-11-11 | feat(web): 落地上游 PR #125 稀有度徽章，宠物卡片显示四档稀有度 | `9106971f` |
 | v3.16.2 | #119 | 2026-11-11 | fix(core/web): 复核前两次上游同步，补修 3 处漏网缺陷并逐条对账 24 项 | `497c226e` |
 | v3.16.1 | #118 | 2026-11-11 | fix(core/web): 全仓完整性体检，修复 14 处逻辑缺陷并补齐回归测试 | `450266f0` |
@@ -140,7 +141,7 @@ flowchart TB
 ```
 
 ## 详细记录
-### 2026-11-11 · 收口 visit-strategy 二次开关判断：options 成为单次好友访问的唯一决策来源
+### 2026-11-11 · v3.17.1（#121） · 收口 visit-strategy 二次开关判断：options 成为单次好友访问的唯一决策来源
 
 **背景**：复核前两次上游同步时列过一项「`visit-strategy.ts` 二次 AND `isAutomationOn` 与 `effectiveXxx` 语义重复」。`checkFriends()` 已把全局开关与本地定向语义算进 `effectiveStealEnabled` / `effectiveHelpEnabled` / `effectiveBadEnabled`，再经 `allowXxx` 传给 `visitFriend()`；被调方却又读一次 `isAutomationOn('friend_steal' / 'friend_bad' / 'friend_help')` 做 AND。这与本地 `onlyHelp` / `onlySteal` / `onlyBad`（忽略全局开关，强制只做一件事）的语义冲突：定向模式会被静默掐回 `false`，`visitFriend` 返回 `no_action`，一个请求、一行日志都不产生。当前三条定向入口都有守卫、`onlySteal` 零调用点，所以不构成可观察缺陷；`git blame` 确认这段来自上游 2026-10-23 提交 `580e3253b`，本地与上游逐字相同，不是前两次同步引入。
 

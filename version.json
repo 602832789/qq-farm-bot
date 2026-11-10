@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 17,
-  "patch": 0,
-  "build": 120,
-  "version": "3.17.0",
-  "updatedAt": "2026-11-10T19:06:57.366Z",
-  "lastCommit": "9106971f",
+  "patch": 1,
+  "build": 121,
+  "version": "3.17.1",
+  "updatedAt": "2026-11-10T19:28:42.876Z",
+  "lastCommit": "1a1be415",
   "history": [
+    {
+      "version": "3.17.1",
+      "build": 121,
+      "date": "2026-11-11",
+      "summary": "fix(core): 收口 visit-strategy 二次开关判断，options 成为单次好友访问唯一决策来源",
+      "commit": "1a1be415",
+      "type": "patch"
+    },
     {
       "version": "3.17.0",
       "build": 120,
