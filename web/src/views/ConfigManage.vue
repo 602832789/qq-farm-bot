@@ -8,6 +8,7 @@ import api, { getApiErrorMessage } from '@/api'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 import OverflowTooltip from '@/components/ui/OverflowTooltip.vue'
+import { vLazySrc } from '@/directives/lazy-src'
 import { useToastStore } from '@/stores/toast'
 
 const props = defineProps<{
@@ -487,9 +488,10 @@ function itemDescription(item: any): string {
                       <div class="relative h-10 w-10 flex shrink-0 items-center justify-center overflow-hidden border border-gray-200 rounded-lg bg-gray-100 dark:border-gray-600 dark:bg-gray-700">
                         <img
                           v-if="item.image && !imageErrors[item.seedId]"
-                          :src="item.image"
+                          v-lazy-src="item.image"
                           class="h-8 w-8 object-contain"
                           loading="lazy"
+                          decoding="async"
                           @error="imageErrors[item.seedId] = true"
                         >
                         <div v-else class="i-carbon-sprout text-xl text-gray-400" />
@@ -552,9 +554,10 @@ function itemDescription(item: any): string {
               <div class="relative h-12 w-12 flex shrink-0 items-center justify-center overflow-hidden border border-gray-200 rounded-lg bg-gray-100 dark:border-gray-600 dark:bg-gray-700">
                 <img
                   v-if="item.image && !imageErrors[item.seedId]"
-                  :src="item.image"
+                  v-lazy-src="item.image"
                   class="h-10 w-10 object-contain"
                   loading="lazy"
+                  decoding="async"
                   @error="imageErrors[item.seedId] = true"
                 >
                 <div v-else class="i-carbon-sprout text-xl text-gray-400" />
@@ -634,9 +637,10 @@ function itemDescription(item: any): string {
                       <div class="relative h-10 w-10 flex shrink-0 items-center justify-center overflow-hidden border border-gray-200 rounded-lg bg-gray-100 dark:border-gray-600 dark:bg-gray-700">
                         <img
                           v-if="item.image && !imageErrors[item.id]"
-                          :src="item.image"
+                          v-lazy-src="item.image"
                           class="h-8 w-8 object-contain"
                           loading="lazy"
+                          decoding="async"
                           @error="imageErrors[item.id] = true"
                         >
                         <div v-else class="i-carbon-crop-growth text-xl text-gray-400" />
@@ -678,9 +682,10 @@ function itemDescription(item: any): string {
               <div class="relative h-12 w-12 flex shrink-0 items-center justify-center overflow-hidden border border-gray-200 rounded-lg bg-gray-100 dark:border-gray-600 dark:bg-gray-700">
                 <img
                   v-if="item.image && !imageErrors[item.id]"
-                  :src="item.image"
+                  v-lazy-src="item.image"
                   class="h-10 w-10 object-contain"
                   loading="lazy"
+                  decoding="async"
                   @error="imageErrors[item.id] = true"
                 >
                 <div v-else class="i-carbon-crop-growth text-xl text-gray-400" />
@@ -749,9 +754,10 @@ function itemDescription(item: any): string {
                       <div class="relative h-10 w-10 flex shrink-0 items-center justify-center overflow-hidden border border-gray-200 rounded-lg bg-gray-100 dark:border-gray-600 dark:bg-gray-700">
                         <img
                           v-if="item.image && !imageErrors[item.id]"
-                          :src="item.image"
+                          v-lazy-src="item.image"
                           class="h-8 w-8 object-contain"
                           loading="lazy"
+                          decoding="async"
                           @error="imageErrors[item.id] = true"
                         >
                         <div v-else class="i-carbon-box text-xl text-gray-400" />
@@ -804,9 +810,10 @@ function itemDescription(item: any): string {
               <div class="relative h-12 w-12 flex shrink-0 items-center justify-center overflow-hidden border border-gray-200 rounded-lg bg-gray-100 dark:border-gray-600 dark:bg-gray-700">
                 <img
                   v-if="item.image && !imageErrors[item.id]"
-                  :src="item.image"
+                  v-lazy-src="item.image"
                   class="h-10 w-10 object-contain"
                   loading="lazy"
+                  decoding="async"
                   @error="imageErrors[item.id] = true"
                 >
                 <div v-else class="i-carbon-box text-xl text-gray-400" />

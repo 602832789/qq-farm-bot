@@ -7,8 +7,7 @@ const { parentPort, workerData } = require('node:worker_threads');
 const { CONFIG, updateRuntimeConfig } = require('../config/config');
 const { getLevelExpProgress, loadConfigs } = require('../config/gameConfig');
 const { getAutomation, getPreferredSeed, getConfigSnapshot, applyConfigSnapshot } = require('../models/store');
-const { checkAndClaimEmails } = require('../services/email');
-const { getEmailDailyState } = require('../services/email');
+const { checkAndClaimEmails, configureEmailClaim, getEmailDailyState } = require('../services/email');
 const { checkFarm, startFarmCheckLoop, stopFarmCheckLoop, refreshFarmCheckLoop, getLandsDetail, getAvailableSeeds, purchaseSeed, runFarmOperation, runFertilizerByConfig, fertilizeOwnLand } = require('../services/farm');
 const { checkFriends, startFriendCheckLoop, stopFriendCheckLoop, refreshFriendCheckLoop, getFriendsList, getFriendsListCacheOnly, getFriendLandsDetail, doFriendOperation, deleteFriend, runScheduledStealCheck, runGoldenBugPlacement } = require('../services/friend');
 const { getInteractRecords } = require('../services/interact');
@@ -138,7 +137,8 @@ const workerScheduler = createScheduler('worker');
 async function runDailyRoutines(force: boolean = false): Promise<void> {
     if (!loginReady) return;
     try {
-        await checkAndClaimEmails(force);
+        // 邮箱按配置时刻每日检查一次，不受 force 影响（否则每次重连都会重复请求）。
+        await checkAndClaimEmails();
         await openCharitySettlementGiftPacksSilently();
         await checkDailyShareStatus(force);
         await performDailyMonthCardGift(force);
@@ -173,6 +173,13 @@ function startDailyRoutineTimer(runImmediately: boolean = true): void {
         const today = getSystemDateKey();
         if (today === lastDailyRunDate) {
             checkDailyShareStatus(false).catch(() => null);
+            // 邮箱：到达配置时刻且当天未出结果时补跑一次（跨日后到点才触发，不会 60 秒打一次）。
+            const email = getEmailDailyState();
+            if (!email.doneToday && email.result !== 'running' && Date.now() >= email.nextCheckAt) {
+                runExclusiveAutomationTask('email_claim', async () => {
+                    if (loginReady) await checkAndClaimEmails();
+                }).catch(() => null);
+            }
             return;
         }
         lastDailyRunDate = today;
@@ -350,6 +357,7 @@ async function runFarmTick(auto: any): Promise<void> {
 // ============ 帮助 Tick（帮忙 + 放虫放草，老版本节奏：低频 ~10 分钟）============
 async function runFriendTick(auto: any): Promise<void> {
     if (friendTaskRunning) return;
+    const generation = runtimeGeneration;
     // 老版本 runHelpTick：间隔随机 30~35s，但最终固定抬到 10 分钟低频——
     // 好友帮忙不需要追着时间跑，偷菜才需要（有独立成熟驱动循环）。
     const helpMs = Math.max(
@@ -389,14 +397,19 @@ async function runFriendTick(auto: any): Promise<void> {
     } catch (e: any) {
         log('系统', `好友帮助任务执行失败: ${e.message}`, { module: 'system', event: '好友帮助任务', result: 'error' });
     } finally {
-        nextFriendRunAt = Date.now() + helpMs;
-        friendTaskRunning = false;
+        // 账号已经重启/停跑时不要再把旧轮次的到期时间写回去。
+        if (generation === runtimeGeneration) {
+            nextFriendRunAt = Date.now() + helpMs;
+            friendTaskRunning = false;
+            scheduleUnifiedNextTick();
+        }
     }
 }
 
 // ============ 偷菜 Tick（成熟驱动，老版本 runStealTick 移植）============
 async function runStealTick(auto: any): Promise<void> {
     if (stealTaskRunning) return;
+    const generation = runtimeGeneration;
     if (!auto.friend || !auto.friend_steal) {
         nextStealRunAt = Date.now() + (15 * 60 * 1000);
         return;
@@ -415,13 +428,17 @@ async function runStealTick(auto: any): Promise<void> {
     } catch (e: any) {
         log('系统', `偷菜巡查执行失败: ${e.message}`, { module: 'system', event: '偷菜巡查', result: 'error' });
     } finally {
-        nextStealRunAt = Date.now() + Math.max(1000, Number(nextStealDelayMs) || 15 * 60 * 1000);
-        stealTaskRunning = false;
+        if (generation === runtimeGeneration) {
+            nextStealRunAt = Date.now() + Math.max(1000, Number(nextStealDelayMs) || 15 * 60 * 1000);
+            stealTaskRunning = false;
+            scheduleUnifiedNextTick();
+        }
     }
 }
 
 async function runUnifiedTick(): Promise<void> {
     if (!unifiedSchedulerRunning || !loginReady) return;
+    const generation = runtimeGeneration;
     const now = Date.now();
     const dueFarm = now >= nextFarmRunAt;
     const dueFriend = now >= nextFriendRunAt;
@@ -429,10 +446,11 @@ async function runUnifiedTick(): Promise<void> {
     if (!dueFarm && !dueFriend && !dueSteal) return;
 
     const auto = getAutomation();
-    // 串行执行而非并行，避免并发请求过多导致超时（顺序与老版本一致：农场 → 帮忙 → 偷菜）
+    // 农场仍串行（要等它真做完）；好友/偷菜在访问间隔中会让出锁，不必让它们挡住后续 tick。
     if (dueFarm) await runExclusiveAutomationTask('farm_tick', () => runFarmTick(auto));
-    if (dueFriend) await runExclusiveAutomationTask('friend_tick', () => runFriendTick(auto));
-    if (dueSteal) await runExclusiveAutomationTask('steal_tick', () => runStealTick(auto));
+    if (!unifiedSchedulerRunning || !loginReady || generation !== runtimeGeneration) return;
+    if (dueFriend && !friendTaskRunning) void runExclusiveAutomationTask('friend_tick', () => runFriendTick(auto)).catch(() => null);
+    if (dueSteal && !stealTaskRunning) void runExclusiveAutomationTask('steal_tick', () => runStealTick(auto)).catch(() => null);
 }
 
 function scheduleUnifiedNextTick(): void {
@@ -441,11 +459,13 @@ function scheduleUnifiedNextTick(): void {
     if (!loginReady) return;
 
     const now = Date.now();
+    // 正在跑的任务不参与排期：它的 finally 会重新排一次，避免盯着一个已经过期的到期时间空转。
     const nextAt = Math.min(
-        Number(nextFarmRunAt) || (now + 1000),
-        Number(nextFriendRunAt) || (now + 1000),
-        Number(nextStealRunAt) || (now + 1000)
+        farmTaskRunning ? Number.POSITIVE_INFINITY : (Number(nextFarmRunAt) || (now + 1000)),
+        friendTaskRunning ? Number.POSITIVE_INFINITY : (Number(nextFriendRunAt) || (now + 1000)),
+        stealTaskRunning ? Number.POSITIVE_INFINITY : (Number(nextStealRunAt) || (now + 1000))
     );
+    if (!Number.isFinite(nextAt)) return;
     const delayMs = Math.max(1000, nextAt - now); // 最低 1 秒
 
     workerScheduler.setTimeoutTask('unified_next_tick', delayMs, async () => {
@@ -578,7 +598,8 @@ function applyRuntimeConfig(snapshot: any, syncNow: boolean = false): number {
 
     const prevAuto = getAutomation();
     const { getCapitalMode } = require('../models/store');
-    const prevCapitalMode = getCapitalMode();
+    // 单测里 store 常被局部 mock，缺这个函数时按「无资本模式」处理即可。
+    const prevCapitalMode = typeof getCapitalMode === 'function' ? getCapitalMode() : null;
     const accountId = process.env.FARM_ACCOUNT_ID || '';
     if (snapshot && snapshot.systemTimeZone !== undefined) {
         updateRuntimeConfig({ timeZone: snapshot.systemTimeZone });
@@ -595,7 +616,10 @@ function applyRuntimeConfig(snapshot: any, syncNow: boolean = false): number {
     if (!loginReady && snapshot && snapshot.systemClientVersion !== undefined) {
         updateRuntimeConfig({ clientVersion: String(snapshot.systemClientVersion || '') });
     }
-    applyConfigSnapshot(snapshot || {}, { persist: false, accountId });
+    const appliedSnapshot = applyConfigSnapshot(snapshot || {}, { persist: false, accountId });
+    // 邮箱每日检查时刻按账号生效：这里必须每次配置下发都同步，
+    // 否则 email 服务拿不到账号与时刻，状态不会落盘、会反复请求。
+    configureEmailClaim({ hour: appliedSnapshot.emailClaimHour, accountId });
     if (rev > appliedConfigRevision) appliedConfigRevision = rev;
 
     // 资本模式配置变更（关闭/换狗）时收回自动派出的宠物。
@@ -1389,6 +1413,7 @@ async function getDailyGiftOverview(propagateErrors: boolean = false): Promise<a
 
     return {
         date: getSystemDateKey(),
+        timeZone: CONFIG.timeZone,
         growth: {
             key: 'growth_task',
             label: '成长任务',
@@ -1409,7 +1434,17 @@ async function getDailyGiftOverview(propagateErrors: boolean = false): Promise<a
                 totalCount: Number(task.totalCount || 3),
             },
             // 以下功能默认启用，enabled 固定为 true
-            { key: 'email_rewards', label: '邮箱奖励', enabled: true, doneToday: !!email.doneToday, lastAt: Number(email.lastCheckAt || 0) },
+            {
+                key: 'email_rewards',
+                label: '邮箱奖励',
+                enabled: true,
+                doneToday: email.doneToday,
+                lastAt: email.lastCheckAt,
+                nextAt: email.nextCheckAt,
+                scheduledHour: email.scheduledHour,
+                result: email.result,
+                lastError: email.lastError,
+            },
             { key: 'mall_free_gifts', label: '商城免费礼包', enabled: true, doneToday: !!free.doneToday, lastAt: Number(free.lastClaimAt || 0) },
             {
                 key: 'daily_share',

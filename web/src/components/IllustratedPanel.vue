@@ -13,6 +13,7 @@ import BookToolbar from '@/components/illustrated/BookToolbar.vue'
 import IllustratedAutomationSwitches from '@/components/illustrated/IllustratedAutomationSwitches.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
+import { vLazySrc } from '@/directives/lazy-src'
 import { useAccountStore } from '@/stores/account'
 import { useIllustratedStore } from '@/stores/illustrated'
 import { useSettingStore } from '@/stores/setting'
@@ -529,7 +530,7 @@ watch([currentAccountId, isConnected], refresh, { immediate: true })
               </div>
               <div class="reward-row__items">
                 <span v-for="reward in level.rewards" :key="reward.itemId" :title="reward.name">
-                  <img :src="reward.image" :alt="reward.name">×{{ reward.count }}
+                  <img v-lazy-src="reward.image" :alt="reward.name" loading="lazy" decoding="async">×{{ reward.count }}
                 </span>
               </div>
               <span class="reward-row__state">

@@ -4,8 +4,9 @@ export {};
  */
 
 const protobuf = require('protobufjs');
+const { performance } = require('node:perf_hooks');
 const { getPlantNameBySeedId, formatGrowTime, getPlantGrowTime, getAllSeeds, getPlantBySeedId } = require('../../config/gameConfig');
-const { getPreferredSeed, getAutomation, getPlantingStrategy, getBagSeedPriority, getBagSeedMultiLandReservationEnabled, getBagSeedLandTypes, getBagSeedFallbackStrategy, getPrioritize2x2Crops } = require('../../models/store');
+const { getPreferredSeed, getAutomation, getPlantingStrategy, getBagSeedPriority, getBagSeedMultiLandReservationEnabled, getBagSeedLandTypes, getBagSeedFallbackStrategy, getPrioritize2x2Crops, getPlantDelaySeconds } = require('../../models/store');
 const { PlantPhase } = require('../../config/config');
 const { getUserState, getWsErrorState, sendMsgAsync } = require('../../utils/network');
 const { toNum, getServerTimeSec, log, logWarn, sleep } = require('../../utils/utils');
@@ -53,6 +54,25 @@ const {
 interface PlantingLayout {
     anchorLandId: number;
     landIds: number[];
+}
+
+/** 同一轮种植跨种子、背包和商店共用，避免切换种子跳过间隔。 */
+interface PlantingPacing {
+    lastPlantAt: number | null;
+    delaySeconds?: number;
+    defer?: boolean;
+    deferred?: boolean;
+    shopSeed?: { seedId: number; strategy: string; remaining: number };
+}
+
+function getRemainingPlantDelayMs(pacing: PlantingPacing): number {
+    if (pacing.lastPlantAt === null) return 0;
+    return Math.max(0, Math.max(50, (pacing.delaySeconds ?? getPlantDelaySeconds()) * 1000)
+        - (performance.now() - pacing.lastPlantAt));
+}
+
+function isSlicedPlanting(pacing: PlantingPacing): boolean {
+    return !!pacing.defer && (pacing.delaySeconds ?? getPlantDelaySeconds()) > 0;
 }
 
 interface PlantSeedsResult {
@@ -162,7 +182,9 @@ async function plantSeeds(seedId: number | string, landIds: number[], options: {
     maxPlantCount?: number;
     layouts?: PlantingLayout[];
     propagateErrors?: boolean;
+    pacing?: PlantingPacing;
 } = {}): Promise<PlantSeedsResult> {
+    const pacing = options.pacing || { lastPlantAt: null };
     const normalizedLandIds = (Array.isArray(landIds) ? landIds : []).map((id: any) => toNum(id)).filter(Boolean);
     const maxPlantCount: number = Math.max(0, toNum(options.maxPlantCount) || 0) || Number.POSITIVE_INFINITY;
     const suppliedLayouts: PlantingLayout[] = Array.isArray(options.layouts) ? options.layouts : [];
@@ -175,7 +197,9 @@ async function plantSeeds(seedId: number | string, landIds: number[], options: {
             }))
             .filter((layout: PlantingLayout) => layout.anchorLandId > 0 && layout.landIds.length > 0)
         : normalizedLandIds.map((id: number) => ({ anchorLandId: id, landIds: [id] }));
-    const selectedLayouts = layouts.slice(0, maxPlantCount);
+    const requestedLayouts = layouts.slice(0, maxPlantCount);
+    // 分次种植时每轮只发一个请求，剩下的交给下一轮，避免长间隔把整轮卡死。
+    const selectedLayouts = isSlicedPlanting(pacing) ? requestedLayouts.slice(0, 1) : requestedLayouts;
     const plantedLandIds: number[] = [];
     const occupiedLandIds = new Set<number>();
     const reservedLandIds = new Set<number>();
@@ -184,12 +208,22 @@ async function plantSeeds(seedId: number | string, landIds: number[], options: {
     for (let index = 0; index < selectedLayouts.length; index++) {
         const layout = selectedLayouts[index];
         const landId = layout.anchorLandId;
+        // 到配置间隔才发下一个请求；分次模式下没到点就整轮让出，留给接下来的定时续跑。
+        if (pacing.lastPlantAt !== null) {
+            const remainingMs = getRemainingPlantDelayMs(pacing);
+            if (remainingMs > 0 && isSlicedPlanting(pacing)) {
+                pacing.deferred = true;
+                break;
+            }
+            if (remainingMs > 0) await sleep(remainingMs);
+        }
         let rpcSucceeded = false;
         let resolvedMasterId = 0;
         let resolvedOccupiedIds: number[] = [];
         try {
             const body = encodePlantRequest(seedId, layout.landIds);
             const { body: replyBody } = await sendMsgAsync('gamepb.plantpb.PlantService', 'Plant', body);
+            pacing.lastPlantAt = performance.now();
             rpcSucceeded = true;
             const reply = types.PlantReply.decode(replyBody);
             const changedLands = Array.isArray(reply && reply.land) ? reply.land : [];
@@ -242,7 +276,10 @@ async function plantSeeds(seedId: number | string, landIds: number[], options: {
             break;
         }
         if (!rpcSucceeded) break;
-        if (selectedLayouts.length > 1 && index < selectedLayouts.length - 1) await sleep(50);
+    }
+    // 还有布局没种完，说明是被间隔让出的，交给下一轮继续。
+    if (!uncertain && plantedLandIds.length > 0 && selectedLayouts.length < requestedLayouts.length) {
+        pacing.deferred = true;
     }
     return {
         planted: plantedLandIds.length,
@@ -344,6 +381,7 @@ async function plantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<number,
     lands?: any[];
     /** 手动触发的一键种植不走整轮闸门，用户重复点击必须真的重试。 */
     force?: boolean;
+    pacing?: PlantingPacing;
 } = {}): Promise<{
     remainingLandIds: number[];
     fallbackAllowed: boolean;
@@ -388,6 +426,7 @@ async function runPlantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<numb
     allUnlockedLandIds?: number[];
     lands?: any[];
     force?: boolean;
+    pacing?: PlantingPacing;
 } = {}): Promise<{
     remainingLandIds: number[];
     fallbackAllowed: boolean;
@@ -396,6 +435,7 @@ async function runPlantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<numb
     occupiedCount: number;
     deferredLandIds: number[];
 }> {
+    const pacing = options.pacing || { lastPlantAt: null };
     const targetLandIds: number[] = [...new Set((Array.isArray(landsToPlant) ? landsToPlant : [])
         .map((id: any) => toNum(id)).filter(Boolean))];
     if (targetLandIds.length === 0) {
@@ -502,7 +542,7 @@ async function runPlantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<numb
     let waiting2x2ReservationUsed = false;
 
     for (const seed of plantingOrder) {
-        if (remainingLandIds.length === 0 || !fallbackAllowed) break;
+        if (remainingLandIds.length === 0 || !fallbackAllowed || pacing.deferred) break;
 
         const plantSize = Math.max(1, toNum(seed && seed.plantSize) || getPlantSizeBySeedId(seed.seedId));
         // 受限种子只在命中类型的空地上装箱；未命中的空地留给后续种子或第二优先策略。
@@ -620,6 +660,7 @@ async function runPlantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<numb
             maxPlantCount: layouts.length,
             layouts,
             propagateErrors: options.propagateErrors,
+            pacing,
         });
         const consumed = new Set<number>([
             ...(Array.isArray(result.reservedLandIds) ? result.reservedLandIds : []),
@@ -637,6 +678,8 @@ async function runPlantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<numb
             totalPlanted += result.planted;
             plantedLandIds.push(...result.plantedLandIds);
             usedSeedLogs.push(`${seed.name}x${result.planted}`);
+            // 分次模式下种到一个就让出，剩下的等下一轮，保证间隔真的生效。
+            if (!result.uncertain && remainingLandIds.length > 0 && isSlicedPlanting(pacing)) pacing.deferred = true;
         }
         
         if (result.uncertain) {
@@ -939,7 +982,15 @@ async function autoPlantEmptyLands(deadLandIds: number[], emptyLandIds: number[]
     knownLands?: any[];
     /** 手动操作跳过整轮状态闸门。 */
     force?: boolean;
+    pacing?: PlantingPacing;
 } = {}): Promise<any> {
+    const pacing: PlantingPacing = options.pacing || { lastPlantAt: null };
+    pacing.deferred = false;
+    // 上一块刚种下、间隔还没到就直接让出，避免白读背包和商店。
+    if ((deadLandIds.length > 0 || emptyLandIds.length > 0) && isSlicedPlanting(pacing) && getRemainingPlantDelayMs(pacing) > 0) {
+        pacing.deferred = true;
+        return { plantedLands: [] };
+    }
     let landsToPlant: number[] = [...new Set<number>((Array.isArray(emptyLandIds) ? emptyLandIds : [])
         .map((id: any) => toNum(id)).filter((id: number) => id > 0))];
     let latestLands: any[] = Array.isArray(options.knownLands) ? options.knownLands : [];
@@ -988,6 +1039,7 @@ async function autoPlantEmptyLands(deadLandIds: number[], emptyLandIds: number[]
                 allUnlockedLandIds,
                 lands: latestLands,
                 force: options.force,
+                pacing,
             });
         } catch (e: any) {
             logWarn('种植', `读取背包种子失败，本轮跳过第二优先策略以避免误购: ${e.message}`, {
@@ -1002,7 +1054,7 @@ async function autoPlantEmptyLands(deadLandIds: number[], emptyLandIds: number[]
         const plantedLands: number[] = bagResult.plantedLandIds || [];
 
         // 如果允许回退且有剩余空地，使用第二优先策略补种
-        if (bagResult.fallbackAllowed && bagResult.remainingLandIds.length > 0) {
+        if (bagResult.fallbackAllowed && bagResult.remainingLandIds.length > 0 && !pacing.deferred) {
             const fallbackStrategy = getBagSeedFallbackStrategy() || 'level';
             log('种植', `开始按第二优先策略"${getPlantingStrategyLabel(fallbackStrategy)}"补种剩余空地`, {
                 module: 'farm',
@@ -1011,7 +1063,7 @@ async function autoPlantEmptyLands(deadLandIds: number[], emptyLandIds: number[]
                 strategy: fallbackStrategy,
                 remainingCount: bagResult.remainingLandIds.length,
             });
-            const shopResult = await plantFromShop(bagResult.remainingLandIds, state, fallbackStrategy, options);
+            const shopResult = await plantFromShop(bagResult.remainingLandIds, state, fallbackStrategy, { ...options, pacing });
             plantedLands.push(...(shopResult.plantedLands || []));
         }
 
@@ -1026,31 +1078,60 @@ async function autoPlantEmptyLands(deadLandIds: number[], emptyLandIds: number[]
     }
 
     // 其他策略：从商店购买种植
-    const shopResult = await plantFromShop(landsToPlant, state, undefined, options);
+    const shopResult = await plantFromShop(landsToPlant, state, undefined, { ...options, pacing });
     if (shopResult.plantedLands && shopResult.plantedLands.length > 0) {
         await runFertilizerByConfig(shopResult.plantedLands, options);
     }
     return shopResult;
 }
 
-async function plantFromShop(landsToPlant: number[], state: any, overrideStrategy?: string, options: { propagateErrors?: boolean } = {}): Promise<any> {
+async function plantFromShop(landsToPlant: number[], state: any, overrideStrategy?: string, options: { propagateErrors?: boolean; pacing?: PlantingPacing } = {}): Promise<any> {
+    const pacing = options.pacing || { lastPlantAt: null };
+    if (pacing.deferred || (isSlicedPlanting(pacing) && getRemainingPlantDelayMs(pacing) > 0)) {
+        pacing.deferred = true;
+        return { plantedLands: [], remainingLandIds: [...landsToPlant], uncertain: false };
+    }
+    let remainingLandIds: number[] = [...new Set<number>((Array.isArray(landsToPlant) ? landsToPlant : [])
+        .map((id: any) => toNum(id)).filter((id: number) => id > 0))];
+    const plantedLands: number[] = [];
+    let uncertain = false;
+    const strategyKey = `${getPlantingStrategy()}:${overrideStrategy || ''}:${getPreferredSeed()}`;
+    if (pacing.shopSeed?.strategy !== strategyKey) delete pacing.shopSeed;
+    // 分次种植可能留下已购的一包种子。即使商品已售罄，也先核对背包后使用余量。
+    if (pacing.shopSeed) {
+        const seedId = pacing.shopSeed.seedId;
+        const bag = await getBagSeeds();
+        const count = Math.min(pacing.shopSeed.remaining, toNum(bag.find((seed: any) => toNum(seed.seedId) === seedId)?.count));
+        const layouts = selectNonOverlappingLayouts(buildPlantingLayouts(remainingLandIds, getPlantSizeBySeedId(seedId)), count);
+        if (layouts.length > 0) {
+            const result = await plantSeeds(seedId, layouts.map((layout: PlantingLayout) => layout.anchorLandId), {
+                layouts, pacing, propagateErrors: options.propagateErrors,
+            });
+            plantedLands.push(...result.plantedLandIds);
+            const consumed = new Set([...result.reservedLandIds, ...result.occupiedLandIds]);
+            remainingLandIds = remainingLandIds.filter(id => !consumed.has(id));
+            pacing.shopSeed.remaining = count - result.planted;
+            if (result.uncertain || pacing.shopSeed.remaining <= 0) delete pacing.shopSeed;
+            if (result.uncertain || remainingLandIds.length === 0) return { plantedLands, remainingLandIds, uncertain: result.uncertain };
+            if (isSlicedPlanting(pacing) || pacing.deferred) {
+                pacing.deferred = true;
+                return { plantedLands, remainingLandIds, uncertain: false };
+            }
+        }
+        delete pacing.shopSeed;
+    }
     let candidates: any[] = [];
     try {
         candidates = await findBestSeed(overrideStrategy);
     } catch (e: any) {
         logWarn('商店', `查询失败: ${e.message}`);
         if (options.propagateErrors) throw e;
-        return { plantedLands: [], remainingLandIds: [...landsToPlant], uncertain: true };
+        return { plantedLands, remainingLandIds, uncertain: true };
     }
-    if (candidates.length === 0) return { plantedLands: [], remainingLandIds: [...landsToPlant], uncertain: false };
-
-    let remainingLandIds: number[] = [...new Set<number>((Array.isArray(landsToPlant) ? landsToPlant : [])
-        .map((id: any) => toNum(id)).filter((id: number) => id > 0))];
-    const plantedLands: number[] = [];
-    let uncertain = false;
+    if (candidates.length === 0) return { plantedLands, remainingLandIds, uncertain: false };
 
     for (const candidate of candidates) {
-        if (remainingLandIds.length === 0 || uncertain) break;
+        if (remainingLandIds.length === 0 || uncertain || pacing.deferred) break;
         const seedName = getPlantNameBySeedId(candidate.seedId);
         const plantCfg = getPlantBySeedId(candidate.seedId);
         const plantSize = getPlantSizeBySeedId(candidate.seedId);
@@ -1065,6 +1146,9 @@ async function plantFromShop(landsToPlant: number[], state: any, overrideStrateg
             });
             continue;
         }
+
+        // 分次模式下先只种一个，剩下的连同刚买的余量留给下一轮。
+        if (isSlicedPlanting(pacing)) layouts = layouts.slice(0, 1);
 
         const unitItemCount = Math.max(1, toNum(candidate.unitItemCount) || 1);
         const requiredSeedCount = layouts.length;
@@ -1097,6 +1181,7 @@ async function plantFromShop(landsToPlant: number[], state: any, overrideStrateg
         });
 
         let actualSeedId = candidate.seedId;
+        let receivedSeedCount = purchaseUnits * unitItemCount;
         try {
             const buyReply = await buyGoods(candidate.goodsId, purchaseUnits, candidate.price);
             if (buyReply.get_items && buyReply.get_items.length > 0) {
@@ -1104,6 +1189,7 @@ async function plantFromShop(landsToPlant: number[], state: any, overrideStrateg
                 const gotId = toNum(gotItem && gotItem.id);
                 const gotCount = toNum(gotItem && gotItem.count);
                 if (gotId > 0) actualSeedId = gotId;
+                if (gotCount > 0) receivedSeedCount = gotCount;
                 if (gotCount > 0 && gotCount < needCount) {
                     needCount = gotCount;
                     layouts = layouts.slice(0, needCount);
@@ -1129,6 +1215,7 @@ async function plantFromShop(landsToPlant: number[], state: any, overrideStrateg
             maxPlantCount: needCount,
             layouts,
             propagateErrors: options.propagateErrors,
+            pacing,
         });
         plantedLands.push(...result.plantedLandIds);
         const consumed = new Set<number>([
@@ -1147,6 +1234,10 @@ async function plantFromShop(landsToPlant: number[], state: any, overrideStrateg
             logWarn('种植', `${seedName} 种植或占地状态不确定，停止后续购买`, {
                 module: 'farm', event: '种植种子', result: 'plant_uncertain', seedId: actualSeedId
             });
+        } else if (pacing.defer) {
+            // 买到的种子没用完，记下余量，下一轮先花背包里的，避免重复购买。
+            if (receivedSeedCount > result.planted) pacing.shopSeed = { seedId: actualSeedId, strategy: strategyKey, remaining: receivedSeedCount - result.planted };
+            if (isSlicedPlanting(pacing) && result.planted > 0 && remainingLandIds.length > 0) pacing.deferred = true;
         }
     }
 
@@ -1472,6 +1563,7 @@ async function fertilizeOwnLand(landIdInput: unknown, fertilizerTypeInput: unkno
 }
 
 module.exports = {
+    getRemainingPlantDelayMs,
     getPlantSizeBySeedId,
     plantSeeds,
     getPlantingStrategyLabel,

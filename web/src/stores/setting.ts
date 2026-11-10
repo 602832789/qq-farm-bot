@@ -224,6 +224,7 @@ export interface SettingsState {
   fertilizerBuyNormalCount: number
   fertilizerBuyNormalThresholdHours: number
   fertilizerBuyCheckIntervalMinutes: number
+  emailClaimHour: number
   autoAcceptFriendMinLevel: number
   autoAcceptRequireOwnLevel: boolean
   autoAcceptHarvestStealEnabled: boolean
@@ -250,6 +251,7 @@ type SaveableSettingsKey
     | 'fertilizerBuyNormalCount'
     | 'fertilizerBuyNormalThresholdHours'
     | 'fertilizerBuyCheckIntervalMinutes'
+    | 'emailClaimHour'
     | 'autoAcceptFriendMinLevel'
     | 'autoAcceptRequireOwnLevel'
     | 'autoAcceptHarvestStealEnabled'
@@ -277,6 +279,7 @@ const SAVEABLE_SETTINGS_KEYS: SaveableSettingsKey[] = [
   'fertilizerBuyNormalCount',
   'fertilizerBuyNormalThresholdHours',
   'fertilizerBuyCheckIntervalMinutes',
+  'emailClaimHour',
   'autoAcceptFriendMinLevel',
   'autoAcceptRequireOwnLevel',
   'autoAcceptHarvestStealEnabled',
@@ -354,6 +357,7 @@ function createDefaultSettings(): SettingsState {
     fertilizerBuyNormalCount: 10,
     fertilizerBuyNormalThresholdHours: 10,
     fertilizerBuyCheckIntervalMinutes: 30,
+    emailClaimHour: 10,
     autoAcceptFriendMinLevel: 0,
     autoAcceptRequireOwnLevel: false,
     autoAcceptHarvestStealEnabled: true,
@@ -414,6 +418,7 @@ export const useSettingStore = defineStore('setting', () => {
       fertilizerBuyNormalCount: data.fertilizerBuyNormalCount ?? defaults.fertilizerBuyNormalCount,
       fertilizerBuyNormalThresholdHours: data.fertilizerBuyNormalThresholdHours ?? defaults.fertilizerBuyNormalThresholdHours,
       fertilizerBuyCheckIntervalMinutes: data.fertilizerBuyCheckIntervalMinutes ?? defaults.fertilizerBuyCheckIntervalMinutes,
+      emailClaimHour: data.emailClaimHour ?? defaults.emailClaimHour,
       autoAcceptFriendMinLevel: data.autoAcceptFriendMinLevel ?? defaults.autoAcceptFriendMinLevel,
       autoAcceptRequireOwnLevel: data.autoAcceptRequireOwnLevel ?? defaults.autoAcceptRequireOwnLevel,
       autoAcceptHarvestStealEnabled: data.autoAcceptHarvestStealEnabled ?? defaults.autoAcceptHarvestStealEnabled,

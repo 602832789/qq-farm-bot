@@ -244,12 +244,14 @@ const isBagPriority = computed(() => settings.value.plantingStrategy === 'bag_pr
           label="种植延迟 (秒)"
           type="number"
           min="0"
+          max="60"
         />
         <BaseInput
           v-model.number="settings.stealDelaySeconds"
           label="偷菜延迟 (秒)"
           type="number"
           min="0"
+          max="300"
         />
       </div>
     </div>

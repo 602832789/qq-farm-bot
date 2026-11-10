@@ -22,7 +22,7 @@ const {
     filterLandIdsByTypes,
     ALL_FERTILIZER_LAND_TYPES,
 } = require('./land-analysis');
-const { autoPlantEmptyLands, runFertilizerByConfig } = require('./planting');
+const { autoPlantEmptyLands, getRemainingPlantDelayMs, runFertilizerByConfig } = require('./planting');
 const { checkAndBuyFertilizerBoth } = require('../mall');
 // 延迟加载以打破循环依赖: visit-strategy → farm/index → scheduler → visit-strategy
 function inFarmQuietHours() {
@@ -34,20 +34,42 @@ let isCheckingFarm: boolean = false;
 let isFirstFarmCheck: boolean = true;
 let farmLoopRunning: boolean = false;
 let externalSchedulerMode: boolean = false;
+let farmLoopGeneration: number = 0;
+let automaticPlantPacing: any = { lastPlantAt: null, defer: true };
 const farmScheduler = createScheduler('farm');
 let lastPushTime: number = 0;
 
 // ============ 农场循环 ============
 
+function canContinueFarm(generation: number): boolean {
+    return generation === farmLoopGeneration
+        && !!getUserState().gid && isAutomationOn('farm') && !inFarmQuietHours();
+}
+
+function schedulePlantContinuation(generation: number, pacing: any, delayMs?: number): void {
+    if (!farmLoopRunning || !canContinueFarm(generation) || pacing !== automaticPlantPacing || !pacing.deferred) return;
+    farmScheduler.setTimeoutTask('farm_plant_continue', delayMs ?? getRemainingPlantDelayMs(pacing), async () => {
+        // 计时器会继承创建时的异步上下文，必须独立入队，不能当作旧锁的重入。
+        await runExclusiveAutomationTask('farm_plant_continue', async () => {
+            if (!farmLoopRunning || !canContinueFarm(generation) || pacing !== automaticPlantPacing) return;
+            await checkFarm();
+        }, { detached: true });
+    });
+}
+
 async function checkFarm(): Promise<boolean> {
     const state = getUserState();
     if (isCheckingFarm || !state.gid || !isAutomationOn('farm')) return false;
     if (inFarmQuietHours()) return false;
+    const generation = farmLoopGeneration;
+    const pacing = automaticPlantPacing;
+    farmScheduler.clear('farm_plant_continue');
+    pacing.deferred = false;
     isCheckingFarm = true;
 
     try {
         // 复用手动操作逻辑
-        const result = await runFarmOperation('all');
+        const result = await runFarmOperation('all', null, false, { generation, pacing });
         isFirstFarmCheck = false;
         return !!(result && result.hadWork);
     } catch (err: any) {
@@ -60,6 +82,7 @@ async function checkFarm(): Promise<boolean> {
         return false;
     } finally {
         isCheckingFarm = false;
+        schedulePlantContinuation(generation, pacing);
     }
 }
 
@@ -162,8 +185,11 @@ async function runFarmOperation(
     opType: string,
     targetLandIdInput: unknown = null,
     propagateErrors: boolean = false,
+    automatic?: { generation: number; pacing: any },
 ): Promise<{ hadWork: boolean; actions: string[] }> {
     const landsReply = await getAllLands();
+    // 这一轮已经被停掉或账号换了代次，就别再动任何土地。
+    if (automatic && !canContinueFarm(automatic.generation)) return { hadWork: false, actions: [] };
     if (!landsReply.lands || landsReply.lands.length === 0) {
         if (opType !== 'all') {
             log('农场', '没有土地数据');
@@ -320,7 +346,11 @@ async function runFarmOperation(
         // 注意：如果是单纯点"一键种植"，harvestedLandIds 为空，只种当前的空地/死地
         if (allDeadLands.length > 0 || allEmptyLands.length > 0) {
             try {
-                const plantResult = await autoPlantEmptyLands(allDeadLands, allEmptyLands, { propagateErrors, knownLands: lands, force: opType !== 'all' });
+                if (automatic && !canContinueFarm(automatic.generation)) return { hadWork: actions.length > 0, actions };
+                const plantResult = await autoPlantEmptyLands(allDeadLands, allEmptyLands, {
+                    propagateErrors, knownLands: lands, force: opType !== 'all',
+                    pacing: automatic ? automatic.pacing : { lastPlantAt: null, delaySeconds: 0 },
+                });
                 const plantedCount = Array.isArray(plantResult?.plantedLands) ? plantResult.plantedLands.length : 0;
                 if (plantedCount > 0) {
                     actions.push(`种植${plantedCount}`);
@@ -474,6 +504,7 @@ function scheduleNextFarmCheck(delayMs: number = CONFIG.farmCheckInterval): void
 
 function startFarmCheckLoop(options: { externalScheduler?: boolean } = {}): void {
     if (farmLoopRunning) return;
+    farmLoopGeneration++;
     externalSchedulerMode = !!options.externalScheduler;
     farmLoopRunning = true;
     networkEvents.on('landsChanged', onLandsChangedPush);
@@ -518,6 +549,8 @@ function onFarmSocialEventsChangedPush(events: any[]): void {
 
 function stopFarmCheckLoop(): void {
     farmLoopRunning = false;
+    farmLoopGeneration++;
+    automaticPlantPacing = { lastPlantAt: null, defer: true };
     externalSchedulerMode = false;
     farmScheduler.clearAll();
     networkEvents.removeListener('landsChanged', onLandsChangedPush);
@@ -528,6 +561,11 @@ function stopFarmCheckLoop(): void {
 
 function refreshFarmCheckLoop(delayMs: number = 200): void {
     if (!farmLoopRunning) return;
+    // 种植续跑还挂着的话，跟着刷新的间隔一起重排，不要把旧计时器留在那儿。
+    if (farmScheduler.has('farm_plant_continue')) {
+        farmScheduler.clear('farm_plant_continue');
+        schedulePlantContinuation(farmLoopGeneration, automaticPlantPacing, delayMs);
+    }
     scheduleNextFarmCheck(delayMs);
 }
 

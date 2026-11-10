@@ -130,6 +130,24 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-10 · v3.15.0（#110） · 同步上游 20261109 更新（PR #122-#124），保留本地 2×2 / 中文化 / 续期账本改动
+
+- **同步来源**：`muyuewang/qq-farm-bot-404` 的 `3b3608c → b9375ec`（采纳 liyangpengs master `022df50b`，含 PR #122 / #123 / #124 共 8 个提交、33 个文件）。
+- **采纳 PR #123 + #124（邮件）· 每日定点检查**：`core/src/services/email.ts` 整体替换为按配置时刻每天检查一次的版本 —— 默认 10 时、可设 0（午夜）；`running` 状态落盘，进程中途退出重启后会重新读邮箱而不是当作已完成；状态文件按账号哈希命名（`email-claim-<sha256>.json`），放 `core/data` 随命名卷持久化。新增 `core/src/utils/hour-of-day.ts`（core / web 双份）做 0–23 整点解析，`account-config.ts` 的写入与 `applyConfigSnapshot` 都加了 `assertEmailClaimHour` 校验，非法值直接报 `INVALID_CONFIG` 而不是悄悄存进去。
+- **邮件时刻的接线点**（上游原版会漏、本次特意确认）：`worker.ts` 的 `applyRuntimeConfig` 每次下发配置都调用 `configureEmailClaim({ hour, accountId })` —— 少了这一步服务拿不到账号与时刻，状态不落盘、会变成每隔一分钟重复请求。`startDailyRoutineTimer` 里加了「当天未出结果且已到点」才补跑的判断，`runDailyRoutines` 改为不带 `force` 调用邮箱（否则每次重连都白请求一次）。
+- **邮件展示**：`DailyOverview.vue` 按 `scheduledHour` 显示「每天 10:00 检查」，区分「正在检查 / 检查失败（今日跳过）/ 部分领取失败（今日跳过）/ 今日已检查（无奖励）」；时间显示优先用后端下发的 `timeZone`，跨时区部署不会显示错位。
+- **采纳 PR #124（性能）· 图片懒加载**：新增 `web/src/directives/lazy-src.ts`，所有列表共用一个 `IntersectionObserver`（`rootMargin: 200px`），图片进入可视区才写 `src`，卸载时立即释放观察器；环境没有 `IntersectionObserver` 时直接赋值兜底。接入图鉴、变异图鉴、收藏、配置管理、图鉴主面板共 8 个组件，同时补 `decoding="async"`。
+- **采纳 PR #122 · 延迟真正生效并释放等待锁**：`planting.ts` 贯通 `PlantingPacing`（跨背包 / 商店 / 不同种子共用同一个上次种植时间），到点才发下一个 `Plant` 请求，没到点就把剩余地留给下一轮；商店买到但没种完的种子记在 `pacing.shopSeed` 里，下一轮先用背包余量、不重复购买。`automation-lock.ts` 增加 `active` 标记与 `detached` 选项 —— 关键点是异步上下文会被定时器继承，旧任务的 store 必须标记失效，否则延迟续跑会被误判成「旧锁重入」而直接跑在锁外。`farm/scheduler.ts` 用 `farmLoopGeneration` + `automaticPlantPacing` 管理续跑，`worker.ts` 的 `runUnifiedTick` 不再让好友 / 偷菜任务阻塞后续 tick，`scheduleUnifiedNextTick` 把正在跑的任务排除出排期、由它们的 `finally` 重新排。
+- **好友侧同批改动**：`checkFriends` 每进一个好友前复核「循环是否被停、是否跨日、账号是否离线」，单次访问用 `detached` 独立入队，偷菜间隔改为逐秒切片等待（等待期间不持锁）；`pet-sync.ts` 去掉「等好友任务空闲最多 10 秒」的轮询，改为直接让路；普通访问间隔 500–800ms → 200–350ms。
+- **与本地实现的适配（上游代码不能照抄的地方）**：
+  - 上游 `checkFriends` 直接读 `isAutomationOn('friend_steal')`，会破坏本地 `onlyHelp` / `onlySteal` / `onlyBad` 的定向语义 —— 本次改用 `effectiveStealEnabled` / `effectiveHelpEnabled` / `effectiveBadEnabled`。
+  - 本地日常轮询是 60 秒（对齐老版），上游测试锁的是 30 秒 —— 测试断言改为适配本地实际值。
+  - 本地 `applyRuntimeConfig` 依赖 `getCapitalMode()`，上游单测的 store mock 没有它 —— 加 `typeof ... === 'function'` 兜底。
+  - 本地已删除 `AutomationSettingsForm.vue`（功能并入 `AccountFeatureSettings.vue`），上游对它的改动不采纳；「自动邮箱领取（时）」改为放在「日常与活动」模块里（该模块本来没有内容区，正好补上），用新版 `HourInput` 组件：支持上下箭头增减、边界循环、非法输入就地标红。
+  - 本地 `planting.ts` 的 2×2 预留窗口、种植轮状态闸门、`force` 语义全部保留，`PlantingPacing` 只做增量接入。
+- **验证**：core 491/491（新增邮件定时 4 份测试：定时触发、跨日重置、中断恢复、部分领取），web 169/169（新增 `hour-of-day`、`lazy-src`、`email-settings`），改动文件 ESLint、core tsc、`vue-tsc -b`、`vite build` 全过；`docker/Dockerfile` 与 `docker-compose.yml` 未受影响。
+- **说明**：`pnpm lint` 全量仍有 4 个历史遗留文件（`mall-coupon-gift.ts`、`milk-tea-legacy.ts`、`qq-credential.ts`、`weather-activity.ts`）的非捕获组 / 未使用变量告警，与本次同步无关，改动文件的 lint 是干净的。
+
 ### 2026-11-10 · v3.13.0（#109） · 网关诊断日志改为中文文案（压力 / 超时 / 心跳 / 让路）
 
 - **需求**：运行日志里出现 `Gateway 请求压力: pending=3, queued=1, active=GetIllustratedListV2#513:12.327675000065938ms,...`，面板上像抓包日志，读不出「哪里堵了、堵了多久」。要求这类日志以后以中文形式显示。

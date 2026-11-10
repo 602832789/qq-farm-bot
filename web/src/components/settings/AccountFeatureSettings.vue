@@ -8,6 +8,7 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 import BaseSwitch from '@/components/ui/BaseSwitch.vue'
+import HourInput from '@/components/ui/HourInput.vue'
 import { MILK_TEA_AUTOMATION_OPTIONS } from '@/constants/activity-windows'
 import { FERTILIZER_TIME_UNITS, fertilizerTimeSeconds, fertilizerTimeValue } from '@/utils/fertilizer-time'
 
@@ -509,6 +510,23 @@ function cancel() {
                 <p class="text-xs text-gray-500 dark:text-gray-400">
                   偷菜巡查不再使用固定的巡查间隔或延迟设置。系统会根据已知好友农场的作物成熟时间动态计算下一次巡查的时机，成熟越近巡查越勤，避免固定间隔造成的空跑或错过窗口。开启右上角的开关即可自动运行。
                 </p>
+              </section>
+            </div>
+
+            <div v-else-if="activeModule === 'activity'" class="space-y-4">
+              <section class="border border-gray-100 rounded-lg bg-gray-50/70 p-4 space-y-3 dark:border-gray-700 dark:bg-gray-900/25">
+                <div class="text-sm text-gray-700 font-medium dark:text-gray-300">
+                  每日邮箱奖励
+                </div>
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                  每天到设定时刻检查一次邮箱并领取可领邮件；当天检查完（含无奖励、失败）就不再重复请求，次日同一时刻再来。
+                </p>
+                <HourInput
+                  v-model="automation.emailClaimHour"
+                  class="w-full sm:max-w-xs"
+                  label="自动邮箱领取（时）"
+                  help="默认 10 时，0 时为午夜；加减到边界会循环。"
+                />
               </section>
             </div>
 
