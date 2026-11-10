@@ -14,6 +14,7 @@
 
 | 版本 | 更新序号 | 日期 | 更新内容 | 提交 |
 | --- | --- | --- | --- | --- |
+| v3.17.7 | #127 | 2026-11-11 | 修正钩子文件可执行位，Linux/macOS 上版本递增才会真正执行 | — |
 | v3.17.6 | #126 | 2026-11-11 | 版本号与更新内容合并为同一条提交，不再单独产生 chore(version) 记录 | — |
 | v3.17.5 | #125 | 2026-11-11 | chore(deploy): NAS 部署脚本构建缓存回收窗口由 24 小时收紧到 1 分钟 | `ce55f8b1` |
 | v3.17.3 | #123 | 2026-11-11 | fix(version): 修正 CHANGELOG 标题版本号误判，补上 hook 回归测试 | `f22b21b8` |
@@ -145,6 +146,12 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-11 · v3.17.7（#127） · 修正钩子文件可执行位，Linux/macOS 上版本递增才会真正执行
+
+**问题**：Windows 上 `core.filemode=false`，`chmod +x` 不会被 git 记录，两个钩子在索引里都是 `100644`。在 Linux/macOS 上 clone 后 git 会直接忽略这些钩子（提示 not set as executable），导致版本号不再自动递增。
+
+**修复**：用 `git update-index --chmod=+x .githooks/pre-commit .githooks/post-commit` 把索引模式改为 `100755` 并提交。Windows 上行为不变，Linux/macOS 上钩子可正常执行。
+
 ### 2026-11-11 · v3.17.6（#126） · 版本号与更新内容合并为同一条提交，不再单独产生 chore(version) 记录
 
 **需求**：GitHub 上的提交历史里，每次更新都是两条 —— 一条是功能改动，紧跟一条 `chore(version): vX.Y.Z · 第 N 次更新`。用户要求以后版本号与更新内容只出现为一条记录。
