@@ -65,8 +65,30 @@ test('黄金虫策略与邮箱时刻的设置链路前后端完整接线', () =>
 
 test('卡片开关的静默保存参数被父组件接住，不再每次拨动都弹窗', () => {
   assert.ok(featureSettings.includes('emit(\'save\', key, true)'))
-  assert.ok(settingsPage.includes('async function handleFeatureModuleSave(_module?: string, quiet?: boolean)'))
+  assert.ok(settingsPage.includes('async function handleFeatureModuleSave(_module?: string, quiet?: boolean): Promise<boolean>'))
   assert.ok(settingsPage.includes('if (!quiet)'))
+})
+
+// 回归：「保存并关闭」此前是 fire-and-forget emit 后无条件关弹窗、清 editSnapshot。
+// 邮箱时刻留了非法草稿时校验会拦下请求，但弹窗已经关了，草稿残留会把之后
+// 所有保存入口（含拨卡片开关的静默保存）一起堵死，用户也失去了「取消回滚」这条路。
+test('保存并关闭必须等结果，校验失败时留在弹窗里', () => {
+  assert.ok(featureSettings.includes('done?: (ok: boolean) => void'))
+  const fromFinish = featureSettings.slice(featureSettings.indexOf('async function finish()'))
+  const finish = fromFinish.slice(0, fromFinish.indexOf('\n}'))
+  assert.ok(finish.includes('await new Promise<boolean>'))
+  assert.ok(finish.includes('emit(\'save\', module, false, resolve)'), '显式保存不是静默保存')
+  const guardAt = finish.indexOf('if (!ok)')
+  const clearAt = finish.indexOf('editSnapshot.value = null')
+  const closeAt = finish.indexOf('activeModule.value = null')
+  assert.ok(guardAt > 0 && clearAt > guardAt, '失败时必须先返回，不能清掉编辑快照')
+  assert.ok(closeAt > guardAt, '失败时不能关弹窗')
+
+  assert.ok(settingsPage.includes('@save="onFeatureModuleSave"'))
+  assert.ok(settingsPage.includes('.catch(() => done?.(false))'), '保存抛异常也必须回执，否则弹窗永久挂起')
+  assert.ok(settingsPage.includes('if (emailClaimHour === null && !quiet)'), '静默保存不能被一个非法草稿整批拦住')
+  assert.ok(settingsPage.includes('return true'))
+  assert.ok(settingsPage.includes('return false'))
 })
 
 test('切页签不覆盖资本模式草稿，设置保存不冲掉下线提醒草稿', () => {

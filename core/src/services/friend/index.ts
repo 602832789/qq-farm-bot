@@ -15,6 +15,7 @@ export {
 
 export {
     claimDueFriends,
+    dropFriendMaturityPlans,
     getNextStealDelayMs,
     observeFriendLands,
     observeFriendSummary,

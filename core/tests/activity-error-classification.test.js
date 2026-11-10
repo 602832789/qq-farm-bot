@@ -35,11 +35,18 @@ test('网关让路日志的分类关键字也跟着中文化后的文案走', ()
 test('静态锁：四类消费方的关键字与网关真实文案一致', () => {
     const handler = src('controllers/admin/activity-center/error-handler.ts');
     const network = src('utils/network.ts');
+    const commerce = src('controllers/admin/commerce-routes.ts');
     assert.match(network, /请求等待队列已满/);
     assert.match(network, /请求已中断/);
     assert.match(handler, /includes\('请求等待队列已满'\)/);
     assert.match(handler, /includes\('请求已中断'\)/);
-    // 四个消费中文关键字的模块都不能残留旧串作为唯一判断
+    // 商城路由也是中文关键字消费方。体检修 activity-center 时漏了它：
+    // 队列满 / 连接中断会被当成普通失败，网关内部长串原文直接吐给前端且无法分流重试。
+    assert.match(commerce, /includes\('请求等待队列已满'\)/);
+    assert.match(commerce, /includes\('请求已中断'\)/);
+    assert.match(commerce, /COMMERCE_BUSY/);
+    assert.match(commerce, /COMMERCE_REQUEST_INTERRUPTED/);
+    // 三个消费中文关键字的模块都不能残留旧串作为唯一判断
     for (const file of [
         'utils/low-priority-gate.ts',
         'services/friend/visit-strategy.ts',

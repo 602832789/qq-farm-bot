@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const {
     normalizeAbsoluteTime,
@@ -9,10 +11,47 @@ const {
     claimDueFriends,
     getNextStealDelayMs,
     resetFriendMaturityPlans,
+    dropFriendMaturityPlans,
+    getFriendMaturityPlanSnapshot,
 } = require('../dist/services/friend/maturity-plan');
 
 const NOW_MS = 1_700_000_000_000;
 const NOW_SEC = Math.floor(NOW_MS / 1000);
+
+// 回归：成熟计划是「访问好友时」写下的，拉黑动作不会回头清除。
+// 之前 runScheduledStealCheck 的到期名单直接取 claimDueFriends，不查黑名单，
+// 被拉黑的好友仍会被定时偷菜反复进农场，还会按旧成熟点频繁唤醒巡查。
+test('拉黑 gid 的成熟计划必须能按批丢弃，不再进到期名单也不再驱动唤醒', () => {
+    resetFriendMaturityPlans();
+    observeFriendSummary({ gid: 11, plant: { ripe_time_sec: 60 } }, NOW_MS, NOW_SEC);
+    observeFriendSummary({ gid: 22, plant: { ripe_time_sec: 120 } }, NOW_MS, NOW_SEC);
+    assert.equal(getFriendMaturityPlanSnapshot().plans.length, 2);
+
+    assert.equal(dropFriendMaturityPlans(new Set([11])), 1);
+    assert.equal(dropFriendMaturityPlans(new Set([11])), 0, '重复清理不应报错或重复计数');
+    assert.deepEqual(claimDueFriends({ nowSec: NOW_SEC + 180, limit: 12 }).map(item => item.gid), [22],
+        '被拉黑的 gid 不能出现在到期偷菜名单里');
+
+    assert.equal(dropFriendMaturityPlans([22]), 1);
+    assert.equal(getNextStealDelayMs({ nowMs: NOW_MS, nowSec: NOW_SEC, fallbackMs: 300_000 }), 300_000,
+        '计划清空后唤醒延迟应回到常规 fallback');
+});
+
+test('静态锁：定时偷菜巡查先按黑名单清计划，再取到期名单', () => {
+    const src = fs.readFileSync(path.resolve(__dirname, '../src/services/friend/scheduler.ts'), 'utf8');
+    const start = src.indexOf('export async function runScheduledStealCheck');
+    // 只取这一个函数体：文件后面还有别处也用 getFriendBlacklist，混进来会让计数失真。
+    const fn = src.slice(start, src.indexOf('\n}\n', start) + 2);
+    assert.match(fn, /const blacklist: Set<number> = new Set\(getFriendBlacklist\(accountId\)\)/);
+    assert.match(fn, /dropFriendMaturityPlans\(blacklist\)/);
+    const dropAt = fn.indexOf('dropFriendMaturityPlans(blacklist)');
+    const claimAt = fn.indexOf('claimDueFriends(');
+    const visitAt = fn.indexOf('visitFriend(');
+    assert.ok(dropAt > 0 && claimAt > dropAt, '清理必须排在取到期名单之前');
+    assert.ok(visitAt > dropAt, '清理必须排在进农场之前');
+    // 校准分支复用同一个 blacklist，不能出现第二份各算各的名单
+    assert.equal((fn.match(/new Set\(getFriendBlacklist\(accountId\)\)/g) || []).length, 1);
+});
 
 test('normalizeAbsoluteTime treats countdown seconds and absolute timestamps differently', () => {
     // 倒计时秒：now + 120

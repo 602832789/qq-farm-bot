@@ -381,17 +381,17 @@ function syncLocalAutomationSettings() {
 // ==================== 功能模块（旧版六模块） ====================
 // 功能模块里既改 automation，也改部分策略字段（策略、巡查间隔、静默时段），
 // 所以保存时把两份模型合并成一次请求，避免用户切换标签后改动丢失。
-async function handleFeatureModuleSave(_module?: string, quiet?: boolean) {
+async function handleFeatureModuleSave(_module?: string, quiet?: boolean): Promise<boolean> {
   const accountId = currentAccountId.value
   if (!accountId)
-    return
+    return false
   // 邮箱时刻只收 0–23 的整点：输入框会保留非法草稿（清空后是空串），
   // 后端 assertEmailClaimHour 对这份快照是硬校验，抛错会让整批设置一起不生效，
-  // 所以必须在本地拦住，别发出去。
+  // 所以显式保存必须在本地拦住，别发出去。
   const emailClaimHour = parseHourOfDay(localAutomationSettings.value.emailClaimHour)
-  if (emailClaimHour === null) {
+  if (emailClaimHour === null && !quiet) {
     showAlert('「自动邮箱领取」时间需填写 0–23 的整数（时），改好后请再点一次保存。', 'danger')
-    return
+    return false
   }
   automationSaving.value = true
   try {
@@ -410,9 +410,11 @@ async function handleFeatureModuleSave(_module?: string, quiet?: boolean) {
         .map(Number)
         .filter((id: number) => Number.isFinite(id) && id > 0))]
     }
+    // quiet（拨卡片开关）时非法草稿不应把整批开关堵死：这里置成 null，
+    // store 的兜底会就地剔除这一个字段，其余设置照常保存，成功后回填会顺手修正草稿。
     const res = await settingStore.saveSettings(accountId, payload)
     if (accountId !== currentAccountId.value)
-      return
+      return false
     if (res.ok) {
       syncLocalStrategySettings()
       syncLocalAutomationSettings()
@@ -437,18 +439,27 @@ async function handleFeatureModuleSave(_module?: string, quiet?: boolean) {
           console.error('检测购买化肥失败', e)
         }
       }
+      return true
     }
     else {
       const message = res.unconfirmed && res.saved
         ? `设置已保存，但运行进程尚未确认应用：${res.error || '请稍后重试或重启账号'}`
         : `保存失败: ${res.error}`
       showAlert(message, res.unconfirmed && res.saved ? 'primary' : 'danger')
+      return false
     }
   }
   finally {
     if (accountId === currentAccountId.value)
       automationSaving.value = false
   }
+}
+
+// 「保存并关闭」要等结果：校验失败时留在弹窗里让用户就地改，别把编辑上下文销毁。
+function onFeatureModuleSave(module?: string, quiet?: boolean, done?: (ok: boolean) => void): void {
+  handleFeatureModuleSave(module, quiet)
+    .then(ok => done?.(ok))
+    .catch(() => done?.(false))
 }
 
 // ==================== 系统设置 ====================
@@ -917,7 +928,7 @@ async function handleResetSystemConfig() {
             :bag-fallback-strategy-options="BAG_FALLBACK_STRATEGY_OPTIONS"
             :fertilizer-land-type-options="fertilizerLandTypeOptions"
             :fertilizer-options="fertilizerOptions"
-            @save="handleFeatureModuleSave"
+            @save="onFeatureModuleSave"
           />
         </div>
 

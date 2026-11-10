@@ -26,7 +26,8 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  save: [module: ModuleKey, quiet?: boolean]
+  // done 由「保存并关闭」用：只有父组件确认保存成功，才允许关闭弹窗并丢弃编辑快照。
+  save: [module: ModuleKey, quiet?: boolean, done?: (ok: boolean) => void]
 }>()
 
 const strategy = defineModel<any>('strategy', { required: true })
@@ -228,10 +229,16 @@ function toggleFertilizerLand(value: string | number) {
     : [...current, value]
 }
 
-function finish() {
-  if (!activeModule.value)
+async function finish() {
+  const module = activeModule.value
+  if (!module)
     return
-  emit('save', activeModule.value, true)
+  // 显式「保存并关闭」不是静默保存，父组件会给成功反馈。
+  // 更重要的是必须等结果：校验失败时若照样关掉弹窗、清掉 editSnapshot，
+  // 非法草稿会留在模型里，之后连拨卡片开关都会被前置校验拦住，所有设置都存不了。
+  const ok = await new Promise<boolean>(resolve => emit('save', module, false, resolve))
+  if (!ok)
+    return
   editSnapshot.value = null
   activeModule.value = null
 }

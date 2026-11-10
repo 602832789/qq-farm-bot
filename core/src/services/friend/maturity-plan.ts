@@ -169,6 +169,19 @@ export function resetFriendMaturityPlans(): void {
     plans.clear();
 }
 
+/**
+ * 按 gid 丢弃成熟计划：好友被拉黑 / 判定失效后，拉黑前写下的到期点仍留在内存里。
+ * 不清掉的话 claimDueFriends 会把到期点推后 5 分钟反复捞出，
+ * getNextStealDelayMs 也会按这个成熟点频繁唤醒偷菜巡查。
+ */
+export function dropFriendMaturityPlans(gids: Iterable<number>): number {
+    let removed = 0;
+    for (const gid of gids) {
+        if (plans.delete(Number(gid))) removed += 1;
+    }
+    return removed;
+}
+
 export function getFriendMaturityPlanSnapshot(): { plans: MaturityPlan[] } {
     return { plans: [...plans.values()].map(item => ({ ...item })) };
 }

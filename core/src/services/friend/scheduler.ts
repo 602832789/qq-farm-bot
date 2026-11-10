@@ -46,7 +46,7 @@ const {
 } = require('./visit-strategy');
 const { buildFriendVisitPlan } = require('./visit-plan');
 const { getFriendDogState, flushFriendPetCacheNow } = require('./pet-cache');
-const { observeFriendSummary, claimDueFriends, getNextStealDelayMs } = require('./maturity-plan');
+const { observeFriendSummary, claimDueFriends, getNextStealDelayMs, dropFriendMaturityPlans } = require('./maturity-plan');
 
 // 延迟引用 pet-sync，它反向依赖本模块的 isFriendCheckRunning
 function petSyncRef(): any {
@@ -518,6 +518,11 @@ export async function runScheduledStealCheck(): Promise<number> {
     isCheckingFriends = true;
     const accountId: string = process.env.FARM_ACCOUNT_ID || '';
     try {
+        const blacklist: Set<number> = new Set(getFriendBlacklist(accountId));
+        // 成熟计划是「访问好友时」写进来的，拉黑动作不会回头清它。
+        // 不按黑名单丢掉的话，claimDueFriends 每 5 分钟把到期点重新捞出并进农场偷菜，
+        // getNextStealDelayMs 也会按这个成熟点频繁唤醒；其它巡查路径全都查黑名单，这里不能例外。
+        dropFriendMaturityPlans(blacklist);
         const targets = new Map<number, { gid: number; name: string }>();
         // 到期成熟计划：matureAt ≤ now 的好友立即去偷（claim 会把到期点推后 5 分钟重查）。
         for (const due of claimDueFriends({ limit: 12 })) {
@@ -528,7 +533,6 @@ export async function runScheduledStealCheck(): Promise<number> {
             const friendsReply: any = await getAllFriends();
             cacheFriendsListFromReply(friendsReply);
             const friends: any[] = extractReplyFriends(friendsReply);
-            const blacklist: Set<number> = new Set(getFriendBlacklist(accountId));
             for (const friend of friends) {
                 const gid: number = toNum(friend && friend.gid);
                 if (!gid || gid === state.gid || blacklist.has(gid)) continue;

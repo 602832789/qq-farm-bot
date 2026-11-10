@@ -29,6 +29,14 @@ function friendlyError(error: any): { code: string; message: string } {
     if (raw.includes('请求超时') || raw === 'API Timeout') {
         return { code: 'COMMERCE_TIMEOUT', message: '游戏服务响应超时，请稍后重试' };
     }
+    // 网关日志中文化后抛的是「请求等待队列已满」/「请求已中断」。
+    // 少了这两类，购买请求会被当成普通失败，把网关内部长串原文直接吐给前端，无法分流重试。
+    if (raw.includes('请求等待队列已满')) {
+        return { code: 'COMMERCE_BUSY', message: '游戏服务繁忙，请稍后重试' };
+    }
+    if (raw.includes('发送失败') || raw.includes('请求已中断') || raw.includes('请求被中断')) {
+        return { code: 'COMMERCE_REQUEST_INTERRUPTED', message: '购买请求未能完成，请稍后重试' };
+    }
     return { code, message: raw || '操作失败，请刷新后重试' };
 }
 
