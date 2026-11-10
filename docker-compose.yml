@@ -25,11 +25,14 @@ services:
       - NODE_ENV=production
       - ADMIN_PORT=3007
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3007/api/game-version"]
+      # 用容器自带的 node 发请求，不用 wget：alpine 的 busybox wget 解析 localhost
+      # 时会先试 ::1，而应用只监听 IPv4 的 0.0.0.0，可能直接连接被拒 → 容器一直挂
+      # unhealthy。指到 127.0.0.1 再用 node 自带 fetch，和「服务真的没起来」区分得开。
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3007/api/game-version',{signal:AbortSignal.timeout(5000)}).then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 30s
     logging:
       driver: "json-file"
       options:

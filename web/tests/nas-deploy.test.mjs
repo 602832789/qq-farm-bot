@@ -4,11 +4,18 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 const read = relative => readFileSync(new URL(relative, import.meta.url), 'utf8')
-const deploy = read('../../scripts/nas-deploy.sh')
 // 注释里会列举「禁止使用的命令」做警示，检查危险命令时只看真正会执行的行。
-const deployCode = deploy.split('\n').filter(line => !line.trimStart().startsWith('#')).join('\n')
+function stripHash(text) {
+  return text
+    .split('\n')
+    .filter(line => !line.trimStart().startsWith('#'))
+    .join('\n')
+}
+const deploy = read('../../scripts/nas-deploy.sh')
+const deployCode = stripHash(deploy)
 const readme = read('../../README.md')
 const compose = read('../../docker-compose.yml')
+const dockerfile = read('../../core/Dockerfile')
 
 test('NAS 部署脚本完成完整更新流程并报告空间变化', () => {
   assert.match(deploy, /^#!\/bin\/sh/m)
@@ -49,8 +56,37 @@ test('--report 列全镜像/容器/卷并给出读法，不写死「构建缓存
 
   const report = deploy.slice(deploy.indexOf('show_read_guide'), deploy.indexOf('prune_build_cache'))
   assert.match(report, /RECLAIMABLE 很小/, '解释「可回收≈0」的真实含义')
-  assert.match(report, /ACTIVE 数量 > 1/, '多个容器同时在线要作为重点提示')
-  assert.match(report, /du -sh \/var\/lib\/docker/, '给出与 system df 对照的兜底排查')
+  assert.match(report, /ACTIVE 数量多/, '容器数量要作为重点提示')
+  // 同一个镜像起多个实例才算冗余。实测 NAS 上 11 个容器是 10 个不同服务 +
+  // 本项目 1 个，按数量下「有 10 个重复实例」的结论是错的。
+  assert.match(report, /uniq -d/, '按镜像分组找重复，而不是数容器个数')
+  assert.doesNotMatch(report, /ACTIVE 数量 > 1/, '不能用「数量 > 1 就是冗余」的旧结论')
+})
+
+test('--report 做磁盘对账：用 docker info 的真实目录，不写死路径', () => {
+  // system df 四行加起来经常小于磁盘涨上去的量。差额要么在 Docker 目录里但没被
+  // 统计（容器 json 日志、别的 builder），要么根本不在 Docker 里（btrfs 快照 /
+  // NAS 回收站），后者 prune 永远清不掉 —— 所以必须把真实数字打出来对账。
+  assert.match(deploy, /show_disk_audit/, '要有磁盘对账这一节')
+  assert.match(deploy, /DockerRootDir/, '数据目录从 docker info 取，NAS 常挪到数据盘')
+  assert.match(deploy, /du -sxh "\$root"/, '列出 Docker 目录里前几大子目录')
+  assert.match(deploy, /\$root\/buildkit/, '构建缓存落盘目录单独量一次（system df 常显示 0B）')
+  assert.match(deploy, /df -h "\$root"/, '给出所在文件系统的已用/总量')
+  assert.match(deploy, /btrfs/, 'btrfs/zfs 上删文件不释放空间，要提示快照')
+  assert.match(deploy, /subvolume list -s/, '能直接数出快照数量')
+  assert.match(deploy, /json\.log/, '列出容器日志实际体积')
+
+  // 对账必须在 --report 分支里被调用，否则等于没写
+  const branch = deploy.slice(deploy.indexOf('if [ "$REPORT_ONLY" = "1" ]'), deploy.indexOf('show_space "部署前"'))
+  assert.match(branch, /show_disk_audit/, '--report 分支要真的调用它')
+})
+
+test('--report 在容器 unhealthy 时打印健康检查自己的输出', () => {
+  // docker ps 里的 (unhealthy) 只是结论。探针的退出码和输出才是证据，
+  // 否则分不清「服务没起来」和「探测命令写错」。
+  assert.match(deploy, /show_health_detail/)
+  assert.match(deploy, /State\.Health\.Log/, '要取健康检查的历史输出')
+  assert.match(deploy, /\.State\.Health\.Status/, '先报当前状态')
 })
 
 test('--prune-orphans 只删已停止容器，绝不误删数据卷', () => {
@@ -74,10 +110,30 @@ test('--prune-orphans 只删已停止容器，绝不误删数据卷', () => {
 })
 
 test('无 docker 时给出清晰错误，但 --help 仍可查看用法', () => {
-  const helpAt = deploy.indexOf('sed -n \'2,26p\' "$0"')
+  // 用法说明按「文件头注释到 set -eu」打印，改注释不会截断，也不写死行号
+  const helpAt = deploy.indexOf('/^set -eu/{exit}')
   const dockerCheckAt = deploy.indexOf('command -v docker')
-  assert.ok(helpAt > 0 && dockerCheckAt > helpAt, 'help 必须在 docker 检查之前处理')
+  assert.ok(helpAt > 0, '用法说明按文件头注释打印，不写死行号')
+  assert.ok(dockerCheckAt > helpAt, 'help 必须在 docker 检查之前处理')
   assert.match(deploy, /没找到 docker 命令/)
+})
+
+test('健康检查不依赖 wget，也不走 localhost', () => {
+  // 实测容器一直挂着 (unhealthy)：busybox wget 解析 localhost 时可能先试 ::1，
+  // 而应用只监听 IPv4 的 0.0.0.0。探测失败被读成「服务挂了」，实际服务是好的。
+  const health = stripHash(compose.slice(compose.indexOf('healthcheck:'), compose.indexOf('logging:')))
+  assert.match(health, /127\.0\.0\.1:3007/, '探测指到 127.0.0.1')
+  assert.doesNotMatch(health, /localhost/, '不再走 localhost')
+  assert.doesNotMatch(health, /wget/, '不再用 busybox wget 探测')
+  assert.match(health, /node", "-e"/, '用容器自带的 node 发请求')
+  assert.match(health, /\/api\/game-version/, '探测免鉴权接口，否则 401 也会判失败')
+  assert.match(health, /r\.ok\?0:1/, '200 才算健康，4xx/5xx 要判失败')
+
+  const dockerHealth = stripHash(dockerfile.slice(dockerfile.indexOf('HEALTHCHECK')))
+  assert.match(dockerHealth, /HEALTHCHECK/, '镜像级也要有健康检查')
+  assert.match(dockerHealth, /127\.0\.0\.1:3007/, '两边保持一致')
+  assert.match(dockerHealth, /r\.ok\?0:1/, '判定逻辑与 compose 一致')
+  assert.doesNotMatch(dockerHealth, /wget -q --spider/, '不再用 wget 探测')
 })
 
 test('部署脚本绝不触碰命名卷，日志清理只截断不删文件', () => {

@@ -112,7 +112,9 @@ VOLUME ["/app/core/data"]
 
 EXPOSE 3007
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD wget -q --spider http://localhost:3007/api/game-version || exit 1
+# 健康检查用 node 自带 fetch 打 127.0.0.1，不用 busybox wget：wget 解析 localhost
+# 时可能先试 ::1，而应用监听的是 IPv4，容器会一直挂 unhealthy（探测失败≠服务没起）。
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD node -e "fetch('http://127.0.0.1:3007/api/game-version',{signal:AbortSignal.timeout(5000)}).then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
 
 CMD ["node", "client.js"]

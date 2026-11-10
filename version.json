@@ -1,12 +1,20 @@
 {
   "major": 3,
-  "minor": 18,
+  "minor": 19,
   "patch": 0,
-  "build": 130,
-  "version": "3.18.0",
-  "updatedAt": "2026-11-10T23:26:30.052Z",
+  "build": 131,
+  "version": "3.19.0",
+  "updatedAt": "2026-11-10T23:45:16.575Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.19.0",
+      "build": 131,
+      "date": "2026-11-11",
+      "summary": "NAS 空间诊断新增磁盘对账与健康检查明细，探针不再依赖 wget",
+      "commit": "—",
+      "type": "minor"
+    },
     {
       "version": "3.18.0",
       "build": 130,

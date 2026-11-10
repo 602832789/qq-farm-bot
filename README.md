@@ -152,9 +152,11 @@ Build Cache     23        0         0B        0B
 
 - **构建缓存只占 193MB（约 0%）**，`docker buildx du` 才是它的真实值（`system df` 那一行只统计默认 builder）。
 - **镜像 4.965GB 全部 ACTIVE、可回收只有 8.4MB**：因为还有容器引用着它们，被引用的镜像不算 dangling，`docker image prune` 一条都删不掉。
-- **11 个容器全在跑**，而本项目只需要 1 个。多出来的是历史上换过 compose project 名 / 换过目录后留下的实例，它们各自占一份镜像和一层可写空间。
+- **11 个容器全在跑，但那是 10 个不同的服务 + 本项目 1 个**（青龙、alist、音乐、mysql……），不同服务各占一份镜像是正常的。
+- 判断冗余要看**同一个镜像被起了几个容器**，不是数容器总数。这台机器上没有一个镜像是重复的，所以并没有什么「重复实例」可清。
+- 折算下来，这 7.4GB 里属于本项目的只有约 330MB（`qq-farm-bot:latest` 327MB + 两个命名卷约 2.5MB）。
 
-所以「清了只掉 2G」的真因是**镜像被容器钉住**，不是清理命令写错了。先看容器，再谈镜像。
+所以「清了只掉 2G」的真因**不是清理命令写错了**：能清的本来就只有几百 MB，剩下的在 Docker 之外。拿 `--report` 末尾的「磁盘对账」把数字对上就一目了然。
 
 **以前踩过的坑**：`docker builder prune` 不带 `-a` 只删 dangling 缓存记录，每次重建产生的层都不算 dangling，等于几乎没删。现在脚本统一带 `-a` 并用 `--keep-storage` 设上限，但这一项只能回收 100–200MB 量级，别指望靠它解决大头。
 
@@ -170,7 +172,10 @@ bash scripts/nas-deploy.sh --prune-logs     # 额外截断应用日志卷里的�
 bash scripts/nas-deploy.sh --deep           # 空间告急：清空全部构建缓存 + 未使用镜像
 ```
 
-- `--report` 会列出**所有**镜像、容器、卷（不截断），并标出 `LINKS=0` 的残留卷，末尾给读法说明。它会提示「属于本项目的容器有几个」，多于 1 个就是要处理的信号。
+- `--report` 会列出**所有**镜像、容器、卷（不截断），标出 `LINKS=0` 的残留卷，并额外做两件事：
+  - **健康检查明细**：容器挂 `(unhealthy)` 时打印探针自己的退出码和输出。`docker ps` 只给结论，看不出是「服务没起来」还是「探针命令写错」。
+  - **磁盘对账**：用 `docker info` 取真实数据目录（NAS 常把 data-root 挪到数据盘，写死 `/var/lib/docker` 会 du 到空目录），给 `du` 实测占用、前 8 大子目录、所在文件系统的 `df`、文件系统类型；是 btrfs/zfs 就直接数快照数量。四行汇总和磁盘实测的差额，就是 prune 清不到的部分。
+- 冗余判断只看**同一个镜像起了多个容器**；不同服务各一个容器不算，不会误报。
 - `--prune-orphans` 只删**已停止**的本项目容器（名字以 `qq-farm` 开头、且不是 `qq-farm-bot`），删之前还会再确认一次没在运行。数据卷和残留卷只报告不删——里面可能装着早期账号数据，删错无法恢复。
 - 构建缓存上限默认 2048MB，`BUILD_CACHE_KEEP_MB=4096 bash scripts/nas-deploy.sh` 可换更大预算。
 - **回收在构建之前做**，所以盘快满时老缓存会先被削下去，构建不会因为 `no space left` 失败。
@@ -178,9 +183,10 @@ bash scripts/nas-deploy.sh --deep           # 空间告急：清空全部构建�
 **已经涨上去的空间，按这个顺序清**：
 
 ```bash
-# 1) 先看空间花在哪：先看 ACTIVE 数量，再看 SIZE
+# 1) 先看空间花在哪：先看 SIZE，再看每个容器用的是不是同一个镜像
 docker system df
-docker ps -a                            # 有几个容器？本项目应该只有 1 个 qq-farm-bot
+docker ps -a                            # 本项目应该只有 1 个 qq-farm-bot，别的服务不算冗余
+docker ps -a --format '{{.Image}}' | sort | uniq -d   # 有输出才是真的重复实例
 docker images                           # 哪些镜像被谁引用着
 docker system df -v                     # 卷的 LINKS 列，0 = 没人引用
 docker buildx du                        # 构建缓存真实值；有多个 builder 时用 docker buildx ls 看谁在占
@@ -209,7 +215,17 @@ docker exec qq-farm-bot sh -c 'for f in /app/core/data/logs/*.log; do : > "$f"; 
 docker system df
 ```
 
-> 清完 `docker system df` 四块加起来仍明显小于涨出来的量时，再查三件事：`du -sh /var/lib/docker` 与 `system df` 的差额（未统计的层/日志）、`docker buildx ls` 是否还有别的 builder（每个 builder 的缓存独立，`docker buildx prune --builder <名字> -a -f` 单独清）、以及 fnOS 自己的回收站 / 快照 —— 最后这部分不属于 Docker，prune 管不到。
+> 清完 `docker system df` 四块加起来仍明显小于涨出来的量时，`bash scripts/nas-deploy.sh --report` 末尾的「磁盘对账」会把差额直接算给你。还想手工核，按这个顺序看三处：
+>
+> ```bash
+> docker info --format '{{.DockerRootDir}}'    # 真实的 Docker 目录，别假设是 /var/lib/docker
+> du -sh "$(docker info --format '{{.DockerRootDir}}')"/* | sort -h | tail
+> docker buildx ls                            # 还有别的 builder 吗？每个缓存独立
+> stat -f -c %T /                              # 文件系统是 btrfs/zfs 吗
+> btrfs subvolume list -s /                    # 有快照就说明删掉的文件还被引用着
+> ```
+>
+> 快照 / NAS 回收站这部分**不属于 Docker，`prune` 永远清不到**，只能到 fnOS 控制面板去删快照或清回收站。
 
 > **⚠️ 以下操作会不可逆地删掉账号数据，不要执行**：`docker compose down -v`、`docker system prune --volumes`、`docker system prune -a --volumes`、`docker volume prune -f`、`rm -rf /var/lib/docker`。它们会删除「当前没有被容器引用」的命名卷；容器一旦处于停止状态，`qq-farm-data` 里的账号、Code、refreshtoken 就会一起消失。
 

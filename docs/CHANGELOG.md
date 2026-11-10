@@ -15,6 +15,7 @@
 
 | 版本 | 更新序号 | 日期 | 更新内容 | 提交 |
 | --- | --- | --- | --- | --- |
+| v3.19.0 | #131 | 2026-11-11 | NAS 空间诊断新增磁盘对账与健康检查明细，探针不再依赖 wget | — |
 | v3.18.0 | #130 | 2026-11-11 | `--report` 改为全量诊断并新增 `--prune-orphans`，纠正「构建缓存占大头」的误判 | — |
 | v3.17.9 | #129 | 2026-11-11 | 修复 NAS 反复构建后空间清不干净：`builder prune` 补上 `-a`，日志加体积上限 | — |
 | v3.17.8 | #128 | 2026-11-11 | 提交标题改为「版本号 · 第 N 次更新 · 更新内容」，原始说明下沉为正文 | — |
@@ -150,6 +151,34 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-11 · v3.19.0（#131） · NAS 空间诊断新增磁盘对账与健康检查明细，探针不再依赖 wget
+
+**现象**：NAS 反复重建后占用从 30G 涨到 37G，跑完清理只掉 2G（37G → 35G）。按上一版建议跑 `--report`，实测数据又推翻了一条结论。
+
+```
+TYPE            TOTAL     ACTIVE    SIZE      RECLAIMABLE
+Images          11        11        4.965GB   8.442MB (0%)
+Containers      11        11        915.3MB   0B (0%)
+Local Volumes   11        5         1.505GB   15.12MB (1%)
+Build Cache     23        0         0B        0B          # buildx du 实测 193MB
+```
+
+**上一版说错的地方**：`--report` 把「Containers ACTIVE=11」判成「有 10 个历史遗留的重复实例」。实际 `docker ps -a` 列出来是 **10 个不同的服务 + 本项目 1 个**（贴吧签到的 web/db、音乐下载与 sq 音乐三个、mysql、lucky、xiaoya-tvbox、qd、青龙），各自钉住一份镜像完全正常 —— 这台机器上**压根没有重复实例**。按容器个数猜冗余，会在多服务 NAS 上稳定误报。
+
+**真正的账**：这 7.4GB 里属于本项目的只有约 **330MB**（`qq-farm-bot:latest` 327MB + 两个命名卷约 2.5MB），`docker image prune` 本来也回收不出东西。所以「清了只掉 2G」不是清理命令写错了，是**能清的本来就只有几百 MB**，剩下的 5G 在 Docker 之外 —— 那部分 `prune` 永远碰不到，得先把它量出来。
+
+**改动**：
+
+- `--report` 新增 `show_disk_audit()`：数据目录从 `docker info --format '{{.DockerRootDir}}'` 取（NAS 常把 data-root 挪到数据盘，写死 `/var/lib/docker` 会 du 到空目录、得出「Docker 只占 0B」的错误结论），输出 `du` 实测占用、前 8 大子目录、所在文件系统的 `df`、文件系统类型；是 btrfs/zfs 就直接 `btrfs subvolume list -s` 数快照，并说明快照占的空间 `prune` 管不到。
+- `--report` 逐个体积列出容器的 `*-json.log`：`system df` 的 Containers 行不拆分日志，日志暴涨时看不出。
+- `--report` 新增 `show_health_detail()`：容器 `(unhealthy)` 时打印探针的历史退出码与输出。`docker ps` 只给结论，分不清「服务没起来」和「探针命令写错」。
+- `show_read_guide()` 的冗余判据从「容器数量 > 1」改成「同一个镜像起了多个容器」（`docker ps -a --format '{{.Image}}' | sort | uniq -d`），不再把多服务 NAS 的正常容器误报成冗余；「属于本项目的容器 > 1」这条仍然保留。
+- **修掉一直挂着的 `(unhealthy)`**：探针原来是 `wget -q --spider http://localhost:3007/...`，alpine 的 busybox wget 解析 `localhost` 时可能先试 `::1`，而应用只监听 IPv4 的 `0.0.0.0`，探测直接连接被拒 → 容器永久 unhealthy。改成容器自带的 node 发请求并显式指到 `127.0.0.1`，`r.ok` 才判健康（4xx/5xx 也算失败）；`start_period` 由 10s 放宽到 30s，避免 ARM 机器上冷启动被算成失败。`docker-compose.yml` 与 `core/Dockerfile` 两处保持一致。
+- `--help` 不再用 `sed -n '2,26p'` 写死行号，改成打印文件头注释直到 `set -eu`，改注释不会把用法说明截断。
+- `scripts/nas-deploy.sh` 头部说明与 `README.md` 空间维护章节按实测数据重写：**大盘里的大头首先是别人的服务**，其次才是镜像/可写层，构建缓存再次之，最后是对不到账的 Docker 之外部分。
+
+**验证**：core 528/528、web 197/197、`pnpm lint` 0、core `tsc`、`vue-tsc -b`、`vite build` 全过；`sh -n` / `bash -n` 语法通过；用模拟 `docker`（复刻用户真实 `system df` / `ps -a` / `inspect` 输出）实跑 `--report` 全流程，对账段、日志段、健康检查段均正常输出；健康探针一行命令单独实测：200 → exit 0，401 / 域名错误 / 端口关闭 → exit 1，无挂死。
+
 ### 2026-11-11 · v3.18.0（#130） · `--report` 改为全量诊断并新增 `--prune-orphans`，纠正「构建缓存占大头」的误判
 
 **现象**：按上一版建议跑 `--report`，实测数据推翻了上一版的结论 —— 真正占满空间的不是构建缓存。
