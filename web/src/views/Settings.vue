@@ -13,6 +13,7 @@ import BaseSwitch from '@/components/ui/BaseSwitch.vue'
 import { useAccountStore } from '@/stores/account'
 import { useSettingStore } from '@/stores/setting'
 import { useUserStore } from '@/stores/user'
+import { parseHourOfDay } from '@/utils/hour-of-day'
 
 const fertilizerLandTypeOptions = [
   { label: '蓝晶土地', value: 'blue-crystal' },
@@ -380,12 +381,22 @@ async function handleFeatureModuleSave() {
   const accountId = currentAccountId.value
   if (!accountId)
     return
+  // 邮箱时刻只收 0–23 的整点：输入框会保留非法草稿（清空后是空串），
+  // 后端 assertEmailClaimHour 对这份快照是硬校验，抛错会让整批设置一起不生效，
+  // 所以必须在本地拦住，别发出去。
+  const emailClaimHour = parseHourOfDay(localAutomationSettings.value.emailClaimHour)
+  if (emailClaimHour === null) {
+    showAlert('「自动邮箱领取」时间需填写 0–23 的整数（时），改好后请再点一次保存。', 'danger')
+    return
+  }
   automationSaving.value = true
   try {
     const payload: any = {
       ...JSON.parse(JSON.stringify(localStrategySettings.value)),
       ...JSON.parse(JSON.stringify(localAutomationSettings.value)),
     }
+    // 归一成数字再发；合法草稿可能是字符串 '10'。
+    payload.emailClaimHour = emailClaimHour
     if (payload.automation?.fertilizer_land_types) {
       payload.automation.fertilizer_land_types = normalizeFertilizerLandTypes(payload.automation.fertilizer_land_types)
     }

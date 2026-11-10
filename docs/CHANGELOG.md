@@ -133,6 +133,14 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-10 · 邮箱时刻输入非法不再拖垮整份设置保存 · 两份 hour-of-day 加一致性测试
+
+- **问题**：`HourInput` 故意保留非法草稿（把输入框清空后模型里是空串 `''`，填 `25` 就是 `'25'`），而后端 `applyConfigSnapshot` / `setAccountConfigSnapshot` 对 `emailClaimHour` 是硬校验 —— `assertEmailClaimHour` 直接抛 `INVALID_CONFIG`，`/api/settings/save` 整份请求失败。也就是说用户在「日常与活动」里手滑清空这个框，同一批改的开关、延迟、策略全部一起白改，报错信息还只显示后端的 400 文案，指不到具体字段。
+- **修复一（主）**：`web/src/views/Settings.vue` 的 `handleFeatureModuleSave` 在发出请求前用 `parseHourOfDay` 校验一次。非法就 `showAlert('「自动邮箱领取」时间需填写 0–23 的整数（时），改好后请再点一次保存。', 'danger')` 并直接中止，一个字节都不发；合法草稿（比如字符串 `'10'`）归一成数字写回 `payload.emailClaimHour` 再发，避免把 `'10'` 这种形态传给后端。
+- **修复二（兜底）**：`web/src/stores/setting.ts` 的 `saveSettings` 在按白名单构造 payload 后同样校验一次：非法值就地 `delete`，其它字段照常保存；如果整份 payload 只剩这一个非法字段，直接返回「自动邮箱领取时间需为 0–23 的整数（时）」而不打接口。这样以后新增的保存入口即使漏了校验，最差也只是丢掉这一个字段，不会让整批设置一起失败。
+- **修复三（一致性）**：`hour-of-day` 在 core 与 web 各有一份 `parseHourOfDay`，改一边忘另一边就会出现「前端标红拒绝、后端却收下」。新增 `core/tests/hour-of-day-parity.test.js` 4 项：43 个输入（0–23、前导零、越界、小数、空格/中文后缀/科学计数等脏字符串、`null`/`undefined`/`[]`/`{}`/`NaN`/`Infinity`）两份实现判定必须完全一致；接受集合逐条钉死（午夜 `0` 不能被当成假值丢掉）；两份源码去掉空白与分号后的函数骨架必须相同（防止某一边悄悄长出新分支）；`assertEmailClaimHour` 只在 core 存在、非法值抛 `INVALID_CONFIG` 且提示里带 `0–23`。
+- **防回归**：`web/tests/email-settings.test.mjs` +2 —— 空串场景下 `{ emailClaimHour: '', intervals: {...} }` 只丢掉前者、其它字段照发；`'10'` 按数字 `10` 发出；只带 `25` 时不发请求并返回可读错误。另一项静态断言 `Settings.vue` 的校验确实排在 `settingStore.saveSettings(...)` 之前。
+- **验证**：core **500/500**（+4）、web **175/175**（+2），改动文件 ESLint、`vue-tsc -b`、`vite build`（32.20s）全过。
 ### 2026-11-10 · v3.15.2（#112） · 修复好友 tick 与自动化锁互相等死导致整机自动化停摆
 
 - **现象**：v3.15.0 同步上游后，登录十几秒内好友 tick 第一次跑起来就再也不返回。`friendTaskRunning` 一直是 true，`automation-lock` 的全局队列被那条永远不结算的任务占住，紧接着 `farm_tick` 也排不进来 —— 表现是「农场不收、好友不帮、偷菜不动」，只有重启容器才恢复。
