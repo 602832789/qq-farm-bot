@@ -13,6 +13,45 @@ try {
 const DIAGNOSTIC_CODE_KEY_RE = /^(?:disconnect|close|error|http|status|exit|reason)Code$/i;
 const SENSITIVE_KEY_RE = /code|token|password|passwd|auth|ticket|cookie|session/i;
 
+// 日志体积上限：logs 是命名卷，运行期只追加不清理会一直涨。
+// 用「定时检查 + 截断」而不是 winston 的 maxsize 轮转 —— 后者在 winston 3.19 +
+// Node 20 上实测会写出 0 字节空文件（maxsize / maxsize+maxFiles / maxsize+tailable
+// 三种组合都一样），等于静默丢日志。截断时文件句柄依然有效，winston 可继续追加。
+const LOG_FILE_NAMES = ['combined.log', 'error.log'];
+const LOG_TRIM_INTERVAL_MS = 5 * 60 * 1000;
+let logTrimTimer: any = null;
+
+function parsePositiveInt(raw: any, fallback: number): number {
+    const value = Number(raw);
+    return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+}
+
+/** 超过上限的文件截断为 0 字节，返回被截断的文件名。 */
+function trimLogsIfOversize(logDir: string, maxBytes: number): string[] {
+    const trimmed: string[] = [];
+    for (const name of LOG_FILE_NAMES) {
+        const file = path.join(logDir, name);
+        try {
+            if (fs.statSync(file).size > maxBytes) {
+                fs.truncateSync(file, 0);
+                trimmed.push(name);
+            }
+        } catch {
+            // 文件还没创建时 stat 会抛 ENOENT，忽略即可
+        }
+    }
+    return trimmed;
+}
+
+function startLogSizeGuard(logDir: string, maxBytes: number): void {
+    if (logTrimTimer || !(maxBytes > 0)) return;
+    logTrimTimer = setInterval(() => {
+        trimLogsIfOversize(logDir, maxBytes);
+    }, LOG_TRIM_INTERVAL_MS);
+    // 不让这个定时器拖住进程退出（测试/CLI 场景很重要）
+    if (typeof logTrimTimer.unref === 'function') logTrimTimer.unref();
+}
+
 function redactString(input: any): string {
     let text = String(input || '');
     text = text.replace(/([?&](?:code|token|ticket|password)=)[^&\s]+/gi, '$1[REDACTED]');
@@ -115,6 +154,14 @@ function getRootLogger(): any {
     const level = String(process.env.LOG_LEVEL || 'info').toLowerCase();
     const { combine, timestamp, errors, json, colorize, printf } = winston.format;
 
+    // 日志体积上限：logs 是命名卷，不设上限会一直涨（NAS 上 docker system df 把它
+    // 算进 VOLUME，很容易被误当成「构建缓存没清干净」）。
+    // 这里刻意不用 winston 自带的 maxsize 轮转：实测 winston 3.19 在 Node 20 下，
+    // maxsize / maxsize+maxFiles / maxsize+tailable 三种组合写出来全是 0 字节空文件，
+    // 一旦启用等于把日志静默丢掉。改成定时检查 + 截断，见 startLogSizeGuard。
+    const maxSizeMb = parsePositiveInt(process.env.LOG_MAX_SIZE_MB, 100);
+    startLogSizeGuard(logDir, maxSizeMb * 1024 * 1024);
+
     rootLogger = winston.createLogger({
         level,
         defaultMeta: { app: 'qq-farm-bot' },
@@ -180,4 +227,6 @@ module.exports = {
     createModuleLogger,
     sanitizeMeta,
     redactString,
+    trimLogsIfOversize,
+    parsePositiveInt,
 };

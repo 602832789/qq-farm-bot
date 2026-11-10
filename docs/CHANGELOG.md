@@ -15,6 +15,7 @@
 
 | 版本 | 更新序号 | 日期 | 更新内容 | 提交 |
 | --- | --- | --- | --- | --- |
+| v3.17.9 | #129 | 2026-11-11 | 修复 NAS 反复构建后空间清不干净：`builder prune` 补上 `-a`，日志加体积上限 | — |
 | v3.17.8 | #128 | 2026-11-11 | 提交标题改为「版本号 · 第 N 次更新 · 更新内容」，原始说明下沉为正文 | — |
 | v3.17.7 | #127 | 2026-11-11 | 修正钩子文件可执行位，Linux/macOS 上版本递增才会真正执行 | — |
 | v3.17.6 | #126 | 2026-11-11 | 版本号与更新内容合并为同一条提交，不再单独产生 chore(version) 记录 | — |
@@ -148,6 +149,25 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-11 · v3.17.9（#129） · 修复 NAS 反复构建后空间清不干净：`builder prune` 补上 `-a`，日志加体积上限
+
+**现象**：NAS 上反复 `docker compose up -d --build`，占用一路上涨；跑旧清理脚本只能回收 2G（37G → 35G），远高于安装前的 30G。
+
+**根因**：`docker builder prune` **不带 `-a` 时只删 dangling 缓存记录**，而每次重建产生的层缓存都不算 dangling —— 等于几乎没删。本项目 `version.json` 每次提交都变，会连带让 `COPY version.json → COPY web → pnpm -C web build` 重新执行，每部署一次新增 100–200MB 缓存（本地实测构建上下文 122MB，其中 `core` 44MB、`web/public` 36MB），攒起来正好是那 5G。
+
+**修复**：
+- `scripts/nas-deploy.sh` 全面重写清理段：
+  - `docker builder prune -a -f --keep-storage <bytes>`：带 `-a` 才真删，用容量上限（默认 2048MB，`BUILD_CACHE_KEEP_MB` 可调）按「最久未使用」顺序削到上限内，避免清一次干净、下次又涨回来。老引擎不认这些开关时逐级降级到 `buildx prune --max-used-space` 再到纯 `-a`。
+  - **回收改到构建之前**：老缓存先削下去，盘快满时构建不会因 `no space left` 失败。
+  - 新增 `--report`（只读诊断，不改任何东西）、`--deep`（清空全部构建缓存 + 未使用镜像）、`--prune-logs`（改为截断 `*.log` 全部文件，不再只认两个固定文件名）。
+  - 增加 `docker buildx du` 与卷占用明细输出，直接看出空间花在哪。
+- `core/src/services/logger.ts`：`logs` 是命名卷，`combined.log` 只追加不清理会一直涨（本地已到 4.8MB）。新增 `startLogSizeGuard()`，默认 100MB（`LOG_MAX_SIZE_MB` 可调）每 5 分钟检查一次并截断超限文件，定时器 `unref()` 不拖住进程退出。
+  - **刻意不用 winston 自带的 `maxsize` 轮转**：实测 winston 3.19 + Node 20 下，`maxsize` / `maxsize+maxFiles` / `maxsize+tailable` 三种组合落盘全是 0 字节空文件，启用等于静默丢日志。`core/tests/log-rotation.test.js` 用 `doesNotMatch` 把这条锁死。
+- `README.md`：改写空间维护章节，纠正「`docker builder prune -f` 是清空全部缓存」这个错误说法，补 `docker buildx ls` / `docker buildx du` 诊断与备份步骤。
+- `web/tests/nas-deploy.test.mjs`：新增「必须带 `-a`」「不得退回不带 `-a`」「`--report` / `--deep` 开关」等回归断言。
+
+**验证**：core 528/528、web 191/191 通过，`pnpm lint` 0 warning，core `tsc --noEmit` 通过；`sh -n` 语法检查通过，`--report` 在无 Docker 环境下优雅降级。实机验证 winston 落盘正常（改造后日志仍能写入并读到内容）。
+
 ### 2026-11-11 · v3.17.8（#128） · 提交标题改为「版本号 · 第 N 次更新 · 更新内容」，原始说明下沉为正文
 
 **需求**：GitHub 上的提交标题要前面是版本号和更新次数、后面是更新内容，例如「v3.17.7 · 第 127 次更新 · 修正钩子文件可执行位…」。

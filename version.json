@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 17,
-  "patch": 8,
-  "build": 128,
-  "version": "3.17.8",
-  "updatedAt": "2026-11-10T22:44:19.094Z",
+  "patch": 9,
+  "build": 129,
+  "version": "3.17.9",
+  "updatedAt": "2026-11-10T23:10:19.996Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.17.9",
+      "build": 129,
+      "date": "2026-11-11",
+      "summary": "修复 NAS 反复构建后空间清不干净：`builder prune` 补上 `-a`，日志加体积上限",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.17.8",
       "build": 128,
