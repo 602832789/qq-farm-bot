@@ -42,7 +42,12 @@ fi
 
 [ -f scripts/version.mjs ] || exit 0
 
-FARM_VERSION_BUMP_RUNNING=1 node scripts/version.mjs bump --auto-stage || {
+# 标记位：告诉随后的 commit-msg 钩子「本次提交刚递增过版本，可以改写标题」。
+marker="$(git rev-parse --git-path FARM_VERSION_PENDING)"
+
+if FARM_VERSION_BUMP_RUNNING=1 node scripts/version.mjs bump --auto-stage; then
+  touch "$marker"
+else
   echo "[version] 版本号自动递增失败，可手动执行 pnpm version:bump 后重试提交" >&2
-  exit 0
-}
+fi
+exit 0

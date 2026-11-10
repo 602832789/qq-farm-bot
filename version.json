@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 17,
-  "patch": 7,
-  "build": 127,
-  "version": "3.17.7",
-  "updatedAt": "2026-11-10T22:39:17.951Z",
+  "patch": 8,
+  "build": 128,
+  "version": "3.17.8",
+  "updatedAt": "2026-11-10T22:44:19.094Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.17.8",
+      "build": 128,
+      "date": "2026-11-11",
+      "summary": "提交标题改为「版本号 · 第 N 次更新 · 更新内容」，原始说明下沉为正文",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.17.7",
       "build": 127,

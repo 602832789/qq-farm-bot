@@ -50,6 +50,7 @@ export const VERSION_RULES_NOTE = [
     '> **全量重排**：全部历史记录已按时间正序重新编号，以 `v3.0.0 · 第 1 次更新` 为起点；此前 `v2.x` / `v2.9.x` 等旧版本序列的对应关系已作废，一律以本表为准。详细记录正文里提到的旧版本号属于当时的叙述，同样已作废。',
     '> **更新序号**：累计更新次数，每次提交无条件 +1（遇到含 `4` 的序号自动跳过）；所有详细记录都带版本号与更新序号。',
     '> 版本号由 `version.json` 统一维护，可用 `pnpm version:bump` 手动递增，安装 `pnpm hooks:install` 后每次提交自动递增。**版本号与更新内容合并进同一次提交**，不再单独产生 `chore(version)` 提交；因此「提交」列显示 `—` 即代表这次提交自身（早期分批提交的历史记录同样是 `—`）。',
+    '> **提交标题格式**：`vX.Y.Z · 第 N 次更新 · 更新内容`，由 `commit-msg` 钩子自动改写，原始提交说明下沉为正文首行。',
 ].join('\n');
 
 /** 全量重排的初始版本：历史最早一条记录固定为 v3.0.0 · 第 1 次更新。 */
@@ -207,6 +208,34 @@ export function summarizeTitle(title) {
         .replace(/v\d+\.\d+\.\d+（#\d+）\s*·\s*/, '')
         .replace(/v\d+\.\d+\.\d+\s*·\s*/, '')
         .trim();
+}
+
+/** 提交标题是否已经是「版本号 · 第 N 次更新 · 内容」格式。 */
+export function hasVersionPrefixLine(line) {
+    return /^v\d+\.\d+\.\d+ · 第 \d+ 次更新/.test(String(line || '').trim());
+}
+
+/**
+ * 把提交说明改写成「vX.Y.Z · 第 N 次更新 · 更新内容」，原始说明下沉为正文。
+ * 幂等：已经带版本前缀时原样返回，避免 amend 反复叠加。
+ */
+export function rewriteCommitMessage(raw, meta = {}) {
+    const source = String(raw ?? '');
+    const label = versionLabel(meta);
+    const summary = String(meta?.history?.[0]?.summary || '').trim();
+    const head = summary ? `${label} · ${summary}` : label;
+
+    const lines = source.split('\n');
+    let idx = 0;
+    while (idx < lines.length && !lines[idx].trim()) idx++;
+    const first = (lines[idx] || '').trim();
+    if (hasVersionPrefixLine(first)) return source;
+
+    const body = lines.slice(idx + 1).join('\n').replace(/^\n+/, '');
+    // 原提交说明（如 `feat(web): ...`）保留为正文首段，不丢信息
+    const kept = first && first !== head ? `${head}\n\n${first}` : head;
+    const rest = body.trim() ? `\n\n${body.trimEnd()}` : '';
+    return `${kept}${rest}\n`;
 }
 
 /** 给「详细记录」里最新一条未带版本号的标题打上本次版本标记。 */
@@ -391,12 +420,25 @@ function parseArgs(argv) {
         else if (arg === '--from-commit') opts.fromCommit = true;
         else positional.push(arg);
     }
-    return { command: positional[0] || 'show', opts };
+    return { command: positional[0] || 'show', opts, positional };
 }
 
 function main() {
-    const { command, opts } = parseArgs(process.argv.slice(2));
+    const { command, opts, positional } = parseArgs(process.argv.slice(2));
     const root = resolve(opts.root || DEFAULT_ROOT);
+    if (command === 'rewrite-commit-msg') {
+        // 供 commit-msg 钩子调用：把提交标题改写成「版本号 · 第 N 次更新 · 内容」。
+        const file = positional[1] ? resolve(opts.root || '', positional[1]) : '';
+        const meta = readJson(join(root, 'version.json'), null);
+        if (!file || !meta || !existsSync(file)) return;
+        const raw = readFileSync(file, 'utf8');
+        const next = rewriteCommitMessage(raw, meta);
+        if (next !== raw) {
+            writeFileSync(file, next, 'utf8');
+            process.stdout.write(`${versionLabel(meta)} · ${meta?.history?.[0]?.summary || ''}\n`);
+        }
+        return;
+    }
     if (command === 'show') {
         const meta = readJson(join(root, 'version.json'), DEFAULT_META);
         process.stdout.write(`${versionLabel(meta)}\n`);

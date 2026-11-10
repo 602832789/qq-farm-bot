@@ -4,6 +4,11 @@
 # 启用方式：pnpm hooks:install  （git config core.hooksPath .githooks）
 
 msg=$(git log -1 --pretty=%s)
+
+# 清理 pre-commit 留下的标记（正常流程 commit-msg 已删，这里兜底）
+marker="$(git rev-parse --git-path FARM_VERSION_PENDING)"
+[ -f "$marker" ] && rm -f "$marker"
+
 case "$msg" in
   "chore(version)"*) exit 0 ;;
 esac

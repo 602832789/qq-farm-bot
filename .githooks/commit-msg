@@ -1,0 +1,23 @@
+#!/bin/sh
+# 把本次提交的标题改写成「vX.Y.Z · 第 N 次更新 · 更新内容」。
+# 版本号由前一步 pre-commit 算好并写入 version.json，这里只改提交说明文本。
+# 仅在 pre-commit 打过标记时执行（merge / amend / 手动 bump 等场景不动消息）。
+# 启用方式：pnpm hooks:install  （git config core.hooksPath .githooks）
+
+set -u
+
+msg_file="${1:-}"
+[ -n "$msg_file" ] && [ -f "$msg_file" ] || exit 0
+
+marker="$(git rev-parse --git-path FARM_VERSION_PENDING)"
+[ -f "$marker" ] || exit 0
+
+[ -f scripts/version.mjs ] || exit 0
+
+# 改写失败不阻断提交，只提示
+node scripts/version.mjs rewrite-commit-msg "$msg_file" || {
+  echo "[version] 提交标题改写失败，本次沿用原始说明" >&2
+}
+
+rm -f "$marker"
+exit 0

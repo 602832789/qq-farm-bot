@@ -15,11 +15,13 @@ import {
   classifyUpdate,
   containsSkippedDigit,
   DEFAULT_ROOT,
+  hasVersionPrefixLine,
   markLatestChangelogTitle,
   nextAllowedNumber,
   readCommitSubject,
   renderVersionSection,
   renderWebVersionMeta,
+  rewriteCommitMessage,
   SKIPPED_DIGIT,
   summarizeTitle,
   upsertVersionSection,
@@ -364,6 +366,7 @@ test('版本号真源、构建注入与界面显示接线完整', () => {
   assert.match(hook, /git diff --cached --quiet/, '空提交不递增')
   assert.match(hook, /MERGE_HEAD/, '合并提交不递增')
   assert.match(hook, /GIT_REFLOG_ACTION/, 'amend 提交不递增')
+  assert.match(hook, /FARM_VERSION_PENDING/, '递增成功后打标记，交给 commit-msg 改写标题')
   assert.doesNotMatch(hook, /--auto-commit/, '不得再单独产生版本提交')
   assert.equal(
     existsSync(join(ROOT, '.githooks/prepare-commit-msg')),
@@ -371,10 +374,17 @@ test('版本号真源、构建注入与界面显示接线完整', () => {
     '该阶段 git add 进不了本次提交，不能用来合并版本号',
   )
 
+  // 提交标题改成「vX.Y.Z · 第 N 次更新 · 更新内容」
+  assert.ok(existsSync(join(ROOT, '.githooks/commit-msg')))
+  const commitMsgHook = read('.githooks/commit-msg')
+  assert.match(commitMsgHook, /rewrite-commit-msg/)
+  assert.match(commitMsgHook, /FARM_VERSION_PENDING/, '只改本次刚递增过版本的提交')
+
   assert.ok(existsSync(join(ROOT, '.githooks/post-commit')))
   const fallback = read('.githooks/post-commit')
   assert.match(fallback, /chore\(version\)/)
   assert.match(fallback, /version\.json/)
+  assert.match(fallback, /FARM_VERSION_PENDING/, '兜底清理标记位')
   assert.doesNotMatch(fallback, /--auto-commit/, '兜底钩子不得自动提交第二条')
   assert.match(fallback, /pre-commit/, '兜底钩子说明版本号已合并进本次提交')
 
@@ -382,6 +392,34 @@ test('版本号真源、构建注入与界面显示接线完整', () => {
   assert.match(changelog, /## 版本总览/)
   assert.match(changelog, new RegExp(`\\| v${meta.version.replace(/\./g, '\\.')} \\| #${meta.build} \\|`))
   assert.match(changelog, new RegExp(`^### \\d{4}-\\d{2}-\\d{2} · v${meta.version.replace(/\./g, '\\.')}（#${meta.build}） · `, 'm'))
+})
+
+test('提交标题改写为「版本号 · 第 N 次更新 · 更新内容」且可重复执行', () => {
+  const meta = { version: '3.17.7', build: 127, history: [{ summary: '修正钩子文件可执行位' }] }
+  const head = 'v3.17.7 · 第 127 次更新 · 修正钩子文件可执行位'
+
+  // 单行说明：原说明下沉为正文
+  const single = rewriteCommitMessage('fix(githooks): 钩子补可执行位\n', meta)
+  assert.equal(single.split('\n')[0], head)
+  assert.match(single, /fix\(githooks\): 钩子补可执行位/)
+
+  // 带正文：正文完整保留
+  const withBody = rewriteCommitMessage('feat(web): 新增徽章\n\n第一段说明\n第二段说明\n', meta)
+  assert.equal(withBody.split('\n')[0], head)
+  assert.match(withBody, /第一段说明/)
+  assert.match(withBody, /第二段说明/)
+
+  // 幂等：amend 反复调用不能叠加前缀
+  assert.equal(rewriteCommitMessage(single, meta), single)
+  assert.equal(rewriteCommitMessage(withBody, meta), withBody)
+
+  // 空说明只有标题，不产生悬空空行
+  const empty = rewriteCommitMessage('\n\n', meta)
+  assert.equal(empty, `${head}\n`)
+
+  assert.equal(hasVersionPrefixLine(head), true)
+  assert.equal(hasVersionPrefixLine('fix(x): y'), false)
+  assert.equal(hasVersionPrefixLine('v3.17.7 · 修了点东西'), false, '缺「第 N 次更新」不算已改写')
 })
 
 test('版本号并入本次提交：摘要取提交说明首行，提交号写占位 —', () => {
