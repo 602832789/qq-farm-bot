@@ -1,12 +1,20 @@
 {
   "major": 3,
-  "minor": 13,
+  "minor": 15,
   "patch": 0,
-  "build": 109,
-  "version": "3.13.0",
-  "updatedAt": "2026-11-10T00:12:42.899Z",
-  "lastCommit": "8363558f",
+  "build": 110,
+  "version": "3.15.0",
+  "updatedAt": "2026-11-10T00:36:50.801Z",
+  "lastCommit": "158473a2",
   "history": [
+    {
+      "version": "3.15.0",
+      "build": 110,
+      "date": "2026-11-10",
+      "summary": "feat(core/web): 同步上游 20261109 更新（PR #122-#124），采纳邮件定时检查、种植延迟生效与图片懒加载",
+      "commit": "158473a2",
+      "type": "minor"
+    },
     {
       "version": "3.13.0",
       "build": 109,
