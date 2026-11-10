@@ -28,12 +28,24 @@ const {
     isGatewayIdleForLowPriority,
 } = require('./low-priority-gate');
 const {
-    describeRequestClassMarker,
+    describeRequestClassLabel,
     isClassQueueFull,
     maxQueuedForClass,
     resolveRequestClass,
     selectDispatchIndex,
 } = require('./request-priority');
+const {
+    EMPTY_LIST_TEXT,
+    describeBudgetReasonZh,
+    describeFlowModeZh,
+    formatDurationZh,
+    formatGatewayCounts,
+    formatInflightSegment,
+    formatPendingItem,
+    formatQueuedItem,
+    formatRequestPressureZh,
+    joinListZh,
+} = require('./net-diagnosis-text');
 const { getAmbientRequestClass } = require('./request-context');
 const { isInActivityRound, readActivityRound } = require('./activity-round');
 const { startAceRuntime, stopAceRuntime, getAceDiagnostics } = require('../services/ace');
@@ -270,7 +282,7 @@ function drainRequestQueue(): void {
         if (!request) break;
 
         if (!isCurrentConnection(request.context) || request.context.phase !== 'online') {
-            settleQueuedRequest(request, new Error(`连接未打开: ${request.methodName}`));
+            settleQueuedRequest(request, new Error(`连接未打开：${request.methodName}`));
             continue;
         }
 
@@ -298,7 +310,7 @@ function drainRequestQueue(): void {
                 return;
             }
             pendingCallbacks.delete(seq);
-            settleQueuedRequest(request, new Error(`发送失败: ${request.methodName}`));
+            settleQueuedRequest(request, new Error(`发送失败：${request.methodName}`));
             drainRequestQueue();
         }).catch((error: any) => {
             pendingCallbacks.delete(seq);
@@ -328,24 +340,22 @@ function rejectAllPendingRequests(reason = '请求被中断'): number {
 }
 
 function describePendingRequests(): string {
-    if (pendingCallbacks.size === 0) return 'none';
+    if (pendingCallbacks.size === 0) return EMPTY_LIST_TEXT;
     const now = performance.now();
-    return Array.from(pendingCallbacks.entries())
+    return joinListZh(Array.from(pendingCallbacks.entries())
         .slice(0, MAX_DESCRIBED_PENDING_REQUESTS)
-        .map(([seq, pending]) => {
-            const method = pending.methodName || 'unknown';
-            const ageMs = pending.startedMono !== undefined ? Math.max(0, now - pending.startedMono) : 0;
-            return `${method}#${seq}:${ageMs}ms`;
-        })
-        .join(',');
+        .map(([seq, pending]) => formatPendingItem(
+            pending.methodName,
+            seq,
+            pending.startedMono === undefined ? 0 : Math.max(0, now - pending.startedMono),
+        )));
 }
 
 function describeQueuedRequests(): string {
-    if (requestQueue.length === 0) return 'none';
-    return requestQueue
+    if (requestQueue.length === 0) return EMPTY_LIST_TEXT;
+    return joinListZh(requestQueue
         .slice(0, 8)
-        .map(request => `${describeRequestClassMarker(request)}${request.methodName || 'unknown'}`)
-        .join(',');
+        .map(request => formatQueuedItem(request.methodName, describeRequestClassLabel(request))));
 }
 
 /** 画像日志里只保留 `PlantService.AllLands` 这种短名，避免整行被包名占满。 */
@@ -359,7 +369,12 @@ function logRequestPressure(): void {
     const now = performance.now();
     if (!shouldLogRequestPressure(requestQueue, now, lastRequestPressureLogAt)) return;
     lastRequestPressureLogAt = now;
-    logWarn('系统', `Gateway 请求压力: pending=${pendingCallbacks.size}, queued=${requestQueue.length}, active=${describePendingRequests()}, queuedMethods=${describeQueuedRequests()}`);
+    logWarn('系统', formatRequestPressureZh({
+        pending: pendingCallbacks.size,
+        queued: requestQueue.length,
+        active: describePendingRequests(),
+        queuedMethods: describeQueuedRequests(),
+    }));
 }
 
 // ============ 用户状态 (登录后设置) ============
@@ -447,7 +462,7 @@ async function sendMsg(
     if (!isCurrentConnection(context) || context.socket.readyState !== WebSocket.OPEN) {
         if (pending) {
             pendingCallbacks.delete(seq);
-            pending.callback(new Error(`连接未打开: ${methodName}`));
+            pending.callback(new Error(`连接未打开：${methodName}`));
         }
         return false;
     }
@@ -504,11 +519,11 @@ function sendMsgAsync(serviceName: string, methodName: string, bodyBytes: Buffer
         return new Promise((resolve, reject) => {
         const context = currentConnection;
         if (!context || !isCurrentConnection(context) || context.socket.readyState !== WebSocket.OPEN) {
-            reject(new Error(`连接未打开: ${methodName}`));
+            reject(new Error(`连接未打开：${methodName}`));
             return;
         }
         if (context.phase !== 'online') {
-            reject(new Error(`账号尚未登录: ${methodName}`));
+            reject(new Error(`账号尚未登录：${methodName}`));
             return;
         }
 
@@ -528,18 +543,18 @@ function sendMsgAsync(serviceName: string, methodName: string, bodyBytes: Buffer
                 lastBudgetLogAt = nowMono;
                 const stats = getGovernorStats();
                 const top = Array.isArray(stats.topMethods) && stats.topMethods.length > 0
-                    ? `, 大头: ${stats.topMethods.slice(0, 3).map((item: any) => `${shortMethod(item.method)}×${item.count}`).join(' ')}`
+                    ? `，大头：${stats.topMethods.slice(0, 3).map((item: any) => `${shortMethod(item.method)}×${item.count}`).join(' ')}`
                     : '';
                 logWarn(
                     '系统',
-                    `自动任务请求已达流量上限，本轮让路: ${methodName} (${budget.reason}, `
-                    + `模式=${budget.mode}, 60s 自动请求 ${stats.sentInWindow}/${stats.totalLimit}, `
-                    + `累计让路 ${stats.droppedTotal}${top})`,
+                    `自动任务请求已达流量上限，本轮让路：${methodName}（原因=${describeBudgetReasonZh(budget.reason)}，`
+                    + `模式=${describeFlowModeZh(budget.mode)}，60 秒内已发 ${stats.sentInWindow}/${stats.totalLimit}，`
+                    + `累计让路 ${stats.droppedTotal}${top}）`,
                 );
             }
             reject(new GatewayBusyError(
-                `自动任务请求已达流量上限，已让路: ${methodName} (reason=${budget.reason}, `
-                + `mode=${budget.mode}, retryAfterMs=${Math.round(budget.retryAfterMs)})`,
+                `自动任务请求已达流量上限，已让路：${methodName}（原因=${describeBudgetReasonZh(budget.reason)}，`
+                + `模式=${describeFlowModeZh(budget.mode)}，${formatDurationZh(budget.retryAfterMs)}后可重试）`,
                 budget.retryAfterMs,
             ));
             return;
@@ -548,8 +563,9 @@ function sendMsgAsync(serviceName: string, methodName: string, bodyBytes: Buffer
         // 每个班次有独立的排队配额：后台任务把自己的配额排满，也不会占掉前台/心跳的名额。
         if (isClassQueueFull(requestQueue, requestClass)) {
             reject(new Error(
-                `请求等待队列已满: ${methodName} (class=${requestClass}, limit=${maxQueuedForClass(requestClass)}, `
-                + `queued=${requestQueue.length}, pending=${pendingCallbacks.size})`,
+                `请求等待队列已满：${methodName}（班次=${describeRequestClassLabel({ requestClass, criticalLane })}，`
+                + `上限=${maxQueuedForClass(requestClass)} 个，`
+                + `${formatGatewayCounts(pendingCallbacks.size, requestQueue.length)}）`,
             ));
             return;
         }
@@ -578,7 +594,12 @@ function sendMsgAsync(serviceName: string, methodName: string, bodyBytes: Buffer
             const index = requestQueue.indexOf(request);
             if (index >= 0) requestQueue.splice(index, 1);
             const stage = request.seq === null ? 'queued' : 'pending';
-            settleQueuedRequest(request, new Error(`请求超时: ${methodName} (stage=${stage}, pending=${pendingCallbacks.size}, queued=${requestQueue.length}, active=${describePendingRequests()})`));
+            const stageText = stage === 'queued' ? '尚未排到连接' : '已发往网关但未回包';
+            settleQueuedRequest(request, new Error(
+                `请求超时：${methodName}（${stageText}；`
+                + `${formatGatewayCounts(pendingCallbacks.size, requestQueue.length)}`
+                + `${formatInflightSegment(describePendingRequests(), pendingCallbacks.size)}）`,
+            ));
             drainRequestQueue();
         });
         if (requestClass === 'background') {
@@ -590,8 +611,9 @@ function sendMsgAsync(serviceName: string, methodName: string, bodyBytes: Buffer
                 const index = requestQueue.indexOf(request);
                 if (index >= 0) requestQueue.splice(index, 1);
                 settleQueuedRequest(request, new GatewayBusyError(
-                    `网关繁忙，后台请求已让路: ${methodName} (waited=${queueWaitMs}ms, `
-                    + `pending=${pendingCallbacks.size}, queued=${requestQueue.length}, active=${describePendingRequests()})`,
+                    `网关繁忙，后台请求已让路：${methodName}（已等待 ${formatDurationZh(queueWaitMs)}；`
+                    + `${formatGatewayCounts(pendingCallbacks.size, requestQueue.length)}`
+                    + `${formatInflightSegment(describePendingRequests(), pendingCallbacks.size)}）`,
                     Math.min(5000, LOW_PRIORITY_QUEUE_WAIT_MS),
                 ));
             });
@@ -1149,7 +1171,7 @@ function startHeartbeat(context: ConnectionContext): void {
 
             // 第一次漏拍先快速补发：抖动通常补一次就好，补发成功则一切归零。
             if (heartbeatMissCount === 1 && !isRetry) {
-                logWarn('心跳', `心跳未响应，${Math.round(HEARTBEAT_RETRY_DELAY / 1000)}s 后补发一次`);
+                logWarn('心跳', `心跳未响应，${Math.round(HEARTBEAT_RETRY_DELAY / 1000)} 秒后补发一次`);
                 networkScheduler.setTimeoutTask('heartbeat_retry', HEARTBEAT_RETRY_DELAY, () => { void beat(true); });
                 return;
             }
@@ -1159,17 +1181,19 @@ function startHeartbeat(context: ConnectionContext): void {
             const heartbeatSilenceMs = Math.max(0, now - lastHeartbeatMono);
             logWarn(
                 '心跳',
-                `心跳未响应 (miss=${heartbeatMissCount}/${MAX_HEARTBEAT_MISSES}, `
-                + `heartbeat=${Math.round(heartbeatSilenceMs / 1000)}s, inbound=${Math.round(inboundSilenceMs / 1000)}s, `
-                + `pending=${pendingCallbacks.size}, queued=${requestQueue.length}, active=${describePendingRequests()})`,
+                `心跳未响应（漏拍 ${heartbeatMissCount}/${MAX_HEARTBEAT_MISSES}，`
+                + `距上次心跳 ${Math.round(heartbeatSilenceMs / 1000)} 秒，`
+                + `连接无入站数据 ${Math.round(inboundSilenceMs / 1000)} 秒，`
+                + `${formatGatewayCounts(pendingCallbacks.size, requestQueue.length)}`
+                + `${formatInflightSegment(describePendingRequests(), pendingCallbacks.size)}）`,
             );
             if (!shouldTerminateForHeartbeat(heartbeatMissCount, inboundSilenceMs)
                 && !shouldTerminateForSilence(heartbeatMissCount, inboundSilenceMs)) return;
 
-            log('心跳', `连续心跳超时且连接无入站数据，账号将停止运行 (miss=${heartbeatMissCount}, 静默 ${Math.round(inboundSilenceMs / 1000)}s)...`);
+            log('心跳', `连续心跳超时且连接无入站数据，账号将停止运行（漏拍 ${heartbeatMissCount} 次，静默 ${Math.round(inboundSilenceMs / 1000)} 秒）...`);
             finalizeConnection(context, {
                 source: 'heartbeat_timeout',
-                reason: `${Math.round(inboundSilenceMs / 1000)}s 无入站数据，连续 ${heartbeatMissCount} 次心跳失败`,
+                reason: `${Math.round(inboundSilenceMs / 1000)} 秒无入站数据，连续 ${heartbeatMissCount} 次心跳失败`,
             });
             try { (context.socket as any).terminate(); } catch {}
         } finally {
@@ -1187,8 +1211,8 @@ interface DisconnectDetails {
 }
 
 function clearNetworkRuntime(reason: string): void {
-    rejectAllQueuedRequests(`请求已中断: ${reason}`);
-    rejectAllPendingRequests(`请求已中断: ${reason}`);
+    rejectAllQueuedRequests(`请求已中断：${reason}`);
+    rejectAllPendingRequests(`请求已中断：${reason}`);
     networkScheduler.clearAll();
     stopAceRuntime(true);
     gatewayTokens.clear();
