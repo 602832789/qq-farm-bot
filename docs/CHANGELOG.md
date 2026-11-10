@@ -132,6 +132,16 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-10 · 修复好友 tick 与自动化锁互相等死导致整机自动化停摆
+
+- **现象**：v3.15.0 同步上游后，登录十几秒内好友 tick 第一次跑起来就再也不返回。`friendTaskRunning` 一直是 true，`automation-lock` 的全局队列被那条永远不结算的任务占住，紧接着 `farm_tick` 也排不进来 —— 表现是「农场不收、好友不帮、偷菜不动」，只有重启容器才恢复。
+- **根因**：上游 PR #122 把 `checkFriends` 里的取好友列表、单次进农场、偷完出售三处改成 `runExclusiveAutomationTask(..., { detached: true })` 独立入队，本意是「等待间隔时不占锁」。但本仓库的 `runUnifiedTick` 仍然把 `runFriendTick` 整个包在一层 `runExclusiveAutomationTask('friend_tick', ...)` 里（同步前没有 detached 调用，包着没问题）。两层一叠加，detached 子任务会排到「正在 await 它的外层任务」后面，队列等外层结束、外层等子任务返回 —— 死锁。已用最小复现脚本确认：持锁任务内 `await` 一个 detached 子任务，5 秒超时都不返回。
+- **修复一（主）**：`runUnifiedTick` 里好友与偷菜 tick 改回上游写法 `void runFriendTick(auto)` / `void runStealTick(auto)`，不再套自动化锁，由 `checkFriends` 内部的单次访问分别入队；农场 tick 仍保持 `await runExclusiveAutomationTask('farm_tick', ...)` 串行。`friendCheckLoop` 与 `runScheduledStealCheck` 早就是同一口径（后者直接调 `visitFriend`、不经过 detached）。
+- **修复二（兜底）**：`automation-lock` 增加一条硬约束 —— 只要当前上下文**确实持有**锁（`store.active`），detached 调用也一律就地执行。detached 的唯一用途是「定时器继承了已结束任务的上下文（`active=false`）需要重新排队」，不该成为重入逃生门；这样即使以后又有人把 tick 包进锁里，最差只是少让一次锁，不会整机卡死。
+- **修复三（顺带）**：`stopUnifiedScheduler` 之前只复位 `farmTaskRunning` / `friendTaskRunning`，漏了 `stealTaskRunning`。停调度时若有偷菜任务在飞，它的 `finally` 因代次已变不会复位，重启后这个标记永远为 true，偷菜被自己的守卫永久挡住 —— 补上第三个标记一起清。
+- **防回归**：`core/tests/automation-lock.test.js` +2（持锁任务内 await detached 必须返回；任务结束后定时器发起的 detached 仍然重新排队，用顺序断言确认没有退化成「随便就地跑」）；新增 `core/tests/unified-tick-lock.test.js` 3 项（好友/偷菜 tick 不得出现在 `runExclusiveAutomationTask` 里、农场 tick 必须串行、停调度器三个标记同时复位）。
+- **验证**：core 496/496（+5）、web 173/173，改动文件 ESLint、`tsc` 编译全过。
+
 ### 2026-11-10 · v3.15.1（#111） · PC 端账号卡片底部横线与微信卡片对齐 · 手机端显示今日成功次数
 
 - **问题一**：账号管理页 PC 端卡片按 `sm:grid-cols-2` / `xl:grid-cols-3` 排布，微信账号比 QQ 账号多三块内容（凭证状态、免扫码续期标记、续期统计），QQ 卡片自然短一截，底部分隔线和「点击卡片切换当前账号 + 设置 / 编辑 / 删除」这一行就比旁边的微信卡片高出十几到几十像素，一排扫下来参差不齐。

@@ -449,8 +449,10 @@ async function runUnifiedTick(): Promise<void> {
     // 农场仍串行（要等它真做完）；好友/偷菜在访问间隔中会让出锁，不必让它们挡住后续 tick。
     if (dueFarm) await runExclusiveAutomationTask('farm_tick', () => runFarmTick(auto));
     if (!unifiedSchedulerRunning || !loginReady || generation !== runtimeGeneration) return;
-    if (dueFriend && !friendTaskRunning) void runExclusiveAutomationTask('friend_tick', () => runFriendTick(auto)).catch(() => null);
-    if (dueSteal && !stealTaskRunning) void runExclusiveAutomationTask('steal_tick', () => runStealTick(auto)).catch(() => null);
+    // 好友/偷菜这里**不能**再套一层自动化锁：checkFriends 内部按单次访问用 detached 独立入队，
+    // 一旦外层也持锁，那些 detached 调用会排到「外层任务自己」后面，而外层正在 await 它们 —— 死锁。
+    if (dueFriend && !friendTaskRunning) void runFriendTick(auto).catch(() => null);
+    if (dueSteal && !stealTaskRunning) void runStealTick(auto).catch(() => null);
 }
 
 function scheduleUnifiedNextTick(): void {
@@ -486,8 +488,11 @@ function startUnifiedScheduler(): void {
 
 function stopUnifiedScheduler(): void {
     unifiedSchedulerRunning = false;
+    // 三个「运行中」标记必须一起清：漏掉的那个在下一轮登录后会一直为 true，
+    // 对应的 tick 会被自己的守卫永久挡住（偷菜尤其明显，只能重启容器才恢复）。
     farmTaskRunning = false;
     friendTaskRunning = false;
+    stealTaskRunning = false;
     workerScheduler.clear('unified_next_tick');
 }
 

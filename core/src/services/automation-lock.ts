@@ -17,7 +17,11 @@ function runExclusiveAutomationTask<T>(
     options: { detached?: boolean } = {},
 ): Promise<T> {
     const store: AutomationLockStore | undefined = storage.getStore();
-    if (!options.detached && store && store.exclusive && store.active) return Promise.resolve(taskFn());
+    // 已经持锁（store.active）时一律就地执行，detached 也不例外：
+    // detached 的用途只有一个 —— 定时器继承了**已结束**任务的异步上下文（active=false），
+    // 那时必须重新排队。若持有者此刻正 await 这个 detached 子任务，重新排队会排到持有者
+    // 自己后面，队列永远等不到它结束，整个进程的自动化全部卡死。就地执行最差只是少让一次锁。
+    if (store && store.exclusive && (store.active || !options.detached)) return Promise.resolve(taskFn());
 
     const run = tail.then(async () => {
         running = true;
