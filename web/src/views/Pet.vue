@@ -37,6 +37,19 @@ const foodPercent = computed(() => {
 // 上游 PR #125 的 durationLow：守护剩余不足一天时给出醒目提示，避免宠物断粮。
 const durationLow = computed(() => !!deployed.value && remainSeconds.value < 86400)
 
+// 上游 PR #125 的 rarityTone：稀有度药丸徽章，4+ 金 / 3 蓝 / 2 绿 / 其余灰。
+// rarity 与 rarityLabel 后端和 store 早已下发，这里只补显示，不动接口与数据结构。
+type RarityTone = 'gold' | 'blue' | 'green' | 'plain'
+function rarityTone(rarity: number): RarityTone {
+  if (rarity >= 4)
+    return 'gold'
+  if (rarity === 3)
+    return 'blue'
+  if (rarity === 2)
+    return 'green'
+  return 'plain'
+}
+
 function getFeedCount(foodId: number) {
   return feedCounts[foodId] ?? 1
 }
@@ -197,9 +210,12 @@ onMounted(load)
                   {{ deployed ? '守护中' : '未派出' }}
                 </span>
               </div>
-              <h2 class="truncate text-lg text-gray-900 font-semibold dark:text-gray-100">
-                {{ deployed?.name || '选择一只宠物开始守护' }}
-              </h2>
+              <div class="min-w-0 flex items-center gap-2">
+                <h2 class="min-w-0 truncate text-lg text-gray-900 font-semibold dark:text-gray-100">
+                  {{ deployed?.name || '选择一只宠物开始守护' }}
+                </h2>
+                <span v-if="deployed" class="pet-rarity" :class="`pet-rarity--${rarityTone(deployed.rarity)}`">{{ deployed.rarityLabel }}</span>
+              </div>
               <p class="mt-0.5 hidden truncate text-xs text-gray-500 sm:block dark:text-gray-400">
                 {{ deployed?.skillDescription || `已拥有 ${ownedCount} 只宠物` }}
               </p>
@@ -241,10 +257,13 @@ onMounted(load)
                   <span v-else class="i-fas-paw text-xl text-gray-300 dark:text-gray-500" />
                 </div>
                 <div class="min-w-0 flex-1 pt-0.5">
-                  <div class="flex items-start justify-between gap-1">
-                    <h3 class="truncate text-sm text-gray-900 font-semibold dark:text-gray-100" :title="dog.name">
-                      {{ dog.name }}
-                    </h3>
+                  <div class="min-w-0 flex items-start justify-between gap-1">
+                    <div class="min-w-0 flex items-center gap-1">
+                      <h3 class="min-w-0 truncate text-sm text-gray-900 font-semibold dark:text-gray-100" :title="dog.name">
+                        {{ dog.name }}
+                      </h3>
+                      <span class="pet-rarity" :class="`pet-rarity--${rarityTone(dog.rarity)}`">{{ dog.rarityLabel }}</span>
+                    </div>
                     <span v-if="dog.owned" class="shrink-0 text-[11px] text-gray-400">Lv.{{ dog.level || 1 }}</span>
                   </div>
                   <p class="dog-description line-clamp-2 mt-1 text-[11px] text-gray-500 leading-4 dark:text-gray-400" :title="(dog.skillDescription || dog.obtainCondition) || undefined">
@@ -515,6 +534,39 @@ onMounted(load)
 
 .dog-card {
   min-height: 116px;
+}
+
+/* 上游 PR #125 的稀有度药丸徽章：配色沿用本地 --ui-* 令牌，亮/暗模式自动切换。 */
+.pet-rarity {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.pet-rarity--gold {
+  color: var(--ui-warning);
+  background: var(--ui-warning-soft);
+}
+
+.pet-rarity--blue {
+  color: var(--ui-blue);
+  background: var(--ui-blue-soft);
+}
+
+.pet-rarity--green {
+  color: var(--ui-primary);
+  background: var(--ui-primary-soft);
+}
+
+.pet-rarity--plain {
+  color: var(--ui-muted);
+  background: var(--ui-surface-soft);
 }
 
 .pet-guardian-strip {

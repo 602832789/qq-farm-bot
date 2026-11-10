@@ -41,3 +41,39 @@ test('BaseButton 显式声明并绑定 title，按钮灰着时提示才真的能
   const bindings = baseButton.match(/:title="title"/g) || []
   assert.equal(bindings.length, 2, '普通按钮与 RouterLink 两条分支都要绑定 title')
 })
+
+// 上游 PR #125 的 rarityTone：本地 v3.16.0 评估时因「会改视觉」暂缓，
+// 现在等价落地到 views/Pet.vue。rarity / rarityLabel 后端与 store 本来就有，
+// 这里只锁「本地 UI 真的把徽章渲染出来了」，不重新引入 PetPanel.vue。
+test('稀有度徽章按 rarity 分四档，且在守护条与宠物卡片两处渲染', () => {
+  const definition = pet.match(/function rarityTone\(rarity: number\): RarityTone \{[\s\S]*?\n\}/)
+  assert.ok(definition, 'rarityTone 必须存在')
+  const tone = new Function(`${definition[0].replace(/\(rarity: number\): RarityTone/, '(rarity)')}; return rarityTone`)()
+  assert.equal(tone(0), 'plain')
+  assert.equal(tone(1), 'plain')
+  assert.equal(tone(2), 'green')
+  assert.equal(tone(3), 'blue')
+  assert.equal(tone(4), 'gold')
+  assert.equal(tone(99), 'gold', '4 以上一律按最高档')
+  assert.equal(tone(Number.NaN), 'plain', '脏数据落到灰档，不能抛错')
+
+  const bindings = pet.match(/:class="`pet-rarity--\$\{rarityTone\([^`]+\)\}`"/g) || []
+  assert.equal(bindings.length, 2, '当前守护条与名册卡片都要绑定徽章配色')
+  assert.match(pet, /\{\{ deployed\.rarityLabel \}\}/)
+  assert.match(pet, /\{\{ dog\.rarityLabel \}\}/)
+  for (const toneClass of ['gold', 'blue', 'green', 'plain'])
+    assert.match(pet, new RegExp(`\\.pet-rarity--${toneClass} \\{`))
+  for (const token of ['--ui-warning', '--ui-blue', '--ui-primary', '--ui-muted'])
+    assert.ok(pet.includes(`var(${token})`), '配色必须走本地 --ui-* 令牌，亮/暗自动切换')
+  assert.doesNotMatch(pet, /NTag/, '不引入上游的 naive-ui 组件')
+})
+
+test('稀有度徽章不被手机端「隐藏 Lv」规则误伤', () => {
+  assert.match(pet, /\.dog-card > :first-child > :last-child > div > span \{\s*display: none;/)
+  const card = pet.slice(pet.indexOf('<article\n              v-for="dog in sortedDogs"'), pet.indexOf('</article>'))
+  const innerDivAt = card.indexOf('class="min-w-0 flex items-center gap-1"')
+  const rarityAt = card.indexOf('class="pet-rarity"')
+  const levelAt = card.indexOf('Lv.')
+  assert.ok(innerDivAt > 0 && rarityAt > innerDivAt, '徽章放在内层容器里，手机端不会当成外层直接子 span 隐藏')
+  assert.ok(levelAt > rarityAt, '等级仍是名字行的直接子 span，继续按原有规则在手机端隐藏')
+})

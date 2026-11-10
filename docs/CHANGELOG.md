@@ -139,6 +139,20 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-11 · 落地上游 PR #125 稀有度徽章（rarityTone），宠物卡片显示四档稀有度
+
+**背景**：上游 PR #125（`7f38536e`）重写 `components/PetPanel.vue` 时新增 `rarityTone()` —— 宠物名旁按稀有度显示彩色药丸徽章（4+ 金 / 3 蓝 / 2 绿 / 其余灰），文案取 `pet.rarityLabel`。本地 v3.16.0 评估时因「会改视觉、留待需求」未落地，只等价落地了 `durationLow` 与 `feedTitle` 两处可用性改进。数据本身早已齐备：`core/src/services/pets.ts` 的 `RARITY_LABELS`（普通 / 稀有 / 珍品 / 天工）与 `web/src/stores/pet.ts` 的 `rarity` / `rarityLabel` 都在，缺的只是显示。
+
+**等价落地（只改 `web/src/views/Pet.vue` 一个文件，后端 / store / 接口零改动）**：
+
+- script 新增 `rarityTone(rarity)` 四档映射；模板两处渲染：顶部「当前守护」宠物名字旁、名册每张宠物卡片名字旁。PC 端徽章紧贴名字，`Lv.X` 仍靠右。
+- 样式新增 `.pet-rarity` 与四个修饰类，配色走本地 `--ui-warning` / `--ui-blue` / `--ui-primary` / `--ui-muted` 及对应 soft 令牌，亮 / 暗模式自动切换；不引入上游的 naive-ui `NTag`，也不恢复 `components/PetPanel.vue`（资本模式三页签结构保留）。
+- 手机端三列窄卡片：徽章放在名字行的内层容器里，现有「手机端隐藏 Lv」的选择器只命中名字行的直接子 span，不会误伤徽章；名字保留 `truncate`，卡片高度不变。
+
+**回归测试**：`web/tests/pet-page-usability.test.mjs` 新增 2 项 —— 把 `rarityTone` 源码抽出来真实执行 `0 / 1 / 2 / 3 / 4 / 99 / NaN` 七种边界值断言四档映射；锁两处模板绑定、`{{ rarityLabel }}` 文案、四档 CSS 与 `--ui-*` 令牌、不引入 `NTag`、以及手机端徽章的结构位置。
+
+**验证**：core **516/516**、web **186/186**（+2）、`pnpm lint` 全仓 0 问题、core `build:ts`、`vue-tsc -b`、`vite build`（30.02s）全过。服务器 / NAS 环境配置未改动。
+
 ### 2026-11-11 · v3.16.2（#119） · 复核前两次上游同步：24 项修复逐条对账，补修 3 处漏网缺陷
 
 **复核范围**：`158473a2`（v3.15.0，同步上游 PR #122–#124，35 个文件）与 `b0a1f456`（v3.16.0，同步上游 PR #125 等价落地，4 个文件）两次同步带来的改动，加上其后 v3.15.1–v3.16.1 的全部修复提交。做法是：还原两次同步的文件清单 → 从 CHANGELOG / 工作日志整理「已知 BUG 清单」→ 两路只读源码审查查漏 → 逐条核实代码证据（不轻信审查结论）→ 全量自动化验证 → 24 项静态对账。
