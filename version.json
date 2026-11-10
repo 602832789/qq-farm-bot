@@ -1,12 +1,20 @@
 {
   "major": 3,
-  "minor": 15,
-  "patch": 6,
-  "build": 116,
-  "version": "3.15.6",
-  "updatedAt": "2026-11-10T10:02:31.486Z",
-  "lastCommit": "a264fe0f",
+  "minor": 16,
+  "patch": 0,
+  "build": 117,
+  "version": "3.16.0",
+  "updatedAt": "2026-11-10T14:49:56.747Z",
+  "lastCommit": "b0a1f456",
   "history": [
+    {
+      "version": "3.16.0",
+      "build": 117,
+      "date": "2026-11-10",
+      "summary": "feat(web): 同步上游 PR #125 评估并等价落地宠物页可用性改进",
+      "commit": "b0a1f456",
+      "type": "minor"
+    },
     {
       "version": "3.15.6",
       "build": 116,
