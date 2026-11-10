@@ -209,7 +209,10 @@ export function markLatestChangelogTitle(markdown, tag) {
     const start = recordIdx >= 0 ? recordIdx + 1 : 0;
     for (let i = start; i < lines.length; i++) {
         if (!/^###\s/.test(lines[i])) continue;
-        if (/v\d+\.\d+\.\d+/.test(lines[i])) return lines.join('\n');
+        // 只认「标题开头的版本标记」。标题描述里提到旧版本号（例如
+        // 「补修 v3.17.1 引入的回归」）不能算已打标，否则 hook 会跳过本次标记，
+        // 让这条记录永远缺 vX.Y.Z（#N），web 的版本接线断言随之失败。
+        if (/^###\s+(?:\d{4}-\d{2}-\d{2}\s*·\s*)?v\d+\.\d+\.\d+/.test(lines[i])) return lines.join('\n');
         if (/^###\s+\d{4}-\d{2}-\d{2}\s*·\s*/.test(lines[i])) {
             lines[i] = lines[i].replace(/^(###\s+\d{4}-\d{2}-\d{2}\s*·\s*)/, `$1${tag} · `);
         }

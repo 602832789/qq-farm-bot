@@ -310,6 +310,24 @@ test('已发布记录都带版本号，提交前允许最新一条待打版本�
   }
 })
 
+test('版本钩子只认标题开头的版本标记，描述里的旧版本号不误判', () => {
+  const pending = [
+    '## 详细记录',
+    '### 2026-11-11 · 复核运行完整性：补修 v3.17.1 引入的回归',
+    '',
+    '正文',
+    '### 2026-11-11 · v3.17.1（#121） · 上一条已发布',
+  ].join('\n')
+  const marked = markLatestChangelogTitle(pending, 'v3.17.2（#122）')
+  assert.match(marked, /^### 2026-11-11 · v3\.17\.2（#122） · 复核运行完整性：补修 v3\.17\.1 引入的回归/m)
+  assert.match(marked, /^### 2026-11-11 · v3\.17\.1（#121） · 上一条已发布/m, '已发布记录不被改动')
+
+  const already = '## 详细记录\n### 2026-11-11 · v3.17.2（#122） · 已打标\n'
+  assert.equal(markLatestChangelogTitle(already, 'v3.17.3（#123）'), already, '已带标记的标题不重复打标')
+  const noDate = '## 详细记录\n### v3.17.2（#122） · 不带日期的旧格式\n'
+  assert.equal(markLatestChangelogTitle(noDate, 'v3.17.3（#123）'), noDate, '旧格式标题也识别为已打标')
+})
+
 test('版本号真源、构建注入与界面显示接线完整', () => {
   const meta = JSON.parse(read('version.json'))
   assert.ok(/^\d+\.\d+\.\d+$/.test(meta.version))
