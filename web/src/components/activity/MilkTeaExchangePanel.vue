@@ -46,8 +46,12 @@ function limit(good: TeaGoods) {
               <div><b>{{ good.name }}</b><span class="tea-badge">{{ good.category_tag === 'seed' ? '种子' : '装扮与道具' }}</span></div>
             </div>
             <p class="tea-product-limit">
-              <template v-if="good.remaining == null">不限购</template>
-              <template v-else>{{ limit(good) }}限购<small>剩余 {{ teaNumber(good.remaining) }} / {{ teaNumber(good.purchase_limit) }}</small></template>
+              <template v-if="good.remaining == null">
+                不限购
+              </template>
+              <template v-else>
+                {{ limit(good) }}限购<small>剩余 {{ teaNumber(good.remaining) }} / {{ teaNumber(good.purchase_limit) }}</small>
+              </template>
             </p>
             <div class="tea-product-prices">
               <span v-for="cost in good.costs" :key="String(cost.id)" class="tea-price"><img v-if="teaCurrencyImage(cost)" :src="teaCurrencyImage(cost)" :alt="cost.name"><span v-else>{{ cost.name }}</span><b class="tea-number">{{ teaNumber(cost.count) }}</b></span>

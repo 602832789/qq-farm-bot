@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-// eslint-disable-next-line test/no-import-node-test
+
 import test from 'node:test'
 
 const store = readFileSync(new URL('../src/stores/account.ts', import.meta.url), 'utf8')

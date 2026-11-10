@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-// eslint-disable-next-line test/no-import-node-test
+
 import test from 'node:test'
 
 const require = createRequire(import.meta.url)
@@ -28,10 +28,10 @@ test('邮箱时刻可读取和保存，午夜与旧配置默认值正确，账�
   // store 里也用同一份 hour-of-day 做兜底归一，mock 成真实实现而不是空模块。
   const hourSource = readFileSync(new URL('../src/utils/hour-of-day.ts', import.meta.url), 'utf8')
   const hourModule = { exports: {} }
-  // eslint-disable-next-line no-new-func
+
   new Function('exports', ts.transpileModule(hourSource, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText)(hourModule.exports)
   const module = { exports: {} }
-  // eslint-disable-next-line no-new-func
+
   new Function('require', 'module', 'exports', outputText)((id) => {
     if (id === '@/api')
       return { __esModule: true, default: api, getApiErrorMessage: value => value.error }
@@ -78,11 +78,11 @@ test('非法邮箱时刻被就地剔除，同一批的其它设置照常保存',
   const source = readFileSync(new URL('../src/stores/setting.ts', import.meta.url), 'utf8')
   const hourSource = readFileSync(new URL('../src/utils/hour-of-day.ts', import.meta.url), 'utf8')
   const hourModule = { exports: {} }
-  // eslint-disable-next-line no-new-func
+
   new Function('exports', ts.transpileModule(hourSource, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText)(hourModule.exports)
   const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } })
   const module = { exports: {} }
-  // eslint-disable-next-line no-new-func
+
   new Function('require', 'module', 'exports', outputText)((id) => {
     if (id === '@/api')
       return { __esModule: true, default: api, getApiErrorMessage: value => value.error }

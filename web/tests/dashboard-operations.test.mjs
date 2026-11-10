@@ -1,5 +1,5 @@
-import test from 'node:test'
 import assert from 'node:assert/strict'
+import test from 'node:test'
 import { partitionOperations } from '../src/utils/dashboard-operations.ts'
 
 test('partitionOperations: 主动作按次数降序，无记录收进 inactive', () => {

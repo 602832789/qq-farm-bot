@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 // This repository runs its tests with Node's built-in runner.
-// eslint-disable-next-line test/no-import-node-test
+
 import test from 'node:test'
 
 const require = createRequire(import.meta.url)
@@ -21,7 +21,7 @@ function harness(t, api) {
   const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } })
   const module = { exports: {} }
   // Execute the real transpiled store with test I/O, without adding a browser or bundler dependency.
-  // eslint-disable-next-line no-new-func
+
   new Function('require', 'module', 'exports', outputText)(id => imports[id] || require(id), module, module.exports)
   return { store: module.exports.usePetDiaryStore(pinia) }
 }

@@ -135,6 +135,13 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-10 · v3.15.6（#116） · 补齐 tests 与样式文件的检查范围，格式化后 web 全仓 lint 清零
+
+- **问题（检查机制本身有盲区）**：`web` 的 lint 脚本写的是 `eslint "src/**/*.{ts,vue}" --fix`，于是 `src/styles/*.css` 与整个 `tests/` 从来没被检查过。手动跑一次全量才发现堆了 **654 个问题**（650 error）：`src/styles/milk-tea-workbench.css` 一个文件 604（全部是 prettier 要求的「每行一条声明」，而该文件通篇用紧凑单行写法）、`tests/` 38、`index.html` 7、`public/activity/milk-tea/assets.json` 1（缺末尾换行）、`MilkTeaExchangePanel.vue` 4。范围外的文件只会越积越多，等于没在检查。
+- **工具链调整**：`web` 的 `lint` 改成 `eslint src tests --max-warnings=0`（覆盖业务代码 + 测试 + 样式，不扫 `public` 里的静态资源大 JSON），另外新增 `lint:fix`；`core` 的 `lint` 去掉 `--fix`（全量自动修复会顺手改无关文件，之前踩过），另设 `lint:fix`；根 `package.json` 补上原先缺失的 `test` / `test:core` / `test:web` 与 `lint:fix`，`pnpm test` 不再报错。
+- **ESLint 配置贴合实际**：`web/eslint.config.js` 加一段 `tests/**` 的 overrides —— `test/no-import-node-test` 关掉（本仓库单测统一用 `node:test` 配 `node --test`，不接 vitest），`no-new-func` 关掉（测试靠 `new Function` / `ts.transpileModule` 把 TS 源码跑起来做静态断言，这里没有代码注入面）。
+- **格式化**：`milk-tea-workbench.css` 按 prettier 展开成一条一声明（746 行 → 3118 行）。为确认没有改到实际样式，把格式化前后的文件都去掉注释、空白、引号与小数写法差异后逐字符比对 —— 两边 token 长度同为 **47325** 且完全相同，等于**只动了空白与 `"x"` → `'x'`、`.5` → `0.5` 这类等价写法**。tests 里的 `max-statements-per-line` 手工拆行（12 处，像 `const a = f(); reply(); await a` 拆成三行）；`credential-status.test.mjs` 的 `NOW` 常量提到 `account()` 之前（原来函数先引用后定义，靠调用时机侥幸不炸）。
+- **验证**：`pnpm lint` 全仓 **0 问题**（core + web）；`pnpm test` core **500/500**、web **175/175**；`vue-tsc -b`、`vite build`（22.54s）通过。
 ### 2026-11-10 · v3.15.5（#115） · 种植轮闸门缓存失效判断修正 + 清理死代码 + core 全量 lint 清零
 
 - **问题（唯一的逻辑缺陷）**：`farm/planting.ts` 调用 `plantingRoundGate.commit(roundSignature, {...})` 时传的是手写字面量，其中 `plantedLandIds` 恒为空数组。而 `reservation-window.ts` 的 `commit` 里有一条保护 ——「本轮真的种了东西就不缓存」（`planted > 0` 就 `last = null`）—— 从这条调用永远进不去；上一行注释写的正是这个意图，代码与注释对不上。后果是种完一轮后仍把「本轮无事可做」缓存满 `PLANTING_ROUND_RECHECK_MS = 30 秒`。多数情况下土地状态签名会因新植株变化而自动绕开缓存，但只要调用方复用了同一份土地快照（签名没变），剩余空地就要等下一次 30 秒复检 —— 正是之前怀疑的「2×2 已预留但迟迟没种」。

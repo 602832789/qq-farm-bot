@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-// eslint-disable-next-line test/no-import-node-test
+
 import test from 'node:test'
 
 const bookOverview = readFileSync(new URL('../src/components/illustrated/BookOverview.vue', import.meta.url), 'utf8')

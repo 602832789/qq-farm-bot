@@ -2,16 +2,20 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import test from 'node:test'
+
 const require = createRequire(import.meta.url)
 const { createPinia, disposePinia } = require('pinia')
 const ts = require('typescript')
+
 function store(t, name, api, account = 'a') {
   const pinia = createPinia()
   t.after(() => disposePinia(pinia))
   let current = account
   const previous = globalThis.localStorage
   globalThis.localStorage = { getItem: () => current }
-  t.after(() => { globalThis.localStorage = previous })
+  t.after(() => {
+    globalThis.localStorage = previous
+  })
   const source = readFileSync(new URL(`../src/stores/${name}.ts`, import.meta.url), 'utf8')
   const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } })
   const module = { exports: {} }
@@ -28,15 +32,22 @@ test('switching mall tabs or accounts clears stale catalog and ignores delayed r
   const requests = []
   const { value, select } = store(t, 'commerce', { get: (_url, options) => new Promise(resolve => requests.push({ options, resolve })) })
   const reply = (index, slot, marker) => requests[index].resolve({ data: { ok: true, data: { slotType: slot, currencies: [], goods: [], marker } } })
-  const initial = value.fetchMall('a', 1); reply(0, 1, 'normal'); await initial
+  const initial = value.fetchMall('a', 1)
+  reply(0, 1, 'normal')
+  await initial
   const svip = value.fetchMall('a', 4)
   assert.equal(value.mall, null)
-  const normal = value.fetchMall('a', 1); reply(2, 1, 'new'); await normal
-  reply(1, 4, 'old'); await svip
+  const normal = value.fetchMall('a', 1)
+  reply(2, 1, 'new')
+  await normal
+  reply(1, 4, 'old')
+  await svip
   assert.equal(value.mall.marker, 'new')
-  select('b'); const other = value.fetchMall('b', 1)
+  select('b')
+  const other = value.fetchMall('b', 1)
   assert.equal(value.mall, null)
-  reply(3, 1, 'b'); await other
+  reply(3, 1, 'b')
+  await other
   assert.equal(value.mall.marker, 'b')
 })
 
@@ -112,17 +123,26 @@ test('delayed diamond balance cannot leak across accounts or an account round tr
   const { value, select } = store(t, 'commerce', { get: (url, options) => new Promise(resolve => requests.push({ url, options, resolve })) })
   const catalog = () => ({ slotType: 1, currencies: [{ id: 1004, count: 0, balanceKnown: false }], goods: [{ id: 1007, purchasable: true, price: { id: 1004, count: 5, balance: null } }] })
   const reply = (index, data) => requests[index].resolve({ data: { ok: true, data } })
-  const oldA = value.fetchMall('a'); reply(0, catalog()); await Promise.resolve()
+  const oldA = value.fetchMall('a')
+  reply(0, catalog())
+  await Promise.resolve()
   assert.equal(requests[1].url, '/api/diamond')
   select('b')
-  const b = value.fetchMall('b'); reply(2, catalog()); await Promise.resolve()
-  reply(3, { diamond: 2 }); await b
+  const b = value.fetchMall('b')
+  reply(2, catalog())
+  await Promise.resolve()
+  reply(3, { diamond: 2 })
+  await b
   assert.equal(value.mall.currencies[0].count, 2)
   assert.equal(value.mall.goods[0].price.balance, 2)
   select('a')
-  const newA = value.fetchMall('a'); reply(4, catalog()); await Promise.resolve()
-  reply(5, { diamond: 99 }); await newA
-  reply(1, { diamond: 87 }); await oldA
+  const newA = value.fetchMall('a')
+  reply(4, catalog())
+  await Promise.resolve()
+  reply(5, { diamond: 99 })
+  await newA
+  reply(1, { diamond: 87 })
+  await oldA
   assert.equal(value.mall.currencies[0].count, 99)
   assert.equal(value.mall.goods[0].price.balance, 99)
   assert.deepEqual(requests.map(request => request.options.headers['x-account-id']), ['a', 'a', 'b', 'b', 'a', 'a'])

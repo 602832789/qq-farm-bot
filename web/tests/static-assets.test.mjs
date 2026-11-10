@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
-// eslint-disable-next-line test/no-import-node-test -- This project uses the Node.js test runner.
+
 import test from 'node:test'
 
 test('the favicon is a passive, self-contained SVG', async () => {

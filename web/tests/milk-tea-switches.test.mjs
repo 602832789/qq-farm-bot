@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-// eslint-disable-next-line test/no-import-node-test
+
 import test from 'node:test'
 
 const require = createRequire(import.meta.url)
 const ts = require('typescript')
+
 const read = file => readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8')
 
 function loadActivityWindows() {

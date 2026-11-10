@@ -21,8 +21,17 @@ const phase = 'business'
 
 function goods(overrides = {}) {
   return {
-    id: '339', name: '森野甜莓种子', category_tag: 'seed', items: [], costs: [{ id: '1001', count: '10000' }],
-    purchase_limit: 24, remaining: 23, unlocked: true, affordable: true, paid: false, maxPurchasable: 10,
+    id: '339',
+    name: '森野甜莓种子',
+    category_tag: 'seed',
+    items: [],
+    costs: [{ id: '1001', count: '10000' }],
+    purchase_limit: 24,
+    remaining: 23,
+    unlocked: true,
+    affordable: true,
+    paid: false,
+    maxPurchasable: 10,
     ...overrides,
   }
 }

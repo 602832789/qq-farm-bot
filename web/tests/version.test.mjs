@@ -1,5 +1,5 @@
 // web 测试由 `node --test` 运行（见 package.json），此处刻意使用 node:test 而非 vitest。
-/* eslint-disable test/no-import-node-test */
+
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'

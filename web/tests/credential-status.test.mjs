@@ -1,17 +1,18 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-// eslint-disable-next-line test/no-import-node-test
+
 import test from 'node:test'
 
 const require = createRequire(import.meta.url)
 const ts = require('typescript')
+
 const source = readFileSync(new URL('../src/utils/credential-status.ts', import.meta.url), 'utf8')
 const { outputText } = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
 })
 const module = { exports: {} }
-// eslint-disable-next-line no-new-func
+
 new Function('require', 'module', 'exports', outputText)(require, module, module.exports)
 const { getCredentialStatus } = module.exports
 
@@ -21,12 +22,11 @@ const GREEN = 'text-green-600 dark:text-green-400'
 const AMBER = 'text-amber-600 dark:text-amber-400'
 const RED = 'text-red-600 dark:text-red-400'
 const GRAY = 'text-gray-500'
+const NOW = 1_800_000_000_000
 
 function account(patch = {}) {
   return { platform: 'wx', expires_at: NOW + 2 * HOUR, expires_in: 7200, ...patch }
 }
-
-const NOW = 1_800_000_000_000
 
 test('有效期充足的凭证显示绿色，且不带待续期文案', () => {
   const status = getCredentialStatus(account(), NOW)
@@ -49,7 +49,8 @@ test('已过期的凭证显示红色', () => {
 
 test('没有任何到期信息时显示灰色「未知」；刷新时间在未来则报时间异常', () => {
   assert.deepEqual(getCredentialStatus(account({ expires_at: 0, wxCredentialRefreshedAt: 0 }), NOW), {
-    text: '访问凭证：到期时间未知', color: GRAY,
+    text: '访问凭证：到期时间未知',
+    color: GRAY,
   })
   assert.equal(getCredentialStatus(account({ expires_at: 0, wxCredentialRefreshedAt: NOW + HOUR }), NOW).color, RED)
 })

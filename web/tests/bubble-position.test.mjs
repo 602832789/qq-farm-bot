@@ -1,17 +1,18 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-// eslint-disable-next-line test/no-import-node-test
+
 import test from 'node:test'
 
 const require = createRequire(import.meta.url)
 const ts = require('typescript')
+
 const source = readFileSync(new URL('../src/utils/bubble-position.ts', import.meta.url), 'utf8')
 const { outputText } = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
 })
 const module = { exports: {} }
-// eslint-disable-next-line no-new-func
+
 new Function('require', 'module', 'exports', outputText)(require, module, module.exports)
 const { computeBubblePosition } = module.exports
 
