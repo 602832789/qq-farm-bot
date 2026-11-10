@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 15,
-  "patch": 2,
-  "build": 112,
-  "version": "3.15.2",
-  "updatedAt": "2026-11-10T02:38:41.845Z",
-  "lastCommit": "0914db06",
+  "patch": 3,
+  "build": 113,
+  "version": "3.15.3",
+  "updatedAt": "2026-11-10T03:00:22.663Z",
+  "lastCommit": "1374aa1a",
   "history": [
+    {
+      "version": "3.15.3",
+      "build": 113,
+      "date": "2026-11-10",
+      "summary": "fix(web/core): 邮箱时刻输入非法不再拖垮整份设置保存，并给两份 hour-of-day 加一致性测试",
+      "commit": "1374aa1a",
+      "type": "patch"
+    },
     {
       "version": "3.15.2",
       "build": 112,
