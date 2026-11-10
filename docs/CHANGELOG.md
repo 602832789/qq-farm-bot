@@ -134,6 +134,14 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-10 · v3.15.5（#115） · 种植轮闸门缓存失效判断修正 + 清理死代码 + core 全量 lint 清零
+
+- **问题（唯一的逻辑缺陷）**：`farm/planting.ts` 调用 `plantingRoundGate.commit(roundSignature, {...})` 时传的是手写字面量，其中 `plantedLandIds` 恒为空数组。而 `reservation-window.ts` 的 `commit` 里有一条保护 ——「本轮真的种了东西就不缓存」（`planted > 0` 就 `last = null`）—— 从这条调用永远进不去；上一行注释写的正是这个意图，代码与注释对不上。后果是种完一轮后仍把「本轮无事可做」缓存满 `PLANTING_ROUND_RECHECK_MS = 30 秒`。多数情况下土地状态签名会因新植株变化而自动绕开缓存，但只要调用方复用了同一份土地快照（签名没变），剩余空地就要等下一次 30 秒复检 —— 正是之前怀疑的「2×2 已预留但迟迟没种」。
+- **修法**：一行，改成 `plantingRoundGate.commit(roundSignature, result)` 透传本轮真实结果。`commit` 内部按 `plantedLandIds.length > 0` 决定是否作废缓存；`cached` 命中的也变成真实结果对象（而不是被抹空的字面量），`deferredLandIds` 等信息不再丢。
+- **防回归**：`core/tests/planting-log-throttle.test.js` 加两条断言 —— 调用必须是 `commit(roundSignature, result)`，且不得再出现 `commit(roundSignature, {` 这种手写字面量。
+- **死代码（四处）**：`utils.ts` 的 `msg.includes('reason=queue_full')` 删掉 —— 全仓只有这一处提到 `queue_full`，`budget.reason` 的实际取值是 `budget_total` / `budget_method` / `foreground` / `critical` / `ok`，这条兜底从写下来那天起就不成立，只会在排查时误导；`friend/golden-bug.ts` 未使用的 `getAutomation`、`mall-coupon-gift.ts` 未使用的 `isAutomationOn` / `logWarn` 一并从 require 里摘掉；`web/src/stores/status.ts` 的 `nextAt?: number` 删掉 —— 后端会下发，但全前端没有任何地方读它，真要显示「下次检查的绝对时间」时再加回来。
+- **core 全量 lint 清零（11 error + 1 warning → 0）**：`golden-bug.ts` / `friend/index.ts` 的导出顺序（自动修正，纯重排，re-export 语义不变）；`mall-coupon-gift.ts` 的 `getCouponGiftPurchase` jsdoc 补全三个 `@param`（原来只写了 `balance`）；`milk-tea-legacy.ts` 的 `[A-Za-z0-9_]` 改 `\w`（JS 里完全等价）；控制字符剥离 `/[\x00-\x1f\x7f]/g` 改 `/\p{Cc}/gu`（Unicode 控制类，含 C0 与 C1，比手写区间更彻底，也避开 `no-control-regex`）；`qq-credential.ts` 的 `UNSUPPORTED_CODES` 与 `weather-activity.ts` 两条标题匹配正则把无用捕获组改成非捕获组。
+- **验证**：core **500/500**、web **175/175**，core 全量 `eslint .` 0 问题、`tsc` 编译通过。
 ### 2026-11-10 · v3.15.3（#113） · 邮箱时刻输入非法不再拖垮整份设置保存 · 两份 hour-of-day 加一致性测试
 
 - **问题**：`HourInput` 故意保留非法草稿（把输入框清空后模型里是空串 `''`，填 `25` 就是 `'25'`），而后端 `applyConfigSnapshot` / `setAccountConfigSnapshot` 对 `emailClaimHour` 是硬校验 —— `assertEmailClaimHour` 直接抛 `INVALID_CONFIG`，`/api/settings/save` 整份请求失败。也就是说用户在「日常与活动」里手滑清空这个框，同一批改的开关、延迟、策略全部一起白改，报错信息还只显示后端的 400 文案，指不到具体字段。

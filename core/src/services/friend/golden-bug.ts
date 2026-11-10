@@ -6,7 +6,7 @@
  */
 export {};
 
-const { isAutomationOn, getAutomation, getConfigSnapshot, getUserState, getFriendBlacklist } = require('../../models/store');
+const { isAutomationOn, getConfigSnapshot, getUserState, getFriendBlacklist } = require('../../models/store');
 const { isConnected } = require('../../utils/network');
 const { log, logWarn, randomDelay, toNum, getSystemDateKey } = require('../../utils/utils');
 const { enterFriendFarm, leaveFriendFarm, getAllFriends, putSocialItem } = require('./api');
@@ -153,8 +153,8 @@ async function runGoldenBugPlacement(options: { force?: boolean } = {}): Promise
 }
 
 export {
+    getGoldenBugCount,
     GOLDEN_BUG_DAILY_LIMIT,
     GOLDEN_BUG_ITEM_ID,
-    getGoldenBugCount,
     runGoldenBugPlacement,
 };

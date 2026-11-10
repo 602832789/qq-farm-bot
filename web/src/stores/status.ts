@@ -27,7 +27,6 @@ interface DailyGift {
   result?: string
   lastError?: string
   scheduledHour?: number
-  nextAt?: number
 }
 
 interface DailyGiftsResponse {

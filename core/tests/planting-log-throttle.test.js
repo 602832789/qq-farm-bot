@@ -92,6 +92,10 @@ test('种植引擎的三类刷屏日志都接入整轮合并（反向验证：�
     assert.match(planting, /finally \{\s*if \(!nested\) flushPlantingRound\(\);/);
     // 整轮状态闸门：土地状态没变时复用上一轮结论，不读背包也不发种植请求。
     assert.match(planting, /plantingRoundGate\.cached\(roundSignature\)/);
+    // 闸门靠 plantedLandIds 判断「本轮真的种了没」：必须透传真实结果，
+    // 手写空数组会让「有种植就立即失效」永远不成立，把刚种过的一轮也缓存满 30 秒。
+    assert.match(planting, /plantingRoundGate\.commit\(roundSignature, result\)/);
+    assert.doesNotMatch(planting, /plantingRoundGate\.commit\(roundSignature, \{/);
     assert.match(planting, /reservationWindow\.hasExpiredWindow\(/);
     assert.match(planting, /checkStateChange\('bag_planting_round', signature\)/);
     assert.match(planting, /shown\.join\('；'\)/, '一轮的多条诊断合成一条正文');

@@ -227,8 +227,7 @@ function isTransientGatewaySkip(error: any): boolean {
     return msg.includes('网关请求超预算')
         || msg.includes('自动任务请求已达流量上限')
         || msg.includes('请求等待队列已满')
-        || msg.includes('budget_total')
-        || msg.includes('reason=queue_full');
+        || msg.includes('budget_total');
 }
 
 // ============ 异步工具 ============

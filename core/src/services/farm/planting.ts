@@ -405,16 +405,9 @@ async function plantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<number,
     try {
         const result = await runPlantFromBagSeeds(landsToPlant, landTypeById, options);
         // 只缓存「本轮没有任何实际种植」的结论；有种植则立即失效，下一轮照常重算。
-        if (gateEnabled) {
-            plantingRoundGate.commit(roundSignature, {
-                remainingLandIds: [],
-                fallbackAllowed: false,
-                plantedLandIds: [],
-                totalPlanted: 0,
-                occupiedCount: 0,
-                deferredLandIds: result.deferredLandIds,
-            });
-        }
+        // 必须透传真实结果：闸门内部按 plantedLandIds 判断是否作废缓存，
+        // 手写空数组会让这条保护永远进不去，把「刚种过」也缓存满 30 秒。
+        if (gateEnabled) plantingRoundGate.commit(roundSignature, result);
         return result;
     } finally {
         if (!nested) flushPlantingRound();

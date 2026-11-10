@@ -108,7 +108,7 @@ function idText(value: any): string {
  * 让在售库存 / 配方列表 / 制作弹窗都显示对应品种的杯子图标（而不是共用一张主视觉图）。
  */
 function recipeImageFromIcon(icon: any): string {
-    const matched = /([A-Za-z0-9_]+)\/spriteFrame$/.exec(String(icon || ''));
+    const matched = /(\w+)\/spriteFrame$/.exec(String(icon || ''));
     return matched ? `/activity/milk-tea/${matched[1]}.png` : '';
 }
 function withRecipeImage(row: any): any {
@@ -426,7 +426,9 @@ async function mutate(action: string, input: any = {}) {
             fail('没有可雇佣员工或奶茶券不足');
         const hireOptions = normalizeHireOptions(input);
         detail = {
-            employeeName: String(target.friend.name || '').replace(/[\x00-\x1f\x7f]/g, '').slice(0, 60),
+            // \p{Cc}（Unicode 控制类）含 C0 U+0000–U+001F、U+007F–U+009F，比手写区间更彻底，
+            // 也避开 no-control-regex 规则；名字里出现控制字符只可能是脏数据。
+            employeeName: String(target.friend.name || '').replace(/\p{Cc}/gu, '').slice(0, 60),
             slotIndex: slot, durationId: duration.duration_id, hours: toNum(duration.duration_sec) / 3600,
             talentId: toNum(target.talent_id), employeeType: target.is_robot ? '实习员工' : '好友',
             fallbackUsed: input.autoSelect === true && hireOptions.primaryTalentId !== 0 && toNum(target.talent_id) !== hireOptions.primaryTalentId,

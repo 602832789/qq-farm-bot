@@ -260,9 +260,9 @@ function tasksDto(child: any): any[] {
  */
 function lightningHarvestDto(tasks: any[]): any {
     const task = tasks.find(entry => (
-        /(雷电|闪电)/.test(String(entry?.title || ''))
+        /雷电|闪电/.test(String(entry?.title || ''))
         && /变异/.test(String(entry?.title || ''))
-        && /(收集|收获)/.test(String(entry?.title || ''))
+        && /收集|收获/.test(String(entry?.title || ''))
     ));
     const target = Math.max(0, toNum(task?.dailyLimit));
     const progress = Math.max(0, toNum(task?.current));

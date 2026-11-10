@@ -7,9 +7,9 @@
  */
 export {};
 
-const { isAutomationOn, getAutomation } = require('../models/store');
+const { getAutomation } = require('../models/store');
 const { getUserState } = require('../utils/network');
-const { log, logWarn, toNum } = require('../utils/utils');
+const { log, toNum } = require('../utils/utils');
 const { getMallGoodsList, purchaseMallGoods } = require('./mall');
 
 const COUPON_CURRENCY_ID = 1002; // 点券
@@ -23,7 +23,9 @@ function getCouponBalance(state: any): number {
 
 /**
  * 返回该礼包这一轮应购买的数量；条件不满足（非点券计价 / 不可售 / 无限购 / 已过期 / 点券不足）返回 0。
- * @param balance Infinity 时用于「只算差额提示」的探测。
+ * @param goods 商城货架条目（取 price.id / price.count / purchase_limit / is_available）。
+ * @param balance 当前点券余额；Infinity 时只用于「只算差额提示」的探测。
+ * @param nowSec 服务器时间（秒），用于判断活动是否已结束。
  */
 function getCouponGiftPurchase(goods: any, balance: number, nowSec: number): number {
     const price = goods && goods.price;

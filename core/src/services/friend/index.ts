@@ -9,6 +9,11 @@ export {
 } from './gid-manager';
 
 export {
+    getGoldenBugCount,
+    runGoldenBugPlacement,
+} from './golden-bug';
+
+export {
     claimDueFriends,
     getNextStealDelayMs,
     observeFriendLands,
@@ -49,8 +54,3 @@ export {
     getFriendsList,
     getFriendsListCacheOnly,
 } from './visit-strategy';
-
-export {
-    getGoldenBugCount,
-    runGoldenBugPlacement,
-} from './golden-bug';
