@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 15,
-  "patch": 0,
-  "build": 110,
-  "version": "3.15.0",
-  "updatedAt": "2026-11-10T00:36:50.801Z",
-  "lastCommit": "158473a2",
+  "patch": 1,
+  "build": 111,
+  "version": "3.15.1",
+  "updatedAt": "2026-11-10T02:25:16.343Z",
+  "lastCommit": "3b4cd7fb",
   "history": [
+    {
+      "version": "3.15.1",
+      "build": 111,
+      "date": "2026-11-10",
+      "summary": "fix(web): QQ 账号卡片底部横线与微信卡片对齐，手机端显示今日成功次数",
+      "commit": "3b4cd7fb",
+      "type": "patch"
+    },
     {
       "version": "3.15.0",
       "build": 110,
