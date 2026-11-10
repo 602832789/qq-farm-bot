@@ -40,11 +40,11 @@ function stats(patch = {}) {
   }
 }
 
-test('正常账号：显示上次自动续期相对时间与今日失败次数，绿色', () => {
+test('正常账号：显示上次自动续期相对时间、今日成功与失败次数，绿色', () => {
   const result = getWxPreflightSummary(wx(stats()), NOW)
-  assert.equal(result.text, '上次自动续期：5 分钟前 · 今日失败 0 次')
+  assert.equal(result.text, '上次自动续期：5 分钟前 · 今日成功 8 次 · 今日失败 0 次')
   assert.equal(result.color, GREEN)
-  assert.equal(result.detail, '今日成功 8 次')
+  assert.equal(result.detail, undefined)
   assert.match(result.hint, /只统计后端自动发起/)
   assert.match(result.hint, /手动续期不计入/)
   assert.match(result.hint, /容器重启不丢失/)
@@ -75,9 +75,9 @@ test('超过 3 小时没有成功记录时提示琥珀色（凭证约 2 小时�
 test('从没成功过：显示「暂无记录」而不是编造时间；有失败则红色', () => {
   const empty = getWxPreflightSummary(wx(stats({ lastSuccessAt: 0, lastFailureAt: 0, successesToday: 0 })), NOW)
   assert.match(empty.text, /暂无记录/)
+  assert.match(empty.text, /今日成功 0 次/)
   assert.match(empty.text, /今日失败 0 次/)
   assert.equal(empty.color, GRAY)
-  assert.equal(empty.detail, '今日成功 0 次')
 
   const failed = getWxPreflightSummary(wx(stats({ lastSuccessAt: 0, lastFailureAt: NOW, failuresToday: 1, successesToday: 0 })), NOW)
   assert.equal(failed.color, RED)
@@ -90,8 +90,7 @@ test('旧版服务 / QQ / 不支持的账号 / 脏数据一律不渲染，不误
   assert.equal(getWxPreflightSummary(wx(stats(), { wxPreflightSupported: undefined }), NOW), null)
   assert.equal(getWxPreflightSummary(null, NOW), null)
   const dirty = getWxPreflightSummary(wx({ lastSuccessAt: 'oops', successesToday: -9, failuresToday: Number.NaN }), NOW)
-  assert.match(dirty.text, /暂无记录 · 今日失败 0 次/)
-  assert.equal(dirty.detail, '今日成功 0 次')
+  assert.match(dirty.text, /暂无记录 · 今日成功 0 次 · 今日失败 0 次/)
 })
 
 test('秒级时间戳兼容（老数据可能由外部写成秒）', () => {
@@ -99,16 +98,18 @@ test('秒级时间戳兼容（老数据可能由外部写成秒）', () => {
   assert.match(result.text, /2 小时前/)
 })
 
-test('账号卡片确实渲染这行，且手机端简短、PC 端补充成功次数', () => {
+test('账号卡片确实渲染这行，两端显示同一份文案（含今日成功次数）', () => {
   const panel = read('../src/components/settings/AccountManagementPanel.vue')
   assert.match(panel, /import \{ getCredentialStatus, getWxPreflightBadge, getWxPreflightSummary \}/)
   assert.match(panel, /function wxPreflightSummary\(acc: any\)/)
   assert.match(panel, /getWxPreflightSummary\(acc, now\.value\.getTime\(\)\)/)
   assert.match(panel, /v-if="wxPreflightSummary\(acc\)"/)
   assert.match(panel, /wxPreflightSummary\(acc\)\?\.text/)
-  assert.match(panel, /wxPreflightSummary\(acc\)\?\.detail/)
   assert.match(panel, /:title="wxPreflightSummary\(acc\)\?\.hint"/)
   assert.match(panel, /:class="wxPreflightSummary\(acc\)\?\.color"/)
+  // 成功次数不能再被 hidden sm:inline 藏起来，否则手机端看不到续期到底有没有生效。
+  assert.doesNotMatch(panel, /wxPreflightSummary\(acc\)\?\.detail/)
+  assert.doesNotMatch(panel, /hidden[^"]*sm:inline[^"]*">· \{\{ wxPreflightSummary/)
 })
 
 test('前端类型与后端投影接线：账本只有时间戳与计数', () => {

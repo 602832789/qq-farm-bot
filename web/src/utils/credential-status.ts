@@ -34,10 +34,8 @@ export interface WxPreflightStats {
 }
 
 export interface WxPreflightSummary {
-  /** 手机端与 PC 端共用的主文案，保持简短。 */
+  /** 手机端与 PC 端共用的完整文案：上次续期 + 今日成功 + 今日失败。 */
   text: string
-  /** PC 端追加的补充信息（今日成功次数）。 */
-  detail: string
   color: string
   hint: string
 }
@@ -86,8 +84,10 @@ function formatAgo(ts: number, now: number): string {
 }
 
 /**
- * 账号卡片「上次自动续期 / 今日失败次数」。
+ * 账号卡片「上次自动续期 · 今日成功 N 次 · 今日失败 M 次」。
  *
+ * 手机端与 PC 端显示同一份文案——成功次数同样说明「后端真的在续」，不能只给
+ * PC 看，否则手机上看不出续期有没有生效。
  * 数据来自后端持久化的自动续期账本（preflight-stats.json），字段缺失说明服务
  * 还是旧版本，返回 null 不渲染，避免把「还没更新」误报成「没在续期」。
  * 只统计后端自动发起的到期前续期与掉线重登，手动点按钮不计入。
@@ -110,24 +110,23 @@ export function getWxPreflightSummary(acc: any, now: number = Date.now()): WxPre
     ? `${hintBase} 最近一次成功：${new Date(lastSuccessAt).toLocaleString('zh-CN', { hour12: false })}`
     : hintBase
 
-  const detail = `今日成功 ${successesToday} 次`
+  const successText = `今日成功 ${successesToday} 次`
   if (!lastSuccessAt) {
     return {
-      text: `上次自动续期：暂无记录 · 今日失败 ${failuresToday} 次`,
-      detail,
+      text: `上次自动续期：暂无记录 · ${successText} · 今日失败 ${failuresToday} 次`,
       color: failuresToday > 0 ? COLOR_RED : COLOR_GRAY,
       hint,
     }
   }
 
   const when = formatAgo(lastSuccessAt, now)
-  const text = `上次自动续期：${when} · 今日失败 ${failuresToday} 次`
+  const text = `上次自动续期：${when} · ${successText} · 今日失败 ${failuresToday} 次`
   const color = failuresToday > 0 && lastFailureAt > lastSuccessAt
     ? COLOR_RED
     : failuresToday > 0 || now - lastSuccessAt > PREFLIGHT_STALE_MS
       ? COLOR_AMBER
       : COLOR_GREEN
-  return { text, detail, color, hint }
+  return { text, color, hint }
 }
 
 /** 兼容秒级 / 毫秒级到期时间戳；老数据可能由外部写成秒。 */

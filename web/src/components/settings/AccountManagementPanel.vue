@@ -77,7 +77,7 @@ function wxPreflightBadge(acc: any) {
   return getWxPreflightBadge(acc)
 }
 
-/** 上次自动续期 / 今日失败次数；旧版服务字段缺失时返回 null 不渲染。 */
+/** 上次自动续期 · 今日成功 · 今日失败；旧版服务字段缺失时返回 null 不渲染。 */
 function wxPreflightSummary(acc: any) {
   return getWxPreflightSummary(acc, now.value.getTime())
 }
@@ -415,7 +415,7 @@ watch(codeAlerts, (list) => {
       <div
         v-for="acc in accounts"
         :key="acc.id"
-        class="farm-content-card cursor-pointer border rounded-lg bg-white p-3 shadow transition-all duration-200 dark:bg-gray-800 sm:p-4"
+        class="farm-content-card flex flex-col cursor-pointer border rounded-lg bg-white p-3 shadow transition-all duration-200 dark:bg-gray-800 sm:p-4"
         :class="String(currentAccountId) === String(acc.id) ? 'ring-2' : 'border-transparent'"
         :style="String(currentAccountId) === String(acc.id)
           ? { borderColor: 'var(--theme-primary)', backgroundColor: 'rgba(var(--theme-primary-rgb, 59, 130, 246), 0.1)' }
@@ -494,8 +494,12 @@ watch(codeAlerts, (list) => {
           :title="wxPreflightSummary(acc)?.hint"
         >
           {{ wxPreflightSummary(acc)?.text }}
-          <span class="hidden text-gray-400 sm:inline">· {{ wxPreflightSummary(acc)?.detail }}</span>
         </p>
+
+        <!-- 微信账号比 QQ 多出凭证状态、免扫码标记与续期统计三块，卡片高度天然不一致。
+             PC 端（sm 起）用这段弹性占位把剩余高度吃掉，让所有卡片的横线与底部按钮行
+             落在同一水平线上；手机端单列排布不需要对齐，直接不渲染。 -->
+        <div class="hidden sm:block sm:flex-1" aria-hidden="true" />
 
         <div class="mt-3 flex items-center justify-between border-t border-gray-100 pt-3 sm:mt-4 dark:border-gray-700 sm:pt-4">
           <div class="hidden items-center gap-2 text-xs text-gray-500 sm:flex">
