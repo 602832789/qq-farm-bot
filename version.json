@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 16,
-  "patch": 1,
-  "build": 118,
-  "version": "3.16.1",
-  "updatedAt": "2026-11-10T16:38:55.568Z",
-  "lastCommit": "450266f0",
+  "patch": 2,
+  "build": 119,
+  "version": "3.16.2",
+  "updatedAt": "2026-11-10T17:56:10.910Z",
+  "lastCommit": "497c226e",
   "history": [
+    {
+      "version": "3.16.2",
+      "build": 119,
+      "date": "2026-11-11",
+      "summary": "fix(core/web): 复核前两次上游同步，补修 3 处漏网缺陷并逐条对账 24 项",
+      "commit": "497c226e",
+      "type": "patch"
+    },
     {
       "version": "3.16.1",
       "build": 118,
