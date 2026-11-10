@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 17,
-  "patch": 2,
-  "build": 122,
-  "version": "3.17.2",
-  "updatedAt": "2026-11-10T20:08:36.213Z",
-  "lastCommit": "c4a1640f",
+  "patch": 3,
+  "build": 123,
+  "version": "3.17.3",
+  "updatedAt": "2026-11-10T20:17:25.201Z",
+  "lastCommit": "f22b21b8",
   "history": [
+    {
+      "version": "3.17.3",
+      "build": 123,
+      "date": "2026-11-11",
+      "summary": "fix(version): 修正 CHANGELOG 标题版本号误判，补上 hook 回归测试",
+      "commit": "f22b21b8",
+      "type": "patch"
+    },
     {
       "version": "3.17.2",
       "build": 122,
