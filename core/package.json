@@ -1,6 +1,6 @@
 {
   "name": "qq-farm-bot",
-  "version": "3.15.3",
+  "version": "3.15.5",
   "description": "",
   "license": "ISC",
   "author": "",
@@ -17,7 +17,8 @@
     "build:win": "tsc && tsc -p tsconfig.client.json && pkg . --no-bytecode --targets node18-win-x64 --out-path dist/bin",
     "build:linux": "tsc && tsc -p tsconfig.client.json && pkg . --no-bytecode --targets node18-linux-x64 --out-path dist/bin",
     "build:mac": "tsc && tsc -p tsconfig.client.json && pkg . --no-bytecode --targets node18-macos-x64,node18-macos-arm64 --out-path dist/bin",
-    "lint": "eslint . --fix",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "test": "pnpm run build:ts && node --test tests/*.test.js"
   },
   "dependencies": {

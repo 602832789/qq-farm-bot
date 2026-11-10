@@ -1,6 +1,6 @@
 {
   "name": "qq-farm-bot-ui",
-  "version": "3.15.3",
+  "version": "3.15.5",
   "packageManager": "pnpm@10.30.2",
   "scripts": {
     "dev:core": "pnpm -C core dev",
@@ -9,6 +9,10 @@
     "lint": "pnpm lint:core && pnpm lint:web",
     "lint:core": "pnpm -C core lint",
     "lint:web": "pnpm -C web lint",
+    "lint:fix": "pnpm -C core lint:fix && pnpm -C web lint:fix",
+    "test": "pnpm test:core && pnpm test:web",
+    "test:core": "pnpm -C core test",
+    "test:web": "pnpm -C web test",
     "typecheck:web": "pnpm -C web typecheck",
     "build:web": "pnpm -C web build",
     "build:core": "pnpm -C core build:ts",

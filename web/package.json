@@ -1,7 +1,7 @@
 {
   "name": "qq-farm-bot-web",
   "type": "module",
-  "version": "3.15.3",
+  "version": "3.15.5",
   "private": true,
   "scripts": {
     "dev": "vite",
@@ -10,7 +10,8 @@
     "build:analyze": "vite build --mode analyze",
     "typecheck": "vue-tsc -b",
     "test": "node --test tests/*.test.mjs",
-    "lint": "eslint \"src/**/*.{ts,vue}\" --fix",
+    "lint": "eslint src tests --max-warnings=0",
+    "lint:fix": "eslint src tests --fix",
     "preview": "vite preview"
   },
   "dependencies": {
