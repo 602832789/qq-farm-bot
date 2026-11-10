@@ -140,6 +140,17 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-11 · 收口 visit-strategy 二次开关判断：options 成为单次好友访问的唯一决策来源
+
+**背景**：复核前两次上游同步时列过一项「`visit-strategy.ts` 二次 AND `isAutomationOn` 与 `effectiveXxx` 语义重复」。`checkFriends()` 已把全局开关与本地定向语义算进 `effectiveStealEnabled` / `effectiveHelpEnabled` / `effectiveBadEnabled`，再经 `allowXxx` 传给 `visitFriend()`；被调方却又读一次 `isAutomationOn('friend_steal' / 'friend_bad' / 'friend_help')` 做 AND。这与本地 `onlyHelp` / `onlySteal` / `onlyBad`（忽略全局开关，强制只做一件事）的语义冲突：定向模式会被静默掐回 `false`，`visitFriend` 返回 `no_action`，一个请求、一行日志都不产生。当前三条定向入口都有守卫、`onlySteal` 零调用点，所以不构成可观察缺陷；`git blame` 确认这段来自上游 2026-10-23 提交 `580e3253b`，本地与上游逐字相同，不是前两次同步引入。
+
+**改动**：
+- `core/src/services/friend/visit-strategy.ts`：`visitFriend()` 去掉三处二次 `isAutomationOn`，`allowXxx` 直接成为最终结论；`VisitFriendOptions` 注释明确「options 是唯一决策来源、所有调用点必须显式传齐三个 allowXxx」。经验上限 / 护主犬放行这类调用方没算过的条件仍留在被调方。
+- `core/src/services/friend/scheduler.ts`：把「运行中关掉开关立即生效」的实时性从被调方挪到调度方 —— `checkFriends()` 的 `canContinue()` 新增 `hasLiveFriendOp()`（非定向模式下三个分项开关全关就停，定向模式不受影响）；`runScheduledStealCheck()` 的 12 人访问循环内新增 `!isAutomationOn('friend') || !isAutomationOn('friend_steal')` 实时复查，避免硬编码 `allowSteal: true` 在开关关闭后继续进农场。
+- `core/tests/friend-visit-options.test.js`（新增 4 项）：静态锁 `visitFriend` 不再读分项开关而保留经验上限判断；遍历 `core/src` 锁住所有 `visitFriend()` 调用点都显式传齐 `allowSteal` / `allowHelp` / `allowBad`；锁住两处实时性复查的位置顺序；抽 `effectiveXxx` 真实源码片段执行，验证「`friend_steal` 关着 + `onlySteal` 仍放行」与普通模式完全跟随全局开关。
+
+**验证**：core 520/520（+4）、web 186/186、`pnpm lint` 全仓 0、core `build:ts`、`vue-tsc -b`、`vite build` 全过。服务器 / NAS 环境配置未改动。
+
 ### 2026-11-11 · v3.17.0（#120） · 落地上游 PR #125 稀有度徽章（rarityTone），宠物卡片显示四档稀有度
 
 **背景**：上游 PR #125（`7f38536e`）重写 `components/PetPanel.vue` 时新增 `rarityTone()` —— 宠物名旁按稀有度显示彩色药丸徽章（4+ 金 / 3 蓝 / 2 绿 / 其余灰），文案取 `pet.rarityLabel`。本地 v3.16.0 评估时因「会改视觉、留待需求」未落地，只等价落地了 `durationLow` 与 `feedTitle` 两处可用性改进。数据本身早已齐备：`core/src/services/pets.ts` 的 `RARITY_LABELS`（普通 / 稀有 / 珍品 / 天工）与 `web/src/stores/pet.ts` 的 `rarity` / `rarityLabel` 都在，缺的只是显示。

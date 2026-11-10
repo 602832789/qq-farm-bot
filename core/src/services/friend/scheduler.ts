@@ -309,10 +309,15 @@ export async function checkFriends(options: CheckFriendsOptions = {}): Promise<b
     checkDailyReset();
     const generation = friendLoopGeneration;
     const roundDate = getSystemDateKey();
+    // 分项开关的实时生效挪到调度层：visitFriend 不再二次读 isAutomationOn，
+    // 运行中把帮忙/偷菜/捣乱全关掉时，本轮后续好友必须及时停下。
+    // 定向模式按定义忽略全局开关，不受这一条影响（由调用点的守卫负责）。
+    const hasLiveFriendOp = (): boolean => onlyHelp || onlySteal || onlyBad
+        || isAutomationOn('friend_help') || isAutomationOn('friend_steal') || isAutomationOn('friend_bad');
     // 停过循环、账号离线、开关关掉或跨日，这一轮的后续动作就不再做了。
     const canContinue = (): boolean => generation === friendLoopGeneration
-        && !!getUserState().gid && isAutomationOn('friend') && !inFriendQuietHours()
-        && getSystemDateKey() === roundDate;
+        && !!getUserState().gid && isAutomationOn('friend') && hasLiveFriendOp()
+        && !inFriendQuietHours() && getSystemDateKey() === roundDate;
 
     // 偷菜间隔在两次访问之间逐秒切片等待，等待期间不持有自动化锁。
     async function waitStealGap(target: any): Promise<void> {
@@ -547,6 +552,9 @@ export async function runScheduledStealCheck(): Promise<number> {
         const visitTargets = [...targets.values()].slice(0, 12);
         const totalActions: any = { steal: 0, farming: 0, putBug: 0, putWeed: 0 };
         for (const target of visitTargets) {
+            // 这里传的是硬编码 allowSteal:true，且 visitFriend 已不再二次读分项开关；
+            // 运行中关掉偷菜必须在循环内实时复查，否则剩余好友仍会被带进农场。
+            if (!isAutomationOn('friend') || !isAutomationOn('friend_steal')) break;
             try {
                 await visitFriend(
                     { gid: target.gid, name: target.name },

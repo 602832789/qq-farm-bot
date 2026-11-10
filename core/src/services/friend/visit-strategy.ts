@@ -759,7 +759,17 @@ interface VisitResult {
     protectDogBypass?: boolean;
 }
 
-/** 单次访问要做哪几件事；默认全做，保持老调用方的行为不变。 */
+/**
+ * 单次访问要做哪几件事。
+ *
+ * **options 是唯一决策来源**：调用方（checkFriends / runScheduledStealCheck）已经把
+ * 全局开关 friend_help / friend_steal / friend_bad，以及本地定向语义
+ * onlyHelp / onlySteal / onlyBad（"忽略全局开关，强制只做这一件事"）算进 allowXxx。
+ * 被调方绝不二次读 isAutomationOn，否则定向模式会被静默掐回 false，
+ * visitFriend 直接返回 no_action —— 一个请求、一行日志都不产生，极难排查。
+ * 因此所有调用点都必须显式传齐 allowSteal / allowHelp / allowBad（有静态测试锁着）。
+ * 默认全做只为兼容历史调用方，新代码不要依赖默认值。
+ */
 export interface VisitFriendOptions {
     allowSteal?: boolean;
     allowHelp?: boolean;
@@ -794,12 +804,17 @@ export async function visitFriend(
     options: VisitFriendOptions = {},
 ): Promise<VisitResult> {
     const { gid, name } = friend;
+    // allowXxx 是调用方算好的最终结论，这里直接采信，不再二次读分项全局开关。
+    // 分项开关「运行中关掉立即生效」由调度层负责：checkFriends 的 canContinue()
+    // 与 runScheduledStealCheck 的循环内复查。
     const allowSteal: boolean = options.allowSteal !== false;
+    const allowHelp: boolean = options.allowHelp !== false;
     const allowBad: boolean = options.allowBad !== false;
     const ignoreExpLimit: boolean = !!options.ignoreExpLimit;
 
-    const stealEnabled: boolean = allowSteal && !!isAutomationOn('friend_steal');
-    const badEnabled: boolean = allowBad && !!isAutomationOn('friend_bad');
+    const stealEnabled: boolean = allowSteal;
+    const badEnabled: boolean = allowBad;
+    // 经验上限 / 护主犬放行是调用方没算过的额外条件，仍由被调方判断。
     const stopWhenExpLimit: boolean = !!isAutomationOn('friend_help_exp_limit') && !ignoreExpLimit;
     if (!stopWhenExpLimit) schedulerRef().setCanGetHelpExp(true);
     const protectDogBypassEnabled: boolean = !!isAutomationOn('friend_help_protect_dog_ignore_exp_limit');
@@ -809,9 +824,7 @@ export async function visitFriend(
     // 缓存还没结论的好友交给 pet-sync 的每日同步补齐。
     const helpBlockedByExpLimit: boolean = expLimitReachedBeforeVisit
         && (!protectDogBypassEnabled || getFriendDogState(gid) !== 'protect');
-    const helpEnabled: boolean = options.allowHelp !== false
-        && !!isAutomationOn('friend_help')
-        && !helpBlockedByExpLimit;
+    const helpEnabled: boolean = allowHelp && !helpBlockedByExpLimit;
 
     if (!stealEnabled && !badEnabled && !helpEnabled) {
         // 这一轮对这位好友无事可做：一个请求都不发
