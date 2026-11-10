@@ -141,6 +141,24 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-11 · 复核运行完整性：补修 v3.17.1 分项开关实时性回归，两次同步缺陷 33 项对账 0 缺失
+
+**背景**：用户再次确认「前两次同步带来的 BUG 都修完了吗、现在运行完全没问题了吗」。以当前 HEAD `794fcc39`（v3.17.1）为基线，复跑全量验证、对 33 个既存修复点静态对账（0 缺失），并对之后两笔新改动（v3.17.0 稀有度徽章、v3.17.1 收口二次开关判断）做独立只读审查，发现 v3.17.1 自身引入 1 处确定性回归。
+
+**问题**：`checkFriends()` 的 `effectiveXxx` 是进轮时的快照；`visitFriend()` 删掉内层 `isAutomationOn` 之后，调度层只补了三分项 OR 的 `hasLiveFriendOp()`，只挡得住「三项全关」。运行中单独关掉 `friend_steal`（`friend_help` 仍开着）时 `canContinue()` 继续放行，后续好友仍以快照的 `allowSteal=true` 被带进农场偷菜，`waitStealGap()` 也按快照继续等待。改动前由被调方每位好友实时读开关可以挡住，属于收口时漏掉的一层实时性。
+
+**修复**（`core/src/services/friend/scheduler.ts`）：
+- 新增 `isLiveFriendOp('help'|'steal'|'bad')`：开头快照决定「本轮是否安排这件事」，运行中按分项实时读 `isAutomationOn`；定向模式由 `onlyXxx` 豁免全局开关，保持「忽略全局、强制只做一件」的语义。
+- 循环开头按实时值算 `liveSteal / liveHelp / liveBad`，目标要做的事全被关掉就跳过（不进农场，也不会因已关闭的捣乱额度误 break 整轮）；`waitStealGap()` 的 `stillWaiting()`、偷菜间隔判断、捣乱额度分支同步改用实时值。
+- `detached` 回调内再次按分项重算 `allowXxx`，覆盖「入队 → 真正执行」之间的时间差。
+- `hasLiveFriendOp()` 保留三分项 OR 不变：它只负责「整轮是否还有事可做」，分项级判断交给 `isLiveFriendOp`。
+
+**回归测试**（`core/tests/friend-visit-options.test.js` +2 项）：静态锁住实时复查贯穿等待 / 循环 / detached 三处、detached 不再用 `effectiveXxx` 快照；抽真实 `isLiveFriendOp` 源码执行，验证「只关偷菜」时 steal 立即 false 而 help/bad 仍 true、三项全关全 false、定向 `onlySteal` 在全局关闭时仍放行、开头未安排的事中途打开不在本轮临时启用。
+
+**验证**：core **522/522**（+2）、web **186/186**、`pnpm lint` 全仓 0 问题、core `tsc --noEmit`、`vue-tsc -b`、`vite build` 全过。服务器 / NAS 环境配置未改动。
+
+**结论边界**：两次上游同步（`158473a2` v3.15.0 / `b0a1f456` v3.16.0）带来的、可静态确认的缺陷仍全部修完（33 项对账 0 缺失）；本次补修的是之后 v3.17.1 自身引入的回归，不是同步遗留。仍有 3 项需服务器跑满一天日志判断的参数验收项：好友 200–350ms 请求密度、`pet-sync` 整轮让路频率、分次种植 × 2×2 命中率。
+
 ### 2026-11-11 · v3.17.1（#121） · 收口 visit-strategy 二次开关判断：options 成为单次好友访问的唯一决策来源
 
 **背景**：复核前两次上游同步时列过一项「`visit-strategy.ts` 二次 AND `isAutomationOn` 与 `effectiveXxx` 语义重复」。`checkFriends()` 已把全局开关与本地定向语义算进 `effectiveStealEnabled` / `effectiveHelpEnabled` / `effectiveBadEnabled`，再经 `allowXxx` 传给 `visitFriend()`；被调方却又读一次 `isAutomationOn('friend_steal' / 'friend_bad' / 'friend_help')` 做 AND。这与本地 `onlyHelp` / `onlySteal` / `onlyBad`（忽略全局开关，强制只做一件事）的语义冲突：定向模式会被静默掐回 `false`，`visitFriend` 返回 `no_action`，一个请求、一行日志都不产生。当前三条定向入口都有守卫、`onlySteal` 零调用点，所以不构成可观察缺陷；`git blame` 确认这段来自上游 2026-10-23 提交 `580e3253b`，本地与上游逐字相同，不是前两次同步引入。

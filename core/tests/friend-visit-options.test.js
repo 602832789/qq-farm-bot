@@ -116,3 +116,57 @@ test('定向语义：全局开关关着时 onlySteal 仍放行', () => {
         effectiveBadEnabled: true,
     }, '非定向模式仍完全跟随全局开关');
 });
+
+// 回归：v3.17.1 把内层 isAutomationOn 删掉后，调度层只补了三分项 OR 的
+// hasLiveFriendOp，只挡得住「三项全关」。运行中单独关掉偷菜（帮忙还开着），
+// 后续好友仍以开头快照的 allowSteal=true 被带进农场偷菜。
+test('分项实时复查贯穿等待、循环与 detached 回调', () => {
+    const checkBody = topLevelBody(scheduler, 'export async function checkFriends(');
+    assert.match(checkBody, /const isLiveFriendOp = \(kind: 'help' \| 'steal' \| 'bad'\)/);
+    assert.match(checkBody, /canContinue\(\) && isLiveFriendOp\('steal'\)/, '等待偷菜间隔时也要实时停');
+    const loop = checkBody.slice(checkBody.indexOf('for (const target of plan.visits)'));
+    assert.match(loop, /const liveSteal = isLiveFriendOp\('steal'\)/);
+    assert.match(loop, /const allowSteal = target.wantSteal && isLiveFriendOp\('steal'\)/);
+    assert.match(loop, /const allowHelp = target.wantHelp && isLiveFriendOp\('help'\)/);
+    assert.match(loop, /const allowBad = target.wantBad && isLiveFriendOp\('bad'\)/);
+    assert.doesNotMatch(loop, /const allowSteal = target\.wantSteal && effectiveStealEnabled/,
+        'detached 执行时不能再用进轮时的快照');
+    assert.match(loop, /if \(!\(target\.wantSteal && liveSteal\)/, '目标要做的事全被关掉时不进农场');
+});
+
+// 抽真实 isLiveFriendOp 源码执行，锁住「只关一项」这个漏网场景。
+test('运行中只关掉一个分项时，对应的 allowXxx 立刻变 false', () => {
+    const start = scheduler.indexOf('    const isLiveFriendOp');
+    assert.ok(start > 0, '找不到 isLiveFriendOp 定义');
+    const end = scheduler.indexOf('\n    const hasLiveFriendOp', start);
+    assert.ok(end > start, '找不到 isLiveFriendOp 结尾');
+    const block = scheduler.slice(start, end)
+        .replace("(kind: 'help' | 'steal' | 'bad'): boolean", '(kind)');
+    // eslint-disable-next-line no-new-func
+    const makeLive = new Function(
+        'effectiveHelpEnabled', 'effectiveStealEnabled', 'effectiveBadEnabled',
+        'onlyHelp', 'onlySteal', 'onlyBad', 'isAutomationOn',
+        `${block}\nreturn isLiveFriendOp;`,
+    );
+
+    // 开头三项全开；运行中只关掉 friend_steal，帮忙与捣乱仍开着
+    const live = makeLive(true, true, true, false, false, false,
+        key => key !== 'friend_steal');
+    assert.equal(live('steal'), false, '关掉的偷菜必须立即停');
+    assert.equal(live('help'), true, '还开着的帮忙不能一起被停');
+    assert.equal(live('bad'), true);
+
+    // 三项全关时 hasLiveFriendOp 会停掉整轮，这里三项也各自为 false
+    const allOff = makeLive(true, true, true, false, false, false, () => false);
+    assert.deepEqual([allOff('help'), allOff('steal'), allOff('bad')], [false, false, false]);
+
+    // 定向 onlySteal 忽略全局开关：即使 friend_steal 关着也要放行
+    const directed = makeLive(false, true, false, false, true, false, () => false);
+    assert.equal(directed('steal'), true, '定向语义不能被全局开关掐掉');
+    assert.equal(directed('help'), false);
+
+    // 开头就没安排的事，运行中打开也不在这一轮临时启用（快照决定本轮范围）
+    const snapshot = makeLive(false, false, true, false, false, false, () => true);
+    assert.equal(snapshot('steal'), false);
+    assert.equal(snapshot('bad'), true);
+});

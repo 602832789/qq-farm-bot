@@ -309,9 +309,16 @@ export async function checkFriends(options: CheckFriendsOptions = {}): Promise<b
     checkDailyReset();
     const generation = friendLoopGeneration;
     const roundDate = getSystemDateKey();
-    // 分项开关的实时生效挪到调度层：visitFriend 不再二次读 isAutomationOn，
-    // 运行中把帮忙/偷菜/捣乱全关掉时，本轮后续好友必须及时停下。
-    // 定向模式按定义忽略全局开关，不受这一条影响（由调用点的守卫负责）。
+    // 分项开关的实时生效挪到调度层：visitFriend 不再二次读 isAutomationOn。
+    // 开头的 effectiveXxx 只是「这一轮要不要安排这件事」的快照；运行中把某一项
+    // 单独关掉（比如只关偷菜、帮忙还开着），这一项必须立刻停，不能等下一轮。
+    // hasLiveFriendOp 是三分项 OR，只兜得住「三项全关」，所以每位好友还要按分项复查。
+    // 定向模式按定义忽略全局开关，保持放行（由调用点的守卫负责）。
+    const isLiveFriendOp = (kind: 'help' | 'steal' | 'bad'): boolean => {
+        if (kind === 'help') return effectiveHelpEnabled && (onlyHelp || !!isAutomationOn('friend_help'));
+        if (kind === 'steal') return effectiveStealEnabled && (onlySteal || !!isAutomationOn('friend_steal'));
+        return effectiveBadEnabled && (onlyBad || !!isAutomationOn('friend_bad'));
+    };
     const hasLiveFriendOp = (): boolean => onlyHelp || onlySteal || onlyBad
         || isAutomationOn('friend_help') || isAutomationOn('friend_steal') || isAutomationOn('friend_bad');
     // 停过循环、账号离线、开关关掉或跨日，这一轮的后续动作就不再做了。
@@ -322,7 +329,7 @@ export async function checkFriends(options: CheckFriendsOptions = {}): Promise<b
     // 偷菜间隔在两次访问之间逐秒切片等待，等待期间不持有自动化锁。
     async function waitStealGap(target: any): Promise<void> {
         // 每一秒都重新判断一次：中途关掉偷菜、拉黑或账号下线就不用再等了。
-        const stillWaiting = (): boolean => canContinue() && effectiveStealEnabled
+        const stillWaiting = (): boolean => canContinue() && isLiveFriendOp('steal')
             && !getFriendBlacklist(accountId).includes(target.gid);
         let remainingMs = getStealDelaySeconds(accountId) * 1000;
         while (remainingMs > 0 && stillWaiting()) {
@@ -405,13 +412,19 @@ export async function checkFriends(options: CheckFriendsOptions = {}): Promise<b
             // 每进一个好友前复核一次：这轮可能已经被停掉、跨日或账号离线。
             if (!canContinue()) return false;
             if (getFriendBlacklist(accountId).includes(target.gid)) continue;
-            if (attemptedStealVisit && target.wantSteal && effectiveStealEnabled) {
+            const liveSteal = isLiveFriendOp('steal');
+            const liveHelp = isLiveFriendOp('help');
+            const liveBad = isLiveFriendOp('bad');
+            // 运行中关掉某一分项：这个目标要做的事若全被关掉就不进农场，
+            // 否则只做仍开着的部分，不能靠开头快照把已关闭的操作带进去。
+            if (!(target.wantSteal && liveSteal) && !(target.wantHelp && liveHelp) && !(target.wantBad && liveBad)) continue;
+            if (attemptedStealVisit && target.wantSteal && liveSteal) {
                 // 首位可偷好友立即访问，后续才等配置的偷菜间隔；等待期间不持锁。
                 await waitStealGap(target);
             }
             if (!canContinue()) return false;
             if (getFriendBlacklist(accountId).includes(target.gid)) continue;
-            if (target.wantBad) {
+            if (target.wantBad && liveBad) {
                 // 纯捣乱的好友都排在队尾，额度一用完这一轮就可以收工
                 if (isBadOperationLimitReached() || getRemainingBadOperationTimes() <= 0) {
                     log('好友', '放虫放草次数已用完，停止执行', { module: 'friend', event: '放虫放草次数用完' });
@@ -430,9 +443,11 @@ export async function checkFriends(options: CheckFriendsOptions = {}): Promise<b
                 // 农场巡查和心跳才不会被拖住。
                 await runExclusiveAutomationTask('friend_visit', async () => {
                     if (!canContinue() || getFriendBlacklist(accountId).includes(target.gid)) return;
-                    const allowSteal = target.wantSteal && effectiveStealEnabled;
-                    const allowHelp = target.wantHelp && effectiveHelpEnabled;
-                    const allowBad = target.wantBad && effectiveBadEnabled;
+                    // 入队到真正执行之间可能又过了一段时间，这里按分项再实时读一次；
+                    // 定向模式由 isLiveFriendOp 内部的 onlyXxx 豁免全局开关。
+                    const allowSteal = target.wantSteal && isLiveFriendOp('steal');
+                    const allowHelp = target.wantHelp && isLiveFriendOp('help');
+                    const allowBad = target.wantBad && isLiveFriendOp('bad');
                     if (!allowSteal && !allowHelp && !allowBad) return;
                     if (allowSteal) attemptedStealVisit = true;
                     await visitFriend(target, totalActions, state.gid, state.accountId, {
