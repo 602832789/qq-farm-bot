@@ -136,23 +136,56 @@ docker compose down
 | 持久化数据 | `qq-farm-data` 命名卷，容器内 `/app/core/data` |
 | 运行日志 | `qq-farm-logs` 命名卷 |
 
-`docker compose down` 不会删除命名卷，除非确认要清空数据，不要加 `-v`。更新时先 `git pull --ff-only`，再执行 `docker compose up -d --build`。
+`docker compose down` 不会删除命名卷，除非确认要清空数据，不要加 `-v`。
 
-### 📦 更新与空间
+### 📦 一键更新 / 一键清理 / 一键重构
 
-```bash
-git pull --ff-only
-docker compose up -d --build      # 或 bash scripts/nas-deploy.sh（先回收旧镜像再重建）
-```
-
-反复重建会留下上一版的 `<none>` 悬空镜像，`docker image prune -f` 可以回收。它只删除没有任何容器引用的悬空镜像，不影响正在运行的容器和数据卷。
-
-想知道空间花在哪里，用只读诊断（只打印，不改动任何容器、镜像、卷）：
+仓库自带的 `scripts/nas-deploy.sh` 把日常运维收成三条命令，顺序固定：
 
 ```bash
-bash scripts/nas-deploy.sh --report                 # 镜像 / 容器 / 卷全量 + 磁盘对账
-bash scripts/nas-deploy.sh --report --scan-volume   # 再加一步：整卷目录占用
+bash scripts/nas-deploy.sh            # 一键更新（最常用，不带参数就是它）
+bash scripts/nas-deploy.sh rebuild    # 一键重构：彻底重建
+bash scripts/nas-deploy.sh clean      # 一键清理：服务不停
 ```
+
+| 命令 | 实际执行 |
+| --- | --- |
+| `update` | `git pull --ff-only` → `docker compose down` → `docker builder prune -a -f`（裁到 2GB 上限）→ `docker compose up -d --build` → `docker image prune -f` |
+| `rebuild` | 同样的顺序，但构建缓存全清、旧镜像也清、容器 `--force-recreate`。最彻底也最慢 |
+| `clean` | 清悬空镜像 → 清空构建缓存 → 清本项目历史残留。**不动运行中的容器，服务全程不停** |
+
+**为什么顺序不能换**：
+
+- `down` 必须在 `prune` 之前 —— 容器还在跑就会钉住旧镜像和旧层，这时 `prune` 什么都回收不了，`docker system df` 会显示「可回收 0B」
+- `prune` 必须在 `build` 之前 —— 盘快满时先腾地方再构建，否则会遇到 `no space left on device`
+- `image prune` 必须在 `build` 之后 —— 到那时才能确定哪些是上一版留下的
+
+常用开关，可以和任意命令组合：
+
+| 开关 | 作用 |
+| --- | --- |
+| `--keep-cache` | 更新时保留构建缓存（构建更快，占盘更多） |
+| `--prune-logs` | 顺带截断应用日志（只截断，不删文件） |
+| `--prune-orphans` | 清本项目的历史残留（已停止的旧容器 + 悬空镜像） |
+| `--deep` | 清空全部构建缓存，并回收 1 小时前的所有未使用镜像 |
+| `--scan-volume` | 扫整块盘的目录占用（只读，可能几分钟） |
+| `report` | 只读诊断，不改动任何东西 |
+
+脚本不会做的事：删命名卷、动别人的容器/镜像/卷、`down -v`、`docker system prune`。`qq-farm-data` / `qq-farm-logs` 是硬编码白名单，任何模式都不碰。
+
+### 📦 空间去哪了
+
+反复重建会留下上一版 `<none>` 悬空镜像，`docker image prune -f` 就能回收；`update` 的最后一步会自动做。
+
+Docker 里榨干之后如果还觉得占盘，用只读诊断对账：
+
+```bash
+bash scripts/nas-deploy.sh report                 # 镜像 / 容器 / 卷全量 + 磁盘对账
+bash scripts/nas-deploy.sh report --scan-volume   # 再加一步：整卷目录占用
+bash scripts/nas-deploy.sh clean                  # 清理，并点名 Docker 之外的大目录
+```
+
+`report` 用 `docker info` 取真实数据目录（NAS 常把 data-root 挪到数据盘，写死 `/var/lib/docker` 会读到空目录），把 `du` 实测占用和 `df` 已用摆在一起对账。差额通常不在 Docker 里 —— 系统快照、回收站、以及应用自己的数据目录，这些 `prune` 永远碰不到。`clean` 会把这些大目录点名列出来，处理方式是到应用中心卸载/重装对应应用，**不要手动删目录**：手删之后应用中心仍显示「已安装」但应用打不开，而且不会自愈。
 
 **清理或删卷之前先备份账号数据**（备份文件内含账号凭据，注意保管）：
 

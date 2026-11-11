@@ -38,8 +38,9 @@ test('构建缓存回收必须带 -a，否则只删 dangling 等于没清', () =
 })
 
 test('提供只读诊断与深度清理两个显式开关', () => {
-  assert.match(deploy, /--report/, '只读诊断不加参数不支持')
-  assert.match(deployCode, /REPORT_ONLY/, '--report 要在改动前退出')
+  assert.match(deploy, /--report/, '只读诊断要能显式触发')
+  assert.match(deployCode, /case "\$MODE" in/, '按模式分派，report 在改动前退出')
+  assert.match(deployCode, /^\s+report\|status\)/m, 'report 是独立分支')
   assert.match(deploy, /--deep/, '空间告急时能一次性清空构建缓存')
   assert.match(deployCode, /docker image prune -a -f/, '--deep 才回收未使用镜像')
 })
@@ -80,9 +81,9 @@ test('--report 做磁盘对账：用 docker info 的真实目录，不写死路�
   assert.match(deploy, /subvolume list -s/, '能直接数出快照数量')
   assert.match(deploy, /json\.log/, '列出容器日志实际体积')
 
-  // 对账必须在 --report 分支里被调用，否则等于没写
-  const branch = deploy.slice(deploy.indexOf('if [ "$REPORT_ONLY" = "1" ]'), deploy.indexOf('show_space "部署前"'))
-  assert.match(branch, /show_disk_audit/, '--report 分支要真的调用它')
+  // 对账必须在 report 分支里被调用，否则等于没写
+  const branch = deploy.slice(deploy.indexOf('case "$MODE" in'))
+  assert.match(branch, /show_disk_audit/, 'report 分支要真的调用它')
 })
 
 test('--report 在容器 unhealthy 时打印健康检查自己的输出', () => {
@@ -97,7 +98,7 @@ test('--prune-orphans 只删已停止容器，绝不误删数据卷', () => {
   assert.match(deploy, /--prune-orphans/)
   assert.match(deployCode, /PRUNE_ORPHANS/)
 
-  const fn = deploy.slice(deploy.indexOf('# 清理历史残留'), deploy.indexOf('if [ "$REPORT_ONLY"'))
+  const fn = deploy.slice(deploy.indexOf('# 清理历史残留'), deploy.indexOf('# ---- 流水线步骤'))
   // 只留真正会执行的行：注释和 echo/printf 的提示文案里出现的命令不算执行。
   const fnCode = fn
     .split('\n')
@@ -212,6 +213,75 @@ test('README 的 Docker 章节只写通用步骤，不写某台机器的实测�
   ]
   for (const { re, name } of leaked)
     assert.doesNotMatch(readme, re, `README 不得出现${name}：${re}`)
+})
+
+test('三条流水线：一键更新 / 一键重构 / 一键清理，顺序固定不可调换', () => {
+  // 顺序是用户明确要求的：git pull → docker compose down → docker builder prune
+  // → docker compose up -d --build。不能调换的理由：
+  //   - down 在 prune 之前：容器还跑着就会钉住旧镜像和旧层，prune 什么也回收不到；
+  //   - prune 在 build 之前：盘满时先腾地方，否则构建会遇到 no space left；
+  //   - image prune 在 build 之后：那时才能确定哪些是「上一版」留下的。
+  for (const mode of ['update', 'rebuild', 'clean'])
+    assert.match(deploy, new RegExp(`\\b${mode}\\)`), `${mode} 要有模式分支`)
+  assert.match(deploy, /^\s+do_update$/m, '不带参数默认走一键更新')
+
+  const upd = deploy.slice(deploy.indexOf('do_update() {'), deploy.indexOf('do_rebuild() {'))
+  let last = -1
+  for (const step of ['step_pull', 'step_down', 'prune_build_cache', 'step_up']) {
+    const at = upd.indexOf(step)
+    assert.ok(at > last, `更新流水线里 ${step} 的位置不对`)
+    last = at
+  }
+  assert.ok(upd.indexOf('post_deploy') > upd.indexOf('step_up'), '悬空镜像回收必须在启动之后')
+
+  // 名字对上不算数，每个步骤内部要真的执行对应的命令
+  const pull = deploy.slice(deploy.indexOf('step_pull() {'), deploy.indexOf('step_down() {'))
+  assert.match(pull, /git pull --ff-only/)
+  assert.match(pull, /exit 1/, 'pull 失败要停住，不能带着旧代码往下 down')
+  const down = deploy.slice(deploy.indexOf('step_down() {'), deploy.indexOf('step_up() {'))
+  assert.match(down, /docker compose down/)
+  assert.doesNotMatch(stripHash(down), /down -v/, 'down 不能带 -v，命名卷要保留')
+  const up = deploy.slice(deploy.indexOf('step_up() {'), deploy.indexOf('post_deploy() {'))
+  assert.match(up, /docker compose up -d --build/)
+})
+
+test('一键重构比更新更彻底：缓存全清 + 旧镜像清 + 容器强制重建', () => {
+  const rb = deploy.slice(deploy.indexOf('do_rebuild() {'), deploy.indexOf('do_clean() {'))
+  assert.ok(rb.length > 200, '要取到函数体')
+  assert.match(rb, /force-recreate/, '容器强制新建')
+  assert.match(rb, /image prune -f/, '旧镜像也清掉')
+  assert.ok(rb.indexOf('prune_build_cache') < rb.indexOf('step_up'), '清缓存仍要在构建之前')
+  assert.match(deploy, /FULL_CACHE=1/, 'rebuild 走全清分支，不留缓存')
+})
+
+test('一键清理不动运行中的容器，服务全程不停', () => {
+  const clean = deploy.slice(deploy.indexOf('do_clean() {'), deploy.indexOf('case "$MODE" in'))
+  assert.ok(clean.length > 200, '要取到函数体')
+  const exec = stripHash(clean)
+  assert.doesNotMatch(exec, /compose down/, '清理不能停服务')
+  assert.doesNotMatch(exec, /compose up/, '清理不能重启服务')
+  assert.match(clean, /image prune -f/, '清悬空镜像')
+  assert.match(clean, /prune_orphans/, '清本项目历史残留')
+})
+
+test('clean 点名应用数据里的大目录，但绝不动手删', () => {
+  // 实测「Docker 之外多出来的几 G」经常落在某一个应用目录里。脚本只负责点名，
+  // 交给应用中心处理 —— 手删会让应用变成「已安装但打不开」且无法自愈。
+  const fn = deploy.slice(deploy.indexOf('show_app_data_top() {'), deploy.indexOf('# 读法说明'))
+  assert.ok(fn.length > 400, '要取到函数体')
+  assert.match(fn, /@appdata/, '认得应用数据目录')
+  assert.match(fn, /应用中心/, '只给处理途径：应用中心卸载/重装')
+  assert.match(fn, /1048576/, '按 KB 数换算，不依赖 du -h 的字符串')
+  // 排序要用原始体积，不能用格式化后的「4.1G」比较（4.1G 与 4.9G 会并列）
+  assert.match(fn, /printf "%d\\t%6\.1fG/, '第一列留原始 KB 数用于排序')
+
+  const exec = fn
+    .split('\n')
+    .filter(line => !line.trimStart().startsWith('#'))
+    .filter(line => !/^\s*echo\b/.test(line))
+    .join('\n')
+  assert.doesNotMatch(exec, /rm -rf/, '只读，不得删任何东西')
+  assert.doesNotMatch(exec, /rm [^\n]*\$volume/, '不得删卷内路径')
 })
 
 test('compose 仍保留两个命名卷与容器日志上限', () => {

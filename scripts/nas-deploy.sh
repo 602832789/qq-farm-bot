@@ -1,16 +1,35 @@
 #!/bin/sh
-# NAS 一键更新部署：回收旧缓存 → 拉代码 → 重建 → 回收旧镜像。
+# NAS 一键部署脚本：一键更新 / 一键清理 / 一键重构，三条固定流水线。
 #
-# 用法（在仓库根目录或任意目录都行，脚本会自己切到仓库根）：
-#   bash scripts/nas-deploy.sh                # 常规更新，数据卷和日志卷都不动
-#   bash scripts/nas-deploy.sh --prune-logs   # 额外截断应用日志卷里的日志
-#   bash scripts/nas-deploy.sh --deep         # 空间告急：清空全部构建缓存
-#   bash scripts/nas-deploy.sh --report       # 只读诊断：列出镜像/容器/卷全量
-#   bash scripts/nas-deploy.sh --report --scan-volume
-#                                             # 再加一步：扫整块盘的目录占用，
-#                                             # 回答「Docker 之外那 27G 是谁」
-#   bash scripts/nas-deploy.sh --prune-orphans  # 清历史残留（已停止的旧容器 +
-#                                             # 无人引用的旧镜像 + 遗留测试卷）
+# 用法（在仓库根或任意目录都行，脚本会自己切到仓库根）：
+#   bash scripts/nas-deploy.sh                        # 一键更新（默认，等同 update）
+#   bash scripts/nas-deploy.sh update                 # 一键更新
+#   bash scripts/nas-deploy.sh rebuild                # 一键重构（彻底重建）
+#   bash scripts/nas-deploy.sh clean                  # 一键清理（服务不停）
+#   bash scripts/nas-deploy.sh report                 # 只读诊断
+#   bash scripts/nas-deploy.sh report --scan-volume   # 诊断 + 整卷目录扫描
+#
+# 三条流水线，顺序固定，不要调换：
+#   更新 update ：git pull → docker compose down → docker builder prune
+#                 → docker compose up -d --build → docker image prune
+#   重构 rebuild：同上，但构建缓存全清、旧镜像也清、容器强制重建（最彻底、最慢）
+#   清理 clean  ：docker image prune → docker builder prune → 历史残留
+#                 （不动运行中的容器，服务全程不停）
+#
+# 为什么必须是这个顺序：
+#   1. down 要在 prune 之前。容器还在跑就会钉住旧镜像和旧层，prune 什么也回收
+#      不了 —— 这时看到的是「可回收 0B」，怎么清都没用。
+#   2. prune 要在 build 之前。磁盘快满时先腾地方再构建，否则会 no space left。
+#   3. image prune 要在 build 之后。这次构建出来的镜像还要留给容器用，能清的
+#      只有上一版留下的 <none>。
+#
+# 修饰开关，可与任意模式组合：
+#   --prune-logs      额外截断应用日志卷里的日志（只截断，不删文件）
+#   --deep            清空全部构建缓存 + 回收 1 小时前的所有未使用镜像
+#   --prune-orphans   清本项目历史残留（已停止的旧容器 + 悬空镜像）
+#   --scan-volume     扫整块盘的目录占用（只读，可能几分钟）
+#   --keep-cache      更新时保留构建缓存（构建更快，占盘更多）
+#   -h, --help        显示这段说明
 #
 # 空间涨上去的来源，按实测占比从大到小：
 #   1. 别人的服务。NAS 上通常还跑着一堆别的容器（网盘、影音、下载、数据库……），
@@ -22,14 +41,15 @@
 #   4. 构建缓存 → docker system df 的 Build Cache 行只统计默认 builder，
 #      真实值要看 docker buildx du；实测经常只占 100–200MB，不是大头。
 #   5. system df 之外的部分 → 文件系统快照（btrfs/zfs）、NAS 回收站、大文件。
-#      prune 管不到这些，这也是「清完只掉 2G」最常见的答案。对账看 --report。
-#      实测另一个常见大头是 fnOS 自己的 @appmeta / @sysappmeta / @appdata：
-#      应用每升级一次就在里面留一份旧版本，攒到十几 G 很常见，同样不属于
-#      Docker。--scan-volume 会把这几层直接摊开给你看（只读，不删）。
+#      prune 管不到这些，这也是「清完只掉 2G」最常见的答案。对账看 report。
+#      另一个常见大头是系统自己的 @appmeta / @sysappmeta / @appdata：应用每升级
+#      一次就可能在里面留一份旧版本，攒到十几 G 很常见，同样不属于 Docker。
+#      --scan-volume 把这几层摊开给你看，clean 也会自动列出其中的大目录（只读）。
 #
 # 设计原则：只删「没有任何东西在引用」的东西，且只碰本项目的对象。
 #   - docker image prune -f      只删 <none> 悬空镜像，正在跑的镜像不会被删
-#   - docker builder prune -a    删未使用的构建缓存（带 -a 才会真删）
+#   - docker builder prune -a    必须带 -a：不带 -a 只删 dangling 缓存记录，
+#                                而每次构建产生的层都不算 dangling，等于没清
 #   - --prune-orphans 只动名字属于本项目的残留，且绝不删除运行中的容器；
 #     数据卷 qq-farm-data / qq-farm-logs 是硬编码白名单，任何模式都不碰。
 #   - 别人的容器、镜像、卷一律不动：脚本没有能力判断它们对你有没用。
@@ -46,27 +66,53 @@ fi
 # 构建缓存上限（MB）。缓存超过这个量就按最久未使用顺序删到上限以内。
 # 调大＝构建更快、占盘更多；调小＝占盘更少、每次要多重建一些层。
 BUILD_CACHE_KEEP_MB="${BUILD_CACHE_KEEP_MB:-2048}"
+# 应用数据目录里多大才算「异常大头」（MB）。clean 会用这个阈值点名。
+APP_BIG_DIR_MB="${APP_BIG_DIR_MB:-1024}"
 
+MODE=update
+MODE_SET=0
+FULL_CACHE=0
 PRUNE_LOGS=0
 DEEP=0
-REPORT_ONLY=0
 PRUNE_ORPHANS=0
 SCAN_VOLUME=0
+KEEP_CACHE=0
+
+print_usage() {
+  # 打印文件头注释直到 set -eu；不写死行号，改注释不会让用法说明截断。
+  awk 'NR>1 && /^set -eu/{exit} NR>1 && /^#/{sub(/^# ?/, ""); print}' "$0"
+}
+
+set_mode() {
+  if [ "$MODE_SET" = "1" ]; then
+    echo "[提示] 模式只取第一个（当前 $MODE），忽略参数 $1" >&2
+    return 0
+  fi
+  MODE="$1"
+  MODE_SET=1
+}
 
 for arg in "$@"; do
   case "$arg" in
+    update|deploy|up) set_mode update ;;
+    rebuild|recreate) set_mode rebuild; FULL_CACHE=1 ;;
+    clean|prune) set_mode clean ;;
+    report|status) set_mode report ;;
+    --update) set_mode update ;;
+    --rebuild) set_mode rebuild; FULL_CACHE=1 ;;
+    --clean) set_mode clean ;;
+    --report) set_mode report ;;
+    --scan-volume) SCAN_VOLUME=1; set_mode report ;;
     --prune-logs) PRUNE_LOGS=1 ;;
     --deep) DEEP=1 ;;
-    --report) REPORT_ONLY=1 ;;
-    --scan-volume) SCAN_VOLUME=1; REPORT_ONLY=1 ;;
     --prune-orphans) PRUNE_ORPHANS=1 ;;
+    --keep-cache) KEEP_CACHE=1 ;;
     -h|--help)
-      # 打印文件头注释直到 set -eu；不写死行号，改注释不会让用法说明截断。
-      awk 'NR>1 && /^set -eu/{exit} NR>1 && /^#/{sub(/^# ?/, ""); print}' "$0"
+      print_usage
       exit 0
       ;;
     *)
-      echo "[提示] 未知参数 $arg，已忽略。可用：--prune-logs / --deep / --report / --scan-volume / --prune-orphans" >&2
+      echo "[提示] 未知参数 $arg，已忽略。模式：update / rebuild / clean / report；开关见 --help" >&2
       ;;
   esac
 done
@@ -125,7 +171,7 @@ show_health_detail() {
       qq-farm-bot 2>/dev/null | tr -d '\r' | sed 's/^/    /' || true
     echo "  手动复现（把探针命令原样在容器里跑一遍）："
     echo "    docker inspect --format '{{json .Config.Healthcheck.Test}}' qq-farm-bot"
-    echo "    docker exec qq-farm-bot sh -c 'wget -q --spider http://127.0.0.1:3007/api/game-version; echo exit=\$?'"
+    echo "    docker exec qq-farm-bot node -e 'fetch(\"http://127.0.0.1:3007/api/game-version\").then(r=>process.exit(r.ok?0:1),()=>process.exit(1))'; echo exit=\$?"
   fi
   echo ""
 }
@@ -143,7 +189,7 @@ show_disk_audit() {
   [ -n "$root" ] || root=/var/lib/docker
   echo "  Docker 数据目录：$root"
   if [ ! -d "$root" ]; then
-    echo "  [跳过] 目录不存在或不可读（非 root 运行时常见），请用 root 再跑一次 --report"
+    echo "  [跳过] 目录不存在或不可读（非 root 运行时常见），请用 root 再跑一次 report"
     echo ""
     return 0
   fi
@@ -187,7 +233,7 @@ show_disk_audit() {
         snaps=$(btrfs subvolume list -s "${mnt:-/}" 2>/dev/null | wc -l | tr -d ' ' || true)
         echo "  本文件系统快照数量：${snaps:-0}    查看：btrfs subvolume list -s ${mnt:-/}"
       fi
-      echo "  fnOS 还要另外看控制面板 → 快照 / 回收站。"
+      echo "  系统自带的快照 / 回收站还要另外在控制面板里看。"
       ;;
   esac
   echo ""
@@ -214,21 +260,21 @@ show_disk_audit() {
   volume=$(df -P "$root" 2>/dev/null | awk 'NR==2{print $6}')
   echo "---- Docker 之外的部分 ----"
   echo "  df 的 Used 减掉上面 du 的占用，就是该卷上不属于 Docker 的量。"
-  echo "  这个量通常落在两处：fnOS 自己的 @appmeta / @sysappmeta / @appdata，"
+  echo "  这个量通常落在两处：系统自己的 @appmeta / @sysappmeta / @appdata，"
   echo "  以及快照 / 回收站 / 别的大文件。都不是 prune 能处理的。"
   if [ "$SCAN_VOLUME" = "1" ]; then
     # 已经扫了就别说「你自己去跑一遍」，直接交代接着看哪一段。
     echo "  这个卷的目录占用见下面的「卷内占用扫描」。"
   else
     echo "  要摊开看（只读，可能几分钟）："
-    echo "    bash scripts/nas-deploy.sh --report --scan-volume"
+    echo "    bash scripts/nas-deploy.sh report --scan-volume"
     echo "  或者手跑：du -xsh ${volume:-/}/* | sort -rh | head -n 15"
   fi
   echo ""
 }
 
-# 卷内占用扫描：把「Docker 之外那 27G 到底是谁」一次问清。
-# 纯只读：只有 du 和打印，一个字节都不删 —— 尤其绝不碰 fnOS 的 @app* 目录，
+# 卷内占用扫描：把「Docker 之外那些空间到底是谁」一次问清。
+# 纯只读：只有 du 和打印，一个字节都不删 —— 尤其绝不碰系统的 @app* 目录，
 # 那些是应用中心在管的，rm 掉会让对应应用变成「已安装但打不开」。
 show_volume_scan() {
   root=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null | tr -d '\r' || true)
@@ -259,7 +305,7 @@ show_volume_scan() {
   # 判据用「目录 + 不是 0」，不用 G/M 后缀做单位判断 —— 单位随 du 变，写死会漏。
   # 排除 Docker 数据目录本身：上面已经量过它了。
   awk -v R="$root" '$1 != "0" && $2 != R && $2 !~ /^total$/ {print $2}' "$top" 2>/dev/null \
-    | while IFS= read -r d; do [ -d "$d" ] && printf '%s\n' "$d"; done \
+    | while IFS= read -r d; do if [ -d "$d" ]; then printf '%s\n' "$d"; fi; done \
     | head -n 5 > "$drill" || true
   count=$(wc -l < "$drill" 2>/dev/null | tr -d ' ' || echo 0)
   echo "---- 下钻：最大的 ${count:-0} 个目录里装了什么 ----"
@@ -267,15 +313,16 @@ show_volume_scan() {
     echo "  没有可下钻的目录（顶层为空或全是文件）。"
   else
     while IFS= read -r d; do
-      [ -d "$d" ] || continue
-      echo ""
-      echo "  [$d]"
-      du -xsh "$d"/* "$d"/.[!.]* 2>/dev/null | sort -rh | head -n 8 | sed 's/^/    /' || true
+      if [ -d "$d" ]; then
+        echo ""
+        echo "  [$d]"
+        du -xsh "$d"/* "$d"/.[!.]* 2>/dev/null | sort -rh | head -n 8 | sed 's/^/    /' || true
+      fi
     done < "$drill"
   fi
   echo ""
 
-  # 命中了 fnOS 的系统目录才讲这段，没命中就不啰嗦。
+  # 命中了系统的应用目录才讲这段，没命中就不啰嗦。
   if grep -q '/@app' "$top" 2>/dev/null; then
     echo "---- 这些 @app* 目录是什么，能不能删 ----"
     echo "  @appmeta / @sysappmeta / @appcenter → 应用中心自己管的元数据与安装包。"
@@ -283,11 +330,72 @@ show_volume_scan() {
     echo "  @appdata → 应用的真实数据（影视库、相册索引、下载内容……），删了数据就没了。"
     echo "  @appshare → 应用之间共享的文件。"
     echo "  ⚠ 别手动删这些目录：应用中心会显示「已安装」但应用打不开，且无法自愈。"
-    echo "  正确做法：应用中心里卸载/重装对应应用，或用 fnOS 控制面板的清理功能。"
+    echo "  正确做法：应用中心里卸载/重装对应应用，或用控制面板的清理功能。"
     echo "  本脚本只展示大小，一个字节都不会删。"
     echo ""
   fi
   rm -f "$top" "$drill"
+}
+
+# 应用数据/元数据里的大目录：只读点名，一个字节都不删。
+# 这些目录由应用中心管理，手删会让应用变成「已安装但打不开」且无法自愈，
+# 只能到应用中心卸载/重装或用控制面板清理。列出来是为了让你知道该去找哪个
+# 应用处理 —— 实测「Docker 之外多出来的几 G」经常就落在某一个应用目录里。
+show_app_data_top() {
+  volume=$(df -P . 2>/dev/null | awk 'NR==2{print $6}' || true)
+  if [ -z "${volume:-}" ]; then
+    return 0
+  fi
+  found=0
+  for base in @appdata @appmeta @sysappmeta @appcenter @appshare; do
+    if [ -d "$volume/$base" ]; then
+      found=1
+      break
+    fi
+  done
+  if [ "$found" = "0" ]; then
+    # 不是这类系统（比如普通 Linux + Docker），整段跳过，不刷无用输出。
+    return 0
+  fi
+
+  echo "==== 应用数据/元数据里的大目录（只读，>${APP_BIG_DIR_MB}MB 才列）===="
+  echo "  这些目录由应用中心管理，本脚本只读数、不删除。可能需要几十秒。"
+  tmp="/tmp/.farm_appdata.$$"
+  : > "$tmp"
+  for base in @appdata @appmeta @sysappmeta @appcenter @appshare; do
+    if [ -d "$volume/$base" ]; then
+      du -sxk "$volume/$base"/* 2>/dev/null >> "$tmp" || true
+    fi
+  done
+  if [ ! -s "$tmp" ]; then
+    echo "  （读不到内容，可能需要 root）"
+    rm -f "$tmp"
+    echo ""
+    return 0
+  fi
+  # 用 du -k 的 KB 数列比较；不拿 du -h 的字符串判单位（单位随体积变，会漏）。
+  big=$(awk -v t="$APP_BIG_DIR_MB" '$1 >= t * 1024' "$tmp" | wc -l | tr -d ' ')
+  if [ "${big:-0}" = "0" ]; then
+    echo "  没有超过 ${APP_BIG_DIR_MB}MB 的应用目录。"
+  else
+    # 排序用原始 KB 数（第一列），不能用格式化后的「4.1G」字符串排 —— 那样
+    # 4.1G 和 4.9G 会被当成同一个数，大小关系就乱了。单位按体积自适应，
+    # 免得小目录全都显示成 0.1G。
+    awk -v t="$APP_BIG_DIR_MB" '
+      $1 < t * 1024 { next }
+      {
+        k = $1
+        if (k >= 1048576) printf "%d\t%6.1fG\t%s\n", k, k / 1048576, $2
+        else if (k >= 1024) printf "%d\t%6.0fM\t%s\n", k, k / 1024, $2
+        else printf "%d\t%6.0fK\t%s\n", k, k, $2
+      }' "$tmp" | sort -rn | cut -f2- | sed 's/^/  /' || true
+    echo ""
+    echo "  ⚠ 不要把上面这些目录整个删掉：应用中心会显示「已安装」但应用打不开，"
+    echo "    而且不会自愈。正确做法是到应用中心卸载/重装对应应用，"
+    echo "    或用控制面板里的清理功能。"
+  fi
+  rm -f "$tmp"
+  echo ""
 }
 
 # 读法说明：只讲怎么看这些表，不替用户下结论（结论要看实际数字）。
@@ -327,21 +435,33 @@ show_read_guide() {
   fi
 }
 
+# 回收构建缓存。三种力度，由模式决定：
+#   --keep-cache     不动（构建最快，占盘最多）
+#   update           裁到 BUILD_CACHE_KEEP_MB 以内（默认 2GB）
+#   rebuild / --deep 全清（下一次构建从头来）
 prune_build_cache() {
-  keep_bytes=$((BUILD_CACHE_KEEP_MB * 1024 * 1024))
-  if [ "$DEEP" = "1" ]; then
-    echo "==== 深度清理：清空全部构建缓存（下次构建会变慢）===="
-    docker builder prune -a -f || docker buildx prune -a -f \
-      || echo "[提示] 构建缓存清空失败，请手动执行：docker builder prune -a -f"
+  if [ "$KEEP_CACHE" = "1" ] && [ "$FULL_CACHE" != "1" ] && [ "$DEEP" != "1" ]; then
+    echo "==== 构建缓存：按 --keep-cache 保留，不动 ===="
+    echo ""
     return 0
   fi
-  echo "==== 回收构建缓存（上限 ${BUILD_CACHE_KEEP_MB}MB，超出按最久未用删）===="
+  if [ "$FULL_CACHE" = "1" ] || [ "$DEEP" = "1" ]; then
+    echo "==== 清空全部构建缓存（下次构建会从头来，慢一些）===="
+    docker builder prune -a -f || docker buildx prune -a -f \
+      || echo "[提示] 构建缓存清空失败，请手动执行：docker builder prune -a -f"
+    echo ""
+    return 0
+  fi
+  keep_bytes=$((BUILD_CACHE_KEEP_MB * 1024 * 1024))
+  echo "==== 回收构建缓存（保留上限 ${BUILD_CACHE_KEEP_MB}MB，超出按最久未用删）===="
+  echo "  要全清：bash scripts/nas-deploy.sh rebuild 或加 --deep / --keep-cache"
   # 关键在 -a：不带它只删 dangling，等于没清。--keep-storage 用来兜住上限，
   # 避免「清一次干净、下次又涨回来」；老引擎不认这些开关时逐级降级。
   docker builder prune -a -f --keep-storage "$keep_bytes" \
     || docker buildx prune -a -f --max-used-space "$keep_bytes" \
     || docker builder prune -a -f \
     || echo "[提示] 构建缓存回收失败，请手动执行：docker builder prune -a -f"
+  echo ""
 }
 
 prune_logs() {
@@ -355,6 +475,7 @@ prune_logs() {
     done
   ' || echo "[提示] 容器尚未就绪，日志截断跳过，下次带 --prune-logs 再执行。"
   docker exec qq-farm-bot sh -c 'du -sh /app/core/data/logs 2>/dev/null' || true
+  echo ""
 }
 
 # 清理历史残留：旧的已停止容器、无人引用的旧镜像。
@@ -362,13 +483,16 @@ prune_logs() {
 #   1. 只删「已停止」容器，运行中的一律跳过 —— 不会影响正在跑的服务。
 #   2. 只处理名字属于本项目的对象，别的容器/镜像碰都不碰。
 #   3. 体积残留卷只报告不删除：里面可能是旧账号数据，删错了无法恢复，
-#      而这点体积（实测约 13MB）省下来也换不来多少空间。
+#      而这点体积省下来也换不来多少空间。
 prune_orphans() {
   echo "==== 清理历史残留 ===="
 
   echo "---- 已停止的本项目容器 ----"
+  # 名字限定字符集：容器名只会是 [A-Za-z0-9_.-]，限制住就不会因为格式串
+  # 返回多列、或名字里带奇怪字符而误删别的东西。
   stopped=$(docker ps -a --filter 'status=exited' --filter 'status=created' \
-    --format '{{.Names}}' 2>/dev/null | grep -E '^qq-farm' | grep -vx 'qq-farm-bot' || true)
+    --format '{{.Names}}' 2>/dev/null \
+    | grep -E '^qq-farm[A-Za-z0-9_.-]*$' | grep -vx 'qq-farm-bot' || true)
   if [ -z "$stopped" ]; then
     echo "  没有需要清理的已停止容器。"
   else
@@ -411,51 +535,162 @@ prune_orphans() {
   echo ""
 }
 
-if [ "$REPORT_ONLY" = "1" ]; then
-  show_space "当前"
-  show_report_detail
-  show_disk_audit
+# ---- 流水线步骤：每个函数只做一件事，顺序由 do_* 固定 ----
+
+step_pull() {
+  echo "==== [1/4] 拉取最新代码 ===="
+  if ! git pull --ff-only; then
+    echo "" >&2
+    echo "[错误] git pull 失败，流水线停在这里。服务没被动，仍在运行。" >&2
+    echo "  常见原因：本地有未提交的改动，或本地分支和远程分叉。" >&2
+    echo "  处理干净再重跑：git status    /    git stash -u" >&2
+    exit 1
+  fi
+  echo ""
+}
+
+step_down() {
+  echo "==== [2/4] 停止并移除本项目容器（命名卷保留，账号数据不丢）===="
+  if ! docker compose down; then
+    echo "[提示] compose down 返回非 0（可能本来就没在跑），继续往下走。"
+  fi
+  echo ""
+}
+
+step_up() {
+  echo "==== [4/4] 重建并启动 ===="
+  if ! docker compose up -d --build "$@"; then
+    echo "" >&2
+    echo "[错误] 重建失败，服务现在是停止状态。命名卷还在，数据没丢。" >&2
+    echo "  先往上翻构建日志找原因，修好后单独跑：docker compose up -d --build" >&2
+    exit 1
+  fi
+  echo ""
+}
+
+post_deploy() {
+  echo "==== [收尾] 回收上一版留下的悬空镜像 ===="
+  docker image prune -f || true
+  echo ""
+
+  if [ "$DEEP" = "1" ]; then
+    echo "==== 深度清理：回收 1 小时前的所有未使用镜像 ===="
+    echo "  注意：这会连带清掉别的服务没在用的旧版本镜像（不再能一键回滚到那版）。"
+    docker image prune -a -f --filter "until=1h" \
+      || echo "[提示] 未使用镜像回收失败，可手动执行：docker image prune -a -f"
+    echo ""
+  fi
+
+  if [ "$PRUNE_ORPHANS" = "1" ]; then
+    prune_orphans
+  fi
+
+  if [ "$PRUNE_LOGS" = "1" ]; then
+    prune_logs
+  fi
+
+  show_space "部署后"
+  if [ "$DEEP" = "1" ]; then
+    # 深度清理是「空间告急」场景，才值得多花一次 du 做对账；常规部署不做。
+    show_disk_audit
+  fi
+  echo "==== 容器状态 ===="
+  docker compose ps || true
+  echo ""
+  echo "完成。命名卷 qq-farm-data / qq-farm-logs 未被删除或重建。"
+  show_read_guide
+}
+
+# 一键更新：git pull → down → 清缓存 → up --build → 清悬空镜像。
+# 这是日常用的一条，也是不带参数时的默认行为。
+do_update() {
+  show_space "部署前"
+  echo "流水线：git pull → compose down → builder prune → compose up -d --build"
+  echo ""
+  step_pull
+  step_down
+  prune_build_cache
+  step_up
+  post_deploy
+}
+
+# 一键重构：和更新同序，但每一步都更彻底 —— 缓存全清、旧镜像也清、
+# 容器强制新建。适合「改了什么就是不对」「升级后行为诡异」这类情况。
+do_rebuild() {
+  show_space "部署前"
+  echo "流水线：git pull → compose down → 清空构建缓存 → 清旧镜像 → compose up -d --build --force-recreate"
+  echo "  重构比更新更彻底：所有层从头构建、容器强制新建。耗时最长，占用最干净。"
+  echo ""
+  step_pull
+  step_down
+  prune_build_cache
+  echo "==== [3/4] 回收旧镜像（让上一版彻底消失）===="
+  docker image prune -f || true
+  echo ""
+  step_up --force-recreate
+  post_deploy
+}
+
+# 一键清理：只清没人引用的东西，不动运行中的容器 —— 服务全程不停。
+do_clean() {
+  echo "==== 一键清理：只清没人引用的东西，服务全程不停 ===="
+  echo ""
+  show_space "清理前"
+
+  echo "==== 悬空镜像（上一版重建留下的 <none>）===="
+  before=$(docker images -q -f dangling=true 2>/dev/null | wc -l | tr -d ' ')
+  docker image prune -f || true
+  after=$(docker images -q -f dangling=true 2>/dev/null | wc -l | tr -d ' ')
+  echo "  悬空镜像：${before} 个 → ${after} 个"
+  echo ""
+
+  echo "==== 构建缓存（全部清空，下次构建会慢一些）===="
+  docker builder prune -a -f || docker buildx prune -a -f \
+    || echo "[提示] 构建缓存清空失败，请手动执行：docker builder prune -a -f"
+  echo ""
+
+  prune_orphans
+
+  if [ "$PRUNE_LOGS" = "1" ]; then
+    prune_logs
+  else
+    echo "[提示] 应用日志没清。要一起清：bash scripts/nas-deploy.sh clean --prune-logs"
+    echo ""
+  fi
+
+  show_space "清理后"
+  echo "==== 容器状态（清理不重启服务，起来时间应该和清理前一样）===="
+  docker compose ps || true
+  echo ""
+
   if [ "$SCAN_VOLUME" = "1" ]; then
     show_volume_scan
   fi
-  show_read_guide
-  exit 0
-fi
+  # Docker 里已经榨干之后，真正占盘的往往是应用自己的数据目录。
+  # 这里点名列出大的，但不删 —— 交给应用中心处理。
+  show_app_data_top
 
-show_space "部署前"
+  echo "清理完成。Docker 里能回收的已经回收；上面点名的大目录需要去应用中心处理。"
+}
 
-# 先回收再构建：老缓存这里就削到上限以内，构建不会因为盘满而失败。
-prune_build_cache
-
-echo "==== 拉取最新代码 ===="
-git pull --ff-only
-
-echo "==== 重建并启动 ===="
-docker compose up -d --build
-
-echo "==== 回收上一轮留下的悬空镜像 ===="
-docker image prune -f
-
-if [ "$DEEP" = "1" ]; then
-  echo "==== 深度清理：回收所有未使用镜像（下次构建要重新拉基础镜像）===="
-  docker image prune -a -f --filter "until=1h" \
-    || echo "[提示] 未使用镜像回收失败，可手动执行：docker image prune -a -f"
-fi
-
-if [ "$PRUNE_ORPHANS" = "1" ]; then
-  prune_orphans
-fi
-
-if [ "$PRUNE_LOGS" = "1" ]; then
-  prune_logs
-fi
-
-show_space "部署后"
-if [ "$DEEP" = "1" ]; then
-  # 深度清理是「空间告急」场景，才值得多花一次 du 做对账；常规部署不做。
-  show_disk_audit
-fi
-echo "==== 容器状态 ===="
-docker compose ps
-echo "完成。数据卷 qq-farm-data / qq-farm-logs 未被删除或重建。"
-show_read_guide
+case "$MODE" in
+  report)
+    show_space "当前"
+    show_report_detail
+    show_disk_audit
+    if [ "$SCAN_VOLUME" = "1" ]; then
+      show_volume_scan
+    fi
+    show_read_guide
+    exit 0
+    ;;
+  clean)
+    do_clean
+    ;;
+  rebuild)
+    do_rebuild
+    ;;
+  *)
+    do_update
+    ;;
+esac
