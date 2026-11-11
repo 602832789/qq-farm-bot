@@ -140,14 +140,29 @@ show_disk_audit() {
     return 0
   fi
 
-  echo "  du 实测占用：$(du -sh "$root" 2>/dev/null | awk '{print $1}' || echo '?')"
-  echo "  前 8 大子目录："
+  # 汇总和明细必须同一个口径，一律带 -x：这个目录下 overlay2/<id>/merged 是
+  # overlay 的挂载点，du 一旦跨进去，会把每个容器的完整根目录视图再算一遍
+  # （mysql 501MB + sq 音乐 1.57GB + xiaoya 800MB + 青龙 1.13GB…），
+  # 实测能把总量从 9.3G 虚报成 15G，白找 5.7G 不存在的东西。
+  echo "  du 实测占用：$(du -sxh "$root" 2>/dev/null | awk '{print $1}' || echo '?')   （-x：不跨进 overlay 挂载点/别的文件系统）"
+  echo "  前 8 大子目录（同一口径）："
   du -sxh "$root"/* 2>/dev/null | sort -rh | head -n 8 | sed 's/^/    /' || true
   # 构建缓存真实落盘在 buildkit 目录（含 --mount=type=cache 的 pnpm store）。
-  # system df 的 Build Cache 行经常显示 0B（只算默认 builder 的可见部分），
-  # 所以这里单独量一次，免得又去追一个「看起来是 0」的地方。
+  # system df 的 Build Cache 行经常显示 0B（只算默认 builder 的可见部分）。
   if [ -d "$root/buildkit" ]; then
     echo "  构建缓存落盘（含 pnpm store 缓存卷）：$(du -sh "$root/buildkit" 2>/dev/null | awk '{print $1}')"
+    echo "    注：buildx du 报的是缓存记录的逻辑大小（含已失效记录），常远大于实际落盘。"
+  fi
+  echo ""
+
+  echo "---- 可回收的镜像 ----"
+  dangling=$(docker images -f dangling=true --format '{{.ID}}  {{.Size}}  {{.CreatedSince}}' 2>/dev/null || true)
+  if [ -z "$dangling" ]; then
+    echo "  没有悬空镜像，镜像这块没什么可回收的。"
+  else
+    echo "  悬空镜像（<none>，重建后上一版留下的）："
+    printf '%s\n' "$dangling" | sed 's/^/    /'
+    echo "  → 回收：docker image prune -f"
   fi
   echo ""
 
@@ -175,7 +190,7 @@ show_disk_audit() {
     find "$root/containers" -type f -name '*-json.log' 2>/dev/null | head -n 50 > /tmp/.farm_logs.$$ || true
     if [ -s /tmp/.farm_logs.$$ ]; then
       # shellcheck disable=SC2046
-      du -h $(cat /tmp/.farm_logs.$$) 2>/dev/null | sort -h | tail -n 5 | sed 's/^/  /' || true
+      du -h $(cat /tmp/.farm_logs.$$) 2>/dev/null | sort -rh | head -n 5 | sed 's/^/  /' || true
     else
       echo "  没有找到容器 json 日志文件。"
     fi
@@ -183,6 +198,15 @@ show_disk_audit() {
   else
     echo "  没有找到 containers 目录，跳过。"
   fi
+  echo ""
+
+  # 差额归谁：df 的 Used 减掉上面 du 的占用，就是该卷上非 Docker 的部分。
+  # 这里只给命令不自动跑：数据盘上可能是几十万个文件，du 一遍要好几分钟。
+  volume=$(df -P "$root" 2>/dev/null | awk 'NR==2{print $6}')
+  echo "---- Docker 之外的部分 ----"
+  echo "  df 的 Used 减掉上面 du 的占用，就是该卷上不属于 Docker 的量。"
+  echo "  要拆到目录（可能有几十万文件，跑之前心里有数）："
+  echo "    du -xsh ${volume:-/}/* | sort -rh | head -n 15"
   echo ""
 }
 
@@ -193,9 +217,11 @@ show_read_guide() {
   echo "   image prune 删不掉任何一条，得先看是谁在用，不是继续清镜像。"
   echo "2) Containers 的 ACTIVE 数量多，不等于有冗余：先看是不是「同一个镜像被"
   echo "   起了多个实例」。不同服务各占一个容器、各占一份镜像是正常的。"
-  echo "3) Build Cache 行很小 → 构建缓存不是大头，别在这上面找空间。"
-  echo "4) 要对账的是「磁盘对账」那一节：du 实测 vs df 已用。差额说明占空间的"
-  echo "   东西不在 Docker 里（快照 / 回收站 / 别的大文件），prune 管不到。"
+  echo "3) Build Cache 行算的是缓存记录大小，要和「构建缓存落盘」的 du 一起看："
+  echo "   记录 1GB+ 而落盘只有几十 MB 时，说明那是记录不是真占盘，别在这找空间。"
+  echo "4) 「可回收的镜像」有 <none> 就一条命令能回收（重建后上一版的镜像）。"
+  echo "5) 要对账的是「磁盘对账」：du 实测 vs df 已用。差额说明占空间的东西不在"
+  echo "   Docker 里（快照 / 回收站 / 别的服务的数据），prune 管不到。"
   echo ""
   # 只有同一个镜像被起了多个容器才算冗余；不同服务各一个容器不算。
   dup=$(docker ps -a --format '{{.Image}}' 2>/dev/null | sort | uniq -d || true)

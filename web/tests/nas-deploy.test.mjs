@@ -70,6 +70,10 @@ test('--report 做磁盘对账：用 docker info 的真实目录，不写死路�
   assert.match(deploy, /show_disk_audit/, '要有磁盘对账这一节')
   assert.match(deploy, /DockerRootDir/, '数据目录从 docker info 取，NAS 常挪到数据盘')
   assert.match(deploy, /du -sxh "\$root"/, '列出 Docker 目录里前几大子目录')
+  // 汇总和明细必须同一个口径。实测缺陷：汇总漏了 -x，du 跨进 overlay2/<id>/merged
+  // 把每个容器的根目录视图又算一遍，15G vs 明细合计 9.3G，白找 5.7G。
+  assert.match(deploy, /du -sxh "\$root" 2>\/dev\/null/, '汇总也必须带 -x')
+  assert.doesNotMatch(deploy, /du -sh "\$root"/, '汇总不能退回不带 -x 的写法')
   assert.match(deploy, /\$root\/buildkit/, '构建缓存落盘目录单独量一次（system df 常显示 0B）')
   assert.match(deploy, /df -h "\$root"/, '给出所在文件系统的已用/总量')
   assert.match(deploy, /btrfs/, 'btrfs/zfs 上删文件不释放空间，要提示快照')
@@ -107,6 +111,15 @@ test('--prune-orphans 只删已停止容器，绝不误删数据卷', () => {
   // 残留卷只报告不删：里面可能装着早期账号数据
   assert.doesNotMatch(fnCode, /docker volume rm/, '脚本不得自动删卷')
   assert.match(fn, /docker volume rm <上面列出的卷名>/, '只打印命令让用户自己确认')
+})
+
+test('--report 标出悬空镜像，并说明 buildx 记录与真实落盘不是一回事', () => {
+  // 实测：重建后 <none> 会留着上一版镜像（327MB），不跑 image prune 就一直占着；
+  // 同时 buildx du 报 1.177GB 而 buildkit 目录只有 49M，两个数字不能混着看。
+  assert.match(deploy, /dangling=true/, '要列出悬空镜像')
+  assert.match(deploy, /docker image prune -f/, '给出回收命令')
+  assert.match(deploy, /缓存记录的逻辑大小/, '说清 buildx du 与 du 的口径差异')
+  assert.match(deploy, /Docker 之外的部分/, '要对账到容器之外')
 })
 
 test('无 docker 时给出清晰错误，但 --help 仍可查看用法', () => {

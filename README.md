@@ -140,23 +140,25 @@ docker compose down
 
 ### 📦 NAS 反复部署时的空间维护
 
-反复 `docker compose up -d --build` 确实会让占用上涨，但**大头不是构建缓存**。实测一台反复部署的 fnOS，`docker system df` 给出的是这组数字：
+反复 `docker compose up -d --build` 确实会让占用上涨，但**大头不是构建缓存**。实测一台反复部署的 fnOS（跑着 10 个别的服务），`docker system df` 给出的是这组数字：
 
 ```
 TYPE            TOTAL     ACTIVE    SIZE      RECLAIMABLE
-Images          11        11        4.965GB   8.442MB (0%)
+Images          12        11        5.158GB   335.4MB (6%)
 Containers      11        11        915.3MB   0B (0%)
 Local Volumes   11        5         1.505GB   15.12MB (1%)
-Build Cache     23        0         0B        0B
+Build Cache     56        0         791.1MB   791.1MB
 ```
 
-- **构建缓存只占 193MB（约 0%）**，`docker buildx du` 才是它的真实值（`system df` 那一行只统计默认 builder）。
-- **镜像 4.965GB 全部 ACTIVE、可回收只有 8.4MB**：因为还有容器引用着它们，被引用的镜像不算 dangling，`docker image prune` 一条都删不掉。
-- **11 个容器全在跑，但那是 10 个不同的服务 + 本项目 1 个**（青龙、alist、音乐、mysql……），不同服务各占一份镜像是正常的。
+- **构建缓存不是大头**：`system df` 报 791MB、`docker buildx du` 报 1.177GB，但 `/vol1/docker/buildkit` 实测只有 **49MB**。前者是缓存记录的逻辑大小（含已失效记录），后者才是真占盘 —— 两个数字不能混着看。
+- **镜像 5.158GB 里可回收只有 335MB**：其中 327MB 是重建后没清的 `<none>`（上一版），跑一次 `docker image prune -f` 就回来了；剩下 8.4MB 是零头。被容器引用的镜像不算 dangling，`prune` 删不掉。
+- **11 个容器全在跑，但那是 10 个不同的服务 + 本项目 1 个**（贴吧签到、音乐三件套、mysql、青龙、xiaoya、lucky、qd），不同服务各占一份镜像是正常的。
 - 判断冗余要看**同一个镜像被起了几个容器**，不是数容器总数。这台机器上没有一个镜像是重复的，所以并没有什么「重复实例」可清。
-- 折算下来，这 7.4GB 里属于本项目的只有约 330MB（`qq-farm-bot:latest` 327MB + 两个命名卷约 2.5MB）。
+- 折算下来，这 8.4GB 里属于本项目的只有约 **330MB**（`qq-farm-bot:latest` 327MB + 两个命名卷约 2.5MB）。
 
-所以「清了只掉 2G」的真因**不是清理命令写错了**：能清的本来就只有几百 MB，剩下的在 Docker 之外。拿 `--report` 末尾的「磁盘对账」把数字对上就一目了然。
+**最关键的一条：`du` 必须带 `-x`。** `/vol1/docker` 下有 `overlay2/<id>/merged` 这些 overlay 挂载点，`du` 一旦跨进去，会把每个容器的完整根目录视图再算一遍（mysql 501MB + sq 音乐 1.57GB + xiaoya 800MB + 青龙 1.13GB…）。实测同一时刻：**不带 `-x` 报 15G，带 `-x` 是 9.3G，明细合计也是 9.3G** —— 差了 5.7G 纯属重复计算。`--report` 的汇总和明细现在统一带 `-x`。
+
+所以「清了只掉 2G」的真因**不是清理命令写错了**：Docker 总共 9.3G，能清的只有几百 MB，其余是别的服务本来就在用的。该卷 80G 里已用 36G，扣掉 Docker 的 9.3G，**还有约 27G 不在 Docker 里**，那才是要查的地方（`--report` 末尾给了拆解命令）。
 
 **以前踩过的坑**：`docker builder prune` 不带 `-a` 只删 dangling 缓存记录，每次重建产生的层都不算 dangling，等于几乎没删。现在脚本统一带 `-a` 并用 `--keep-storage` 设上限，但这一项只能回收 100–200MB 量级，别指望靠它解决大头。
 
@@ -172,9 +174,10 @@ bash scripts/nas-deploy.sh --prune-logs     # 额外截断应用日志卷里的�
 bash scripts/nas-deploy.sh --deep           # 空间告急：清空全部构建缓存 + 未使用镜像
 ```
 
-- `--report` 会列出**所有**镜像、容器、卷（不截断），标出 `LINKS=0` 的残留卷，并额外做两件事：
+- `--report` 会列出**所有**镜像、容器、卷（不截断），标出 `LINKS=0` 的残留卷，并额外做三件事：
   - **健康检查明细**：容器挂 `(unhealthy)` 时打印探针自己的退出码和输出。`docker ps` 只给结论，看不出是「服务没起来」还是「探针命令写错」。
-  - **磁盘对账**：用 `docker info` 取真实数据目录（NAS 常把 data-root 挪到数据盘，写死 `/var/lib/docker` 会 du 到空目录），给 `du` 实测占用、前 8 大子目录、所在文件系统的 `df`、文件系统类型；是 btrfs/zfs 就直接数快照数量。四行汇总和磁盘实测的差额，就是 prune 清不到的部分。
+  - **可回收的镜像**：单独列出 `<none>`（重建后上一版的镜像）和它的体积，并给出回收命令。
+  - **磁盘对账**：用 `docker info` 取真实数据目录（NAS 常把 data-root 挪到数据盘，写死 `/var/lib/docker` 会 du 到空目录），给 `du -xsh` 实测占用、前 8 大子目录（同一口径）、所在文件系统的 `df`、文件系统类型；是 btrfs/zfs 就直接数快照数量；构建缓存单独量 `buildkit` 目录的实际落盘；最后给出「Docker 之外还剩多少、怎么拆」。
 - 冗余判断只看**同一个镜像起了多个容器**；不同服务各一个容器不算，不会误报。
 - `--prune-orphans` 只删**已停止**的本项目容器（名字以 `qq-farm` 开头、且不是 `qq-farm-bot`），删之前还会再确认一次没在运行。数据卷和残留卷只报告不删——里面可能装着早期账号数据，删错无法恢复。
 - 构建缓存上限默认 2048MB，`BUILD_CACHE_KEEP_MB=4096 bash scripts/nas-deploy.sh` 可换更大预算。
@@ -219,7 +222,7 @@ docker system df
 >
 > ```bash
 > docker info --format '{{.DockerRootDir}}'    # 真实的 Docker 目录，别假设是 /var/lib/docker
-> du -sh "$(docker info --format '{{.DockerRootDir}}')"/* | sort -h | tail
+> du -xsh "$(docker info --format '{{.DockerRootDir}}')"/* | sort -rh | head   # 一定带 -x，否则 overlay 挂载点会重复计
 > docker buildx ls                            # 还有别的 builder 吗？每个缓存独立
 > stat -f -c %T /                              # 文件系统是 btrfs/zfs 吗
 > btrfs subvolume list -s /                    # 有快照就说明删掉的文件还被引用着

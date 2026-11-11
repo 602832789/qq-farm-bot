@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 19,
-  "patch": 0,
-  "build": 131,
-  "version": "3.19.0",
-  "updatedAt": "2026-11-10T23:45:16.575Z",
+  "patch": 1,
+  "build": 132,
+  "version": "3.19.1",
+  "updatedAt": "2026-11-11T00:06:49.331Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.19.1",
+      "build": 132,
+      "date": "2026-11-11",
+      "summary": "磁盘对账汇总补上 `-x`：15G 虚报其实是 9.3G，另有 5.7G 是 overlay 视图重复算的",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.19.0",
       "build": 131,
