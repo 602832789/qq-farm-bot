@@ -196,26 +196,47 @@ test('部署脚本绝不触碰命名卷，日志清理只截断不删文件', ()
   assert.doesNotMatch(deployCode, /\brm\s+\/app\/core\/data\/logs/)
 })
 
-test('README 的 Docker 章节只讲正常安装，不写运维脚本 / 清理空间 / 机器实测数据', () => {
-  // 运维脚本仍在仓库里，但 README 只服务于「第一次把服务装起来」的人：
-  // 一键更新/清理/重构、构建缓存、磁盘对账这些内容让章节又长又难读，全部移出。
+test('README 的 Docker 章节给出完整部署命令，不写运维脚本 / 清理空间 / 机器实测数据', () => {
+  // 章节要能让人照着装完并日常操作：安装、.env 配置、状态校验、更新重建、
+  // 重启停止、命名卷备份都要有可复制的命令。一键脚本与空间诊断仍不进 README。
   const start = readme.indexOf('<a name="docker-部署"></a>')
   const end = readme.indexOf('<a name="账号登录"></a>')
   assert.ok(start > 0 && end > start, '要取到完整的 Docker 章节')
   const section = readme.slice(start, end)
 
-  // 正常安装步骤要齐全、顺序清楚。
+  // 正常安装与配置。
   assert.match(section, /git clone /)
   assert.match(section, /docker compose up -d --build/)
   assert.match(section, /http:\/\/localhost:3007/, '给出访问地址')
   assert.match(section, /admin/, '给出首次登录账号')
-  for (const cmd of ['docker compose ps', 'docker compose logs -f', 'docker compose down'])
-    assert.match(section, new RegExp(cmd), `保留基础命令 ${cmd}`)
+  assert.match(section, /PORT=3007/, '给出端口配置写法')
+  assert.match(section, /TZ=Asia\/Shanghai/, '给出时区配置写法')
+  assert.match(section, /NPM_REGISTRY=/, '给出换源的构建参数写法')
   assert.match(section, /qq-farm-data/, '说清数据卷')
   assert.match(section, /qq-farm-logs/, '说清日志卷')
   assert.match(section, /-v/, '保留一句「不要删卷」的安全提示')
 
+  // 完整命令集：曾被「精简」到只剩 clone/up/ps/logs/down，逐条锁住防止回退。
   const escapeRe = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  for (const cmd of [
+    'docker compose ps',
+    'docker compose logs -f',
+    'docker compose config',
+    'docker compose restart qq-farm-bot',
+    'docker compose stop',
+    'docker compose start',
+    'git pull --ff-only',
+    'docker compose build --pull --no-cache',
+    'docker compose up -d --force-recreate',
+    'docker compose down',
+    'docker build -f napcat/Dockerfile',
+    'tar czf',
+  ])
+    assert.match(section, new RegExp(escapeRe(cmd)), `部署命令要完整：${cmd}`)
+
+  // 备份命名卷属于正常部署，不能退化成一句「见文档」。
+  assert.match(section, /-v qq-farm-data:\/src/, '给出命名卷备份命令')
+
   for (const removed of [
     'nas-deploy.sh',
     '一键更新',
@@ -230,13 +251,12 @@ test('README 的 Docker 章节只讲正常安装，不写运维脚本 / 清理�
     '磁盘对账',
     'docker info',
     '应用中心',
-    'qq-farm-data:/src',
   ])
     assert.doesNotMatch(section, new RegExp(escapeRe(removed)), `Docker 章节不应再出现「${removed}」`)
 
-  // 用一个行数上限挡住运维内容换个说法又塞回来。
+  // 完整命令集本来就比精简版长，但仍用上限挡住运维内容换个说法塞回来。
   const lines = section.split('\n').length
-  assert.ok(lines < 40, `Docker 章节应保持精简，实际 ${lines} 行`)
+  assert.ok(lines < 100, `Docker 章节应保持可读，实际 ${lines} 行`)
 
   // 公开文档里绝不写某台机器的实测数据：只锁「路径 / 系统目录 / 容量」这几类
   // 最典型的机器指纹，不在测试里复述具体服务名。
