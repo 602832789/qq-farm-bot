@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 22,
-  "patch": 3,
-  "build": 151,
-  "version": "3.22.3",
-  "updatedAt": "2026-11-11T21:28:25.085Z",
+  "patch": 5,
+  "build": 152,
+  "version": "3.22.5",
+  "updatedAt": "2026-11-11T21:37:04.344Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.22.5",
+      "build": 152,
+      "date": "2026-11-12",
+      "summary": "回滚 README 的 Docker 部署命令补全，恢复精简安装说明",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.22.3",
       "build": 151,

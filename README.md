@@ -115,9 +115,7 @@ pnpm dev:core
 
 ## 🐳 Docker 部署
 
-需要 Git、Docker 20+ 与 Docker Compose 2+；Node.js 已内置在镜像中，无需本机安装。
-
-### 1. 首次安装
+需要 Git 和 Docker Compose。
 
 ```bash
 git clone https://github.com/602832789/qq-farm-bot.git
@@ -127,75 +125,23 @@ docker compose up -d --build
 
 启动后访问 `http://localhost:3007`，用 `admin` / `admin` 登录，并立即修改默认密码。
 
-### 2. 可选：调整配置
-
-在仓库根目录新建 `.env`，可覆盖宿主机端口、时区和构建参数；容器内部固定监听 `3007`，`NODE_ENV` 由 Compose 固定为 `production`。
-
-```dotenv
-PORT=3007
-TZ=Asia/Shanghai
-
-# 以下三项可选：网络受限时换 npm 源，或指定基础镜像 / pnpm 版本
-# NPM_REGISTRY=https://registry.npmmirror.com/
-# NODE_IMAGE=node:20.19.6-alpine3.21
-# PNPM_VERSION=10.30.2
-```
-
-改 `PORT` / `TZ` 后执行 `docker compose up -d` 即可生效；改了构建参数要按下方「强制重建」重新构建镜像。
-
-### 3. 常用命令
-
-```bash
-# 查看运行状态、实时日志、Compose 配置展开结果
-docker compose ps
-docker compose logs -f
-docker compose logs -f --tail=100
-docker compose config
-
-# 只重启现有容器，不重建镜像
-docker compose restart qq-farm-bot
-docker compose stop
-docker compose start
-
-# 更新代码后重新构建并启动
-git pull --ff-only
-docker compose up -d --build
-
-# 换源或怀疑缓存有问题时强制重建
-docker compose build --pull --no-cache
-docker compose up -d --force-recreate
-
-# 停止并移除容器（命名卷保留）
-docker compose down
-```
-
-### 4. 数据与备份
-
 | 项目 | 位置 |
 | --- | --- |
-| 管理面板 | 宿主机 `3007`（`.env` 的 `PORT`），容器内固定 `3007` |
-| 持久化数据 | `qq-farm-data` 命名卷，容器内 `/app/core/data` |
+| 管理面板 | 端口 `3007`，由根目录 `.env` 的 `PORT` 控制宿主机映射 |
+| 持久化数据 | `qq-farm-data` 命名卷（容器内 `/app/core/data`） |
 | 运行日志 | `qq-farm-logs` 命名卷 |
 
-升级或迁移前先执行 `docker compose down` 停止服务，再备份命名卷（备份文件内含账号凭据，注意保管）：
+常用操作：
 
 ```bash
-mkdir -p ~/qq-farm-backup
-docker run --rm --entrypoint sh \
-  -v qq-farm-data:/src -v ~/qq-farm-backup:/backup \
-  qq-farm-bot:latest -c 'tar czf /backup/data-$(date +%F).tar.gz -C /src .'
+docker compose ps          # 查看运行状态
+docker compose logs -f     # 查看实时日志
+docker compose down        # 停止并移除容器
 ```
 
-`docker compose down` 不会删除命名卷；加 `-v` 会连账号数据一起删掉，请勿使用。更多说明见[数据与备份](#数据)。
+`docker compose down` 不会删除命名卷；加 `-v` 会连账号数据一起删掉，请勿使用。备份与迁移见[数据与备份](#数据)。
 
-QQ 扫码登录所需的 NapCat 默认不随 Compose 启动，需要时自行构建运行：
-
-```bash
-docker build -f napcat/Dockerfile -t qq-farm-napcat .
-docker run -d --name qq-farm-napcat --restart unless-stopped qq-farm-napcat
-```
-
-其余环境变量、构建参数与镜像细节见 [详细参考](docs/detailed-reference.md#部署细节)。
+QQ 扫码登录所需的 NapCat 服务默认不随 Compose 启动，需要时用 `napcat/Dockerfile` 自行构建。其余环境变量、构建参数与镜像细节见 [详细参考](docs/detailed-reference.md#部署细节)。
 
 <a name="账号登录"></a>
 
