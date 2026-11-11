@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 20,
-  "patch": 0,
-  "build": 133,
-  "version": "3.20.0",
-  "updatedAt": "2026-11-11T00:19:54.973Z",
+  "patch": 1,
+  "build": 135,
+  "version": "3.20.1",
+  "updatedAt": "2026-11-11T00:26:54.707Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.20.1",
+      "build": 135,
+      "date": "2026-11-11",
+      "summary": "修掉 `--scan-volume` 下「让你再跑一遍自己」的自相矛盾提示",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.20.0",
       "build": 133,

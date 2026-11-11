@@ -145,6 +145,11 @@ test('--scan-volume 把「Docker 之外」摊到目录级，全程只读', () =>
   assert.doesNotMatch(exec, /rm [^\n]*\$volume/, '不得删卷内路径')
   // 默认不跑：整卷 du 可能几分钟，常规诊断不该被它拖住
   assert.match(deploy, /if \[ "\$SCAN_VOLUME" = "1" \]/, '要用开关控制，不默认扫')
+
+  // 已经扫过了就别再让人「自己去跑一遍」，那是自相矛盾的输出
+  const gap = deploy.slice(deploy.indexOf('Docker 之外的部分'), deploy.indexOf('show_volume_scan() {'))
+  assert.match(gap, /SCAN_VOLUME" = "1"/, '扫过的场景要分支')
+  assert.match(gap, /卷内占用扫描/, '改成指向下面那段结果')
 })
 
 test('无 docker 时给出清晰错误，但 --help 仍可查看用法', () => {

@@ -216,9 +216,14 @@ show_disk_audit() {
   echo "  df 的 Used 减掉上面 du 的占用，就是该卷上不属于 Docker 的量。"
   echo "  这个量通常落在两处：fnOS 自己的 @appmeta / @sysappmeta / @appdata，"
   echo "  以及快照 / 回收站 / 别的大文件。都不是 prune 能处理的。"
-  echo "  要摊开看（只读，可能几分钟）："
-  echo "    bash scripts/nas-deploy.sh --report --scan-volume"
-  echo "  或者手跑：du -xsh ${volume:-/}/* | sort -rh | head -n 15"
+  if [ "$SCAN_VOLUME" = "1" ]; then
+    # 已经扫了就别说「你自己去跑一遍」，直接交代接着看哪一段。
+    echo "  这个卷的目录占用见下面的「卷内占用扫描」。"
+  else
+    echo "  要摊开看（只读，可能几分钟）："
+    echo "    bash scripts/nas-deploy.sh --report --scan-volume"
+    echo "  或者手跑：du -xsh ${volume:-/}/* | sort -rh | head -n 15"
+  fi
   echo ""
 }
 
