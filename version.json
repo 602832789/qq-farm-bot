@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 22,
-  "patch": 5,
-  "build": 152,
-  "version": "3.22.5",
-  "updatedAt": "2026-11-11T21:37:04.344Z",
+  "patch": 6,
+  "build": 153,
+  "version": "3.22.6",
+  "updatedAt": "2026-11-11T23:27:29.381Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.22.6",
+      "build": 153,
+      "date": "2026-11-12",
+      "summary": "修正调度器注释与清理帮忙间隔的无效配置读取",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.22.5",
       "build": 152,

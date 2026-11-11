@@ -361,19 +361,17 @@ async function runFarmTick(auto: any): Promise<void> {
     }
 }
 
-// ============ 帮助 Tick（帮忙 + 放虫放草，老版本节奏：低频 ~10 分钟）============
+// ============ 帮助 Tick（帮忙 + 放虫放草，低频固定 10 分钟一轮）============
+// 好友帮忙不需要追着时间跑：每日额度、经验上限、捣乱次数都是低频约束；
+// 偷菜才需要精确卡成熟时刻，已拆到独立的 runStealTick（成熟驱动）。
+// 调度器首次启动的首次到期窗口由 friendCheckIntervalMin/Max 决定（30~35 秒），
+// 之后每轮结束都按这里的固定间隔推进 nextFriendRunAt。
+const HELP_TICK_INTERVAL_MS = 10 * 60 * 1000;
+
 async function runFriendTick(auto: any): Promise<void> {
     if (friendTaskRunning) return;
     const generation = runtimeGeneration;
-    // 老版本 runHelpTick：间隔随机 30~35s，但最终固定抬到 10 分钟低频——
-    // 好友帮忙不需要追着时间跑，偷菜才需要（有独立成熟驱动循环）。
-    const helpMs = Math.max(
-        10 * 60 * 1000,
-        randomIntervalMs(
-            workerConfig.helpCheckIntervalMin || 30000,
-            workerConfig.helpCheckIntervalMax || 35000
-        )
-    );
+    const helpMs = HELP_TICK_INTERVAL_MS;
     // friend 总开关仍控制好友任务总入口；关闭时也要推进到期时间，避免调度器每秒空转。
     if (!auto.friend) {
         nextFriendRunAt = Date.now() + helpMs;
@@ -1600,7 +1598,9 @@ function syncStatus(force: boolean = false): void {
         friendQuiet,
         helpQuiet: friendQuiet,
         stealQuiet: friendQuiet,
-        // 好友帮忙与偷菜在同一轮好友巡查里一起做，开关状态各自独立，首页据此决定显示倒计时还是「已关闭」。
+        // 帮忙与偷菜是两条独立到期时间线：helpRemainSec 取 nextFriendRunAt（固定 10 分钟一轮），
+        // stealRemainSec 取 nextStealRunAt（按好友作物成熟时刻动态唤醒）。开关各自独立，
+        // 首页据此决定每条倒计时显示读数还是「已关闭」。
         helpEnabled: automation.friend_help !== false,
         stealEnabled: automation.friend_steal !== false,
         friendEnabled: automation.friend !== false,

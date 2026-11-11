@@ -65,3 +65,34 @@ test('停机时复位全部 2×2 跨轮状态，包含已注册的布局', () =>
     const quiesce = bodyOf(worker, 'function quiesceBot', 'async function stopBot');
     assert.match(quiesce, /resetPlantingRoundState\(\)/);
 });
+
+// 回归：帮忙间隔固定 10 分钟。原先 runFriendTick 读的 helpCheckIntervalMin/Max
+// 从未被 applyIntervalsToRuntime 赋值，算出的 30~35 秒随机数每轮都被
+// Math.max(10min, …) 丢掉 —— 是死代码。补赋值只会制造「可配置」的假象，
+// 正确做法是删掉它、把 10 分钟提为命名常量，行为保持不变。
+test('帮忙 Tick 固定 10 分钟，不再读从未赋值的间隔字段', () => {
+    const help = bodyOf(worker, 'const HELP_TICK_INTERVAL_MS', '// ============ 偷菜 Tick');
+    assert.match(help, /const HELP_TICK_INTERVAL_MS = 10 \* 60 \* 1000/, '10 分钟提为命名常量');
+    assert.match(help, /const helpMs = HELP_TICK_INTERVAL_MS/, '每轮按固定间隔推进');
+    assert.doesNotMatch(help, /Math\.max\(\s*10 \* 60 \* 1000/, '不再做恒被丢弃的 max');
+    assert.match(help, /nextFriendRunAt = Date\.now\(\) \+ helpMs/, 'finally 仍推进好友到期线');
+    assert.doesNotMatch(worker, /helpCheckInterval(?:Min|Max)/, '全文件不得再出现未赋值字段');
+
+    // 首次启动的到期窗口仍由可配置的 friendCheckInterval* 决定，别把这条也顺手删了。
+    const reset = bodyOf(worker, 'function resetUnifiedSchedule', 'const BUSINESS_TICK_LABEL');
+    assert.match(reset, /workerConfig\.friendCheckIntervalMin \|\| 12000/);
+    assert.match(reset, /nextFriendRunAt = now \+ friendMs/);
+    const apply = bodyOf(worker, 'function applyIntervalsToRuntime', 'function randomIntervalMs');
+    assert.match(apply, /workerConfig\.friendCheckIntervalMin = friendRange\.min \* 1000/);
+});
+
+// 回归：帮忙与偷菜早已拆成两条独立到期时间线，status 里的注释不能还写着
+// 「在同一轮好友巡查里一起做」，否则后人会按错的模型去改倒计时。
+test('nextChecks 注释与两条独立到期线一致，不再宣称同一轮好友巡查', () => {
+    const nextChecks = bodyOf(worker, 'fullStats.nextChecks = {', 'fullStats.automation');
+    assert.doesNotMatch(nextChecks, /同一轮好友巡查里一起做/);
+    assert.match(nextChecks, /两条独立到期时间线/);
+    assert.match(nextChecks, /helpRemainSec: friendRemainSec/, '帮忙倒计时取好友到期线');
+    assert.match(nextChecks, /stealRemainSec,/, '偷菜倒计时取独立到期线');
+    assert.match(worker, /nextStealRunAt = Date\.now\(\) \+ Math\.max\(1000, Number\(nextStealDelayMs\)/);
+});
