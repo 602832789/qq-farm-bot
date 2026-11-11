@@ -1,12 +1,20 @@
 {
   "major": 3,
-  "minor": 21,
+  "minor": 22,
   "patch": 0,
-  "build": 137,
-  "version": "3.21.0",
-  "updatedAt": "2026-11-11T01:26:21.166Z",
+  "build": 138,
+  "version": "3.22.0",
+  "updatedAt": "2026-11-11T20:25:42.331Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.22.0",
+      "build": 138,
+      "date": "2026-11-12",
+      "summary": "新增今日统计的金豆与点券今日数值卡片",
+      "commit": "—",
+      "type": "minor"
+    },
     {
       "version": "3.21.0",
       "build": 137,

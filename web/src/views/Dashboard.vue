@@ -496,6 +496,83 @@ const operationGroups = computed(() => partitionOperations(filteredOperations.va
 // 负数按资产「本次运行金币」的负向色展示。经验只增不减，仍保持非负。
 const todayGoldGained = computed(() => Number(status.value?.sessionGoldGained) || 0)
 const todayExpGained = computed(() => Math.max(0, Number(status.value?.sessionExpGained) || 0))
+// 点券与金币同源：后端 sessionCouponGained 同为「当日余额 - 当日基线」的净值，
+// 消费高于收益时为负，负数沿用同一个负向色，不做 clamp。
+const todayCouponGained = computed(() => Number(status.value?.sessionCouponGained) || 0)
+
+// 金豆：后端只下发当前余额 status.goldBean，没有当日净增字段。为遵守「只改
+// 今日统计模块、不动后端」的范围，在浏览器按「账号 + 本地日期」记住当天首次
+// 看到的余额作基线，净值 = 当前余额 - 基线，与金币一样可为负、负数同色。
+// 基线存 localStorage：刷新不丢；跨天 / 换账号各自重新起算。
+const todayGoldBeanGained = ref(0)
+
+// ---- 今日统计：金豆当日基线纯逻辑开始（可独立测试，勿在此区间引用 Vue 状态）----
+const TODAY_BEAN_BASELINE_KEY = 'dashboard:todayGoldBeanBaseline'
+const beanBaselineMemory = new Map<string, { day: string, value: number }>()
+
+function localDayKey(now: Date = new Date()): string {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+}
+
+type BeanBaselineStorage = Pick<Storage, 'getItem' | 'setItem'>
+
+// 净值 = 当前余额 - 当日基线。基线按「账号 + 本地日期」保存：跨天、换账号各自
+// 重新起算；余额还没下发或掉线时不记基线，避免恢复后显示一个虚高的数字。
+// storage 可注入，隐私模式 / localStorage 不可用时退回内存基线。
+function resolveGoldBeanDelta(
+  rawBean: unknown,
+  accountId: string,
+  connected: boolean,
+  day: string,
+  storage: BeanBaselineStorage,
+): number {
+  if (!accountId || !connected || rawBean == null)
+    return 0
+  const bean = Number(rawBean)
+  if (!Number.isFinite(bean) || bean < 0)
+    return 0
+  const key = `${TODAY_BEAN_BASELINE_KEY}:${accountId}`
+  let base: number | null = null
+  try {
+    const raw = storage.getItem(key)
+    if (raw) {
+      const saved = JSON.parse(raw)
+      if (saved?.day === day && Number.isFinite(Number(saved.value)))
+        base = Number(saved.value)
+    }
+  }
+  catch { /* 存储不可用或内容损坏：退回内存基线 */ }
+  if (base === null) {
+    const mem = beanBaselineMemory.get(key)
+    if (mem?.day === day)
+      base = mem.value
+  }
+  if (base === null) {
+    base = bean
+    try {
+      storage.setItem(key, JSON.stringify({ day, value: base }))
+    }
+    catch { /* 写不进 localStorage 时内存基线仍然有效 */ }
+    beanBaselineMemory.set(key, { day, value: base })
+  }
+  // 消费金豆后当前余额低于基线即为负数，与金币一样不 clamp 到 0。
+  return bean - base
+}
+// ---- 今日统计：金豆当日基线纯逻辑结束 ----
+
+watch(
+  [() => status.value?.status?.goldBean, currentAccountId, () => status.value?.connection?.connected],
+  ([rawBean, accountId, connected]) => {
+    todayGoldBeanGained.value = resolveGoldBeanDelta(
+      rawBean,
+      String(accountId || ''),
+      connected === true,
+      localDayKey(),
+      localStorage,
+    )
+  },
+  { immediate: true },
+)
 
 function getOpName(key: string | number) {
   return OP_META[String(key)]?.label || String(key)
@@ -1058,7 +1135,7 @@ useIntervalFn(updateCountdowns, 1000)
             description="启动账号后显示今日收获与互动统计"
             icon="i-carbon-connection-signal-off"
           />
-          <div v-else-if="!operationGroups.active.length && todayGoldGained === 0 && todayExpGained === 0" class="flex flex-col items-center justify-center gap-1 py-6 text-center">
+          <div v-else-if="!operationGroups.active.length && todayGoldGained === 0 && todayExpGained === 0 && todayGoldBeanGained === 0 && todayCouponGained === 0" class="flex flex-col items-center justify-center gap-1 py-6 text-center">
             <span class="i-carbon-sprout text-3xl text-gray-300 dark:text-gray-600" />
             <strong class="text-sm text-gray-700 dark:text-gray-200">等待第一份收获</strong>
             <p class="text-xs text-gray-400">
@@ -1066,7 +1143,7 @@ useIntervalFn(updateCountdowns, 1000)
             </p>
           </div>
           <template v-else>
-            <div class="grid grid-cols-2 mb-2 gap-2 2xl:gap-3" role="region" aria-label="今日金币与经验增量">
+            <div class="grid grid-cols-2 mb-2 gap-2 2xl:gap-3" role="region" aria-label="今日金币、经验、金豆与点券增量">
               <div class="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2 transition-transform hover:scale-105 dark:bg-gray-700/30">
                 <div class="flex items-center gap-2">
                   <img src="/game-config/resource-icons/gold.png" alt="金币" class="h-5 w-5 object-contain 2xl:h-6 2xl:w-6" aria-hidden="true">
@@ -1087,6 +1164,28 @@ useIntervalFn(updateCountdowns, 1000)
                 </div>
                 <div class="text-sm font-bold 2xl:text-base">
                   {{ todayExpGained }}
+                </div>
+              </div>
+              <div class="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2 transition-transform hover:scale-105 dark:bg-gray-700/30">
+                <div class="flex items-center gap-2">
+                  <img src="/game-config/resource-icons/gold-bean.png" alt="金豆" class="h-5 w-5 object-contain 2xl:h-6 2xl:w-6" aria-hidden="true">
+                  <div class="text-xs text-gray-500 2xl:text-sm">
+                    金豆
+                  </div>
+                </div>
+                <div class="ov-today-value text-sm font-bold 2xl:text-base" :class="{ 'is-down': todayGoldBeanGained < 0 }">
+                  {{ todayGoldBeanGained }}
+                </div>
+              </div>
+              <div class="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2 transition-transform hover:scale-105 dark:bg-gray-700/30">
+                <div class="flex items-center gap-2">
+                  <img src="/game-config/resource-icons/coupon.png" alt="点券" class="h-5 w-5 object-contain 2xl:h-6 2xl:w-6" aria-hidden="true">
+                  <div class="text-xs text-gray-500 2xl:text-sm">
+                    点券
+                  </div>
+                </div>
+                <div class="ov-today-value text-sm font-bold 2xl:text-base" :class="{ 'is-down': todayCouponGained < 0 }">
+                  {{ todayCouponGained }}
                 </div>
               </div>
             </div>
@@ -1589,6 +1688,11 @@ useIntervalFn(updateCountdowns, 1000)
 
 /* 今日统计金币净增为负时，与资产「本次运行金币」用同一个负向色。 */
 .ov-today-gold.is-down {
+  color: var(--ui-danger);
+}
+
+/* 金豆 / 点券净增为负时沿用同一个负向色，四张卡片配色保持一致。 */
+.ov-today-value.is-down {
   color: var(--ui-danger);
 }
 
