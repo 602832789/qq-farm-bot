@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 20,
-  "patch": 1,
-  "build": 135,
-  "version": "3.20.1",
-  "updatedAt": "2026-11-11T00:26:54.707Z",
+  "patch": 2,
+  "build": 136,
+  "version": "3.20.2",
+  "updatedAt": "2026-11-11T00:48:52.104Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.20.2",
+      "build": 136,
+      "date": "2026-11-11",
+      "summary": "README 的「Docker 部署」只留通用步骤，删掉某台机器的实测数据",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.20.1",
       "build": 135,

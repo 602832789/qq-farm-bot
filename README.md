@@ -138,117 +138,30 @@ docker compose down
 
 `docker compose down` 不会删除命名卷，除非确认要清空数据，不要加 `-v`。更新时先 `git pull --ff-only`，再执行 `docker compose up -d --build`。
 
-### 📦 NAS 反复部署时的空间维护
-
-反复 `docker compose up -d --build` 确实会让占用上涨，但**大头不是构建缓存**。实测一台反复部署的 fnOS（跑着 10 个别的服务），`docker system df` 给出的是这组数字：
-
-```
-TYPE            TOTAL     ACTIVE    SIZE      RECLAIMABLE
-Images          12        11        5.158GB   335.4MB (6%)
-Containers      11        11        915.3MB   0B (0%)
-Local Volumes   11        5         1.505GB   15.12MB (1%)
-Build Cache     56        0         791.1MB   791.1MB
-```
-
-- **构建缓存不是大头**：`system df` 报 791MB、`docker buildx du` 报 1.177GB，但 `/vol1/docker/buildkit` 实测只有 **49MB**。前者是缓存记录的逻辑大小（含已失效记录），后者才是真占盘 —— 两个数字不能混着看。
-- **镜像 5.158GB 里可回收只有 335MB**：其中 327MB 是重建后没清的 `<none>`（上一版），跑一次 `docker image prune -f` 就回来了；剩下 8.4MB 是零头。被容器引用的镜像不算 dangling，`prune` 删不掉。
-- **11 个容器全在跑，但那是 10 个不同的服务 + 本项目 1 个**（贴吧签到、音乐三件套、mysql、青龙、xiaoya、lucky、qd），不同服务各占一份镜像是正常的。
-- 判断冗余要看**同一个镜像被起了几个容器**，不是数容器总数。这台机器上没有一个镜像是重复的，所以并没有什么「重复实例」可清。
-- 折算下来，这 8.4GB 里属于本项目的只有约 **330MB**（`qq-farm-bot:latest` 327MB + 两个命名卷约 2.5MB）。
-
-**最关键的一条：`du` 必须带 `-x`。** `/vol1/docker` 下有 `overlay2/<id>/merged` 这些 overlay 挂载点，`du` 一旦跨进去，会把每个容器的完整根目录视图再算一遍（mysql 501MB + sq 音乐 1.57GB + xiaoya 800MB + 青龙 1.13GB…）。实测同一时刻：**不带 `-x` 报 15G，带 `-x` 是 9.3G，明细合计也是 9.3G** —— 差了 5.7G 纯属重复计算。`--report` 的汇总和明细现在统一带 `-x`。
-
-所以「清了只掉 2G」的真因**不是清理命令写错了**：Docker 总共 9.3G，能清的只有几百 MB，其余是别的服务本来就在用的。
-
-**那剩下的 27G 是什么？** 同一台机器上 `du -xsh /vol1/* | sort -rh` 的结果很典型：
-
-```
-10G     /vol1/@appmeta       ← fnOS 应用中心的元数据 / 安装包
-9.1G    /vol1/@sysappmeta    ← fnOS 系统应用的元数据
-9.1G    /vol1/docker         ← Docker 全部（含别的服务的镜像、数据卷）
-4.3G    /vol1/@appdata       ← 应用的真实数据（影视库、相册索引、下载内容）
-2.3G    /vol1/1000           ← 用户主目录
-```
-
-`@appmeta` / `@sysappmeta` 加起来 19G，是 fnOS 自己管的目录：**应用每升级/重装一次就可能在里面留一份旧版本**，反复升级就一路堆上去。它们和本项目无关，`docker prune` 一个字节都碰不到。
-
-> ⚠️ **不要手动删 `@app*` 目录。** 删了应用中心仍然显示「已安装」，但应用会直接打不开，而且不会自愈。正确做法是在应用中心里卸载 / 重装对应应用，或用 fnOS 控制面板的清理功能。`--scan-volume` 只做展示，不会删任何东西。
-
-`--report --scan-volume` 会把这一整块自动摊开（顶层排序 + 最大的 5 个目录各下钻一层），不用再手敲 `du`。
-
-**以前踩过的坑**：`docker builder prune` 不带 `-a` 只删 dangling 缓存记录，每次重建产生的层都不算 dangling，等于几乎没删。现在脚本统一带 `-a` 并用 `--keep-storage` 设上限，但这一项只能回收 100–200MB 量级，别指望靠它解决大头。
-
-另外应用自己往 `qq-farm-logs` 卷里写 `combined.log` / `error.log`，现在已加体积上限（默认 100MB，`LOG_MAX_SIZE_MB` 可调），容器控制台日志另有 `json-file` 的 `10m × 3` 上限。
-
-**以后每次更新用一键脚本**（只删没人引用的东西，绝不碰数据卷）：
+### 📦 更新与空间
 
 ```bash
-bash scripts/nas-deploy.sh                  # 回收构建缓存 → git pull → 重建 → 清悬空镜像
-bash scripts/nas-deploy.sh --report         # 只读诊断：镜像/容器/卷全量 + 怎么读这张表
-bash scripts/nas-deploy.sh --report --scan-volume   # 再扫整块盘的目录占用，几分钟
-bash scripts/nas-deploy.sh --prune-orphans  # 清历史残留：已停止的旧容器 + 悬空镜像
-bash scripts/nas-deploy.sh --prune-logs     # 额外截断应用日志卷里的日志
-bash scripts/nas-deploy.sh --deep           # 空间告急：清空全部构建缓存 + 未使用镜像
+git pull --ff-only
+docker compose up -d --build      # 或 bash scripts/nas-deploy.sh（先回收旧镜像再重建）
 ```
 
-- `--report` 会列出**所有**镜像、容器、卷（不截断），标出 `LINKS=0` 的残留卷，并额外做三件事：
-  - **健康检查明细**：容器挂 `(unhealthy)` 时打印探针自己的退出码和输出。`docker ps` 只给结论，看不出是「服务没起来」还是「探针命令写错」。
-  - **可回收的镜像**：单独列出 `<none>`（重建后上一版的镜像）和它的体积，并给出回收命令。
-  - **磁盘对账**：用 `docker info` 取真实数据目录（NAS 常把 data-root 挪到数据盘，写死 `/var/lib/docker` 会 du 到空目录），给 `du -xsh` 实测占用、前 8 大子目录（同一口径）、所在文件系统的 `df`、文件系统类型；是 btrfs/zfs 就直接数快照数量；构建缓存单独量 `buildkit` 目录的实际落盘；最后给出「Docker 之外还剩多少、怎么拆」。
-- `--scan-volume`（配合 `--report`，也可单独用）再往前一步：按卷顶层的 `du -xsh` 排序，对最大的 5 个目录各下钻一层，命中 `@appmeta` / `@sysappmeta` / `@appdata` 时给出「这是 fnOS 应用目录、别手删、去应用中心处理」的说明。**纯只读，一个字节都不删。** 整卷可能有几十万文件，跑起来要几分钟，所以不放进默认的 `--report`。
-- 冗余判断只看**同一个镜像起了多个容器**；不同服务各一个容器不算，不会误报。
-- `--prune-orphans` 只删**已停止**的本项目容器（名字以 `qq-farm` 开头、且不是 `qq-farm-bot`），删之前还会再确认一次没在运行。数据卷和残留卷只报告不删——里面可能装着早期账号数据，删错无法恢复。
-- 构建缓存上限默认 2048MB，`BUILD_CACHE_KEEP_MB=4096 bash scripts/nas-deploy.sh` 可换更大预算。
-- **回收在构建之前做**，所以盘快满时老缓存会先被削下去，构建不会因为 `no space left` 失败。
+反复重建会留下上一版的 `<none>` 悬空镜像，`docker image prune -f` 可以回收。它只删除没有任何容器引用的悬空镜像，不影响正在运行的容器和数据卷。
 
-**已经涨上去的空间，按这个顺序清**：
+想知道空间花在哪里，用只读诊断（只打印，不改动任何容器、镜像、卷）：
 
 ```bash
-# 1) 先看空间花在哪：先看 SIZE，再看每个容器用的是不是同一个镜像
-docker system df
-docker ps -a                            # 本项目应该只有 1 个 qq-farm-bot，别的服务不算冗余
-docker ps -a --format '{{.Image}}' | sort | uniq -d   # 有输出才是真的重复实例
-docker images                           # 哪些镜像被谁引用着
-docker system df -v                     # 卷的 LINKS 列，0 = 没人引用
-docker buildx du                        # 构建缓存真实值；有多个 builder 时用 docker buildx ls 看谁在占
+bash scripts/nas-deploy.sh --report                 # 镜像 / 容器 / 卷全量 + 磁盘对账
+bash scripts/nas-deploy.sh --report --scan-volume   # 再加一步：整卷目录占用
+```
 
-# 2) 先备份账号数据到宿主机（内含账号凭据，别外传）
+**清理或删卷之前先备份账号数据**（备份文件内含账号凭据，注意保管）：
+
+```bash
 mkdir -p ~/qq-farm-backup
 docker run --rm --entrypoint sh \
   -v qq-farm-data:/src -v ~/qq-farm-backup:/backup \
   qq-farm-bot:latest -c 'tar czf /backup/data-$(date +%F).tar.gz -C /src .'
-
-# 3) 分级回收，随时可以停在某一步
-docker image prune -f          # 只删 <none> 悬空镜像，最安全；但被容器引用的删不掉
-docker builder prune -a -f     # 清空全部构建缓存：**-a 不能省**，省了就只删 dangling
-docker builder prune -a -f --keep-storage 2147483648   # 或者只保留 2GB，按最久未用删
-
-# 3.5) 容器太多时才需要这一步：镜像被旧容器钉住，只能先停容器再清镜像
-docker ps -a                                   # 先逐个确认，别停掉正在用的
-docker stop <多余的容器名> && docker rm <多余的容器名>
-docker image prune -a -f --filter "until=1h"   # 这时旧镜像才真正变成可回收
-
-# 4) 日志卷单独处理：只截断文件，不删卷、不重启容器
-docker exec qq-farm-bot sh -c 'du -sh /app/core/data/logs'
-docker exec qq-farm-bot sh -c 'for f in /app/core/data/logs/*.log; do : > "$f"; done'
-
-# 5) 复核
-docker system df
 ```
-
-> 清完 `docker system df` 四块加起来仍明显小于涨出来的量时，`bash scripts/nas-deploy.sh --report` 末尾的「磁盘对账」会把差额直接算给你。还想手工核，按这个顺序看三处：
->
-> ```bash
-> docker info --format '{{.DockerRootDir}}'    # 真实的 Docker 目录，别假设是 /var/lib/docker
-> du -xsh "$(docker info --format '{{.DockerRootDir}}')"/* | sort -rh | head   # 一定带 -x，否则 overlay 挂载点会重复计
-> docker buildx ls                            # 还有别的 builder 吗？每个缓存独立
-> stat -f -c %T /                              # 文件系统是 btrfs/zfs 吗
-> btrfs subvolume list -s /                    # 有快照就说明删掉的文件还被引用着
-> ```
->
-> 快照 / NAS 回收站这部分**不属于 Docker，`prune` 永远清不到**，只能到 fnOS 控制面板去删快照或清回收站。同样清不到的还有 `@appmeta` / `@sysappmeta` / `@appdata` 这些 fnOS 应用目录（一台实测机器的 27G 差额里，19G 就在前两个里），它们要在应用中心里处理。
->
-> 嫌一条条敲麻烦就直接：`bash scripts/nas-deploy.sh --report --scan-volume`，整卷排序 + 下钻一次给全。
 
 > **⚠️ 以下操作会不可逆地删掉账号数据，不要执行**：`docker compose down -v`、`docker system prune --volumes`、`docker system prune -a --volumes`、`docker volume prune -f`、`rm -rf /var/lib/docker`。它们会删除「当前没有被容器引用」的命名卷；容器一旦处于停止状态，`qq-farm-data` 里的账号、Code、refreshtoken 就会一起消失。
 

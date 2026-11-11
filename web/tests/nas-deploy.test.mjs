@@ -195,14 +195,23 @@ test('部署脚本绝不触碰命名卷，日志清理只截断不删文件', ()
   assert.doesNotMatch(deployCode, /\brm\s+\/app\/core\/data\/logs/)
 })
 
-test('README 给出诊断、分级清理与危险操作警示', () => {
-  assert.match(readme, /NAS 反复部署时的空间维护/)
-  assert.match(readme, /bash scripts\/nas-deploy\.sh/)
-  assert.match(readme, /docker system df -v/, '先诊断再清理')
-  assert.match(readme, /docker builder prune -a/, '清理命令必须带 -a，不带等于没清')
+test('README 的 Docker 章节只写通用步骤，不写某台机器的实测数据', () => {
+  // README 是公开文档。曾经把某台机器实测的挂载路径、应用目录、容量、还跑了哪些
+  // 服务都写了进去，那属于使用者自己的设备信息，不该进仓库。
+  assert.match(readme, /bash scripts\/nas-deploy\.sh/, '给出运维脚本入口')
   assert.match(readme, /qq-farm-data:\/src/, '清理前先备份账号数据')
   assert.match(readme, /⚠️/, '危险命令要有醒目警告')
   assert.match(readme, /qq-farm-logs/)
+
+  // 只锁「路径 / 系统目录 / 容量」这几类最典型的机器指纹，不在测试里复述具体服务名。
+  const leaked = [
+    { re: /\/vol\d+\b/, name: '具体挂载路径' },
+    { re: /\/volume\d+/, name: '具体挂载路径' },
+    { re: /@(?:appmeta|sysappmeta|appdata|appshare)/, name: '系统应用目录' },
+    { re: /\d+(?:\.\d+)?\s*[GM]\s+\//, name: '该机器实测容量' },
+  ]
+  for (const { re, name } of leaked)
+    assert.doesNotMatch(readme, re, `README 不得出现${name}：${re}`)
 })
 
 test('compose 仍保留两个命名卷与容器日志上限', () => {
