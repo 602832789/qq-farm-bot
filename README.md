@@ -121,82 +121,25 @@ pnpm dev:core
 git clone https://github.com/602832789/qq-farm-bot.git
 cd qq-farm-bot
 docker compose up -d --build
-
-# 查看状态与日志
-docker compose ps
-docker compose logs -f
-
-# 停止并移除容器
-docker compose down
 ```
 
-| 用途 | 端口或位置 |
+启动后访问 `http://localhost:3007`，用 `admin` / `admin` 登录，并立即修改默认密码。
+
+| 项目 | 位置 |
 | --- | --- |
-| 管理面板 | `3007`（根目录 `.env` 的 `PORT` 控制宿主机映射） |
-| 持久化数据 | `qq-farm-data` 命名卷，容器内 `/app/core/data` |
+| 管理面板 | 端口 `3007`，由根目录 `.env` 的 `PORT` 控制宿主机映射 |
+| 持久化数据 | `qq-farm-data` 命名卷（容器内 `/app/core/data`） |
 | 运行日志 | `qq-farm-logs` 命名卷 |
 
-`docker compose down` 不会删除命名卷，除非确认要清空数据，不要加 `-v`。
-
-### 📦 一键更新 / 一键清理 / 一键重构
-
-仓库自带的 `scripts/nas-deploy.sh` 把日常运维收成三条命令，顺序固定：
+常用操作：
 
 ```bash
-bash scripts/nas-deploy.sh            # 一键更新（最常用，不带参数就是它）
-bash scripts/nas-deploy.sh rebuild    # 一键重构：彻底重建
-bash scripts/nas-deploy.sh clean      # 一键清理：服务不停
+docker compose ps          # 查看运行状态
+docker compose logs -f     # 查看实时日志
+docker compose down        # 停止并移除容器
 ```
 
-| 命令 | 实际执行 |
-| --- | --- |
-| `update` | `git pull --ff-only` → `docker compose down` → `docker builder prune -a -f`（裁到 2GB 上限）→ `docker compose up -d --build` → `docker image prune -f` |
-| `rebuild` | 同样的顺序，但构建缓存全清、旧镜像也清、容器 `--force-recreate`。最彻底也最慢 |
-| `clean` | 清悬空镜像 → 清空构建缓存 → 清本项目历史残留。**不动运行中的容器，服务全程不停** |
-
-**为什么顺序不能换**：
-
-- `down` 必须在 `prune` 之前 —— 容器还在跑就会钉住旧镜像和旧层，这时 `prune` 什么都回收不了，`docker system df` 会显示「可回收 0B」
-- `prune` 必须在 `build` 之前 —— 盘快满时先腾地方再构建，否则会遇到 `no space left on device`
-- `image prune` 必须在 `build` 之后 —— 到那时才能确定哪些是上一版留下的
-
-常用开关，可以和任意命令组合：
-
-| 开关 | 作用 |
-| --- | --- |
-| `--keep-cache` | 更新时保留构建缓存（构建更快，占盘更多） |
-| `--prune-logs` | 顺带截断应用日志（只截断，不删文件） |
-| `--prune-orphans` | 清本项目的历史残留（已停止的旧容器 + 悬空镜像） |
-| `--deep` | 清空全部构建缓存，并回收 1 小时前的所有未使用镜像 |
-| `--scan-volume` | 扫整块盘的目录占用（只读，可能几分钟） |
-| `report` | 只读诊断，不改动任何东西 |
-
-脚本不会做的事：删命名卷、动别人的容器/镜像/卷、`down -v`、`docker system prune`。`qq-farm-data` / `qq-farm-logs` 是硬编码白名单，任何模式都不碰。
-
-### 📦 空间去哪了
-
-反复重建会留下上一版 `<none>` 悬空镜像，`docker image prune -f` 就能回收；`update` 的最后一步会自动做。
-
-Docker 里榨干之后如果还觉得占盘，用只读诊断对账：
-
-```bash
-bash scripts/nas-deploy.sh report                 # 镜像 / 容器 / 卷全量 + 磁盘对账
-bash scripts/nas-deploy.sh report --scan-volume   # 再加一步：整卷目录占用
-bash scripts/nas-deploy.sh clean                  # 清理，并点名 Docker 之外的大目录
-```
-
-`report` 用 `docker info` 取真实数据目录（NAS 常把 data-root 挪到数据盘，写死 `/var/lib/docker` 会读到空目录），把 `du` 实测占用和 `df` 已用摆在一起对账。差额通常不在 Docker 里 —— 系统快照、回收站、以及应用自己的数据目录，这些 `prune` 永远碰不到。`clean` 会把这些大目录点名列出来，处理方式是到应用中心卸载/重装对应应用，**不要手动删目录**：手删之后应用中心仍显示「已安装」但应用打不开，而且不会自愈。
-
-**清理或删卷之前先备份账号数据**（备份文件内含账号凭据，注意保管）：
-
-```bash
-mkdir -p ~/qq-farm-backup
-docker run --rm --entrypoint sh \
-  -v qq-farm-data:/src -v ~/qq-farm-backup:/backup \
-  qq-farm-bot:latest -c 'tar czf /backup/data-$(date +%F).tar.gz -C /src .'
-```
-
-> **⚠️ 以下操作会不可逆地删掉账号数据，不要执行**：`docker compose down -v`、`docker system prune --volumes`、`docker system prune -a --volumes`、`docker volume prune -f`、`rm -rf /var/lib/docker`。它们会删除「当前没有被容器引用」的命名卷；容器一旦处于停止状态，`qq-farm-data` 里的账号、Code、refreshtoken 就会一起消失。
+`docker compose down` 不会删除命名卷；加 `-v` 会连账号数据一起删掉，请勿使用。备份与迁移见[数据与备份](#数据)。
 
 QQ 扫码登录所需的 NapCat 服务默认不随 Compose 启动，需要时用 `napcat/Dockerfile` 自行构建。其余环境变量、构建参数与镜像细节见 [详细参考](docs/detailed-reference.md#部署细节)。
 

@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 22,
-  "patch": 1,
-  "build": 139,
-  "version": "3.22.1",
-  "updatedAt": "2026-11-11T20:45:16.765Z",
+  "patch": 2,
+  "build": 150,
+  "version": "3.22.2",
+  "updatedAt": "2026-11-11T21:06:32.825Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.22.2",
+      "build": 150,
+      "date": "2026-11-12",
+      "summary": "精简 README 的 Docker 部署章节，只保留正常安装说明",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.22.1",
       "build": 139,

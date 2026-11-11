@@ -196,15 +196,50 @@ test('部署脚本绝不触碰命名卷，日志清理只截断不删文件', ()
   assert.doesNotMatch(deployCode, /\brm\s+\/app\/core\/data\/logs/)
 })
 
-test('README 的 Docker 章节只写通用步骤，不写某台机器的实测数据', () => {
-  // README 是公开文档。曾经把某台机器实测的挂载路径、应用目录、容量、还跑了哪些
-  // 服务都写了进去，那属于使用者自己的设备信息，不该进仓库。
-  assert.match(readme, /bash scripts\/nas-deploy\.sh/, '给出运维脚本入口')
-  assert.match(readme, /qq-farm-data:\/src/, '清理前先备份账号数据')
-  assert.match(readme, /⚠️/, '危险命令要有醒目警告')
-  assert.match(readme, /qq-farm-logs/)
+test('README 的 Docker 章节只讲正常安装，不写运维脚本 / 清理空间 / 机器实测数据', () => {
+  // 运维脚本仍在仓库里，但 README 只服务于「第一次把服务装起来」的人：
+  // 一键更新/清理/重构、构建缓存、磁盘对账这些内容让章节又长又难读，全部移出。
+  const start = readme.indexOf('<a name="docker-部署"></a>')
+  const end = readme.indexOf('<a name="账号登录"></a>')
+  assert.ok(start > 0 && end > start, '要取到完整的 Docker 章节')
+  const section = readme.slice(start, end)
 
-  // 只锁「路径 / 系统目录 / 容量」这几类最典型的机器指纹，不在测试里复述具体服务名。
+  // 正常安装步骤要齐全、顺序清楚。
+  assert.match(section, /git clone /)
+  assert.match(section, /docker compose up -d --build/)
+  assert.match(section, /http:\/\/localhost:3007/, '给出访问地址')
+  assert.match(section, /admin/, '给出首次登录账号')
+  for (const cmd of ['docker compose ps', 'docker compose logs -f', 'docker compose down'])
+    assert.match(section, new RegExp(cmd), `保留基础命令 ${cmd}`)
+  assert.match(section, /qq-farm-data/, '说清数据卷')
+  assert.match(section, /qq-farm-logs/, '说清日志卷')
+  assert.match(section, /-v/, '保留一句「不要删卷」的安全提示')
+
+  const escapeRe = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  for (const removed of [
+    'nas-deploy.sh',
+    '一键更新',
+    '一键清理',
+    '一键重构',
+    '空间去哪了',
+    'builder prune',
+    'image prune',
+    'scan-volume',
+    '--deep',
+    '--prune-logs',
+    '磁盘对账',
+    'docker info',
+    '应用中心',
+    'qq-farm-data:/src',
+  ])
+    assert.doesNotMatch(section, new RegExp(escapeRe(removed)), `Docker 章节不应再出现「${removed}」`)
+
+  // 用一个行数上限挡住运维内容换个说法又塞回来。
+  const lines = section.split('\n').length
+  assert.ok(lines < 40, `Docker 章节应保持精简，实际 ${lines} 行`)
+
+  // 公开文档里绝不写某台机器的实测数据：只锁「路径 / 系统目录 / 容量」这几类
+  // 最典型的机器指纹，不在测试里复述具体服务名。
   const leaked = [
     { re: /\/vol\d+\b/, name: '具体挂载路径' },
     { re: /\/volume\d+/, name: '具体挂载路径' },
