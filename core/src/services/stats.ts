@@ -100,17 +100,26 @@ interface InitialState {
     gold: number | null;
     exp: number | null;
     coupon: number | null;
+    goldBean: number | null;
 }
 
 const initialState: InitialState = {
     gold: null,
     exp: null,
     coupon: null,
+    goldBean: null,
 }
 
 // 本次运行基线：每次登录/重启时重新记录，不做持久化恢复。
 // 与 initialState（当日基线，同日重启恢复）互不影响，供资产卡片“本次运行”增量使用。
-const runInitial: InitialState = {
+// 资产卡没有金豆的「本次运行」增量，这里不含 goldBean。
+interface RunInitialState {
+    gold: number | null;
+    exp: number | null;
+    coupon: number | null;
+}
+
+const runInitial: RunInitialState = {
     gold: null,
     exp: null,
     coupon: null,
@@ -120,6 +129,7 @@ interface SessionData {
     goldGained: number;
     expGained: number;
     couponGained: number;
+    goldBeanGained: number;
     runGoldGained: number;
     runExpGained: number;
     runCouponGained: number;
@@ -132,6 +142,7 @@ const session: SessionData = {
     goldGained: 0,
     expGained: 0,
     couponGained: 0,
+    goldBeanGained: 0,
     runGoldGained: 0,
     runExpGained: 0,
     runCouponGained: 0,
@@ -160,13 +171,15 @@ function checkAndResetDailyStats(): void {
             operations[key] = 0;
         });
         // 跨天后基线清空：下次 getStats/recomputeSessionTotals 以当时值重新起算，
-        // 金币/经验当日增量从新的一天重新累计。
+        // 金币/经验/点券/金豆当日增量都从新的一天重新累计。
         initialState.gold = null;
         initialState.exp = null;
         initialState.coupon = null;
+        initialState.goldBean = null;
         session.goldGained = 0;
         session.expGained = 0;
         session.couponGained = 0;
+        session.goldBeanGained = 0;
     }
     currentDateKey = todayKey;
 }
@@ -203,6 +216,10 @@ function initStats(gold: number, exp: number, coupon: number = 0): void {
     initialState.gold = g;
     initialState.exp = e;
     initialState.coupon = c;
+    // 金豆余额在登录回调里可能还没同步完，不能拿 0 当今日起点（会把全部余额
+    // 算成今日净增）。当日基线留空，由首次 getStats 观测到的真实余额初始化；
+    // 同日重启时仍从持久化存档恢复，见 initStatsWithPersistence。
+    initialState.goldBean = null;
     // 本次运行基线只在登录时重置：资产卡“本次运行”增量从这次登录起算。
     runInitial.gold = g;
     runInitial.exp = e;
@@ -246,6 +263,12 @@ function initStatsWithPersistence(accountId: string, gold: number, exp: number, 
             initialState.exp = restoredExp;
         if (Number.isFinite(restoredCoupon) && restoredCoupon >= 0)
             initialState.coupon = restoredCoupon;
+        // 金豆基线：旧存档没有该字段，或基线仍为空时保持 null 交给首次观测。
+        // 必须显式排除 null/undefined —— Number(null) === 0 会通过上面的常规检查。
+        const restoredGoldBean = savedInitial.goldBean;
+        if (restoredGoldBean !== null && restoredGoldBean !== undefined
+            && Number.isFinite(Number(restoredGoldBean)) && Number(restoredGoldBean) >= 0)
+            initialState.goldBean = Number(restoredGoldBean);
     }
 }
 
@@ -289,20 +312,26 @@ function resetSessionGains(): void {
     session.goldGained = 0;
     session.expGained = 0;
     session.couponGained = 0;
+    session.goldBeanGained = 0;
     session.lastGoldGain = 0;
     session.lastExpGain = 0;
     session.lastExpTime = 0;
 }
 
-function recomputeSessionTotals(currentGold: number, currentExp: number, currentCoupon: number): void {
+function recomputeSessionTotals(currentGold: number, currentExp: number, currentCoupon: number, currentGoldBean: number): void {
     if (initialState.gold === null || initialState.exp === null || initialState.coupon === null) {
         initialState.gold = currentGold;
         initialState.exp = currentExp;
         initialState.coupon = currentCoupon;
     }
+    // 金豆单独按「首次观测」初始化当日基线，见 initStats 注释。
+    if (initialState.goldBean === null)
+        initialState.goldBean = currentGoldBean;
     session.goldGained = currentGold - (initialState.gold as number);
     session.expGained = currentExp - (initialState.exp as number);
     session.couponGained = currentCoupon - (initialState.coupon as number);
+    // 与金币/点券同源的当日净值：消费后可为负，不做 clamp。
+    session.goldBeanGained = currentGoldBean - (initialState.goldBean as number);
     // 本次运行增量：独立于当日增量，重启/重新登录后从新基线重新累计。
     session.runGoldGained = currentGold - (runInitial.gold ?? currentGold);
     session.runExpGained = currentExp - (runInitial.exp ?? currentExp);
@@ -325,7 +354,7 @@ function getStats(statusData: any, userState: any, connected: boolean, limits: a
 
     if (connected) {
         updateStats(currentGold, currentExp);
-        recomputeSessionTotals(currentGold, currentExp, currentCoupon);
+        recomputeSessionTotals(currentGold, currentExp, currentCoupon, currentGoldBean);
     }
 
     const operationsSnapshot: OperationsMap = { ...operations };
@@ -347,6 +376,7 @@ function getStats(statusData: any, userState: any, connected: boolean, limits: a
         sessionExpGained: session.expGained,
         sessionGoldGained: session.goldGained,
         sessionCouponGained: session.couponGained,
+        sessionGoldBeanGained: session.goldBeanGained,
         runExpGained: session.runExpGained,
         runGoldGained: session.runGoldGained,
         runCouponGained: session.runCouponGained,

@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 22,
-  "patch": 0,
-  "build": 138,
-  "version": "3.22.0",
-  "updatedAt": "2026-11-11T20:25:42.331Z",
+  "patch": 1,
+  "build": 139,
+  "version": "3.22.1",
+  "updatedAt": "2026-11-11T20:45:16.765Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.22.1",
+      "build": 139,
+      "date": "2026-11-12",
+      "summary": "金豆今日数值改由后端同源统计，移除浏览器本地基线",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.22.0",
       "build": 138,

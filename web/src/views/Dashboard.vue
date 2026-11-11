@@ -491,88 +491,13 @@ const filteredOperations = computed(() => {
 // 老版本今日统计：主动作按次数排序展示，无记录的收进折叠区。
 const operationGroups = computed(() => partitionOperations(filteredOperations.value))
 
-// 当日新增金币/经验：后端以当日首次基线计算，跨重启与跨天均已处理。
-// 金币是净值（消费会扣减），消费高于收益时为负数，不能 clamp 到 0；
+// 当日新增金币/经验/金豆/点券：四项都由后端按当日基线算好下发，跨重启与跨天均已处理。
+// 金币、金豆、点券是净值（消费会扣减），消费高于收益时为负数，不能 clamp 到 0；
 // 负数按资产「本次运行金币」的负向色展示。经验只增不减，仍保持非负。
 const todayGoldGained = computed(() => Number(status.value?.sessionGoldGained) || 0)
 const todayExpGained = computed(() => Math.max(0, Number(status.value?.sessionExpGained) || 0))
-// 点券与金币同源：后端 sessionCouponGained 同为「当日余额 - 当日基线」的净值，
-// 消费高于收益时为负，负数沿用同一个负向色，不做 clamp。
+const todayGoldBeanGained = computed(() => Number(status.value?.sessionGoldBeanGained) || 0)
 const todayCouponGained = computed(() => Number(status.value?.sessionCouponGained) || 0)
-
-// 金豆：后端只下发当前余额 status.goldBean，没有当日净增字段。为遵守「只改
-// 今日统计模块、不动后端」的范围，在浏览器按「账号 + 本地日期」记住当天首次
-// 看到的余额作基线，净值 = 当前余额 - 基线，与金币一样可为负、负数同色。
-// 基线存 localStorage：刷新不丢；跨天 / 换账号各自重新起算。
-const todayGoldBeanGained = ref(0)
-
-// ---- 今日统计：金豆当日基线纯逻辑开始（可独立测试，勿在此区间引用 Vue 状态）----
-const TODAY_BEAN_BASELINE_KEY = 'dashboard:todayGoldBeanBaseline'
-const beanBaselineMemory = new Map<string, { day: string, value: number }>()
-
-function localDayKey(now: Date = new Date()): string {
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-}
-
-type BeanBaselineStorage = Pick<Storage, 'getItem' | 'setItem'>
-
-// 净值 = 当前余额 - 当日基线。基线按「账号 + 本地日期」保存：跨天、换账号各自
-// 重新起算；余额还没下发或掉线时不记基线，避免恢复后显示一个虚高的数字。
-// storage 可注入，隐私模式 / localStorage 不可用时退回内存基线。
-function resolveGoldBeanDelta(
-  rawBean: unknown,
-  accountId: string,
-  connected: boolean,
-  day: string,
-  storage: BeanBaselineStorage,
-): number {
-  if (!accountId || !connected || rawBean == null)
-    return 0
-  const bean = Number(rawBean)
-  if (!Number.isFinite(bean) || bean < 0)
-    return 0
-  const key = `${TODAY_BEAN_BASELINE_KEY}:${accountId}`
-  let base: number | null = null
-  try {
-    const raw = storage.getItem(key)
-    if (raw) {
-      const saved = JSON.parse(raw)
-      if (saved?.day === day && Number.isFinite(Number(saved.value)))
-        base = Number(saved.value)
-    }
-  }
-  catch { /* 存储不可用或内容损坏：退回内存基线 */ }
-  if (base === null) {
-    const mem = beanBaselineMemory.get(key)
-    if (mem?.day === day)
-      base = mem.value
-  }
-  if (base === null) {
-    base = bean
-    try {
-      storage.setItem(key, JSON.stringify({ day, value: base }))
-    }
-    catch { /* 写不进 localStorage 时内存基线仍然有效 */ }
-    beanBaselineMemory.set(key, { day, value: base })
-  }
-  // 消费金豆后当前余额低于基线即为负数，与金币一样不 clamp 到 0。
-  return bean - base
-}
-// ---- 今日统计：金豆当日基线纯逻辑结束 ----
-
-watch(
-  [() => status.value?.status?.goldBean, currentAccountId, () => status.value?.connection?.connected],
-  ([rawBean, accountId, connected]) => {
-    todayGoldBeanGained.value = resolveGoldBeanDelta(
-      rawBean,
-      String(accountId || ''),
-      connected === true,
-      localDayKey(),
-      localStorage,
-    )
-  },
-  { immediate: true },
-)
 
 function getOpName(key: string | number) {
   return OP_META[String(key)]?.label || String(key)

@@ -158,6 +158,7 @@ function createRuntimeState(options: RuntimeStateOptions) {
             sessionExpGained: 0,
             sessionGoldGained: 0,
             sessionCouponGained: 0,
+            sessionGoldBeanGained: 0,
             runExpGained: 0,
             runGoldGained: 0,
             runCouponGained: 0,
