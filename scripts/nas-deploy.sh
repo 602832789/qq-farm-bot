@@ -6,6 +6,9 @@
 #   bash scripts/nas-deploy.sh --prune-logs   # 额外截断应用日志卷里的日志
 #   bash scripts/nas-deploy.sh --deep         # 空间告急：清空全部构建缓存
 #   bash scripts/nas-deploy.sh --report       # 只读诊断：列出镜像/容器/卷全量
+#   bash scripts/nas-deploy.sh --report --scan-volume
+#                                             # 再加一步：扫整块盘的目录占用，
+#                                             # 回答「Docker 之外那 27G 是谁」
 #   bash scripts/nas-deploy.sh --prune-orphans  # 清历史残留（已停止的旧容器 +
 #                                             # 无人引用的旧镜像 + 遗留测试卷）
 #
@@ -20,6 +23,9 @@
 #      真实值要看 docker buildx du；实测经常只占 100–200MB，不是大头。
 #   5. system df 之外的部分 → 文件系统快照（btrfs/zfs）、NAS 回收站、大文件。
 #      prune 管不到这些，这也是「清完只掉 2G」最常见的答案。对账看 --report。
+#      实测另一个常见大头是 fnOS 自己的 @appmeta / @sysappmeta / @appdata：
+#      应用每升级一次就在里面留一份旧版本，攒到十几 G 很常见，同样不属于
+#      Docker。--scan-volume 会把这几层直接摊开给你看（只读，不删）。
 #
 # 设计原则：只删「没有任何东西在引用」的东西，且只碰本项目的对象。
 #   - docker image prune -f      只删 <none> 悬空镜像，正在跑的镜像不会被删
@@ -45,12 +51,14 @@ PRUNE_LOGS=0
 DEEP=0
 REPORT_ONLY=0
 PRUNE_ORPHANS=0
+SCAN_VOLUME=0
 
 for arg in "$@"; do
   case "$arg" in
     --prune-logs) PRUNE_LOGS=1 ;;
     --deep) DEEP=1 ;;
     --report) REPORT_ONLY=1 ;;
+    --scan-volume) SCAN_VOLUME=1; REPORT_ONLY=1 ;;
     --prune-orphans) PRUNE_ORPHANS=1 ;;
     -h|--help)
       # 打印文件头注释直到 set -eu；不写死行号，改注释不会让用法说明截断。
@@ -58,7 +66,7 @@ for arg in "$@"; do
       exit 0
       ;;
     *)
-      echo "[提示] 未知参数 $arg，已忽略。可用：--prune-logs / --deep / --report / --prune-orphans" >&2
+      echo "[提示] 未知参数 $arg，已忽略。可用：--prune-logs / --deep / --report / --scan-volume / --prune-orphans" >&2
       ;;
   esac
 done
@@ -201,13 +209,80 @@ show_disk_audit() {
   echo ""
 
   # 差额归谁：df 的 Used 减掉上面 du 的占用，就是该卷上非 Docker 的部分。
-  # 这里只给命令不自动跑：数据盘上可能是几十万个文件，du 一遍要好几分钟。
+  # 这里不自动跑整卷扫描：数据盘上可能是几十万个文件，du 一遍要好几分钟，
+  # 常规诊断不该被这个拖住。要扫就加 --scan-volume。
   volume=$(df -P "$root" 2>/dev/null | awk 'NR==2{print $6}')
   echo "---- Docker 之外的部分 ----"
   echo "  df 的 Used 减掉上面 du 的占用，就是该卷上不属于 Docker 的量。"
-  echo "  要拆到目录（可能有几十万文件，跑之前心里有数）："
-  echo "    du -xsh ${volume:-/}/* | sort -rh | head -n 15"
+  echo "  这个量通常落在两处：fnOS 自己的 @appmeta / @sysappmeta / @appdata，"
+  echo "  以及快照 / 回收站 / 别的大文件。都不是 prune 能处理的。"
+  echo "  要摊开看（只读，可能几分钟）："
+  echo "    bash scripts/nas-deploy.sh --report --scan-volume"
+  echo "  或者手跑：du -xsh ${volume:-/}/* | sort -rh | head -n 15"
   echo ""
+}
+
+# 卷内占用扫描：把「Docker 之外那 27G 到底是谁」一次问清。
+# 纯只读：只有 du 和打印，一个字节都不删 —— 尤其绝不碰 fnOS 的 @app* 目录，
+# 那些是应用中心在管的，rm 掉会让对应应用变成「已安装但打不开」。
+show_volume_scan() {
+  root=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null | tr -d '\r' || true)
+  [ -n "$root" ] || root=/var/lib/docker
+  volume=$(df -P "$root" 2>/dev/null | awk 'NR==2{print $6}')
+  [ -n "$volume" ] || volume=/
+  top="/tmp/.farm_vol.$$"
+  drill="/tmp/.farm_drill.$$"
+
+  echo "==== 卷内占用扫描（$volume，只读，可能要几分钟）===="
+  echo "  口径与上面一致：du -x，不跨文件系统、不进 overlay 挂载点，"
+  echo "  所以这里的数字可以直接和「磁盘对账」里的 df 对得上。"
+  echo ""
+  # 顶层一次列全：以前让人手敲的那条命令，现在自己跑。
+  du -xsh "$volume"/* "$volume"/.[!.]* 2>/dev/null | sort -rh | head -n 15 > "$top" || true
+  echo "---- $volume 顶层 ----"
+  if [ -s "$top" ]; then
+    sed 's/^/  /' "$top"
+  else
+    echo "  （读不到内容。整个卷的扫描需要 root，请用 root 再跑一次）"
+    rm -f "$top" "$drill"
+    echo ""
+    return 0
+  fi
+  echo ""
+
+  # 只对最大的几个目录下钻一层：再往下就得人看着数据决定往哪走，盲扫没意义。
+  # 判据用「目录 + 不是 0」，不用 G/M 后缀做单位判断 —— 单位随 du 变，写死会漏。
+  # 排除 Docker 数据目录本身：上面已经量过它了。
+  awk -v R="$root" '$1 != "0" && $2 != R && $2 !~ /^total$/ {print $2}' "$top" 2>/dev/null \
+    | while IFS= read -r d; do [ -d "$d" ] && printf '%s\n' "$d"; done \
+    | head -n 5 > "$drill" || true
+  count=$(wc -l < "$drill" 2>/dev/null | tr -d ' ' || echo 0)
+  echo "---- 下钻：最大的 ${count:-0} 个目录里装了什么 ----"
+  if [ "${count:-0}" -eq 0 ]; then
+    echo "  没有可下钻的目录（顶层为空或全是文件）。"
+  else
+    while IFS= read -r d; do
+      [ -d "$d" ] || continue
+      echo ""
+      echo "  [$d]"
+      du -xsh "$d"/* "$d"/.[!.]* 2>/dev/null | sort -rh | head -n 8 | sed 's/^/    /' || true
+    done < "$drill"
+  fi
+  echo ""
+
+  # 命中了 fnOS 的系统目录才讲这段，没命中就不啰嗦。
+  if grep -q '/@app' "$top" 2>/dev/null; then
+    echo "---- 这些 @app* 目录是什么，能不能删 ----"
+    echo "  @appmeta / @sysappmeta / @appcenter → 应用中心自己管的元数据与安装包。"
+    echo "    应用每升级/重装一次就可能留一份旧的，攒到十几 G 很常见。"
+    echo "  @appdata → 应用的真实数据（影视库、相册索引、下载内容……），删了数据就没了。"
+    echo "  @appshare → 应用之间共享的文件。"
+    echo "  ⚠ 别手动删这些目录：应用中心会显示「已安装」但应用打不开，且无法自愈。"
+    echo "  正确做法：应用中心里卸载/重装对应应用，或用 fnOS 控制面板的清理功能。"
+    echo "  本脚本只展示大小，一个字节都不会删。"
+    echo ""
+  fi
+  rm -f "$top" "$drill"
 }
 
 # 读法说明：只讲怎么看这些表，不替用户下结论（结论要看实际数字）。
@@ -335,6 +410,9 @@ if [ "$REPORT_ONLY" = "1" ]; then
   show_space "当前"
   show_report_detail
   show_disk_audit
+  if [ "$SCAN_VOLUME" = "1" ]; then
+    show_volume_scan
+  fi
   show_read_guide
   exit 0
 fi

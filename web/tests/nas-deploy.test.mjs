@@ -122,6 +122,31 @@ test('--report 标出悬空镜像，并说明 buildx 记录与真实落盘不是
   assert.match(deploy, /Docker 之外的部分/, '要对账到容器之外')
 })
 
+test('--scan-volume 把「Docker 之外」摊到目录级，全程只读', () => {
+  // 实测：36G 已用里 Docker 只占 9.3G，剩下 27G 是 fnOS 自己的 @appmeta(10G) /
+  // @sysappmeta(9.1G) / @appdata(4.3G)。这些 prune 永远碰不到，只能摊开看。
+  assert.match(deploy, /--scan-volume/, '提供整卷扫描开关')
+  assert.match(deploy, /show_volume_scan/, '要有这一节')
+  assert.match(deploy, /du -xsh "\$volume"/, '顶层扫描同样带 -x，才和 df 对得上')
+  assert.doesNotMatch(deploy, /du -sh "\$volume"/, '不能再出现不带 -x 的整卷 du')
+
+  const scan = deploy.slice(deploy.indexOf('show_volume_scan() {'), deploy.indexOf('# 读法说明'))
+  assert.ok(scan.length > 500, '要取到函数体')
+  assert.match(scan, /下钻/, '只钻一层：再深得人看着数据决定')
+  assert.match(scan, /\$2 != R/, '下钻时跳过 Docker 目录本身，它上面已经量过')
+  assert.match(scan, /@appmeta/, '要能识别 fnOS 的应用目录')
+  assert.match(scan, /应用中心/, '清理途径是应用中心卸载/重装，不是手删')
+
+  const exec = scan
+    .split('\n')
+    .filter(line => !/^\s*(?:#|echo\b)/.test(line))
+    .join('\n')
+  assert.doesNotMatch(exec, /rm -rf/, '扫描只读，不得删任何东西')
+  assert.doesNotMatch(exec, /rm [^\n]*\$volume/, '不得删卷内路径')
+  // 默认不跑：整卷 du 可能几分钟，常规诊断不该被它拖住
+  assert.match(deploy, /if \[ "\$SCAN_VOLUME" = "1" \]/, '要用开关控制，不默认扫')
+})
+
 test('无 docker 时给出清晰错误，但 --help 仍可查看用法', () => {
   // 用法说明按「文件头注释到 set -eu」打印，改注释不会截断，也不写死行号
   const helpAt = deploy.indexOf('/^set -eu/{exit}')
