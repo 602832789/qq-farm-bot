@@ -123,6 +123,21 @@ docker run -d --name qq-farm-napcat --restart unless-stopped qq-farm-napcat
 
 镜像同时提供 amd64 与 arm64，不提供 32 位 x86。启动后把它的可访问地址和接口签名填到面板的登录设置里。
 
+NapCat 的上游源码仓库已经下线，`mlikiowa/napcat-docker:latest` 作为浮动标签不再有任何可用性保证：它既可能在无人知晓的情况下指向另一个版本，也可能在镜像被清理后直接拉不到。生产部署建议把基础镜像固定到明确版本，让每次重建都落到同一个 NapCat 上：
+
+```bash
+docker build -f napcat/Dockerfile -t qq-farm-napcat \
+  --build-arg NAPCAT_IMAGE=mlikiowa/napcat-docker:<版本号> .
+```
+
+如果镜像仓库本身不可达，可以改走离线导入：社区维护的 NapCat 归档仓库在 release 产物里保留了分架构的 `napcat-docker-v<版本号>-<架构>.tar`，下载后在本机导入，再按上面的 `--build-arg` 指向本地标签即可，全程不需要访问任何 registry：
+
+```bash
+docker load -i napcat-docker-v<版本号>-amd64.tar
+```
+
+导入后的镜像名以 `docker images` 显示为准；镜像若没有名字，可以先 `docker tag <镜像ID> napcat-docker:<版本号>` 再构建。
+
 ### 二进制部署
 
 不想装 Node.js 时，可从 [Releases](https://github.com/602832789/qq-farm-bot/releases) 下载对应平台的可执行文件，也可以自行构建：

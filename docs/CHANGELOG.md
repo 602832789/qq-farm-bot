@@ -15,6 +15,7 @@
 
 | 版本 | 更新序号 | 日期 | 更新内容 | 提交 |
 | --- | --- | --- | --- | --- |
+| v3.23.1 | #161 | 2026-11-13 | QQ 取码链路收口：优先 getOpenAuth，NapCat 基础镜像补固定版本与离线导入路径 | — |
 | v3.23.0 | #160 | 2026-11-13 | 移植 YYB-Go-Enhanced 完整保活方案：会话复用、错误分级与只滚令牌续期 | — |
 | v3.22.11 | #159 | 2026-11-12 | 掉线后无法自愈：补上 QQ 重登与登录失败兜底 | — |
 | v3.22.10 | #158 | 2026-11-12 | 全仓完整性复查：修复统计基线、登录初始化与若干判定缺陷 | — |
@@ -168,6 +169,17 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-13 · v3.23.1（#161） · QQ 取码链路收口：优先 getOpenAuth，NapCat 基础镜像补固定版本与离线导入路径
+
+- **来源**：为排查 QQ 账号掉线，横向核对了两个第三方项目——`DandanLLab/SnowCatQQ`（自称 NapCat 4.18.28 底座 + SnowLuma 融合）与 `XingYunStar/NapCatQQ`（NapCat 归档仓）。前者 `packages/` 目录与 NapCat 逐个对应（`snowcat-core` ↔ `napcat-core` 等），实为同一份源码的改名分支，没有独立的 QQ 登录协议实现；后者提供了当前版本的源码与 release 产物，正好用来核对我们的插件。
+- **取码入口的确定答案**：`NodeIKernelNodeMiscService` 的接口声明里**只有** `getOpenAuth(arg1, arg2)`，而在 `NodeIKernelMiniAppService` 里同样找不到 `checkSessionForMiniApp` / `loginWithAppId` / `getOpenCodeWithAppId`。这三个名字是更早版本 NapCat 的命名，在当前版本上不存在，插件的四步探测实际只有最后一步有效。
+- **顺序改成 getOpenAuth 优先**（`napcat/plugins/qq-miniapp-openauth`）：它第一个参数传 `true` 表示「要新的 Code」；而 `checkSessionForMiniApp` 语义是查已有会话，很可能返回上一轮已被 worker 消费掉的旧 Code——那种 Code 写进账号后连接会被网关拒绝，要等下一轮才能自愈。三个老命名保留为兜底（老版本 NapCat 上 `getOpenAuth` 不存在），但不再排在新 Code 之前。
+- **供应链问题**：NapCat 上游源码仓库 `NapNeko/NapCat` 已返回 404，`NapNeko/NapCatQQ` 只剩 1KB 空壳。而 `napcat/Dockerfile` 的基础镜像是 `mlikiowa/napcat-docker:latest`——浮动标签在这种情况下一旦被覆盖或清理，重建会失败，也无法复现当前正在运行的版本。
+- **补上两条部署路径**（`docs/detailed-reference.md`「部署细节」）：① 用 `--build-arg NAPCAT_IMAGE=mlikiowa/napcat-docker:<版本号>` 固定版本；② 镜像仓库不可达时，从归档仓的 release 产物取分架构的 `napcat-docker-v<版本号>-<架构>.tar`，`docker load` 后指向本地标签，全程不访问 registry。`napcat/Dockerfile` 相应加注释，`NAPCAT_IMAGE` 构建参数本身保持不变。
+- **未做的两件事（附原因）**：① `NAPCAT_IMAGE` 默认值仍是 `:latest`——本机到 Docker Hub 与 `registry-1.docker.io` 均不可达（连接直接失败），无法确认哪些 tag 还存活，凭空写一个版本号不如留待部署侧用 `docker manifest inspect` 确认；② 内置插件会忽略请求里的 `uin`（`index.mjs` 只读 `appId`），而 `qq-credential` 拿到 Code 后直接写盘，多 QQ 账号场景存在把 A 的 Code 写进 B 账号的串号风险。修法是在写入前比对返回的 `uin` 与账号 `uin`，但账号 `uin` 在扫码登录路径下可能为空、格式也未经真机验证，改动会让自动重签在格式不符时整体失效，因此单独一版先小范围验证。
+- **测试**：新增 `core/tests/napcat-plugin-ladder.test.js`（5 条静态回归）：锁定「`getOpenAuth` 排第一」「三个老命名不得删除且不得前置」「`getOpenAuth` 首参为 `true`」「`NAPCAT_IMAGE` 仍可覆盖」「文档同时给出固定版本与离线导入两条路」。
+- **边界**：不改任何 QQ 协议常量、不改 Docker Compose、不改 NAS / 服务器配置；本次只动插件取码顺序与部署文档。
+
 ### 2026-11-13 · v3.23.0（#160） · 移植 YYB-Go-Enhanced 完整保活方案：会话复用、错误分级与只滚令牌续期
 
 - **来源**：对照 `525815266/YYB-Go-Enhanced`（同一套应用宝 PC 微信授权协议，实现比本项目完整）逐文件比对后，把它的保活模型、错误分类、登录预算与 HTTPDNS 策略移植过来。协议常量本来就一致（host appid `wxd44977328b36e647`、服务端 ECDH 公钥、`/ilink/ilinkapp/mp/wxaruntime_transfer`、`js-login` cmdID `1029`、clientVersion `524545`），所以这次改的不是协议本身，而是「什么时候、以什么代价去用它」。

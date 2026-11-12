@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 23,
-  "patch": 0,
-  "build": 160,
-  "version": "3.23.0",
-  "updatedAt": "2026-11-12T20:57:03.803Z",
+  "patch": 1,
+  "build": 161,
+  "version": "3.23.1",
+  "updatedAt": "2026-11-12T21:46:35.647Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.23.1",
+      "build": 161,
+      "date": "2026-11-13",
+      "summary": "QQ 取码链路收口：优先 getOpenAuth，NapCat 基础镜像补固定版本与离线导入路径",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.23.0",
       "build": 160,
