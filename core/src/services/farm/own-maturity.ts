@@ -62,15 +62,24 @@ export function observeOwnFarmMaturity(lands: any[], source: 'round' | 'push' = 
     if (source === 'round') matureAtSec = 0;
 }
 
-/** 返回距离下一块自家作物成熟还有多少毫秒；0 表示没有可用计划。 */
-export function getOwnFarmMaturityDelayMs(nowMs: number = Date.now()): number {
+/**
+ * 返回距离下一块自家作物成熟还有多少毫秒；0 表示没有可用计划。
+ *
+ * matureAtSec 与 findNearestOwnMaturityAt 都按「服务器时间」归一（begin_time
+ * 相对倒计时是用 getServerTimeSec() 当下值折算的），所以这里必须用服务器时间差
+ * 算时长，不能拿 matureAtSec*1000（服务器时间戳）去减本地 Date.now() —— 一旦
+ * 服务器时钟与本地时钟不一致（syncServerTime 本就是为这种偏移存在的），旧写法会
+ * 把整段偏移当成「还要等多久」喂给调度器，唤醒线被错算。好友成熟计划用的就是
+ * nowMs + (matureAt - nowSec)*1000 这一正确口径，自家这里对齐它。
+ */
+export function getOwnFarmMaturityDelayMs(): number {
     if (!matureAtSec) return 0;
-    const dueMs = matureAtSec * 1000;
-    if (dueMs < nowMs - MATURITY_GRACE_MS) {
+    const delayMs = (matureAtSec - getServerTimeSec()) * 1000;
+    if (delayMs < -MATURITY_GRACE_MS) {
         matureAtSec = 0;
         return 0;
     }
-    return Math.max(0, dueMs - nowMs);
+    return Math.max(0, delayMs);
 }
 
 /** 巡查中到达的推送、收获失败、整轮超时都登记一次「尽快再跑一轮」。 */

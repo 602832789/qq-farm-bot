@@ -15,6 +15,7 @@
 
 | 版本 | 更新序号 | 日期 | 更新内容 | 提交 |
 | --- | --- | --- | --- | --- |
+| v3.22.9 | #157 | 2026-11-12 | 成熟唤醒与活动/好友成熟计划的时间基准修正 | — |
 | v3.22.8 | #156 | 2026-11-12 | 自家农场成熟驱动唤醒与农场调度健壮性补强 | — |
 | v3.22.7 | #155 | 2026-11-12 | 全仓完整性检查：修复六处影响统计与农场自动化的缺陷 | — |
 | v3.22.6 | #153 | 2026-11-12 | 修正调度器注释与清理帮忙间隔的无效配置读取 | — |
@@ -164,6 +165,25 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-12 · v3.22.9（#157） · 成熟唤醒与活动/好友成熟计划的时间基准修正
+
+再次按「整个代码完整性」做了一轮只读审计，重点核对 v3.22.8 新增的「自家农场成熟驱动唤醒」链路与全仓其它时间计算路径。发现并修复三处同一根因的缺陷：把「服务器时间」和「本地 Date.now()」混用做时长 / 延迟计算，一旦本机时钟与服务器时钟不一致（项目本就为这种偏移维护了 syncServerTime），唤醒线或开关节点会被错算。
+
+- **自家成熟延迟按服务器时间计算（最要紧）**：`own-maturity.ts` 的 `getOwnFarmMaturityDelayMs` 原来用 `matureAtSec*1000`（服务器时间戳）去减本地 `Date.now()`，算出「还要等多久」。服务器比本地快 30 秒时，本应 10 秒后收的菜会被算成还要等约 40 秒，唤醒点跟着漂。现在改成纯服务器时间差 `(matureAtSec - getServerTimeSec())*1000`，与好友成熟计划 `nowMs + (matureAt - nowSec)*1000` 同一口径；`worker.ts` 调用处同步去掉已无意义的本地 nowMs 入参。
+- **活动开放判定按服务器时间**：`activity-automation.ts` 的 `isActivityOpen` 在 DTO 不带 active 字段、只能按 endTime 兜底判定时，用了 `Math.floor(Date.now()/1000)`（本地秒），而同文件 `buildActivityWindowGate` / `rescheduleActivityEventTimers` 都按 `getServerTimeSec()`。青酿 / 七夕 / 公益等活动的开放与关闭边界因此会按本机时钟算，可能向已关闭活动发请求或漏领。改为 `getServerTimeSec()`。
+- **好友成熟计划的过期清理按服务器时间**：`maturity-plan.ts` 的 `pruneExpiredPlans` 把服务器秒级的 `plan.matureAt` 和调用方传入的本地 `Date.now()`（nowMs）混在一起比，其余全部成熟数学（findNearestFutureMaturity / getNextStealDelayMs / observeFriendSummary 的 matureAt 比较）都正确用服务器时间。改成用 `getServerTimeSec()` 折算，调用方不再把本地 nowMs 喂进去。
+
+补的回归测试：
+- `core/tests/farm-scheduler-enhancements.test.js` 新增一条**真跑**用例：用 `syncServerTime` 把服务器时钟模拟得比本地快 30 秒，注入一个「服务器视角 10 秒后成熟」的墙钟，断言 `getOwnFarmMaturityDelayMs` 返回约 10 秒而非约 40 秒，锁死时间基准。
+- `core/tests/maturity-plan.test.js` 新增一条结构锁：源码不再出现 `plan.matureAt * 1000 <= nowMs - DUE_GRACE_MS`，必须是 `nowSec * 1000 - DUE_GRACE_MS`。
+- `core/tests/activity-automation.test.js`（新文件）新增一条结构锁：`isActivityOpen` 体内不再用 `Math.floor(Date.now()/1000)`，必须出现 `getServerTimeSec()`。
+
+审查中另有两项**存疑、未改**：
+- `commerce.ts` 的 `purchaseMysteryOffer` 购买成功后的确认判断里，`reward.count` 来自静态的 `npc.reward_count`，购买并不递减它，所以「`shop.npc.reward.count >= offer.reward.count`」在买成功后仍为真，理论上每次成功购买都会被判「未确认」并抛错、购买历史也写不进去。但这一判据真正能否触发取决于神秘商人购买后 `is_active` 是否翻转——这是协议回包层面的行为，本机无法验证，盲改购买路径风险更高，因此本次不动，仅标记为待线上确认。
+- `capital-mode.ts` 的 `findNearestMatureSeconds` 用 `toTimeSec(begin_time)` 取成熟点。`toTimeSec` 只做毫秒→秒归一、不处理相对倒计时，若服务端对 phase 的 `begin_time` 下发相对值会被当成绝对时间戳。但全仓 `land-analysis.ts` / `ripen-all.ts` / `reservation-window.ts` 都用 `toTimeSec(begin_time) - getServerTimeSec()` 这一绝对时间口径，属既有统一约定，故不改（避免破坏既有正确假设）。
+
+验证：core 575/575（较上轮 +3，来自新增回归用例）、web 212/212（web 未改动，沿用上轮基线）、`pnpm lint` 0 警告、core `build:ts` 全过。服务器 / NAS 环境配置未改动；这些改动要在 NAS 生效仍需走一次一键更新重新构建。
+
 ### 2026-11-12 · v3.22.8（#156） · 自家农场成熟驱动唤醒与农场调度健壮性补强
 
 把上一轮只读分析里点名、当时按「没要求就不改」留着的增强项全部落地，另外清掉工作树里唯一的未跟踪文件。行为上只让巡查更及时、更不容易被卡住，没有改任何开关语义、协议请求或数据落盘。

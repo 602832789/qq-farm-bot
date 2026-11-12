@@ -13,6 +13,7 @@ const ownMaturitySrc = src('services/farm/own-maturity.ts');
 const automationLock = src('services/automation-lock.ts');
 
 const maturity = require('../dist/services/farm/own-maturity');
+const utils = require('../dist/utils/utils');
 const { runExclusiveAutomationTask } = require('../dist/services/automation-lock');
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -79,6 +80,22 @@ test('成熟点过了宽限期就作废，不会把唤醒永久钉在最小值',
     maturity.setOwnFarmMatureAtForTest(Math.floor(Date.now() / 1000) - 120);
     assert.equal(maturity.getOwnFarmMaturityDelayMs(Date.now()), 0);
     assert.equal(maturity.getOwnFarmMaturityDelayMs(Date.now()), 0, '作废后要清零而不是每次重算');
+    maturity.resetOwnFarmMaturity();
+});
+
+test('成熟延迟按服务器时间计算，不受本地时钟偏移影响', () => {
+    // 复现「服务器时钟与本地时钟不一致」：syncServerTime 本就是为这种偏移存在的。
+    // 旧写法用 matureAtSec*1000 减本地 Date.now()，会把整段偏移当成还要等多久。
+    maturity.resetOwnFarmMaturity();
+    const localNow = Date.now();
+    const SERVER_AHEAD_MS = 30 * 1000; // 服务器比本地快 30 秒
+    utils.syncServerTime(localNow + SERVER_AHEAD_MS);
+    const serverNowSec = utils.getServerTimeSec();
+    maturity.setOwnFarmMatureAtForTest(serverNowSec + 10); // 服务器视角下 10 秒后成熟
+    const delay = maturity.getOwnFarmMaturityDelayMs();
+    assert.ok(Math.abs(delay - 10_000) < 2000, `应按服务器时间差算约 10 秒，实际 ${delay}`);
+    assert.ok(delay < 20_000, '不能把本地与服务器的 30 秒偏移当成还要等约 40 秒');
+    utils.syncServerTime(Date.now()); // 还原，避免污染同文件其它用例
     maturity.resetOwnFarmMaturity();
 });
 

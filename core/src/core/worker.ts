@@ -250,7 +250,7 @@ function planNextFarmRun(nowMs: number, farmMs: number): number {
         logFileOnly('巡田', `提前唤醒农场巡查: ${wakeReason}`);
         return nowMs + FARM_WAKEUP_IMMEDIATE_MS;
     }
-    const maturityDelayMs = getOwnFarmMaturityDelayMs(nowMs);
+    const maturityDelayMs = getOwnFarmMaturityDelayMs();
     const maturityAt = maturityDelayMs > 0
         ? nowMs + maturityDelayMs + FARM_MATURITY_WAKE_BUFFER_MS
         : Number.POSITIVE_INFINITY;

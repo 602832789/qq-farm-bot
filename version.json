@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 22,
-  "patch": 8,
-  "build": 156,
-  "version": "3.22.8",
-  "updatedAt": "2026-11-12T03:55:08.076Z",
+  "patch": 9,
+  "build": 157,
+  "version": "3.22.9",
+  "updatedAt": "2026-11-12T04:49:15.372Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.22.9",
+      "build": 157,
+      "date": "2026-11-12",
+      "summary": "成熟唤醒与活动/好友成熟计划的时间基准修正",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.22.8",
       "build": 156,
