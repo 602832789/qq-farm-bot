@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 22,
-  "patch": 9,
-  "build": 157,
-  "version": "3.22.9",
-  "updatedAt": "2026-11-12T04:49:15.372Z",
+  "patch": 10,
+  "build": 158,
+  "version": "3.22.10",
+  "updatedAt": "2026-11-12T05:43:01.934Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.22.10",
+      "build": 158,
+      "date": "2026-11-12",
+      "summary": "全仓完整性复查：修复统计基线、登录初始化与若干判定缺陷",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.22.9",
       "build": 157,

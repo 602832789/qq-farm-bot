@@ -15,6 +15,7 @@
 
 | 版本 | 更新序号 | 日期 | 更新内容 | 提交 |
 | --- | --- | --- | --- | --- |
+| v3.22.10 | #158 | 2026-11-12 | 全仓完整性复查：修复统计基线、登录初始化与若干判定缺陷 | — |
 | v3.22.9 | #157 | 2026-11-12 | 成熟唤醒与活动/好友成熟计划的时间基准修正 | — |
 | v3.22.8 | #156 | 2026-11-12 | 自家农场成熟驱动唤醒与农场调度健壮性补强 | — |
 | v3.22.7 | #155 | 2026-11-12 | 全仓完整性检查：修复六处影响统计与农场自动化的缺陷 | — |
@@ -165,6 +166,26 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-12 · v3.22.10（#158） · 全仓完整性复查：修复统计基线、登录初始化与若干判定缺陷
+
+再次按「整个代码完整性」做只读审计（4 个只读子代理分模块扫描 + 逐条回源码核实），确认并修复以下真实缺陷；对需要协议行为或产品口径才能定性的条目，核实后不盲改。
+
+- **今日统计基线被 null 误恢复成 0（最要紧）**：`stats.ts` 同日重启恢复当天基线时，`Number(null) === 0` 会通过 `>= 0` 检查，把跨天清空的 `gold/exp/coupon` 基线恢复成 0，导致「今日金币/经验/点券」直接显示成整个账户余额（金豆那段早已显式排除 null 并留了注释，金币三条是漏改的同型缺陷）。抽出 `restoreInitialBaseline()` 统一排除 null/undefined。
+- **登录成功的连接被附属初始化掐断**：`worker.ts` 的 `onLoginSuccess` 里 `initStatsWithPersistence / processInviteCodes / syncStatus` 等未包 try/catch，而 network 的 `sendLogin` 会把 `onLoginSuccess` 抛错当成「登录初始化失败」直接 finalize + terminate。任一附属步骤（统计落盘失败、邀请码接口抖动）都可能把刚登录好的健康连接杀掉，形成「登录成功→立刻掉线→重启」循环。改为逐段兜底 + logWarn（作者在 `runStartupSequence` 注释里已明说该风险，中段漏做）。
+- **2×2 催熟结果没带出返回值**：`planting.ts` 的 `runFertilizerByConfig` 只在 `multi_season && none` 分支返回 `size2` 计数，常规「2×2 催熟开 + 施肥 none/smart」下返回 0，scheduler 因此不立即收获刚催熟的地块（多等一轮约 20-25s，正落在最易被偷的窗口），日志也没有「2×2催熟」痕迹。改为统一返回 `fertilized + size2`；并给 smart 有机目标补上排除 2×2 主地块，避免重复施肥。
+- **出售数量在 gold=0 时漏记**：`worker.ts` 的 `onSellGain` 用 `sellInfo.gold || sellInfo`，gold 为 0 时回落成对象、`Number(obj)` 得 NaN 直接 return，`recordOperation('sell')` 丢失。改为只认 `count`。
+- **调度器旧 interval 任务改写新任务状态**：`scheduler.ts` 的 `setIntervalTask` finally 只用 key 取 entry，任务被 clear 后重建（如保存配置重建神秘商店定时器）时，仍在跑的旧 runner 会把新 entry 的 `running` 清掉、`nextRunAt` 覆盖，导致防重入失效。补代际校验 `updated === entry`（`setTimeoutTask` 早已有同类校验）。
+- **末季多季作物被误判仍在生长**：`land-analysis.ts` 的 `hasRemainingSeasons` 写成 `currentSeason > 1 || currentSeason < totalSeason`，前一项与「是否有剩余季」无关且恒把末季判真，导致异常阶段下的末季作物被当 growing（跳过铲除、还对其补肥）。改为 `currentSeason < totalSeason`。
+- **有机肥目标混入成熟地块**：`getOrganicFertilizerTargetsFromLands` 只排除枯死、不排除成熟（普通肥版本已排除），成熟地块排在前面会让「第一块不能施」中断整轮有机肥。补 MATURE 排除。
+- **神秘商店缺字段被当有效商品**：`decideMysteryShopTick` 用 `Number(npc.reward.count) <= 0` 判无效，字段缺失时 `NaN <= 0` 为 false，会被当成有效商品继续下单。改为 `!(Number(...) > 0)`。
+- **图鉴自动化一次失败吃掉一整天**：`illustrated-auto.ts` 在干活前就把 `lastRunDate` 置成今天，`getSnapshot`/`getBagSeeds` 抛错后当天后续调用全返回 `same_day`。改为真正跑完才标记，基础设施失败可当天重试。
+- **`/api/automation` 空 body 500**：`farm-routes.ts` 直接 `Object.entries(req.body)`，`Content-Type` 不匹配时 `req.body` 为 undefined → TypeError → 500。补请求体守卫，空配置返回 400。
+- **前端三处**：好友土地请求序号原来是全账号共享计数器，「展开 A 后立刻展开 B」会把 A 的结果丢弃且 A 的 loading 永真 → 改为按好友维度（Map）；账号列表请求失败不再清空 `accounts`/`currentAccountId`（原来一次超时就会静默把选中账号重置成第一个）；活动倒计时新增未知 state 的兜底文案（原会渲染成 `undefined`）。
+
+核实后未改（避免盲改）：`mall.ts`/`pet-feed.ts` 读 `getUserState().ticket` 恒为 0，但商城商品计价币种是动态的 `goods.price.id`，不是固定点券，简单换成 `coupon` 会在币种不同时误暂停购买，留待「按币种取背包余额」的方案；`pet-feed` 自动买礼包失败后提前 return（与开关关闭分支语义不一致，属产品取舍）；`email` 批量领取回包被丢弃与 `nextCheckAt` 服务器分钟/本地毫秒混算；`task` 图鉴用点券差值 ≥200 判成功；`network` 登录业务错误码直接 `process.exit(0)` 不上报（涉及连接生命周期，改动面大）。
+
+验证：core **575→587**（+12）、web **212→215**（+3）、`pnpm lint` 0、core `build:ts`、`vue-tsc -b`、`vite build` 全过。
+
 ### 2026-11-12 · v3.22.9（#157） · 成熟唤醒与活动/好友成熟计划的时间基准修正
 
 再次按「整个代码完整性」做了一轮只读审计，重点核对 v3.22.8 新增的「自家农场成熟驱动唤醒」链路与全仓其它时间计算路径。发现并修复三处同一根因的缺陷：把「服务器时间」和「本地 Date.now()」混用做时长 / 延迟计算，一旦本机时钟与服务器时钟不一致（项目本就为这种偏移维护了 syncServerTime），唤醒线或开关节点会被错算。

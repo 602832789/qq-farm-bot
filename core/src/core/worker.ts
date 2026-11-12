@@ -905,10 +905,10 @@ async function startBot(config: any): Promise<void> {
             networkEvents.off('sell', onSellGain);
         }
         onSellGain = (sellInfo: any) => {
-            // 老版口径：优先取事件里的 count（实际卖出果实数量），兼容旧版纯金币数字量。
-            const gold = Number(sellInfo && sellInfo.gold || sellInfo || 0);
-            const count = Number(sellInfo && sellInfo.count || 0);
-            if (!Number.isFinite(gold) || gold <= 0) return;
+            // warehouse 恒向事件里发 { gold, count }；以 count（实际卖出果实数量）为准。
+            // 旧口径的 `gold || sellInfo` 在 gold===0 时会回落成对象，Number(obj) 得 NaN，
+            // 进而直接 return 丢掉本次卖出计数。这里只认 count，不依赖金币金额。
+            const count = Number(sellInfo && typeof sellInfo === 'object' ? sellInfo.count : 0) || 0;
             if (count > 0) recordOperation('sell', count);
         };
         networkEvents.on('sell', onSellGain);
@@ -980,17 +980,28 @@ async function startBot(config: any): Promise<void> {
         // 登录成功后，以当前金币/经验/点券作为统计基线，并清空会话增量
         const latest = getUserState();
         const accountId = process.env.FARM_ACCOUNT_ID || '';
-        initStatsWithPersistence(
-            accountId,
-            Number(latest.gold || 0),
-            Number(latest.exp || 0),
-            Number(latest.coupon || 0),
-            goldBeanReady ? Number(latest.goldBean || 0) : null,
-        );
-        resetSessionGains();
+        try {
+            initStatsWithPersistence(
+                accountId,
+                Number(latest.gold || 0),
+                Number(latest.exp || 0),
+                Number(latest.coupon || 0),
+                goldBeanReady ? Number(latest.goldBean || 0) : null,
+            );
+            resetSessionGains();
+        } catch (e: any) {
+            // 统计落盘失败（磁盘只读/写满）不应反噬已建立的连接。
+            logWarn('系统', `登录后统计初始化失败: ${e?.message || e}`, { module: 'system', event: '统计初始化', result: 'error' });
+        }
 
-        // 登录成功后启动各模块
-        await runExclusiveAutomationTask('invite_codes', processInviteCodes);
+        // 以下均为附属初始化。network 的 sendLogin 会把 onLoginSuccess 抛出的错误
+        // 当成「登录初始化失败」直接 finalize + terminate 连接，所以每一步都必须自带
+        // 兜底，避免附属功能的小故障把刚登录成功的健康连接掐掉（可形成重启循环）。
+        try {
+            await runExclusiveAutomationTask('invite_codes', processInviteCodes);
+        } catch (e: any) {
+            logWarn('系统', `登录后邀请码处理失败: ${e?.message || e}`, { module: 'system', event: '邀请码处理', result: 'error' });
+        }
         if (!canContinueLogin()) return;
         if (getAutomation().fertilizer_gift) {
             await runExclusiveAutomationTask('fertilizer_gifts_login', openFertilizerGiftPacksSilently).catch(() => 0);
@@ -999,8 +1010,16 @@ async function startBot(config: any): Promise<void> {
 
         if (!canContinueLogin()) return;
         // 立即发送一次状态，再串行跑启动序列（不阻塞状态上报）
-        syncStatus();
-        await runExclusiveAutomationTask('startup_sequence', () => runStartupSequence(canContinueLogin));
+        try {
+            syncStatus();
+        } catch (e: any) {
+            logWarn('系统', `登录后状态同步失败: ${e?.message || e}`, { module: 'system', event: '状态同步', result: 'error' });
+        }
+        try {
+            await runExclusiveAutomationTask('startup_sequence', () => runStartupSequence(canContinueLogin));
+        } catch (e: any) {
+            logWarn('系统', `启动序列执行失败: ${e?.message || e}`, { module: 'system', event: '启动序列', result: 'error' });
+        }
     };
 
     connect(code, onLoginSuccess);
