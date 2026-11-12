@@ -15,6 +15,7 @@
 
 | 版本 | 更新序号 | 日期 | 更新内容 | 提交 |
 | --- | --- | --- | --- | --- |
+| v3.22.11 | #159 | 2026-11-12 | 掉线后无法自愈：补上 QQ 重登与登录失败兜底 | — |
 | v3.22.10 | #158 | 2026-11-12 | 全仓完整性复查：修复统计基线、登录初始化与若干判定缺陷 | — |
 | v3.22.9 | #157 | 2026-11-12 | 成熟唤醒与活动/好友成熟计划的时间基准修正 | — |
 | v3.22.8 | #156 | 2026-11-12 | 自家农场成熟驱动唤醒与农场调度健壮性补强 | — |
@@ -166,6 +167,36 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-12 · v3.22.11（#159） · 掉线后无法自愈：补上 QQ 重登与登录失败兜底
+
+**问题**：账号跑两天左右就掉线，并且一直离线；老版本能连着好几天在线。先分两件事查：掉线本身是代码问题还是登录协议过期。
+
+**协议核对（结论：协议是新的，不需要更新）**
+
+- 本地 `DEFAULT_CLIENT_VERSION` / `DEFAULT_WX_CLIENT_VERSION` = `1.16.3.8_20261028`，TSDK 为 `v3.9.0.1793764291`（微信 `v3.9.0.1793763796`），WASM SHA-256 与官方包一致。
+- 对照上游 `liyangpengs/qq-farm-bot`（2026-11-12 仍在提交）与镜像 `muyuewang/qq-farm-bot-404`（2026-11-10）：两者的客户端版本号、TSDK 版本、WASM 校验值与本地完全相同，没有更新的协议可用。11-12 的上游提交只是奶茶弹窗的样式改动，不涉及登录链路。
+- 协议过期会「直接登录失败（HTTP 400 / 版本不符）」，不会先正常在线两天再掉，所以症状形态也对不上协议失效。
+
+**代码侧根因（掉线是触发，回不来才是缺陷）**
+
+- **掉线重登只对微信生效**：`wx-keepalive.notifyAccountOffline` 的准入条件是 `hasWxCredential()`（`platform === 'wx'` 且有 `wxid + refreshtoken`），QQ 账号掉线后连「尝试重登」都不会发起，只能人工点启动。这是「掉线后一直离线」最直接的原因。
+- **登录失败直接杀进程**：`network.ts` 的 `sendLogin` 遇到 `code=` 错误走 `process.exit(0)`，而 worker-manager 的 `exit` 分支不会 `reportAccountOffline`，主进程根本收不到掉线信号，自然也不会补 Code 重登。一次性 Code 被消费、Code 过期、版本不符都会落到这条路上。
+- **掉线重登默认关闭**：`autoCodeRefresh.offlineEnabled` 默认 `false`，且归一化只看 `=== true`，老配置里没有该字段时也是关的。对「已经掉线的账号」来说这是纯自愈动作，默认关闭等于把恢复能力关掉了。
+- **QQ 重签能力判定过严**：`qq-credential` 把所有 `ok:false` 与 `LOGIN_REQUIRED` 都当成「服务不支持免扫码重签」并永久停止探测，NapCat 里 QQ 掉登录后即使重新登录也不会再试。
+
+**改动**
+
+- `core/src/services/wx-keepalive.ts`：新增 `platformOf` / `canRecoverAccount` / `refreshCredentialFor`，把「能否免扫码恢复」作为唯一准入条件 —— 微信看滚动凭证，QQ 看 NapCat 重签是否可用；`refreshAndMaybeRestart` 按平台选择 `refreshAccountCredential` 或 `tryRefreshQqGameCode`，成功后统一用新 Code 重启。新增掉线重登次数闸门 `reserveReconnectSlot`：一小时窗口最多 5 次，超了暂停 30 分钟（暂停期满重新起一轮额度），避免 Code 永久失效时每 60 秒重登一次刷屏、反复打续期接口；没有可恢复凭证时直接写清「需重新扫码」。所有尝试写入账号日志（`auto_reconnect` / `auto_reconnect_paused`）。
+- `core/src/core/worker.ts` + `core/src/utils/network.ts`：登录失败不再 `process.exit(0)`，改为 `finalizeConnection({ source: 'login_failed' })` + terminate，走正常断线收尾，让主进程按平台补 Code 后重登。
+- `core/src/runtime/worker-manager.ts`：新增 `DISCONNECT_SOURCE_LABELS`，断线与踢下线的账号日志直接写中文原因（服务端关闭连接 / 连接被拒绝 / 登录验证失败 / 心跳超时…）并带关闭码，下次掉线不用再翻英文 `source` 猜原因。
+- `core/src/services/qq-credential.ts`：`LOGIN_REQUIRED` 移出「服务不支持」永久名单（NapCat 掉登录是可恢复状态）；只有明确的能力/鉴权类错误才停止探测；临时 5xx 与网络异常不再永久禁用自愈。新增导出 `isQqCodeRefreshConfigured()`。
+- `core/src/config/config.ts`、`web/src/stores/setting.ts`、`web/src/components/settings/AccountKeepAliveCard.vue`：掉线重登默认开启；归一化只把「明确保存过的 false」当作用户主动关闭，缺省按开启处理。
+- 未改：心跳阈值（25 秒 tick / 3 次漏拍 / 60 秒极端静默）、Code 一次性不重放、扫码工作流，以及微信到期前预防性续期（仍常开、每 2 小时小幅重启一次以滚动 token）。
+
+**验证**：新增 `core/tests/qq-credential-refresh.test.js`（5 条：未配置、重签成功、明确不支持、NapCat 未登录可恢复、网络异常不永久禁用）；`core/tests/code-preflight.test.js` 扩到 25 条（QQ 掉线重签、失败不重启、限流与暂停、窗口滚动、登录失败不再杀进程、准入条件改为平台无关）。core **587→598**、web **215/215**、`pnpm lint` 0、`build:ts` / `vue-tsc -b` / `vite build` 全过。
+
+**边界**：QQ 的免扫码重签依赖 NapCat 侧 `/miniapp` 能力与当前 QQ 会话，标准 `qq-miniapp-auth` 不支持，这类账号仍只能重新扫码（日志会写明原因）；掉线触发原因（服务端关闭连接 / 心跳静默 / 网络抖动）本次只增强可见性，没有伪造握手或修改网关参数。
+
 ### 2026-11-12 · v3.22.10（#158） · 全仓完整性复查：修复统计基线、登录初始化与若干判定缺陷
 
 再次按「整个代码完整性」做只读审计（4 个只读子代理分模块扫描 + 逐条回源码核实），确认并修复以下真实缺陷；对需要协议行为或产品口径才能定性的条目，核实后不盲改。
