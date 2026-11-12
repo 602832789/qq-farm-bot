@@ -10,7 +10,8 @@ const COLOR_AMBER = 'text-amber-600 dark:text-amber-400'
 const COLOR_RED = 'text-red-600 dark:text-red-400'
 const COLOR_GRAY = 'text-gray-500'
 
-const WARNING_WINDOW_MS = 45 * 60_000
+/** 后端在到期前 5 分钟才滚令牌，界面提前 10 分钟提示即可（与 core 的 code-watch 对齐）。 */
+const WARNING_WINDOW_MS = 10 * 60_000
 const DEFAULT_TTL_SECONDS = 7200
 
 export interface CredentialStatus {

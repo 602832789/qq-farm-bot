@@ -1,12 +1,20 @@
 {
   "major": 3,
-  "minor": 22,
-  "patch": 11,
-  "build": 159,
-  "version": "3.22.11",
-  "updatedAt": "2026-11-12T12:09:48.624Z",
+  "minor": 23,
+  "patch": 0,
+  "build": 160,
+  "version": "3.23.0",
+  "updatedAt": "2026-11-12T20:57:03.803Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.23.0",
+      "build": 160,
+      "date": "2026-11-13",
+      "summary": "移植 YYB-Go-Enhanced 完整保活方案：会话复用、错误分级与只滚令牌续期",
+      "commit": "—",
+      "type": "minor"
+    },
     {
       "version": "3.22.11",
       "build": 159,

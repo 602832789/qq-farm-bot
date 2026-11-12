@@ -15,6 +15,7 @@
 
 | 版本 | 更新序号 | 日期 | 更新内容 | 提交 |
 | --- | --- | --- | --- | --- |
+| v3.23.0 | #160 | 2026-11-13 | 移植 YYB-Go-Enhanced 完整保活方案：会话复用、错误分级与只滚令牌续期 | — |
 | v3.22.11 | #159 | 2026-11-12 | 掉线后无法自愈：补上 QQ 重登与登录失败兜底 | — |
 | v3.22.10 | #158 | 2026-11-12 | 全仓完整性复查：修复统计基线、登录初始化与若干判定缺陷 | — |
 | v3.22.9 | #157 | 2026-11-12 | 成熟唤醒与活动/好友成熟计划的时间基准修正 | — |
@@ -167,6 +168,25 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-13 · v3.23.0（#160） · 移植 YYB-Go-Enhanced 完整保活方案：会话复用、错误分级与只滚令牌续期
+
+- **来源**：对照 `525815266/YYB-Go-Enhanced`（同一套应用宝 PC 微信授权协议，实现比本项目完整）逐文件比对后，把它的保活模型、错误分类、登录预算与 HTTPDNS 策略移植过来。协议常量本来就一致（host appid `wxd44977328b36e647`、服务端 ECDH 公钥、`/ilink/ilinkapp/mp/wxaruntime_transfer`、`js-login` cmdID `1029`、clientVersion `524545`），所以这次改的不是协议本身，而是「什么时候、以什么代价去用它」。
+- **根因（为什么老版本能跑好几天，现在两天就掉）**：原来在到期前 **45 分钟**就去打 `pcyyb_refresh_token_auth`，拿到 token 后顺手再取一次 loginBuffer、换一次 Code、把账号连接重启一遍。三个后果叠加：① 官方续期窗口只有约 4 分钟，提前 45 分钟属于窗口外空打，YYB-Go-Enhanced 的注释里明确记着这条路由有「延时失效」记录；② 每 2 小时重启一次连接，面板上看起来就像频繁掉线；③ 每次续期多打一次 `pcyyb_get_wx_login_buffer_auth`，而决定授权存活的是 OAuth 层调用次数，不是业务请求数。
+- **只滚令牌续期**：`WxLoginService` 拆出 `refreshOAuthToken()`（只滚 access/refresh token）；`wx-credential` 相应分成 `renewOAuthToken()`（后台保活专用，不取 loginBuffer、不换 Code、不重启）与 `refreshAccountCredential()`（token + buffer + Code 全链路，只在确实缺 Code 时调用）。`wx-keepalive` 的预检改走前者，提前量 `RENEW_AHEAD_MS` 由 45 分钟收紧到 **5 分钟**，且成功后**不再 `restartWorker`**——面板上「每 2 小时闪一次」随之消失。
+- **按需换码**：掉线重登改为先用 `ensureFreshGameCode()` 拿 loginBuffer 直接换 Code（**零 OAuth 调用**），只有 buffer 被服务端拒绝且存在 refresh token 时才滚一次 token。`-14` 与 `-109` 都不再触发滚动续期。
+- **错误分级**（新增 `core/src/services/wx-login/recovery-policy.ts`，对应 Go 的 `code_recovery.go`）：`-14` 判为 AppID 侧拒绝（`application_rejected`，不是凭证失效）；`-10` 判为 ticket 被拒（允许重取一次）；`-101 / 40014 / 42001` 判为 access token 失效（还能救）；`-109 / 42007 / 40030 / 42002` 与 `40188 + invalid scope` 判为凭证已吊销（`needsRescan`，停止自动重试）；其余传输错误保持可重试。文案判定只在同时出现「invalid/expired/无效/过期/失效」与「refresh token/刷新令牌」时才判死，避免把代理的 `token expired` 当成微信吊销。
+- **-14 修复闸门**：同一会话在两分钟内刚成功拿到过 Code 时，`-14` 不再触发重新登录（`FRESH_SESSION_WINDOW_MS`），避免「AppID 拒绝 → 重新登录 → 更频繁被拒」的反向循环。
+- **动态退避**：`computeRefreshBackoff()` 取 `min(5 分钟, max(30 秒, 剩余寿命 / 2))`；token 已过期给 15 分钟（续期窗口已过，每 tick 重试只是重复被拒）；确定吊销直接熔断到当天结束。原来的固定 5 分钟退避会整窗错过官方 4 分钟窗口。
+- **登录预算**（新增 `core/src/services/wx-login/login-budget.ts`，对应 `login_budget.go`）：滑动窗口 **10 分钟 3 次 / 账号**，只在「新建 ticket + ManualAuth」这种真正让 OAuth 层干活的路径上扣额度；会话缓存命中、保活滚令牌、用户手动续期都不计数。额度用尽时直接返回原有错误，不再打上游。
+- **会话复用**（新增 `core/src/services/wx-login/session-cache.ts` + `native-protocol` 改造）：把握手结果（sendKey / recvKey / f9 / uin / deviceId / hostAppId / PSK / ticket）按「loginBuffer 摘要 + AppID」缓存 20 分钟，换 Code 时直接走短链 early data，跳过整个长链握手与 ManualAuth。会话被拒或超时才退回完整握手。缓存只在进程内，**不落盘**（会话密钥写进 `store.json` 等于把可解密通道的钥匙存到磁盘上）。
+- **业务拒绝码解析**：`native-protocol` 解析 `wx.login` 的 JSLoginResponse 时，先看 `BaseResponse.ret` / `JSAPI Result.ret`，非 0 就抛 `-14` 这类业务拒绝，再找 `code`。早期实现只找 code，找不到就报「解密失败」，于是把「AppID 拒绝」误当成「会话失效」去重新登录。`ret` 是 varint 全 64 位编码的负数，要按 `BigInt.asIntN(32)` 还原，否则 `-14` 会打印成 `18446744073709551602`。
+- **HTTPDNS 修正**（新增 `core/src/services/wx-login/httpdns.ts`，对应 `newdns.go`）：去掉已被微信下线的短链兜底 IP `120.241.131.173`，换成 `116.128.171.253` / `140.207.120.146` / `182.50.15.223` / `182.50.15.171`；短链协议优先 `mmtlsoverhttp`（当前后端在用），长链优先 `mmtlsovertcp`；长链端口按 `443 → 8080 → 80 → 5000` 排序（部分代理只放行 443）；DNS 查询的 `clientversion` 由 `0` 改为 `524545`（传 0 服务端可能返回空列表）；新增 `longcloud.weixin.com:443` 域名直连槽位，DNS 全挂时仍有路可走；结果缓存 10 分钟。
+- **降级而不是判死**：授权被吊销但连接仍在线时，日志输出「仅会话模式」并暂停自动续期，等用户重新扫码，而不是立刻把账号判死；`wxCredentialNeedsRescan` 标记让保活下一轮不再空转，重新扫码 / 手动填 Code 换到新凭据时自动清除。
+- **未采纳（并说明原因）**：① `cmd 3198 AutoAuth` 需要持久化会话密钥并用硬编码公钥验 ECDSA 签名，属于协议核心改造，没有离线实验台不敢上，先用「会话缓存 + 按需换码」拿到同等收益；② H5 取码路线（完全不走 mmtls）与 PCMgr 通道属于第三条兜底链路，自用单账号用不上；③ `pool.go` 的多 channel / provider 抽象 / 熔断总控是为「授权服务商、几十个账号并发」设计的，照搬只增加维护面。
+- **行为变化（用户可见）**：① 账号不再每 2 小时重启一次连接；② 「即将到期」提示窗口由 45 分钟收紧到 10 分钟（后端 5 分钟才真正续期，原来琥珀色会亮 40 分钟却什么都不发生）；③ 凭证真死时日志直接写「授权已被服务端吊销，需要重新扫码」，不再每 60 秒空转一次。
+- **测试与验证**：新增 `wx-recovery-policy.test.js`（6）、`wx-httpdns.test.js`（6）、`wx-login-budget.test.js`（6）、`wx-session-cache.test.js`（5）、`wx-login-code-parse.test.js`（5）；`code-preflight.test.js` 按新模型重写（28），`wx-credential-refresh.test.js` 补 4 条分层续期用例。core **598 → 634**、web **215/215**、`pnpm lint` 0、`build:ts` / `vue-tsc -b` / `vite build` 全过。
+- **边界**：会话缓存只在进程内有效，容器重启后首次换 Code 仍要完整握手一次；登录预算对「手动点续期」不设限，与上游一致；本次未改动任何协议常量，也未改动 NAS / 服务器配置。
+
 ### 2026-11-12 · v3.22.11（#159） · 掉线后无法自愈：补上 QQ 重登与登录失败兜底
 
 **问题**：账号跑两天左右就掉线，并且一直离线；老版本能连着好几天在线。先分两件事查：掉线本身是代码问题还是登录协议过期。

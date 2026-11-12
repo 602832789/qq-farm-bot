@@ -35,10 +35,10 @@ test('有效期充足的凭证显示绿色，且不带待续期文案', () => {
   assert.ok(!status.text.includes('待续期'))
 })
 
-test('剩余 45 分钟内才显示待续期（琥珀色）', () => {
-  assert.equal(getCredentialStatus(account({ expires_at: NOW + 30 * MINUTE }), NOW).color, AMBER)
-  assert.match(getCredentialStatus(account({ expires_at: NOW + 30 * MINUTE }), NOW).text, /待续期/)
-  assert.equal(getCredentialStatus(account({ expires_at: NOW + 46 * MINUTE }), NOW).color, GREEN)
+test('剩余 10 分钟内才显示待续期（琥珀色）', () => {
+  assert.equal(getCredentialStatus(account({ expires_at: NOW + 8 * MINUTE }), NOW).color, AMBER)
+  assert.match(getCredentialStatus(account({ expires_at: NOW + 8 * MINUTE }), NOW).text, /待续期/)
+  assert.equal(getCredentialStatus(account({ expires_at: NOW + 11 * MINUTE }), NOW).color, GREEN)
 })
 
 test('已过期的凭证显示红色', () => {

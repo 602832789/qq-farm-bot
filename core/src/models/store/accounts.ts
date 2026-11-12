@@ -94,6 +94,7 @@ function addOrUpdateAccount(acc: Partial<Account> & { avatarUrl?: string; openid
         'id', 'name', 'code', 'platform', 'uin', 'qq', 'avatar', 'avatarUrl', 'nick',
         'wxid', 'openid', 'refreshtoken', 'accesstoken', 'loginBuffer',
         'expires_in', 'expires_at', 'wxCredentialRefreshedAt', 'wxCredentialLastAttemptAt', 'wxCredentialRefreshError',
+        'wxCredentialNeedsRescan',
     ]) {
         if (source[key] !== undefined) cleanAccount[key] = source[key];
     }
@@ -123,6 +124,12 @@ function addOrUpdateAccount(acc: Partial<Account> & { avatarUrl?: string; openid
                     next.wxCredentialRefreshedAt = Date.now();
                 if ((acc as any).wxCredentialLastAttemptAt === undefined)
                     next.wxCredentialLastAttemptAt = Date.now();
+            }
+            // 「授权已被吊销，只能重新扫码」是保活停止自动重试的开关；换到新凭据
+            // （重新扫码 / 手动填 Code / 续期成功）时必须一并清掉，否则账号会永远
+            // 停在「不再自动续期」的状态里。调用方显式传 true 时才保留。
+            if (credentialRotated && (acc as any).wxCredentialNeedsRescan === undefined) {
+                delete next.wxCredentialNeedsRescan;
             }
             data.accounts[idx] = next;
             touchedAccountId = String(next.id || '');
