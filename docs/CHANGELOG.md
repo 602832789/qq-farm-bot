@@ -15,6 +15,7 @@
 
 | 版本 | 更新序号 | 日期 | 更新内容 | 提交 |
 | --- | --- | --- | --- | --- |
+| v3.23.2 | #162 | 2026-11-13 | Docker Hub 直连超时时，NapCat 镜像改用加速站或本地标签 | — |
 | v3.23.1 | #161 | 2026-11-13 | QQ 取码链路收口：优先 getOpenAuth，NapCat 基础镜像补固定版本与离线导入路径 | — |
 | v3.23.0 | #160 | 2026-11-13 | 移植 YYB-Go-Enhanced 完整保活方案：会话复用、错误分级与只滚令牌续期 | — |
 | v3.22.11 | #159 | 2026-11-12 | 掉线后无法自愈：补上 QQ 重登与登录失败兜底 | — |
@@ -169,6 +170,17 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-13 · v3.23.2（#162） · Docker Hub 直连超时时，NapCat 镜像改用加速站或本地标签
+
+- **现象**：在宿主机上执行 `docker manifest inspect mlikiowa/napcat-docker:v4.18.42` 返回 `failed to configure transport: error pinging v2 registry: Get "https://registry-1.docker.io/v2/": net/http: request canceled while waiting for connection (Client.Timeout exceeded while awaiting headers)`。
+- **定性**：这是网络层的连接超时，不是「标签不存在」。`docker manifest inspect` 由 Docker CLI **直接连接 registry**，不经过宿主机的 `registry-mirrors` 配置；因此在 `docker.io` 无法直连的网络里，它必然超时，也**不能用来判断标签是否可用**。会走镜像加速的是 `docker pull`，两者行为不同。
+- **文档缺口**：上一版只写了「用 `--build-arg NAPCAT_IMAGE=<版本号>` 固定版本」和「离线 `docker load`」两条路，没有覆盖「registry 直连不通、但加速站可用」这种最常见的情况，也没有说明 `manifest inspect` 与 `pull` 的差异，排查时容易被超时误导成版本不存在。
+- **补全获取路径**（`docs/detailed-reference.md`「部署细节」）：① 明确 `manifest inspect` 不走 `registry-mirrors`、验证标签请改用 `docker pull`；② 给出加速站前缀的构建写法 `--build-arg NAPCAT_IMAGE=docker.m.daocloud.io/mlikiowa/napcat-docker:<版本号>`，与 `docker-compose.yml` 里 `NODE_IMAGE` 的写法一致；③ 补一句「宿主机已有该镜像时直接把 `NAPCAT_IMAGE` 写成 `docker images` 里的本地标签，构建阶段不产生任何拉取」。
+- **注释同步**（`napcat/Dockerfile`）：在 `ARG NAPCAT_IMAGE` 上方注明它接受任意完整镜像地址、加速站前缀怎么写、以及 `manifest inspect` 不吃 `registry-mirrors` 这一点。默认值仍保持 `mlikiowa/napcat-docker:latest`，可由 `--build-arg` 覆盖。
+- **事实核对**：归档仓的 release 产物里实际存在 `napcat-docker-v4.15.0-{amd64,arm64}.tar`、`v4.18.19-*`、`v4.18.42-*` 三组版本。至于 Docker Hub 上这些标签是否仍然存活，本机与部署机都无法直连 `registry-1.docker.io`，仍未能确认，所以没有把某个版本号写死成默认值。
+- **测试**：`core/tests/napcat-plugin-ladder.test.js` 由 5 条增至 6 条——新增「文档说明 manifest inspect 不走镜像加速」一条（锁 `registry-mirrors`、加速站前缀、`docker pull` 三处表述），并在「`NAPCAT_IMAGE` 仍可覆盖」里加断言锁住 Dockerfile 注释中的加速站示例。
+- **边界**：不改任何 QQ 协议常量、不改 Docker Compose、不改 NAS / 服务器配置；`NAPCAT_IMAGE` 默认值保持原样。
+
 ### 2026-11-13 · v3.23.1（#161） · QQ 取码链路收口：优先 getOpenAuth，NapCat 基础镜像补固定版本与离线导入路径
 
 - **来源**：为排查 QQ 账号掉线，横向核对了两个第三方项目——`DandanLLab/SnowCatQQ`（自称 NapCat 4.18.28 底座 + SnowLuma 融合）与 `XingYunStar/NapCatQQ`（NapCat 归档仓）。前者 `packages/` 目录与 NapCat 逐个对应（`snowcat-core` ↔ `napcat-core` 等），实为同一份源码的改名分支，没有独立的 QQ 登录协议实现；后者提供了当前版本的源码与 release 产物，正好用来核对我们的插件。

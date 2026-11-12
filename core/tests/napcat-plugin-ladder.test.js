@@ -41,10 +41,28 @@ test('NapCat 基础镜像仍可通过 NAPCAT_IMAGE 覆盖（上游已下线，�
     const dockerfile = fs.readFileSync(path.resolve(ROOT, 'napcat/Dockerfile'), 'utf8');
     assert.match(dockerfile, /ARG NAPCAT_IMAGE=/, 'NAPCAT_IMAGE 构建参数被删掉了，重建将无法固定版本');
     assert.match(dockerfile, /FROM \$\{NAPCAT_IMAGE\}/, 'FROM 没有引用 NAPCAT_IMAGE');
+    assert.match(
+        dockerfile,
+        /docker\.m\.daocloud\.io\/mlikiowa\/napcat-docker/,
+        'Dockerfile 注释里应保留镜像加速站的写法示例，Docker Hub 直连超时时靠它落地',
+    );
 });
 
 test('部署文档给出固定版本与离线导入两条路径', () => {
     const doc = fs.readFileSync(path.resolve(ROOT, 'docs/detailed-reference.md'), 'utf8');
     assert.match(doc, /NAPCAT_IMAGE=mlikiowa\/napcat-docker:</, '文档缺少固定基础镜像版本的写法');
     assert.match(doc, /docker load -i/, '文档缺少镜像离线导入的兜底步骤');
+});
+
+test('文档说明 manifest inspect 不走镜像加速，别拿它判断标签可用性', () => {
+    const doc = fs.readFileSync(path.resolve(ROOT, 'docs/detailed-reference.md'), 'utf8');
+    // docker manifest inspect 是 CLI 直连 registry，不吃 daemon 的 registry-mirrors，
+    // 在 Docker Hub 不可直连的网络里必然超时。若文档不提这一点，排查时会被它带偏。
+    assert.match(doc, /registry-mirrors/, '文档缺少「manifest inspect 不走宿主机 registry-mirrors」的说明');
+    assert.match(
+        doc,
+        /docker\.m\.daocloud\.io\/mlikiowa\/napcat-docker:/,
+        '文档缺少镜像加速站前缀的构建写法',
+    );
+    assert.match(doc, /docker pull/, '文档应指明验证标签要用 docker pull（它会走镜像加速）');
 });

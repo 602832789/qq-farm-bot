@@ -130,7 +130,16 @@ docker build -f napcat/Dockerfile -t qq-farm-napcat \
   --build-arg NAPCAT_IMAGE=mlikiowa/napcat-docker:<版本号> .
 ```
 
-如果镜像仓库本身不可达，可以改走离线导入：社区维护的 NapCat 归档仓库在 release 产物里保留了分架构的 `napcat-docker-v<版本号>-<架构>.tar`，下载后在本机导入，再按上面的 `--build-arg` 指向本地标签即可，全程不需要访问任何 registry：
+如果 `docker.io` 在当前网络下无法直连，构建会卡在拉取基础镜像这一步。注意 `docker manifest inspect` 是由 CLI 直接连接 registry 的，**不经过宿主机的 `registry-mirrors` 配置**，所以它报连接超时既不能证明版本不存在，也不能用来判断标签可用性；要验证标签请改用 `docker pull`，它才会走镜像加速。无法直连时把 `NAPCAT_IMAGE` 换成加速站前缀的完整地址：
+
+```bash
+docker build -f napcat/Dockerfile -t qq-farm-napcat \
+  --build-arg NAPCAT_IMAGE=docker.m.daocloud.io/mlikiowa/napcat-docker:<版本号> .
+```
+
+宿主机上已经有这个镜像时，把 `NAPCAT_IMAGE` 直接写成 `docker images` 里显示的本地标签即可，构建阶段不会产生任何拉取。
+
+如果镜像仓库和加速站都不可达，可以改走离线导入：社区维护的 NapCat 归档仓库在 release 产物里保留了分架构的 `napcat-docker-v<版本号>-<架构>.tar`，下载后在本机导入，再按上面的 `--build-arg` 指向本地标签即可，全程不需要访问任何 registry：
 
 ```bash
 docker load -i napcat-docker-v<版本号>-amd64.tar
