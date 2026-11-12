@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 22,
-  "patch": 7,
-  "build": 155,
-  "version": "3.22.7",
-  "updatedAt": "2026-11-12T03:01:04.840Z",
+  "patch": 8,
+  "build": 156,
+  "version": "3.22.8",
+  "updatedAt": "2026-11-12T03:55:08.076Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.22.8",
+      "build": 156,
+      "date": "2026-11-12",
+      "summary": "自家农场成熟驱动唤醒与农场调度健壮性补强",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.22.7",
       "build": 155,

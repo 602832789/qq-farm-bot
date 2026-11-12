@@ -8,7 +8,7 @@ const { CONFIG, updateRuntimeConfig } = require('../config/config');
 const { getLevelExpProgress, loadConfigs } = require('../config/gameConfig');
 const { getAutomation, getPreferredSeed, getConfigSnapshot, applyConfigSnapshot } = require('../models/store');
 const { checkAndClaimEmails, configureEmailClaim, getEmailDailyState } = require('../services/email');
-const { checkFarm, startFarmCheckLoop, stopFarmCheckLoop, refreshFarmCheckLoop, getLandsDetail, getAvailableSeeds, purchaseSeed, runFarmOperation, runFertilizerByConfig, fertilizeOwnLand } = require('../services/farm');
+const { checkFarm, startFarmCheckLoop, stopFarmCheckLoop, refreshFarmCheckLoop, getOwnFarmMaturityDelayMs, consumeFarmWakeup, getLandsDetail, getAvailableSeeds, purchaseSeed, runFarmOperation, runFertilizerByConfig, fertilizeOwnLand } = require('../services/farm');
 const { checkFriends, startFriendCheckLoop, stopFriendCheckLoop, refreshFriendCheckLoop, getFriendsList, getFriendsListCacheOnly, getFriendLandsDetail, doFriendOperation, deleteFriend, runScheduledStealCheck, runGoldenBugPlacement } = require('../services/friend');
 const { getInteractRecords } = require('../services/interact');
 const { processInviteCodes } = require('../services/invite');
@@ -232,6 +232,31 @@ function randomIntervalMs(minMs: number, maxMs: number): number {
     return sec * 1000;
 }
 
+// 自家农场成熟驱动：比服务端成熟墙钟晚 1.5 秒唤醒，避开时间同步的小偏差。
+const FARM_MATURITY_WAKE_BUFFER_MS = 1500;
+const FARM_WAKEUP_IMMEDIATE_MS = 200;
+const FARM_TICK_LOCK_WAIT_MS = 30 * 1000;
+
+/**
+ * 算农场线下一次唤醒时刻。
+ * 优先级：巡查中攒下的推送 / 收获失败 / 整轮超时登记的「尽快补跑」
+ *       > 下一块自家作物的成熟点
+ *       > 常规 20~25 秒随机轮询。
+ * 配置下发时也走这里，所以不会再出现「面板保存把到期线推后、农场二十多秒叫不醒」。
+ */
+function planNextFarmRun(nowMs: number, farmMs: number): number {
+    const wakeReason = consumeFarmWakeup();
+    if (wakeReason) {
+        logFileOnly('巡田', `提前唤醒农场巡查: ${wakeReason}`);
+        return nowMs + FARM_WAKEUP_IMMEDIATE_MS;
+    }
+    const maturityDelayMs = getOwnFarmMaturityDelayMs(nowMs);
+    const maturityAt = maturityDelayMs > 0
+        ? nowMs + maturityDelayMs + FARM_MATURITY_WAKE_BUFFER_MS
+        : Number.POSITIVE_INFINITY;
+    return Math.max(nowMs + 1000, Math.min(nowMs + farmMs, maturityAt));
+}
+
 function resetUnifiedSchedule(options: { preserveSteal?: boolean } = {}): void {
     const farmMs = randomIntervalMs(
         CONFIG.farmCheckIntervalMin || CONFIG.farmCheckInterval || 2000,
@@ -242,7 +267,7 @@ function resetUnifiedSchedule(options: { preserveSteal?: boolean } = {}): void {
         workerConfig.friendCheckIntervalMax || 15000
     );
     const now = Date.now();
-    nextFarmRunAt = now + farmMs;
+    nextFarmRunAt = planNextFarmRun(now, farmMs);
     // 老版本节奏：帮忙循环保底常规间隔，偷菜首轮给一个短的随机窗口，
     // 后续完全由 runScheduledStealCheck 返回的成熟时间动态决定。
     nextFriendRunAt = now + friendMs;
@@ -390,7 +415,7 @@ async function runFarmTick(auto: any): Promise<void> {
         // 与 friend/steal tick 一致：账号停机又立刻重启时，旧轮次不能把新会话
         // 刚算好的到期时间覆盖掉，也不能提前解除新会话的运行中守卫。
         if (generation === runtimeGeneration) {
-            nextFarmRunAt = Date.now() + farmMs;
+            nextFarmRunAt = planNextFarmRun(Date.now(), farmMs);
             farmTaskRunning = false;
         }
     }
@@ -487,7 +512,10 @@ async function runUnifiedTick(): Promise<void> {
 
     const auto = getAutomation();
     // 农场仍串行（要等它真做完）；好友/偷菜在访问间隔中会让出锁，不必让它们挡住后续 tick。
-    if (dueFarm) await runExclusiveAutomationTask('farm_tick', () => runFarmTick(auto));
+    if (dueFarm) await runExclusiveAutomationTask('farm_tick', () => runFarmTick(auto), {
+        priority: true,
+        timeoutMs: FARM_TICK_LOCK_WAIT_MS,
+    });
     if (!unifiedSchedulerRunning || !loginReady || generation !== runtimeGeneration) return;
     // 好友/偷菜这里**不能**再套一层自动化锁：checkFriends 内部按单次访问用 detached 独立入队，
     // 一旦外层也持锁，那些 detached 调用会排到「外层任务自己」后面，而外层正在 await 它们 —— 死锁。
