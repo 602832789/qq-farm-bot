@@ -15,6 +15,7 @@
 
 | 版本 | 更新序号 | 日期 | 更新内容 | 提交 |
 | --- | --- | --- | --- | --- |
+| v3.23.3 | #163 | 2026-11-13 | 全仓完整性复查：修复凭证吊销闸门失效、续期窗口被推迟与续期异常打断主进程 | — |
 | v3.23.2 | #162 | 2026-11-13 | Docker Hub 直连超时时，NapCat 镜像改用加速站或本地标签 | — |
 | v3.23.1 | #161 | 2026-11-13 | QQ 取码链路收口：优先 getOpenAuth，NapCat 基础镜像补固定版本与离线导入路径 | — |
 | v3.23.0 | #160 | 2026-11-13 | 移植 YYB-Go-Enhanced 完整保活方案：会话复用、错误分级与只滚令牌续期 | — |
@@ -170,6 +171,20 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-13 · v3.23.3（#163） · 全仓完整性复查：修复凭证吊销闸门失效、续期窗口被推迟与续期异常打断主进程
+
+- **复查范围**：v3.23.x 引入的协议层与保活层（`wx-login/` 四个模块、`wx-credential`、`wx-keepalive`），以及账号存储、worker 进程管理、账号列表投影三处与它们直接相接的代码。
+- **缺陷一（高）·「授权已吊销」标记从未落盘**：`addOrUpdateAccount` 的白名单收下了 `wxCredentialNeedsRescan`，但 `normalizeAccount` 重建账号对象时只挑固定字段，把它丢掉了；而 `saveAccounts` 正是用它归一化后才写文件并回填内存缓存。结果这个标记在内存里只存在一瞬，`wx-keepalive` 里 `if (account.wxCredentialNeedsRescan) continue` 永远为假——凭证被 `-109` 吊销后，当天靠连续失败熔断挡住，跨日后状态重建，第二天又拿死 token 空打 OAuth 层。修法：账号类型补该字段，`normalizeAccount` 只保留 `true`（缺失等价于 false）。
+- **缺陷二（高）·只换 Code 也会把续期窗口推后最多两小时**：`rotatedKeys` 里含 `code`，于是「用 loginBuffer 直接换 Code」「手动填 Code」这类**完全不碰 token** 的操作也会把 `wxCredentialRefreshedAt` 刷成当前时间。而 `code-watch` 与前端都按 `max(expires_at, refreshedAt + 2h)` 重算到期——真实 access token 只剩十分钟，界面和保活却以为还有两小时，等发现时已经过期掉线。这条正好命中「刚换过码、过一阵还是掉」。修法：把「换 Code」与「换令牌」拆成两组 key，只有 `refreshtoken` / `accesstoken` / `loginBuffer` / `expires_at` 真的变了才推进基准时间。
+- **缺陷三（高）·续期异常会打断主进程**：`refreshAndMaybeRestart` 只有 `finally` 没有 `catch`，而掉线重登那条路径是裸 `void refreshAndMaybeRestart(key, 'offline')`。任何预期外异常（账号文件写入失败、上游返回结构异常）都会变成未处理拒绝，Node 20 默认按致命错误处理，**主进程直接退出，所有账号同时掉线**。修法：函数内部把异常收口成「一次失败」——记账号日志、写系统日志、推进退避状态；调用点再加一层 `catch` 兜底。
+- **缺陷四（高）·worker 消息处理没有兜底**：`child.on('message')` 的回调里会写账号库（落盘失败抛 `storageError`）、会往子进程 `send`（IPC 通道关闭时**同步抛** `ERR_IPC_CHANNEL_CLOSED`）。这些都跑在事件回调里，抛出去等价于 `uncaughtException`，同样会带走主进程。修法：消息处理整体 try/catch；新增 `safeSend()` 包装全部 `send` 调用点；`stopWorker` 的 `send` 失败时直接清掉 worker 条目（否则 `startWorker` 的判重会让账号永远起不来，面板却显示运行中）；`callWorkerApi` 发不出去就立即 `reject` 并摘掉超时定时器，不让调用方白等 10~180 秒。
+- **缺陷五（中）·保活巡检的互斥是假的**：`tick()` 里用 `void runCodePreflight(...)` 触发异步任务后，`finally` 立刻把 `running` 置回 `false`——上一轮还在等上游，下一个 tick 照样进来，只靠 `inFlight` 与退避闸门兜着。修法：改成等 Promise 真正结束再释放，并给巡检异常加日志（原来是 `catch(() => {})` 全吞，出问题完全看不见）。
+- **缺陷六（中）·面板账本用了错误的判定口径**：后端下发的 `wxPreflightSupported` 表示「能滚 token」（`wxid` + `refreshtoken`），而真正的恢复能力 `canRecoverAccount` 还要包含「只有 loginBuffer」的账号。后者滚不了 token，但掉线后会自动换 Code 并写进账本，前端却因为 `wxPreflightSupported === false` 把整段账本隐藏，用户看到的是与事实相反的「不支持」。修法：投影新增 `wxCanRecover`（直接复用 `canRecoverAccount`，只在微信账号上下发），前端账本门禁改用它，字段缺失时回落到旧判定。
+- **顺手更正的三条测试**：`account-credential-state.test.js` 原来断言「换 Code 后 `refreshedAt` 会刷新」——正是缺陷二的错误语义，已改成「换 Code 不推进基准、换令牌才推进」；`code-preflight.test.js` 与 `account-online-card.test.mjs` 里断言 `void runCodePreflight(...).catch` 的接线，已改为断言新的「Promise 结束才释放 running + 异常必须落日志」。
+- **已知未修（记录，单独一版处理）**：`worker-manager` 的「持续离线 N 分钟自动删除账号」在主路径上不可达——计时状态 `disconnectedSince` 挂在 worker 条目上，而真实掉线会在 300ms~1s 内删掉该条目，分钟级的阈值永远累积不到。修法需要把计时提到账号维度并用独立定时任务，属于功能重做，本次不动。
+- **测试**：core **640 → 648**（新增凭证落盘、换 Code 不推进基准、异常吸收、单账号异常不影响同批、投影双口径等用例），web **215 → 216**。`pnpm lint` 0 error、`build:ts` / `vue-tsc -b` / `vite build` 全过。
+- **边界**：不改任何协议常量、不改 Docker Compose、不改 NAS / 服务器配置。
+
 ### 2026-11-13 · v3.23.2（#162） · Docker Hub 直连超时时，NapCat 镜像改用加速站或本地标签
 
 - **现象**：在宿主机上执行 `docker manifest inspect mlikiowa/napcat-docker:v4.18.42` 返回 `failed to configure transport: error pinging v2 registry: Get "https://registry-1.docker.io/v2/": net/http: request canceled while waiting for connection (Client.Timeout exceeded while awaiting headers)`。

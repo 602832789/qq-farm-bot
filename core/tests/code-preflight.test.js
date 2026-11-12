@@ -459,7 +459,13 @@ test('掉线重登限流：窗口滚过 1 小时后计数归零', () => {
 test('接线断言：预检只滚令牌、只有掉线才重启、登录失败不杀进程', () => {
     const keepAlive = fs.readFileSync(path.join(SRC, 'services/wx-keepalive.ts'), 'utf8');
     const engine = fs.readFileSync(path.join(SRC, 'runtime/runtime-engine.ts'), 'utf8');
-    assert.match(keepAlive, /void runCodePreflight\(Date\.now\(\)\)\.catch/);
+    assert.match(keepAlive, /runCodePreflight\(Date\.now\(\)\)/, '巡检入口没变');
+    // running 必须在巡检真正结束后才释放。旧写法是 `void runCodePreflight(...)` 之后
+    // 立刻在 finally 里置 false，异步还没回来互斥就已经放开了。
+    assert.match(keepAlive, /\.finally\(\(\) => \{\s*running = false;\s*\}\)/, 'running 要等巡检结束才释放，否则互斥失效');
+    assert.doesNotMatch(keepAlive, /catch\(\(\) => \{\}\)/, '巡检异常不能静默吞掉，至少要落一条日志');
+    assert.doesNotMatch(keepAlive, /void refreshAndMaybeRestart\(key, 'offline'\);/, '掉线重登的 Promise 必须带 catch，裸 void 在 Node 20 会带走主进程');
+    assert.match(keepAlive, /续期异常/, 'refreshAndMaybeRestart 要把预期外异常收口成一次失败');
     assert.doesNotMatch(keepAlive, /if \(!config\.enabled\) return;/, '预防性续期不能再受定时重登总开关控制');
     assert.doesNotMatch(keepAlive, /intervalMinutes|'timer'|"timer"/, '定时重登的间隔与 reason 必须清空');
     assert.doesNotMatch(keepAlive, /定时重登/, '定时重登文案不得残留');
@@ -490,4 +496,50 @@ test('Code 失效信号：ws_400（worker 实际写入）与预防续期失败�
     assert.ok(OFFLINE_LOG_ACTIONS.has('auto_code_preflight_failed'));
     const workerManager = fs.readFileSync(path.join(SRC, 'runtime/worker-manager.ts'), 'utf8');
     assert.match(workerManager, /'ws_400'/);
+});
+
+test('续期抛异常时被吸收成一次失败：不冒未处理拒绝，且退避会前进', async () => {
+    reset();
+    mocks.accounts = [wxAccount({ expires_at: NOW + MINUTE })];
+    mocks.running = new Set(['1']);
+    // 模拟账号文件写入失败这类预期外异常（不是「返回 ok:false」的正常失败）。
+    mocks.tokenImpl = () => { throw new Error('账号文件写入失败'); };
+
+    // 不能抛出去：掉线重登那条路径是裸 `void refreshAndMaybeRestart(...)`，
+    // 一旦 reject 就是未处理拒绝，Node 20 默认按致命错误处理，主进程直接退出。
+    await ka.runCodePreflight(NOW);
+
+    assert.equal(mocks.tokenCalls.length, 1);
+    assert.ok(
+        mocks.printed.some(item => /续期异常/.test(item.msg)),
+        '异常必须落到系统日志，否则会变成看不见的重试循环',
+    );
+    assert.equal(mocks.logs.length, 1, '异常同样要写一条账号日志');
+    assert.equal(mocks.logs[0].action, 'auto_code_preflight_failed');
+    assert.deepEqual(mocks.preflightResults, [{ id: '1', ok: false, at: NOW }]);
+
+    mocks.tokenCalls = [];
+    await ka.runCodePreflight(NOW);
+    assert.equal(mocks.tokenCalls.length, 0, '记了失败之后退避必须生效，不能同一 tick 立刻重试');
+});
+
+test('单个账号续期异常不影响同批其它账号', async () => {
+    reset();
+    mocks.accounts = [
+        wxAccount({ id: '1', expires_at: NOW + MINUTE }),
+        wxAccount({ id: '2', name: '微信二号', wxid: 'wxid-2', refreshtoken: 'rt-2', expires_at: NOW + MINUTE }),
+    ];
+    mocks.running = new Set(['1', '2']);
+    mocks.tokenImpl = (id) => {
+        if (id === '1') throw new Error('账号 1 写盘失败');
+        return { ok: true, accountId: id, accountName: '微信二号', codeIssued: false };
+    };
+
+    const triggered = await ka.runCodePreflight(NOW);
+    assert.deepEqual(triggered.sort(), ['1', '2']);
+    assert.equal(mocks.tokenCalls.length, 2, '两个账号都应该被试过');
+    assert.deepEqual(
+        mocks.preflightResults.map(item => ({ id: item.id, ok: item.ok })).sort((a, b) => a.id.localeCompare(b.id)),
+        [{ id: '1', ok: false }, { id: '2', ok: true }],
+    );
 });

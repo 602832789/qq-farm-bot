@@ -313,10 +313,10 @@ async function refreshAndMaybeRestart(accountId: unknown, reason: 'offline' | 'm
     if (reason === 'offline' && !canRecoverAccount(account)) return false;
     if (reason !== 'offline' && platformOf(account) === 'wx' && !hasWxCredential(account)) return false;
     inFlight.add(key);
+    const isPreflight = reason === 'preflight';
     try {
         const result = await renewFor(account, key, reason);
         const accountName = String(result?.accountName || nameOf(account, key));
-        const isPreflight = reason === 'preflight';
         if (!result?.ok) {
             const message = `账号 ${accountName} 续期失败：${result?.error || '未知错误'}`;
             const needsRescan = !!result?.needsRescan;
@@ -365,7 +365,29 @@ async function refreshAndMaybeRestart(accountId: unknown, reason: 'offline' | 'm
             }
         }
         return true;
-    } finally {
+    }
+    catch (error: any) {
+        // renewFor 的各条分支内部已经做过 try/catch，走到这里说明出现了预期外的异常
+        // （账号文件写入失败、状态机 bug、上游返回了奇怪结构等）。必须在这里收口：
+        //   - 记一次失败，让退避状态前进，否则下一个 tick 会立刻重试，变成看不见的
+        //     循环，把日志和 OAuth 额度一起刷掉；
+        //   - 绝不能让异常冒到调用方：掉线重登那条路径是裸 `void` 调用，冒出去就是
+        //     未处理拒绝，Node 20 默认按致命错误处理，主进程直接退出（全部账号掉线）。
+        const accountName = nameOf(account, key);
+        const message = String((error && error.message) || error || '未知错误');
+        if (isPreflight) preflight.recordFailure(key, error, now, credentialRemainingMs(account, now));
+        recordAutomaticResult(key, reason, false, now);
+        log('错误', `账号 ${accountName} 续期异常：${message}`, { accountId: key, accountName, reason });
+        addAccountLog(
+            isPreflight ? 'auto_code_preflight_failed' : 'auto_code_refresh_failed',
+            `账号 ${accountName} 续期异常：${message}`,
+            key,
+            accountName,
+            { reason },
+        );
+        return false;
+    }
+    finally {
         inFlight.delete(key);
     }
 }
@@ -396,12 +418,17 @@ function runCodePreflight(now: number = Date.now()): Promise<string[]> {
 function tick(): void {
     if (running) return;
     running = true;
-    try {
-        // 到期前续期常开：不看任何开关、不依赖浏览器，关掉网页后端照样工作。
-        void runCodePreflight(Date.now()).catch(() => {});
-    } finally {
-        running = false;
-    }
+    // runCodePreflight 是异步的，必须等它真正结束才释放 running。旧写法是
+    // `void runCodePreflight(...)` 之后立刻在 finally 里置回 false，互斥形同虚设：
+    // 上一轮还在等上游，下一个 tick 照样进来。以前只靠 inFlight 与退避闸门兜着，
+    // 一旦某次续期卡在网络超时上，就会叠出多条并发续期。
+    runCodePreflight(Date.now())
+        .catch((error: any) => {
+            log('错误', `账号在线保障巡检失败：${String((error && error.message) || error)}`);
+        })
+        .finally(() => {
+            running = false;
+        });
 }
 
 /** 账号掉线（断开 / 被踢下线 / 登录失败）时调用；按配置延时换 Code 并重启。 */
@@ -454,7 +481,11 @@ function notifyAccountOffline(accountId: unknown, reason = 'offline'): void {
         const latest = findAccount(key);
         if (!latest || isRunning(key)) return;
         addAccountLog('auto_reconnect', `账号 ${nameOf(latest, key)} 掉线后尝试自动重登`, key, nameOf(latest, key), { reason });
-        void refreshAndMaybeRestart(key, 'offline');
+        // 再兜一层 catch：refreshAndMaybeRestart 内部已经收口异常，这里是第二道保险。
+        // 裸 `void` 的拒绝在 Node 20 上按致命错误处理，会直接带走主进程。
+        void refreshAndMaybeRestart(key, 'offline').catch((error: any) => {
+            log('错误', `账号自动重登异常：${String((error && error.message) || error)}`, { accountId: key, reason });
+        });
     }, delayMs);
     if (typeof handle.unref === 'function') handle.unref();
     offlineTimers.set(key, handle);

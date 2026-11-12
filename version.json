@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 23,
-  "patch": 2,
-  "build": 162,
-  "version": "3.23.2",
-  "updatedAt": "2026-11-12T22:09:06.366Z",
+  "patch": 3,
+  "build": 163,
+  "version": "3.23.3",
+  "updatedAt": "2026-11-12T22:36:44.765Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.23.3",
+      "build": 163,
+      "date": "2026-11-13",
+      "summary": "全仓完整性复查：修复凭证吊销闸门失效、续期窗口被推迟与续期异常打断主进程",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.23.2",
       "build": 162,
