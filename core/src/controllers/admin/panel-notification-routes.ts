@@ -3,6 +3,8 @@ import type { AdminContext } from './context';
 export {};
 
 const { getAccId } = require('./middleware');
+const { createModuleLogger } = require('../../services/logger');
+const notificationLogger = createModuleLogger('admin');
 
 /** 面板内消息（局内通知）：读取本地 JSON，不依赖任何外部推送渠道配置。 */
 function mountPanelNotificationRoutes(app: Application, ctx: AdminContext): void {
@@ -12,8 +14,12 @@ function mountPanelNotificationRoutes(app: Application, ctx: AdminContext): void
         try {
             const data = await ctx.provider.getPanelNotifications(accountId);
             return res.json({ ok: true, data: Array.isArray(data) ? data : [] });
-        } catch {
-            // 通知是附加信息，读取失败时降级为空列表，不打断面板其它请求。
+        } catch (e: any) {
+            // 通知是附加信息，读取失败时降级为空列表，不打断面板其它请求；
+            // 但不能静默：本地 JSON 损坏 / 权限问题需要留一条可查的日志。
+            notificationLogger.warn(`读取面板通知失败，降级为空列表: ${e?.message || e}`, {
+                event: '面板通知', result: 'error', accountId,
+            });
             return res.json({ ok: true, data: [] });
         }
     });

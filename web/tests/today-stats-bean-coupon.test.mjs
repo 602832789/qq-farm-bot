@@ -7,6 +7,7 @@ const read = relative => readFileSync(new URL(relative, import.meta.url), 'utf8'
 const dashboard = read('../src/views/Dashboard.vue')
 const stats = read('../../core/src/services/stats.ts')
 const runtimeState = read('../../core/src/runtime/runtime-state.ts')
+const worker = read('../../core/src/core/worker.ts')
 
 // 今日统计这四张卡片所在的 grid，用来精确限定「只改今日模块」的检查范围。
 // 从 grid 容器的 class 起切，才能把「沿用两列网格」也一起断言进去。
@@ -75,7 +76,7 @@ test('四项今日数值都直接读后端同源字段，金豆不再由前端�
 
 test('后端下发 sessionGoldBeanGained，且与金币/点券同为当日净值、可为负', () => {
   assert.match(stats, /sessionGoldBeanGained: session\.goldBeanGained/, 'getStats 要把金豆增量下发到 status')
-  assert.match(stats, /session\.goldBeanGained = currentGoldBean - \(initialState\.goldBean as number\)/, '净值 = 当前余额 - 当日基线')
+  assert.match(stats, /session\.goldBeanGained = initialState\.goldBean === null\s*\? 0\s*: currentGoldBean - \(initialState\.goldBean as number\)/, '净值 = 当前余额 - 当日基线；基线未就绪时显示 0 而不是虚高')
   assert.match(stats, /session\.goldGained = currentGold - \(initialState\.gold as number\)/, '金币口径保持不变')
   assert.match(stats, /session\.couponGained = currentCoupon - \(initialState\.coupon as number\)/, '点券口径保持不变')
   assert.match(stats, /goldBean: currentGoldBean/, '余额仍照常下发')
@@ -84,11 +85,15 @@ test('后端下发 sessionGoldBeanGained，且与金币/点券同为当日净值
 })
 
 test('金豆基线在后端由跨天/登录/持久化三条链路统一接管', () => {
-  assert.match(stats, /initialState\.goldBean = null/, '登录与跨天时基线留空，避免把 0 当今日起点')
-  assert.match(stats, /if \(initialState\.goldBean === null\)\s*initialState\.goldBean = currentGoldBean/, '首次观测初始化基线')
+  assert.match(stats, /initialState\.goldBean = null/, '跨天时基线留空')
+  assert.match(stats, /if \(initialState\.goldBean === null && currentGoldBean > 0\)\s*initialState\.goldBean = currentGoldBean/, '只用有效余额初始化基线，未同步的占位 0 不能钉成今日起点')
   assert.match(stats, /session\.goldBeanGained = 0/, '登录与跨天重置都要清增量')
   assert.match(stats, /const restoredGoldBean = savedInitial\.goldBean/, '同日重启恢复基线')
   assert.match(stats, /restoredGoldBean !== null && restoredGoldBean !== undefined/, '旧存档缺字段时不能把 null 当 0 恢复')
+  assert.match(stats, /function initStats\(gold: number, exp: number, coupon: number = 0, goldBean: number \| null = null\)/, '登录基线可显式传入金豆余额或 null')
+  assert.match(stats, /initialState\.goldBean = b !== null && Number\.isFinite\(b\) && b >= 0 \? b : null/, '传 null 时基线保持空，传 0（背包确认过的合法余额）才算基线')
+  assert.match(worker, /goldBeanReady \? Number\(latest\.goldBean \|\| 0\) : null/, '背包同步失败时不能把占位 0 当基线传给统计模块')
+  assert.match(worker, /goldBeanReady = true/, '背包同步成功才允许用登录余额作基线')
 })
 
 test('金豆/点券为负数时用与金币同一个负向色 token', () => {

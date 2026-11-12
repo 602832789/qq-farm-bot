@@ -64,8 +64,13 @@ async function checkFarm(): Promise<boolean> {
     if (inFarmQuietHours()) return false;
     const generation = farmLoopGeneration;
     const pacing = automaticPlantPacing;
+    // 本轮开头会清掉待触发的分次种植续跑。若本轮没走到种植决策（异常/让路/
+    // 空快照），清掉后必须在 finally 按原剩余间隔接回，否则剩余地块要等下一次
+    // 20~25s 常规巡查，配置的种植间隔形同虚设。
+    const hadPendingContinuation = farmScheduler.has('farm_plant_continue');
     farmScheduler.clear('farm_plant_continue');
     pacing.deferred = false;
+    pacing.plantingResolved = false;
     isCheckingFarm = true;
 
     try {
@@ -83,6 +88,14 @@ async function checkFarm(): Promise<boolean> {
         return false;
     } finally {
         isCheckingFarm = false;
+        // 只有「本轮确实走到了种植决策」才相信 pacing.deferred；否则把进入本轮时
+        // 被清掉的续跑接回。剩余间隔为 0 时不重排，交给常规 tick，避免 0ms 空转。
+        if (hadPendingContinuation && !pacing.plantingResolved
+            && farmLoopRunning && canContinueFarm(generation)
+            && pacing === automaticPlantPacing
+            && getRemainingPlantDelayMs(pacing) > 0) {
+            pacing.deferred = true;
+        }
         schedulePlantContinuation(generation, pacing);
     }
 }
@@ -335,6 +348,9 @@ async function runFarmOperation(
 
     // 执行种植
     if (opType === 'all' || opType === 'plant') {
+        // 已走到种植决策：即使最终没有空地可种，也不该触发 checkFarm 的续跑兜底，
+        // 避免「确实没地」时按剩余间隔无限空转。
+        if (automatic) automatic.pacing.plantingResolved = true;
         const allEmptyLands: number[] = [...new Set(status.empty)] as number[];
         let allDeadLands: number[] = [...new Set(status.dead)] as number[];
 
@@ -551,7 +567,7 @@ function onFarmSocialEventsChangedPush(events: any[]): void {
 function stopFarmCheckLoop(): void {
     farmLoopRunning = false;
     farmLoopGeneration++;
-    automaticPlantPacing = { lastPlantAt: null, defer: true };
+    automaticPlantPacing = { lastPlantAt: null, defer: true, plantingResolved: false };
     externalSchedulerMode = false;
     farmScheduler.clearAll();
     networkEvents.removeListener('landsChanged', onLandsChangedPush);

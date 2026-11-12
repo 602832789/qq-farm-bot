@@ -318,8 +318,17 @@ function onTaskInfoNotify(taskInfo: any): void {
         module: 'task', event: '领取任务', result: 'plan', count: claimable.length
     });
     taskScheduler.setTimeoutTask('task_claim_debounce', 1000, async () => {
-        if (hasClaimable) await claimTasksFromList(claimable);
-        await checkAndClaimActives(actives);
+        // 与 checkAndClaimTasks 共用同一把锁：农场巡查正在逐个领取时，推送触发的
+        // debounce 不能再并发跑一遍同一批任务快照，否则同一任务会被重复 ClaimTaskReward，
+        // recordOperation('taskClaim') 也会重复计数。
+        if (checking) return;
+        checking = true;
+        try {
+            if (hasClaimable) await claimTasksFromList(claimable);
+            await checkAndClaimActives(actives);
+        } finally {
+            checking = false;
+        }
     });
 }
 

@@ -205,7 +205,7 @@ function doSave(): void {
     savePersistedStats(currentAccountId, data);
 }
 
-function initStats(gold: number, exp: number, coupon: number = 0): void {
+function initStats(gold: number, exp: number, coupon: number = 0, goldBean: number | null = null): void {
     sessionStartedAt = Date.now();
     const g: number = Number.isFinite(Number(gold)) ? Number(gold) : 0;
     const e: number = Number.isFinite(Number(exp)) ? Number(exp) : 0;
@@ -216,17 +216,19 @@ function initStats(gold: number, exp: number, coupon: number = 0): void {
     initialState.gold = g;
     initialState.exp = e;
     initialState.coupon = c;
-    // 金豆余额在登录回调里可能还没同步完，不能拿 0 当今日起点（会把全部余额
-    // 算成今日净增）。当日基线留空，由首次 getStats 观测到的真实余额初始化；
-    // 同日重启时仍从持久化存档恢复，见 initStatsWithPersistence。
-    initialState.goldBean = null;
+    // 金豆当日基线只认「登录时背包同步成功」拿到的余额（含合法的 0）。
+    // 背包拉取失败时 userState.goldBean 仍是初始占位 0，若拿它当今日起点，
+    // 等 ItemNotify 刷成真实余额就会把全部余额算成今日净增，且会被 doSave 写盘、
+    // 同日重启一直错。失败时传 null：基线留空，由首次有效余额观测初始化。
+    const b: number | null = goldBean === null || goldBean === undefined ? null : Number(goldBean);
+    initialState.goldBean = b !== null && Number.isFinite(b) && b >= 0 ? b : null;
     // 本次运行基线只在登录时重置：资产卡“本次运行”增量从这次登录起算。
     runInitial.gold = g;
     runInitial.exp = e;
     runInitial.coupon = c;
 }
 
-function initStatsWithPersistence(accountId: string, gold: number, exp: number, coupon: number = 0): void {
+function initStatsWithPersistence(accountId: string, gold: number, exp: number, coupon: number = 0, goldBean: number | null = null): void {
     currentAccountId = accountId;
     const todayKey: string = getTodayKey();
     currentDateKey = todayKey;
@@ -248,7 +250,7 @@ function initStatsWithPersistence(accountId: string, gold: number, exp: number, 
         }
     }
 
-    initStats(gold, exp, coupon);
+    initStats(gold, exp, coupon, goldBean);
 
     // 同日重启：用持久化里的当日基线覆盖刚设置的登录基线，
     // 金币/经验当日增量跨重启继续累计，不从头算。
@@ -304,8 +306,8 @@ function recordGoldExp(gold: number, exp: number): void {
     updateStats(gold, exp);
 }
 
-function setInitialValues(gold: number, exp: number, coupon: number = 0): void {
-    initStats(gold, exp, coupon);
+function setInitialValues(gold: number, exp: number, coupon: number = 0, goldBean: number | null = null): void {
+    initStats(gold, exp, coupon, goldBean);
 }
 
 function resetSessionGains(): void {
@@ -324,14 +326,18 @@ function recomputeSessionTotals(currentGold: number, currentExp: number, current
         initialState.exp = currentExp;
         initialState.coupon = currentCoupon;
     }
-    // 金豆单独按「首次观测」初始化当日基线，见 initStats 注释。
-    if (initialState.goldBean === null)
+    // 金豆：登录背包同步失败时基线仍为 null，只有观测到有效余额（> 0）才起算，
+    // 避免把「尚未同步的占位 0」钉成今日起点。基线未就绪期间净增按 0 显示，
+    // 不虚高；等权威余额到达后才开始累计当日净值。
+    if (initialState.goldBean === null && currentGoldBean > 0)
         initialState.goldBean = currentGoldBean;
     session.goldGained = currentGold - (initialState.gold as number);
     session.expGained = currentExp - (initialState.exp as number);
     session.couponGained = currentCoupon - (initialState.coupon as number);
     // 与金币/点券同源的当日净值：消费后可为负，不做 clamp。
-    session.goldBeanGained = currentGoldBean - (initialState.goldBean as number);
+    session.goldBeanGained = initialState.goldBean === null
+        ? 0
+        : currentGoldBean - (initialState.goldBean as number);
     // 本次运行增量：独立于当日增量，重启/重新登录后从新基线重新累计。
     session.runGoldGained = currentGold - (runInitial.gold ?? currentGold);
     session.runExpGained = currentExp - (runInitial.exp ?? currentExp);

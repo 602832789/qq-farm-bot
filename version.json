@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 22,
-  "patch": 6,
-  "build": 153,
-  "version": "3.22.6",
-  "updatedAt": "2026-11-11T23:27:29.381Z",
+  "patch": 7,
+  "build": 155,
+  "version": "3.22.7",
+  "updatedAt": "2026-11-12T03:01:04.840Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.22.7",
+      "build": 155,
+      "date": "2026-11-12",
+      "summary": "全仓完整性检查：修复六处影响统计与农场自动化的缺陷",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.22.6",
       "build": 153,

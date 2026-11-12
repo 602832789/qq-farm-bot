@@ -120,6 +120,13 @@ let nextStealRunAt: number = 0;
 let nextStealDelayMs: number = 0;
 // 网关卡住时两条定时任务各自的退避时长（毫秒），0 表示按正常间隔跑
 const businessBackoffMs: Record<string, number> = { farm: 0, friend: 0 };
+// 网关「半死不活」（心跳时好时坏、持续慢请求）时闸门会长期为 false，退避会
+// 每轮把到期线往后推，形成无限饥饿。与前台让路同口径加连续次数 + 累计时长
+// 双上限，到顶强制照常跑一轮，由 checkFarm 内部的请求超时自行兜底。
+const BUSINESS_BACKOFF_MAX_STREAK = 5;
+const BUSINESS_BACKOFF_MAX_TOTAL_MS = 5 * 60 * 1000;
+const businessBackoffStreak: Record<string, number> = { farm: 0, friend: 0 };
+const businessBackoffTotalMs: Record<string, number> = { farm: 0, friend: 0 };
 let lastStatusHash: string = '';
 let lastStatusSentAt: number = 0;
 let onSellGain: ((deltaGold: any) => void) | null = null;
@@ -244,6 +251,10 @@ function resetUnifiedSchedule(options: { preserveSteal?: boolean } = {}): void {
     if (!options.preserveSteal) nextStealRunAt = now + randomIntervalMs(5000, 15000);
     businessBackoffMs.farm = 0;
     businessBackoffMs.friend = 0;
+    businessBackoffStreak.farm = 0;
+    businessBackoffStreak.friend = 0;
+    businessBackoffTotalMs.farm = 0;
+    businessBackoffTotalMs.friend = 0;
 }
 
 const BUSINESS_TICK_LABEL: Record<string, string> = { farm: '农场定时任务', friend: '好友定时任务' };
@@ -295,6 +306,8 @@ function nextBusinessTickDeferMs(kind: string): number {
     if (isGatewayHealthyForBusiness(load)) {
         if (businessBackoffMs[kind] > 0) {
             businessBackoffMs[kind] = 0;
+            businessBackoffStreak[kind] = 0;
+            businessBackoffTotalMs[kind] = 0;
             log('系统', `网关已恢复，${BUSINESS_TICK_LABEL[kind]}回到正常间隔`, {
                 module: 'system',
                 event: '网关退避',
@@ -308,6 +321,8 @@ function nextBusinessTickDeferMs(kind: string): number {
     const firstDefer = businessBackoffMs[kind] === 0;
     const backoffMs = nextBusinessBackoffMs(businessBackoffMs[kind]);
     businessBackoffMs[kind] = backoffMs;
+    businessBackoffStreak[kind] = (businessBackoffStreak[kind] || 0) + 1;
+    businessBackoffTotalMs[kind] = (businessBackoffTotalMs[kind] || 0) + backoffMs;
     if (firstDefer) {
         logWarn('系统', `网关无回包，${BUSINESS_TICK_LABEL[kind]}退避 ${formatDurationZh(backoffMs)}（${describeGatewayStall(load)}）`, {
             module: 'system',
@@ -316,6 +331,23 @@ function nextBusinessTickDeferMs(kind: string): number {
             requestClass: kind,
             backoffMs,
         });
+    }
+    // 到顶强制探活一轮：连续 5 次或累计推迟超过 5 分钟后，本轮不再 defer，
+    // 并重置计数让下一轮从 30s 重新计。否则慢网关会让自家农场被无限期晾着。
+    if (businessBackoffStreak[kind] > BUSINESS_BACKOFF_MAX_STREAK
+        || businessBackoffTotalMs[kind] > BUSINESS_BACKOFF_MAX_TOTAL_MS) {
+        logWarn('系统', `网关退避已达上限，${BUSINESS_TICK_LABEL[kind]}强制探活一轮`, {
+            module: 'system',
+            event: '网关退避',
+            result: 'force_probe',
+            requestClass: kind,
+            streak: businessBackoffStreak[kind],
+            totalMs: businessBackoffTotalMs[kind],
+        });
+        businessBackoffMs[kind] = 0;
+        businessBackoffStreak[kind] = 0;
+        businessBackoffTotalMs[kind] = 0;
+        return 0;
     }
     return backoffMs;
 }
@@ -349,8 +381,11 @@ async function runFarmTick(auto: any): Promise<void> {
             if (auto.email !== false) await openCharitySettlementGiftPacksSilently();
             if (auto.fertilizer_gift) await openFertilizerGiftPacksSilently();
         });
-    } catch {
-        // ignore
+    } catch (e: any) {
+        // 整轮失败不能静默：否则某个 helper 永久失效时面板上看起来一切正常。
+        logWarn('系统', `农场定时任务执行失败: ${e?.message || e}`, {
+            module: 'system', event: '农场定时任务', result: 'error', requestClass: 'farm',
+        });
     } finally {
         // 与 friend/steal tick 一致：账号停机又立刻重启时，旧轮次不能把新会话
         // 刚算好的到期时间覆盖掉，也不能提前解除新会话的运行中守卫。
@@ -502,6 +537,10 @@ function stopUnifiedScheduler(): void {
     // 停机 300ms 内可能被重新拉起，让路/退避状态不带进新会话。
     businessBackoffMs.farm = 0;
     businessBackoffMs.friend = 0;
+    businessBackoffStreak.farm = 0;
+    businessBackoffStreak.friend = 0;
+    businessBackoffTotalMs.farm = 0;
+    businessBackoffTotalMs.friend = 0;
     foregroundYieldStreak.farm = 0;
     foregroundYieldStreak.friend = 0;
     nextStealDelayMs = 0;
@@ -887,6 +926,9 @@ async function startBot(config: any): Promise<void> {
         if (!canContinueLogin()) return;
 
         // 登录后只拉一次背包，同时初始化点券（1002）和金豆豆（1005）
+        // goldBeanReady 决定金豆当日基线能否用登录余额：背包拉取失败时
+        // userState.goldBean 仍是占位 0，拿它当基线会把全部余额算成今日净增。
+        let goldBeanReady = false;
         try {
             const bagReply = await runExclusiveAutomationTask('login_bag_init', getBag);
             const items = getBagItems(bagReply);
@@ -903,13 +945,20 @@ async function startBot(config: any): Promise<void> {
             const state = getUserState();
             state.coupon = Math.max(0, coupon);
             state.goldBean = Math.max(0, goldBean);
+            goldBeanReady = true;
         } catch {
-            // ignore
+            // 背包拉取失败：金豆基线传 null，等 ItemNotify 带回权威余额后再起算。
         }
         // 登录成功后，以当前金币/经验/点券作为统计基线，并清空会话增量
         const latest = getUserState();
         const accountId = process.env.FARM_ACCOUNT_ID || '';
-        initStatsWithPersistence(accountId, Number(latest.gold || 0), Number(latest.exp || 0), Number(latest.coupon || 0));
+        initStatsWithPersistence(
+            accountId,
+            Number(latest.gold || 0),
+            Number(latest.exp || 0),
+            Number(latest.coupon || 0),
+            goldBeanReady ? Number(latest.goldBean || 0) : null,
+        );
         resetSessionGains();
 
         // 登录成功后启动各模块

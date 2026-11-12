@@ -162,3 +162,64 @@ test('跨天与登录重置、未登录默认 status 都覆盖金豆字段', () 
     const runtime = fs.readFileSync(runtimeSource, 'utf8');
     assert.match(runtime, /sessionGoldBeanGained: 0/, '未登录默认 status 也要带该字段');
 });
+
+test('背包同步失败：首帧占位 0 不能钉死当日基线，余额刷成真实值后不虚高', (t) => {
+    const dataDir = makeDataDir(t);
+    const api = loadStats(dataDir);
+    // 第 5 个参数传 null = 登录时背包拉取失败，userState.goldBean 仍是初始占位 0。
+    api.initStatsWithPersistence('acc-1', 1000, 5000, 30, null);
+    api.resetSessionGains();
+
+    const placeholder = api.getStats({}, state(1000, 5000, 30, 0), true, {});
+    assert.equal(placeholder.sessionGoldBeanGained, 0, '基线未就绪时净增显示 0，不能拿脏数据算');
+
+    // ItemNotify 把余额刷成真实值：这一帧才确立基线，净增仍应是 0，而不是 +600。
+    const synced = api.getStats({}, state(1000, 5000, 30, 600), true, {});
+    assert.equal(synced.sessionGoldBeanGained, 0, '不能把全部余额算成今日净增');
+    assert.equal(synced.status.goldBean, 600);
+
+    const gained = api.getStats({}, state(1000, 5000, 30, 650), true, {});
+    assert.equal(gained.sessionGoldBeanGained, 50, '确立基线后正常累计净值');
+    const spent = api.getStats({}, state(1000, 5000, 30, 580), true, {});
+    assert.equal(spent.sessionGoldBeanGained, -20, '确立基线后仍可为负');
+});
+
+test('基线未就绪时存档写 null 而不是 0，同日重启不会被脏基线污染', (t) => {
+    const dataDir = makeDataDir(t);
+    const api = loadStats(dataDir);
+    api.initStatsWithPersistence('acc-1', 1000, 5000, 30, null);
+    api.getStats({}, state(1000, 5000, 30, 0), true, {});
+    api.saveStats();
+
+    const saved = JSON.parse(fs.readFileSync(savedFile(dataDir, 'acc-1'), 'utf8'));
+    assert.equal(saved.initialState.goldBean, null, '未就绪的基线必须写成 null');
+
+    const restarted = loadStats(dataDir);
+    restarted.initStatsWithPersistence('acc-1', 1000, 5000, 30, null);
+    const firstReal = restarted.getStats({}, state(1000, 5000, 30, 600), true, {});
+    assert.equal(firstReal.sessionGoldBeanGained, 0, '重启后依然不能把 600 算成今日净增');
+});
+
+test('背包同步成功但余额真的是 0：0 是合法基线，当天获得金豆照常计正', (t) => {
+    const dataDir = makeDataDir(t);
+    const api = loadStats(dataDir);
+    api.initStatsWithPersistence('acc-1', 1000, 5000, 30, 0);
+    api.resetSessionGains();
+
+    const empty = api.getStats({}, state(1000, 5000, 30, 0), true, {});
+    assert.equal(empty.sessionGoldBeanGained, 0);
+    const gained = api.getStats({}, state(1000, 5000, 30, 600), true, {});
+    assert.equal(gained.sessionGoldBeanGained, 600, '同步确认过的 0 是有效基线，之后的获得要计入');
+});
+
+test('背包同步成功直接传入余额作基线，无需等首次观测', (t) => {
+    const dataDir = makeDataDir(t);
+    const api = loadStats(dataDir);
+    api.initStatsWithPersistence('acc-1', 1000, 5000, 30, 800);
+    api.resetSessionGains();
+    const spent = api.getStats({}, state(1000, 5000, 30, 730), true, {});
+    assert.equal(spent.sessionGoldBeanGained, -70, '登录基线生效后消费即为负');
+    api.saveStats();
+    const saved = JSON.parse(fs.readFileSync(savedFile(dataDir, 'acc-1'), 'utf8'));
+    assert.equal(saved.initialState.goldBean, 800);
+});

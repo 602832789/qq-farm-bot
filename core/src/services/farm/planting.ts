@@ -76,6 +76,20 @@ function isSlicedPlanting(pacing: PlantingPacing): boolean {
     return !!pacing.defer && (pacing.delaySeconds ?? getPlantDelaySeconds()) > 0;
 }
 
+/**
+ * 铲除后合并可用空地：开场已确认的空地是已知事实，服务端确认结果只能补充新释放的
+ * 地块，不能反向删减（快照滞后时曾把开场空地整体抹掉，导致整轮一块都不种）。
+ * 按地块 id 去重并过滤非法值；防重复下单由 plantSeeds 的服务端占地确认负责。
+ */
+function mergeConfirmedEmptyLands(knownEmpty: number[], confirmedEmpty: unknown): number[] {
+    // toNum 只把 Long 转成 number，字符串编号会原样留下；再过一道 Number 归一化，
+    // 否则 '2' 和 2 会被 Set 当成两块地，可能造成重复下单。
+    return [...new Set<number>([
+        ...(Array.isArray(knownEmpty) ? knownEmpty : []),
+        ...(Array.isArray(confirmedEmpty) ? confirmedEmpty : []),
+    ].map((id: any) => Number(toNum(id))).filter((id: number) => Number.isFinite(id) && id > 0))];
+}
+
 interface PlantSeedsResult {
     planted: number;
     plantedLandIds: number[];
@@ -1001,8 +1015,20 @@ async function autoPlantEmptyLands(deadLandIds: number[], emptyLandIds: number[]
             });
             try {
                 const latest = await getAllLands();
-                latestLands = Array.isArray(latest && latest.lands) ? latest.lands : [];
-                landsToPlant = analyzeLands(latestLands).empty;
+                const confirmedLands = Array.isArray(latest && latest.lands) ? latest.lands : [];
+                if (confirmedLands.length === 0) {
+                    // 「成功但空快照」和抛异常一样不可信：此时若把 landsToPlant 覆盖成空，
+                    // 开场已确认的真实空地会被静默抹掉，整轮一块都不种。
+                    logWarn('铲除', '铲除后土地快照为空，保留开场已确认的空地', {
+                        module: 'farm', event: '铲除植物', result: 'empty_snapshot'
+                    });
+                } else {
+                    latestLands = confirmedLands;
+                    // 只能补充新释放的空地，不能反向删减已知空地：铲除只会让地变空，
+                    // 不会让空地变满；服务端快照滞后时并集才是安全口径。按地块 id 去重，
+                    // 下游 plantSeeds 另有服务端占地确认，不会重复下单。
+                    landsToPlant = mergeConfirmedEmptyLands(landsToPlant, analyzeLands(confirmedLands).empty);
+                }
             } catch (e: any) {
                 logWarn('铲除', `铲除后确认土地失败，保留原有空地且不使用枯死地块: ${e.message}`, {
                     module: 'farm', event: '铲除植物', result: 'confirm_error'
@@ -1560,6 +1586,7 @@ async function fertilizeOwnLand(landIdInput: unknown, fertilizerTypeInput: unkno
 
 module.exports = {
     getRemainingPlantDelayMs,
+    mergeConfirmedEmptyLands,
     getPlantSizeBySeedId,
     plantSeeds,
     getPlantingStrategyLabel,
