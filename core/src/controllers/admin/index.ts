@@ -138,8 +138,11 @@ function startAdminServer(dataProvider: any): void {
         }
     });
 
-    // 统一错误出口：上面 guardAsyncRoutes 转过来的错误最终都在这里变成 JSON 500。
-    // 响应头已经发出时只能断开连接，否则 Express 自己会抛 ERR_HTTP_HEADERS_SENT。
+    // 统一错误出口：上面 guardAsyncRoutes 转过来的错误最终都从这里返回。
+    //
+    // 需要区分两类：请求体解析失败（express.json 抛的 SyntaxError 带 status=400）
+    // 是**客户端**把 JSON 拼错了，返回 500 会让人以为服务端崩了；其余才算真的
+    // 服务端异常。响应头已经发出时只能断开连接，否则 Express 会抛 ERR_HTTP_HEADERS_SENT。
     app.use((err: any, _req: any, res: any, _next: any) => {
         if (res.headersSent) {
             try {
@@ -147,6 +150,18 @@ function startAdminServer(dataProvider: any): void {
             } catch {
                 // 连接已经断了，忽略
             }
+            return;
+        }
+        const rawStatus = Number(err?.status ?? err?.statusCode);
+        const clientStatus = Number.isInteger(rawStatus) && rawStatus >= 400 && rawStatus < 500 ? rawStatus : null;
+        if (clientStatus) {
+            // 不按 error 记：这类是调用方传错，不是服务异常，否则告警会被噪音淹没。
+            adminLogger.warn('admin request rejected', {
+                status: clientStatus,
+                error: String(err?.message || err),
+            });
+            const message = err?.type === 'entity.too.large' ? '请求体过大' : '请求体不是合法 JSON';
+            res.status(clientStatus).json({ ok: false, error: message });
             return;
         }
         adminLogger.error('admin route crashed', {

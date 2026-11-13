@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 25,
-  "patch": 9,
-  "build": 178,
-  "version": "3.25.9",
-  "updatedAt": "2026-11-13T19:19:27.188Z",
+  "patch": 10,
+  "build": 179,
+  "version": "3.25.10",
+  "updatedAt": "2026-11-13T23:15:23.885Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.25.10",
+      "build": 179,
+      "date": "2026-11-14",
+      "summary": "真实启动整个项目做全量路由扫描，修客户端错误被当成 500、测试写脏真实日志",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.25.9",
       "build": 178,

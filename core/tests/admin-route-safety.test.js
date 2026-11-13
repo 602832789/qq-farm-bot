@@ -47,6 +47,20 @@ test('路由注册统一包一层异步守卫，并注册 JSON 错误出口', ()
     assert.ok(spaAt > 0 && errorAt > spaAt, '错误中间件要在所有普通中间件之后');
 });
 
+test('客户端错误不能一律回 500', () => {
+    const index = read('src/controllers/admin/index.ts');
+
+    // express.json() 解析失败时抛的是 SyntaxError 且带 status=400。
+    // 如果中间件无视 err.status 直接回 500，用户随手拼错一个 JSON 就会看到
+    // 「服务端内部错误」——实测扫全部路由时正是这条把 400 变成了 500。
+    assert.match(index, /Number\(err\?\.status \?\? err\?\.statusCode\)/, '要读错误自带的 status');
+    assert.match(index, /rawStatus >= 400 && rawStatus < 500/, '4xx 要按客户端错误处理');
+    assert.match(index, /res\.status\(clientStatus\)\.json/, '客户端错误要回原始状态码');
+    assert.match(index, /请求体不是合法 JSON/, '解析失败要有明确提示');
+    // 真正的服务端异常仍然必须 500，并且记 error 级日志
+    assert.match(index, /adminLogger\.error\('admin route crashed'/, '服务端异常仍按 500 记 error');
+});
+
 test('好友黑名单不再对 provider 返回值直接 for...of', () => {
     const routes = read('src/controllers/admin/friend-routes.ts');
 

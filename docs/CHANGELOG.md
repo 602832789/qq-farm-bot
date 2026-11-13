@@ -15,6 +15,7 @@
 
 | 版本 | 更新序号 | 日期 | 更新内容 | 提交 |
 | --- | --- | --- | --- | --- |
+| v3.25.10 | #179 | 2026-11-14 | 真实启动整个项目做全量路由扫描，修客户端错误被当成 500、测试写脏真实日志 | — |
 | v3.25.9 | #178 | 2026-11-14 | 测试不再往真实数据目录扔临时文件 | — |
 | v3.25.8 | #177 | 2026-11-14 | 修复 Windows 上原子写偶发 EPERM 导致配置与当日状态丢失的问题 | — |
 | v3.25.7 | #176 | 2026-11-14 | 修复单个 HTTP 请求可打死主进程的问题，并补上真实冒烟与前端逻辑测试 | — |
@@ -184,6 +185,19 @@ flowchart TB
 ```
 
 ## 详细记录
+
+### 2026-11-14 · v3.25.10（#179） · 真实启动整个项目做全量路由扫描，修客户端错误被当成 500、测试写脏真实日志
+
+- **起点**：管理员账号确认可用（`data/admin.json` 里就是 `admin/admin`，标记 `mustChangePassword`）。重新构建 web + core，用 `FARM_AUTO_START_ACCOUNTS=0` 启动真实进程（不触发 QQ 登录、不连游戏），登录拿 token 后对**运行中的服务**逐个打路由——这是之前只跑 mock 单测时完全没覆盖的一层。
+- **一次必须记下的失误**：第一版扫描脚本把「跳过写接口」只写进了计数、忘了 `continue`，结果 `DELETE /api/accounts/1` 真的执行了——**真实账号被删**，`store.json` 的主题被改成 dark、账号配置被重写成默认值。运行前做过整目录快照，13 个文件已逐一按哈希还原，`panel_notifications/` 空目录也清掉了。教训：**验证脚本本身要假定它会误伤**，先做快照再决定策略，不能把「跳过」写成注释性的。
+- **改法**：新增 `tests/manual/live-preload.js`，启动前把 `runtime-paths` 指向 `core/data` 的一份副本，服务的读写逻辑照常、只落在副本上；新增 `tests/manual/live-api-sweep.js`（`pnpm test:live`）扫全部路由，写接口按「是否依赖账号上下文」分类——账号增删改 / 系统设置 / 改密码 / 登录一律真跳过，其余带 `x-account-id` 的写接口在账号离线时会停在「账号未运行」，覆盖的是 handler 主体。
+- **抓到的真缺陷**：请求体不是合法 JSON 时返回 **500**。`express.json()` 抛的 `SyntaxError` 自带 `status=400`，而统一错误出口无视了它，一律回 500 —— 用户随手拼错一个括号就会看到「服务端内部错误」。改成读 `err.status`，4xx 按客户端错误回原状态码并给「请求体不是合法 JSON」提示，真正的服务端异常仍然 500 且记 error 级日志。
+- **扫描结果**：171 个路由（含 `mountGet(...)` 这种注册方式），实际请求 143、跳过 28，**0 失败**；不带 token 访问全部 401（免鉴权只有 login / game-version / wx-login）；首页 7 个静态资源全部 200；SPA 深链接回落 `index.html` 正常；60 并发无异常；进程全程存活。
+- **确认不是 bug、有意不动**：`/api/ping` 需要 token —— `app.use('/api', ...)` 注册在它之前，这种 fail-closed 默认是正确的，前端也只在登录后的侧边栏调用；`/api/game-version` 故意免鉴权，`docker-compose.yml` 的 healthcheck 用的就是它；`/api/account-logs` 按前端约定直接返回裸数组，不是漏包 `{ok,data}`。
+- **测试卫生**：清点发现 **15 个测试文件会通过真实 logger 往 `core/data/logs` 追加日志**，一次全量约 21KB（最多的是 `tsdk-runtime` 5.2KB、`farm-multi-season` 3.8KB）。新增 `tests/helpers/isolate-data.js`，在 require 业务模块之前把数据目录指到临时区，15 个文件统一接入；`platform-version-config` 里有两个 `worker_threads` 有独立模块注册表、改 `require.cache` 无效，改用 `LOG_LEVEL=error` 压掉。现在跑完全量测试真实数据**零字节变化**。
+- **闸门**：`core/tests/admin-route-safety.test.js` 新增「客户端错误不能一律回 500」，锁住 `err.status` 读取、4xx 分支与提示文案；缺陷注入验证会红 1 条。
+- **验证**：`pnpm verify` 全绿（core 926 / web 273 / lint 0 / 类型 0），HTTP 冒烟 0 失败，跑完后 `core/data` 与运行前快照逐文件哈希一致。
+
 
 ### 2026-11-14 · v3.25.9（#178） · 测试不再往真实数据目录扔临时文件
 
