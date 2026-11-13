@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 23,
-  "patch": 6,
-  "build": 166,
-  "version": "3.23.6",
-  "updatedAt": "2026-11-13T01:33:05.097Z",
+  "patch": 7,
+  "build": 167,
+  "version": "3.23.7",
+  "updatedAt": "2026-11-13T01:51:10.693Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.23.7",
+      "build": 167,
+      "date": "2026-11-13",
+      "summary": "修复账号运行状态从不更新：补齐后端状态机，登录中 / 等待重登 / 停止中终于可见",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.23.6",
       "build": 166,

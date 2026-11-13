@@ -11,6 +11,7 @@ const { addOrUpdateAccount, deleteAccount } = store;
 const { findAccountByRef } = require('../../services/account-resolver');
 const { toPublicAccountsData } = require('../../services/account-visibility');
 const { parseLogLimit, mergeLogLists } = require('../../services/log-query');
+const { clearAccountRuntimeState } = require('../../services/account-runtime-state');
 const { getPreflightStatsSnapshot } = require('../../services/preflight-stats');
 const { updateRuntimeConfig, getRuntimeConfig, getDefaultSystemConfig, getDevicePresets, getTimeZoneOptions } = require('../../config/config');
 
@@ -289,6 +290,9 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
             const target = findAccountByRef(before.accounts || [], req.params.id);
             ctx.provider.stopAccount(resolvedId);
             const data = deleteAccount(resolvedId);
+            // 账号已删除，状态账本里的记录也要一起摘掉：否则同 id 的账号重新
+            // 加回来时会先继承上一次的「已掉线 / 停止中」，面板闪一下错误状态。
+            clearAccountRuntimeState(resolvedId);
             if (ctx.provider.addAccountLog) {
                 ctx.provider.addAccountLog('delete', `删除账号: ${(target && target.name) || req.params.id}`, resolvedId, target ? target.name : '');
             }
