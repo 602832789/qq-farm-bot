@@ -24,10 +24,17 @@ interface NamespaceStore {
 
 const schedulerRegistry = new Map<string, NamespaceStore>();
 
+/**
+ * setTimeout / setInterval 的延时上限（32 位有符号整数）。
+ * 超过这个值 Node 会打 TimeoutOverflowWarning 并把延时**改成 1ms**——原本「等一天」
+ * 的任务立刻变成 1ms 空转热循环，所以这里必须截断，宁可早醒也不能空转。
+ */
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
+
 function toDelayMs(value: any, fallbackMs = 0): number {
     const n = Number(value);
-    if (!Number.isFinite(n)) return Math.max(0, fallbackMs | 0);
-    return Math.max(0, Math.floor(n));
+    if (!Number.isFinite(n)) return Math.min(MAX_TIMER_DELAY_MS, Math.max(0, Math.floor(Number(fallbackMs) || 0)));
+    return Math.min(MAX_TIMER_DELAY_MS, Math.max(0, Math.floor(n)));
 }
 
 function ensureNamespaceStore(namespace: string): NamespaceStore {
@@ -298,4 +305,5 @@ function createScheduler(namespace = 'default'): Scheduler {
 module.exports = {
     createScheduler,
     getSchedulerRegistrySnapshot,
+    MAX_TIMER_DELAY_MS,
 };

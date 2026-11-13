@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 25,
-  "patch": 1,
-  "build": 170,
-  "version": "3.25.1",
-  "updatedAt": "2026-11-13T11:50:24.169Z",
+  "patch": 2,
+  "build": 171,
+  "version": "3.25.2",
+  "updatedAt": "2026-11-13T12:21:33.042Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.25.2",
+      "build": 171,
+      "date": "2026-11-13",
+      "summary": "参数与边界复查：间隔上限缺失、定时器延时溢出、Infinity 放行与管理端口校验",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.25.1",
       "build": 170,

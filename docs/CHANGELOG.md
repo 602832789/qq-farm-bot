@@ -15,6 +15,7 @@
 
 | 版本 | 更新序号 | 日期 | 更新内容 | 提交 |
 | --- | --- | --- | --- | --- |
+| v3.25.2 | #171 | 2026-11-13 | 参数与边界复查：间隔上限缺失、定时器延时溢出、Infinity 放行与管理端口校验 | — |
 | v3.25.1 | #170 | 2026-11-13 | 重构切号竞态：27 处手写序号计数器全部收口到统一请求守卫 | — |
 | v3.25.0 | #169 | 2026-11-13 | 新增防复发门禁：把「未处理 Promise」这类反复出现的问题变成写的时候就报错 | — |
 | v3.23.8 | #168 | 2026-11-13 | 全仓完整性复查（第四轮，含前四轮回归）：修复进程致命拒绝、启动失败卡死与切号串数据 | — |
@@ -177,6 +178,18 @@ flowchart TB
 ```
 
 ## 详细记录
+
+### 2026-11-13 · v3.25.2（#171） · 参数与边界复查：间隔上限缺失、定时器延时溢出、Infinity 放行与管理端口校验
+
+- **这轮换了角度**：前四轮复查走的是「扫代码找坏味道」，每次捞回的都是同一批（未处理 Promise、竞态、空 catch）。这轮不扫代码，只查**数值本身的合理性**——单位、上下界、溢出、哨兵值。做法也换了：不再靠肉眼，而是把归一化函数拉出来用极端值实跑（NaN / ±Infinity / 1e15 / 数字字符串 / 空串 / 对象 / 数组 / 小数），看它吐回什么。
+- **最实的一条：巡查 / 好友间隔没有上限**。面板只写了 `min="1"`、没有 `max`，服务端 `normalizeIntervals` 也只有下限。实跑确认 `intervals.farm = 1e15` 会被原样收下，随后 `* 1000` 变成 `1e18` 毫秒交给定时器——而 Node 对超过 `2147483647` 的延时会打 `TimeoutOverflowWarning` 并把延时**改成 1ms**，原本「等一小时」的任务立刻变成 1ms 空转。更常见的实际后果没那么极端：把毫秒当秒填成 `20000`（想填 20 秒），农场就会安静地停摆 5 个半小时，界面没有任何提示。修法是把 `INTERVAL_MAX_SEC = 86400`（这个常量本来就在，只是这两条路径没用上）落到 `normalizeIntervals`、账号配置的逐项归一化、以及 worker 的 `normalizeIntervalRangeSec` 三处；面板两处表单补 `:max`，`intervalModel` 的 setter 也自己夹一次（输入框的 `max` 拦不住粘贴和程序赋值）。
+- **定时器侧再加一道**：`scheduler.toDelayMs` 原来只有下限（`Math.max(0, …)`），现在同时对 `MAX_TIMER_DELAY_MS = 2147483647` 封顶。这样即使将来某个 env（`FARM_STATUS_SYNC_INTERVAL_MS`）或新配置绕过了上游归一化，最坏也是「早醒」而不是「1ms 热循环」。
+- **Infinity 被当成合法数字放行**：`Number(x) || 0` 对 `Infinity` 不生效（它是 truthy），`Math.max(0, Infinity)` 也仍然是 `Infinity`。JSON 里写 `1e400` 解析出来就是 `Infinity`，所以这不是理论问题。命中两处：宠物资本模式的 `dogId`（变成 `Infinity` 后 `dog.id === dogId` 永远不成立，资本模式静默变成「从不派狗」，界面一切正常）；管理接口 `useDogFood` 的 `uid` / `count` 与 `activate` / `deploy` 的 `dogId`（`Infinity` 会编进 int64 字段，调用静默失效）。统一改成先 `Number.isFinite` 再取整。
+- **管理端口没校验**：`ADMIN_PORT=70000` 这种「有限但越界」的值会让 `server.listen()` 抛 `ERR_SOCKET_BAD_PORT`，崩在启动阶段且看不出是环境变量写错了（`NaN` 反而被 `|| 3007` 兜住了）。新增 `resolveAdminPort()`，非法值回落 `DEFAULT_ADMIN_PORT` 并统一常量。
+- **复查过、确认没问题、没动的**：`Date.now() - x < N` 这类「毫秒当秒用」的比较（全仓 2 处，都确实按毫秒）；`reduce` 无初值（3 处都有初值）；`Math.min(...arr)` 空数组（都已有长度守卫）；两份归一化器（`shared-state` 与 `account-config`）的夹取区间逐字段比对，只有 `leadSeconds` 单边存在（资本模式是全局配置，不是每账号，符合预期）；代码里 11 个道具 ID 魔数逐个到 `ItemInfo.json` 核对名称，全部对得上（金币 1001 / 点券 1002 / 钻石 1004 / 金豆 1005 / 天气采集瓶 5001 / 雷雨召唤瓶 5002 / 青蛙使坏瓶 5005 / 乌云使坏瓶 5006 / 雷电徽章 1027 / 黄金虫 301101 / 白萝卜种子 29999）。
+- **前几轮修复是否还成立**：`pnpm verify` 全绿即回归锁全部通过；另逐项确认必须保留的本地特性都还在（2×2 预留窗口 `reservationWindow` / `plantingRoundGate`、`allowXxx` 单一决策、预检账本 `recordPreflightResult`、`describeGatewayStall`、`startLogSizeGuard`、`invokePendingCallback`、`sendApiResponse`、`cancelPendingRelogin`）。
+- **新增闸门**（这轮的真正产出不是那几个修复，是下面两组会自己报警的测试）：`core/tests/config-param-bounds.test.js` 8 条——对两套归一化器做极端值实跑，断言所有间隔都是 `[1, INTERVAL_MAX_SEC]` 内的有限整数；断言 `INTERVAL_MAX_SEC * 1000 <= MAX_TIMER_DELAY_MS`（把「秒级配置上限」和「毫秒级定时器上限」绑在一起，任一边被调大而另一边没跟上就红）；用真实 scheduler 注册 `1e18` 延时任务并读快照确认已截断；端口解析表驱动；worker 的 `MAX_INTERVAL_SEC` 与 store 常量比对防漂移；禁止「Infinity 放行」写法回潮。`web/tests/interval-limits.test.mjs` 3 条——前端 `INTERVAL_MAX_SECONDS` 必须等于 core 的 `INTERVAL_MAX_SEC`、两处表单 8 个输入框都带上下限、setter 必须自己夹。
+- **验证**：`pnpm verify` 全绿（core 707 → **715**、web 245 → **248**、lint 0、类型检查 0），`vite build` 真实退出码通过。
 
 ### 2026-11-13 · v3.25.1（#170） · 重构切号竞态：27 处手写序号计数器全部收口到统一请求守卫
 
