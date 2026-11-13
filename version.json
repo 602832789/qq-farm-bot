@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 23,
-  "patch": 5,
-  "build": 165,
-  "version": "3.23.5",
-  "updatedAt": "2026-11-13T00:08:49.100Z",
+  "patch": 6,
+  "build": 166,
+  "version": "3.23.6",
+  "updatedAt": "2026-11-13T01:33:05.097Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.23.6",
+      "build": 166,
+      "date": "2026-11-13",
+      "summary": "全仓完整性复查：修复「全部账号」日志排序失效、停机不清活动主循环与巡检周期被反复重置",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.23.5",
       "build": 165,

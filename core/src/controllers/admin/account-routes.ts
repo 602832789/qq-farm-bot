@@ -10,6 +10,7 @@ const store = require('../../models/store');
 const { addOrUpdateAccount, deleteAccount } = store;
 const { findAccountByRef } = require('../../services/account-resolver');
 const { toPublicAccountsData } = require('../../services/account-visibility');
+const { parseLogLimit, mergeLogLists } = require('../../services/log-query');
 const { getPreflightStatsSnapshot } = require('../../services/preflight-stats');
 const { updateRuntimeConfig, getRuntimeConfig, getDefaultSystemConfig, getDevicePresets, getTimeZoneOptions } = require('../../config/config');
 
@@ -300,7 +301,7 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
     // API: 账号日志
     app.get('/api/account-logs', (req: Request, res: Response) => {
         try {
-            const limit = Number.parseInt(req.query.limit as string) || 100;
+            const limit = parseLogLimit(req.query.limit);
             let list: any[] = ctx.provider.getAccountLogs ? ctx.provider.getAccountLogs(limit) : [];
             if (!Array.isArray(list)) list = [];
 
@@ -318,9 +319,9 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
         // 如果没有指定账号ID，获取所有账号的日志
         if (!id) {
             const accountIds = getAccountIds(ctx);
-            const allLogs: any[] = [];
+            const perAccountLogs: any[][] = [];
             const options = {
-                limit: Number.parseInt(req.query.limit as string) || 100,
+                limit: parseLogLimit(req.query.limit),
                 tag: req.query.tag || '',
                 module: req.query.module || '',
                 event: req.query.event || '',
@@ -333,20 +334,19 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
             for (const accId of accountIds) {
                 const logs = ctx.provider.getLogs(accId, options);
                 if (Array.isArray(logs)) {
-                    allLogs.push(...logs);
+                    perAccountLogs.push(logs);
                 }
             }
 
-            // 按时间排序并限制数量
-            allLogs.sort((a: any, b: any) => (b.time || 0) - (a.time || 0));
-            const limitedLogs = allLogs.slice(0, options.limit);
+            // 按时间升序合并，再取最新的 limit 条（与单账号分支 slice(-limit) 的朝向一致）。
+            const limitedLogs = mergeLogLists(perAccountLogs, options.limit);
 
             return res.json({ ok: true, data: limitedLogs });
         }
 
         // 指定了账号ID且通过权限检查，返回该账号的日志
         const options = {
-            limit: Number.parseInt(req.query.limit as string) || 100,
+            limit: parseLogLimit(req.query.limit),
             tag: req.query.tag || '',
             module: req.query.module || '',
             event: req.query.event || '',

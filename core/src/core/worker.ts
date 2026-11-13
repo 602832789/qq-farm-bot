@@ -583,6 +583,10 @@ function stopMysteryShopTimer(): void {
 /** 活动自动化：与农场主循环同进程，按 automation 开关逐项执行活动领取。 */
 function startActivityAutomationTimer(): void {
     if (!loginReady) return;
+    // 开启状态每轮由 getAutomationSnapshot() 现读，所以配置下发时无需重建；
+    // 而重建会把 5 分钟周期清零——面板上频繁保存设置时，活动自动化会被无限推后。
+    // 保存后立即生效由 scheduleActivityAutomationAfterSave 的 2 秒补跑负责。
+    if (workerScheduler.has('activity_automation_interval')) return;
     const { startActivityAutomation } = require('../services/activity-automation');
     startActivityAutomation(workerScheduler);
 }
@@ -661,8 +665,14 @@ function startMysteryShopTimer(): void {
         isMysteryShopWatchEnabled,
         AUTO_BUY_CHECK_INTERVAL_MS,
     } = require('../services/mystery-shop-auto');
+    if (!loginReady || !isMysteryShopWatchEnabled(getAutomation())) {
+        stopMysteryShopTimer();
+        return;
+    }
+    // 巡查间隔没有变化时不要重建：setIntervalTask 会先 clear 再注册，
+    // 每保存一次设置就把下一次巡查推后一整个周期（默认 10 分钟）。
+    if (workerScheduler.has('mystery_shop_interval')) return;
     stopMysteryShopTimer();
-    if (!loginReady || !isMysteryShopWatchEnabled(getAutomation())) return;
     // 对齐老版 mystery_shop_auto_buy_initial：登录后 10 秒先探一次（商人可能在登录后任意时间出现）。
     workerScheduler.setTimeoutTask('mystery_shop_initial', 10 * 1000, () => {
         runExclusiveAutomationTask('mystery_shop', runMysteryShopTick).catch(() => null);

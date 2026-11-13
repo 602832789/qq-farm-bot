@@ -82,3 +82,33 @@ test('面板状态归一化收敛负数与 Infinity', () => {
     const source = read('src/runtime/runtime-state.ts');
     assert.match(source, /Number\.isFinite\(n\) && n >= 0 \? n : 0/);
 });
+
+test('保存设置不会把活动自动化 / 神秘商人的巡检周期清零', () => {
+    const worker = read('src/core/worker.ts');
+
+    const activityStart = worker.slice(worker.indexOf('function startActivityAutomationTimer('));
+    const activityBody = activityStart.slice(0, activityStart.indexOf('\n}\n'));
+    assert.match(activityBody, /if \(workerScheduler\.has\('activity_automation_interval'\)\) return;/,
+        '已注册就不要重建：setIntervalTask 会先 clear 再注册，等于每次保存都把 5 分钟推后一轮');
+
+    const mysteryStart = worker.slice(worker.indexOf('function startMysteryShopTimer('));
+    const mysteryBody = mysteryStart.slice(0, mysteryStart.indexOf('\n}\n'));
+    assert.match(mysteryBody, /if \(workerScheduler\.has\('mystery_shop_interval'\)\) return;/,
+        '神秘商人巡查同样不能每保存一次就重置 10 分钟周期');
+    // 关掉开关时必须真的停，不能被去重分支挡住
+    assert.ok(mysteryBody.indexOf('stopMysteryShopTimer();') < mysteryBody.indexOf("has('mystery_shop_interval')"),
+        '停用分支要在去重之前，否则关掉开关定时器还在跑');
+});
+
+test('停机 / 切号时活动自动化的主循环定时器也会被清掉', () => {
+    const source = read('src/services/activity-automation.ts');
+    const stopBody = source.slice(source.indexOf('function stopActivityAutomation('));
+    const body = stopBody.slice(0, stopBody.indexOf('\n}\n'));
+    assert.match(body, /workerSchedulerRef\.clear\('activity_automation_interval'\)/,
+        '漏清主循环会让 stop 之后每个周期仍按旧账号的开关跑一轮');
+    assert.match(body, /clearTimeout\(fallbackInitialTimer\)/,
+        '降级通道那条 10 秒首跑的句柄必须能取消');
+    // 注册与清理要成对出现
+    assert.match(source, /setIntervalTask\('activity_automation_interval'/);
+    assert.match(source, /fallbackInitialTimer = initial;/);
+});
