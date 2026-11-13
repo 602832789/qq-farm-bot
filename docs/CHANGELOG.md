@@ -15,6 +15,7 @@
 
 | 版本 | 更新序号 | 日期 | 更新内容 | 提交 |
 | --- | --- | --- | --- | --- |
+| v3.25.0 | #169 | 2026-11-13 | 新增防复发门禁：把「未处理 Promise」这类反复出现的问题变成写的时候就报错 | — |
 | v3.23.8 | #168 | 2026-11-13 | 全仓完整性复查（第四轮，含前四轮回归）：修复进程致命拒绝、启动失败卡死与切号串数据 | — |
 | v3.23.7 | #167 | 2026-11-13 | 修复账号运行状态从不更新：补齐后端状态机，登录中 / 等待重登 / 停止中终于可见 | — |
 | v3.23.6 | #166 | 2026-11-13 | 全仓完整性复查：修复「全部账号」日志排序失效、停机不清活动主循环与巡检周期被反复重置 | — |
@@ -175,6 +176,18 @@ flowchart TB
 ```
 
 ## 详细记录
+
+### 2026-11-13 · v3.25.0（#169） · 新增防复发门禁：把「未处理 Promise」这类反复出现的问题变成写的时候就报错
+
+- **起因**：连续四轮全仓复查，每次都能捞出一批同类缺陷（async 函数被当同步回调传出去、定时器不接管拒绝、切号竞态）。原因不是代码里还有没扫到的角落，而是**每一轮只修实例、没有闸门**——同一个写法在仓里有几十份副本，修掉五处，剩下的一直在，下一轮自然还是它。这轮不再扫代码，改成把规则固化。
+- **门禁一（core）**：接入类型感知 lint，只启用「未处理 Promise」这一族——`ts/no-floating-promises`、`ts/no-misused-promises`、`ts/await-thenable`。其余类型感知规则（`no-unsafe-*`、`strict-boolean-expressions`、`promise-function-async` 等）在 non-strict 代码库上噪声过大，逐条显式关掉并在配置里写明理由。`no-misused-promises` 关掉 `checksConditionals`：仓里大量 `if (pendingPromise)` 是「用 Promise 当哨兵」的合法写法，不该被判成缺陷。
+- **类型感知只覆盖 `src/**`**：`client.ts` 是根目录入口、不在 `tsconfig.json` 的 `include` 里，放开全目录会让 project service 直接报错退出；用 `filesTypeAware` 限定范围，入口文件仍走普通 lint。
+- **当场修掉的 5 处真问题**：`scheduler.ts` 的 `setTimeout(async …)` 与 `setInterval(runner)` 都不接管返回值，任务里任何一步意外抛错都会变成未处理拒绝（Node 20 视为致命）——改为显式 `runOnce().catch(…)` / `runner().catch(…)` 并记 error 日志；`worker.ts` 的 `onMasterMessage(async msg => …)` 同理，把处理器签名放宽成 `void | Promise<void>` 并由 `onMasterMessage` 统一接管拒绝，比在每个调用点各写一遍 `.catch` 更不容易漏；`network.ts` 的请求回调类型原本声明成 `=> void`，与实际传入的 `async` 回调不符，改成 `=> void | Promise<void>`（`invokePendingCallback` 本来就会接住 thenable，类型只是如实描述）；`sendLogin` 的 `onLoginSuccess` 同步放宽，`await onLoginSuccess()` 不再是「await 一个非 Promise」。
+- **门禁二（web）**：同一套规则接入前端，实测 6 处——`useFarmAutoRefreshInterval` 把 `tick` 直接交给 `useIntervalFn`，async tick 抛错后定时器还在跑、界面却再也不更新，新增 `safeTick` 统一捕获并 `console.error`；`usePlantingStrategy` 里 5 处「内部已 try/catch 并写入错误状态」的加载调用改为显式 `void`（说明这是按设计不等待，而不是漏写 await）。
+- **门禁三（一键验证）**：新增 `pnpm verify`＝`lint + test + typecheck:web`。以后「帮我检查一下」有确定命令，不再靠人工重新扫一遍、扫出什么算什么。
+- **门禁本身也要锁**：新增 `core/tests/lint-gate.test.js`（6 条）与 `web/tests/lint-gate.test.mjs`（4 条），断言规则确实开着、噪声规则确实关着、`tsconfigPath` 没被删、定时器注册处仍带 `.catch`、`onMasterMessage` 仍接管拒绝——防止后来者顺手把门禁关掉或改弱。
+- **没做、需要单独一轮的**：切号竞态这一类 lint 抓不到。前端现有 **23 处手写序号守卫**（`let xxxSeq = 0` 散布在 8 个 store / composable 里），没有共享抽象，新写一个 store 就只能靠人记得补守卫——这正是它反复出现的原因。正确做法是抽一个统一的请求守卫工具再逐处迁移，改动面横跨多个 store 与其静态断言，不适合塞进这轮。
+- **验证**：core **701 → 707**、web **230 → 234**，`pnpm verify` 全绿；`vite build` 用真实退出码复核通过（19s）。类型感知让 lint 从数秒涨到约 1 分钟，换来的是这类缺陷在提交前就被拦住。
 ### 2026-11-13 · v3.23.8（#168） · 全仓完整性复查（第四轮，含前四轮回归）：修复进程致命拒绝、启动失败卡死与切号串数据
 
 - **复查方式**：这轮明确把前四轮修过的也算进去，分两条线——① 逐条回归验证 v3.23.0 / .3 / .5 / .6 / .7 的接线仍然闭环，并把关键锚点写进 `core/tests/full-review-regression.test.js` 与 `web/tests/full-review-regression.test.mjs` 长期锁住；② 分三个区域（协议/网络/worker 主循环、其余控制器与持久化、前端组件与 stores）并行扫描未覆盖代码。共修复 19 处，按「会不会直接把进程带走」排序。

@@ -91,12 +91,26 @@ function sendApiResponse(id: any, result: any, error: any): void {
     }
 }
 
-function onMasterMessage(handler: (msg: any) => void): void {
+function onMasterMessage(handler: (msg: any) => void | Promise<void>): void {
+    // 指令处理器常写成 async；Node 20 把未处理的 Promise 拒绝当致命错误，
+    // 这里统一接管，避免一条指令的处理异常直接带走整个 worker。
+    const safeHandler = (msg: any): void => {
+        try {
+            const result: any = handler(msg);
+            if (result && typeof result.then === 'function') {
+                Promise.resolve(result).catch((error: any) => {
+                    logWarn('系统', `主进程指令处理异常: ${String((error && error.message) || error)}`, { module: 'system', event: '主进程指令', result: 'error' });
+                });
+            }
+        } catch (error: any) {
+            logWarn('系统', `主进程指令处理异常: ${String((error && error.message) || error)}`, { module: 'system', event: '主进程指令', result: 'error' });
+        }
+    };
     if (process.send) {
-        process.on('message', handler);
+        process.on('message', safeHandler);
     }
     if (parentPort) {
-        parentPort.on('message', handler);
+        parentPort.on('message', safeHandler);
     }
 }
 

@@ -143,7 +143,8 @@ export function usePlantingStrategy(options: {
     bagSeedsRequestAccountId = id
     bagSeedsLoading.value = true
     bagSeedsError.value = null
-    ensurePlantConfigLoaded()
+    // 内部已捕获异常并写入加载状态，这里按设计不等待。
+    void ensurePlantConfigLoaded()
     try {
       const res = await api.get('/api/bag/seeds', {
         headers: { 'x-account-id': id },
@@ -439,7 +440,7 @@ export function usePlantingStrategy(options: {
 
   watch(() => [strategy.value.plantingStrategy, currentAccountId()] as const, ([planting, id], previous) => {
     if (planting === 'bag_priority' && id && isAccountConnected(id) && (previous?.[0] !== planting || previous?.[1] !== id))
-      fetchBagSeeds(id)
+      void fetchBagSeeds(id)
   }, { immediate: true })
 
   watch(() => [
@@ -526,7 +527,7 @@ export function usePlantingStrategy(options: {
     bagSeedsRequestAccountId = ''
     bagSeedsLoadedAccountId = ''
     if (id)
-      fetchSeedOptions(id)
+      void fetchSeedOptions(id)
   })
 
   watch(() => [
@@ -536,9 +537,9 @@ export function usePlantingStrategy(options: {
   ] as const, ([statusAccountId, connected, id]) => {
     if (!connected || !id || String(statusAccountId || '') !== String(id))
       return
-    fetchSeedOptions(id)
+    void fetchSeedOptions(id)
     if (strategy.value.plantingStrategy === 'bag_priority')
-      fetchBagSeeds(id)
+      void fetchBagSeeds(id)
   }, { immediate: true })
 
   function reset() {

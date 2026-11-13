@@ -1,12 +1,20 @@
 {
   "major": 3,
-  "minor": 23,
-  "patch": 8,
-  "build": 168,
-  "version": "3.23.8",
-  "updatedAt": "2026-11-13T05:42:29.572Z",
+  "minor": 25,
+  "patch": 0,
+  "build": 169,
+  "version": "3.25.0",
+  "updatedAt": "2026-11-13T11:23:47.304Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.25.0",
+      "build": 169,
+      "date": "2026-11-13",
+      "summary": "新增防复发门禁：把「未处理 Promise」这类反复出现的问题变成写的时候就报错",
+      "commit": "—",
+      "type": "minor"
+    },
     {
       "version": "3.23.8",
       "build": 168,

@@ -165,7 +165,8 @@ function createScheduler(namespace = 'default'): Scheduler {
             preventOverlap: true,
             handle: null,
         };
-        const handle = setTimeout(async () => {
+        let handle: ReturnType<typeof setTimeout> | null = null;
+        const runOnce = async (): Promise<void> => {
             const current = timers.get(key);
             if (!current || current.handle !== handle) return;
             current.running = true;
@@ -186,6 +187,17 @@ function createScheduler(namespace = 'default'): Scheduler {
                     timers.delete(key);
                 }
             }
+        };
+        // 定时器不接管返回值：显式兜住拒绝，否则 Node 20 会把未处理的 Promise 拒绝当致命错误。
+        handle = setTimeout(() => {
+            runOnce().catch((e: any) => {
+                schedulerLogger.error(`[${name}] timeout 任务异常退出: ${key}`, {
+                    module: 'scheduler',
+                    scope: name,
+                    task: key,
+                    error: e && e.message ? e.message : String(e),
+                });
+            });
         }, delay);
         entry.handle = handle;
         timers.set(key, entry);
@@ -244,7 +256,16 @@ function createScheduler(namespace = 'default'): Scheduler {
             Promise.resolve().then(runner).catch(() => null);
         }
 
-        const handle = setInterval(runner, delay);
+        const handle: ReturnType<typeof setInterval> = setInterval(() => {
+            runner().catch((e: any) => {
+                schedulerLogger.error(`[${name}] interval 任务异常退出: ${key}`, {
+                    module: 'scheduler',
+                    scope: name,
+                    task: key,
+                    error: e && e.message ? e.message : String(e),
+                });
+            });
+        }, delay);
         entry.handle = handle;
         timers.set(key, entry);
         return handle;
