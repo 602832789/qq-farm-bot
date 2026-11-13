@@ -15,6 +15,7 @@
 
 | 版本 | 更新序号 | 日期 | 更新内容 | 提交 |
 | --- | --- | --- | --- | --- |
+| v3.23.8 | #168 | 2026-11-13 | 全仓完整性复查（第四轮，含前四轮回归）：修复进程致命拒绝、启动失败卡死与切号串数据 | — |
 | v3.23.7 | #167 | 2026-11-13 | 修复账号运行状态从不更新：补齐后端状态机，登录中 / 等待重登 / 停止中终于可见 | — |
 | v3.23.6 | #166 | 2026-11-13 | 全仓完整性复查：修复「全部账号」日志排序失效、停机不清活动主循环与巡检周期被反复重置 | — |
 | v3.23.5 | #165 | 2026-11-13 | 全仓完整性复查：修复统计跨日错位、好友帮忙自锁与 2×2 预留组误释放 | — |
@@ -174,6 +175,27 @@ flowchart TB
 ```
 
 ## 详细记录
+### 2026-11-13 · v3.23.8（#168） · 全仓完整性复查（第四轮，含前四轮回归）：修复进程致命拒绝、启动失败卡死与切号串数据
+
+- **复查方式**：这轮明确把前四轮修过的也算进去，分两条线——① 逐条回归验证 v3.23.0 / .3 / .5 / .6 / .7 的接线仍然闭环，并把关键锚点写进 `core/tests/full-review-regression.test.js` 与 `web/tests/full-review-regression.test.mjs` 长期锁住；② 分三个区域（协议/网络/worker 主循环、其余控制器与持久化、前端组件与 stores）并行扫描未覆盖代码。共修复 19 处，按「会不会直接把进程带走」排序。
+- **登录回包回调是 async，却被同步调用（最严重）**：`network.ts` 的 `handleMessage` 里 5 处 `pending.callback(...)` 都是裸调用，而登录回包的 callback 是 `async`。同步 `try/catch` 拦不住 Promise 拒绝，Node 20 默认把未处理拒绝当致命错误 → 登录过程中任何一步附属操作抛错（状态栏渲染、落盘日志、诊断快照）都会直接终止 worker。新增 `invokePendingCallback()` 统一包装，把同步抛错与异步拒绝一起收敛成告警，5 个调用点全部改走它。
+- **`api_call` 同样是 fire-and-forget**：`worker.ts` 里 `handleApiCall(msg)` 没有 `await` / `.catch`，且回包语句 `sendToMaster({type:'api_response'...})` 在 `try/catch` 之外——`result` 混入 BigInt / 循环引用时 `process.send` 同步抛 TypeError，异常变成未处理拒绝带走 worker，主进程还永远等不到回包。改为 `.catch` + 新增 `sendApiResponse()`（序列化失败时降级回一条纯文本错误，不让面板请求挂到超时）。
+- **启动初始化失败会让账号永久卡死**：`startBot()` 一进来就把 `isRunning = true`，之后 `config` 缺字段、`loadProto()` 失败、`connect()` 因空 Code 抛错都会冒泡出去而不回滚；由于后续所有 start 消息都被 `if (isRunning) return` 静默吞掉，账号再也无法启动，必须外部重新 spawn。现在 start 分支 catch 里回滚 `isRunning` / `shutdownStarted`。
+- **畸形登录回包白等 20 秒**：`error_code=0` 但 body 解不出 `PlayerLoginReply`、或回包缺 `basic` 时，原来只 `return`，连接停在 `phase='login'`，干等 `login_timeout` 20 秒才断线重登，且没有 warn 级日志。现在走正常断线收尾，让主进程立即补 Code 重来。
+- **场景登录按错误类型分流**：`PlayerSceneLogin` 与「登录本身失败」共用一个 catch，弱网超时也会 `finalizeConnection` + `terminate()`，形成「登录成功→立即断开→重登」死循环。现在只对超时类错误记 warn 后继续在线；**协议级错误（回包不完整 / 解码失败 / 连接被替换）仍按登录失败收尾**——`player-scene-login.test.js` 锁的是有意的安全闸门，不能为了让弱网更好看就把它降级。
+- **请求超时参数没有边界**：`Math.max(1, Number(options.timeoutMs) || 20000)` 遇到 `Infinity` 会原样下传，调度器的 `toDelayMs` 把非有限值折成 0 → 请求刚入队就被判「尚未排到连接」超时。改为只接受有限正数。
+- **mmtls 连接与定时器泄漏**：`native-protocol.ts` 的连接超时 `setTimeout` 从不 `clearTimeout`（即使 100ms 就连上，30s 活定时器仍挂着拖住 worker 退出）；短链 `c.send` 失败会跳过 `c.close()`；长链握手任一步失败时局部 `c` 没人关，最多 8 个接入点逐个重试就泄漏 8 条 TCP 连接。全部改为 `finally` 统一释放。
+- **管理员口令先改内存后写盘 + 非原子写**：`admin-store.ts` 里 `changePassword` 是 `current.password = hash; saveAdmin()`，写盘抛错时接口 500 但内存口令已变、旧 token 也没被清；`fs.writeFileSync` 非原子，半截文件在重启后会被 `catch → admin=null` 静默重建成公开的 `admin/admin`。改走既有的 `writeJsonFileAtomic()`，并新增 `persistAdmin()` 保证「先写盘成功、再换内存」；损坏文件留档 `.corrupt-<ts>` 并打醒目告警，不再静默当成首次安装。
+- **微信长效凭据写盘失败仍回报成功**：`/api/wx-login/tasks/:taskId/code` 的空 `catch` 把 `addOrUpdateAccount` 的落盘失败完全吞掉，接口照常 `ok:true`，前端以为免扫码续期已生效，重启后凭据全丢、回落重新扫码。现在记日志并返回 500，`destroy(task)` 仍在提前返回前执行。
+- **删除好友被游戏侧拒绝仍写本地黑名单**：`delFriend` 会以 `{ok:false}` 表达拒绝（不抛异常），路由不检查就拉黑、移除已知 GID、广播配置，最后回报「删除好友成功」。现在先判 `ok === false` 直接返回，跳过所有本地变更。
+- **async 路由的读盘/写盘在 try 之外**：`friend-blacklist` 的 GET 与 toggle 是 async handler，Express 4 不捕获其 rejected promise；`store.getFriendBlacklist` / `setFriendBlacklist` 抛错会让请求永远挂着并变成未处理拒绝。两处补就地 `try/catch` → `handleApiError`。
+- **负数 / Infinity 绕过参数校验**：`!seedId` / `!gid` / `Number(x) || 0` 会放行 `-1` 与 `Infinity`；黑名单下游静默过滤却回报 `ok:true`，化肥购买则把负数直接下传花钱逻辑。统一改成有限正数 / 正整数校验。
+- **NapCat 插件配置损坏会全量免鉴权**：插件 `config()` 把「文件不存在」和「JSON 损坏」都吞成 `{}`，`token` 为空时 `authorized()` 直接放行，而 `/miniapp`、`/logout`、`/status` 都是 `NoAuth` 路由。现在区分 ENOENT（首次安装没配 token，保持既有本地免鉴权）与其他读取失败（损坏 → 三个路由一律 503 并打日志），不改动现有部署行为。
+- **前端切号串数据（一组）**：① `status.ts` 的 `fetchLogs` 是同 store 里唯一没有序号守卫的拉取，Dashboard 10s 轮询与切号并发时旧账号响应会覆盖新账号日志；实时 `log:new` / `logs:snapshot` 也没有账号守卫（服务端明确下发 `accountId`），切号还不清 `logs`。② `friend.ts` 的好友 / 缓存 / 访客记录 / 黑名单四个 fetch 全无守卫，`resetFriendLandState` 也只清土地状态。③ `farm.ts` 的「操作后补刷」用操作发起时的旧 `accountId` 发一笔全新请求，绕过 `landRequestSequence` 守卫，把 A 的土地与 60s overlay 写进已切到 B 的面板。④ `activity-center.ts` 的 `mutate` 只读当前 `requestVersion`，任何并发加载递增版本都会把「后端已成功执行」的操作结果静默丢弃，用户点了没反应、往往重复点击；`reset()` 不清 `pendingLoads` 还会让 `force` 刷新命中已被作废的旧 promise。分别补序号 / 账号守卫、补刷前的账号核对、操作独占版本与清空在途 load。
+- **两处「卡住不自愈」的小问题**：`SolarCalendar.vue` 首次加载失败时 `data=null`，`Math.min(...[])` 得到 `Infinity`，靠时间边界自动刷新的入口永远走不到，页面停在错误态直到手动刷新；现在显式返回 `POSITIVE_INFINITY`、保护 `events` 缺失、并排一次带序号的 10 秒重试。`Friends.vue` 切号或好友数下降后 `currentPage` 仍停在旧页，`slice` 越界返回空数组，列表一片空白且没有「无数据」提示；补 `watch(totalPages)` clamp 与切号重置。
+- **核对后判定「不是缺陷」，没改**：① 场景回包不完整必须 terminate（`player-scene-login.test.js` 锁的有意闸门，本轮只把超时分流）；② `start`/`stop` 用路径 `:id` 而不是 header 是接口语义，改成 header 会破坏按指定账号启停；③ 各路由错误响应 200/500 形状分裂属历史兼容，统一会牵动全部前端解析；④ `version.mjs` 的 `git()` 吞错与 `nas-deploy.sh` 的 `step_down` 容错触发条件受限，且部署脚本顺序是既定约定，不动。
+- **测试**：core **688 → 701**（新增 `full-review-regression.test.js` 13 条：本轮 12 处修复的接线锁 + 前四轮关键锚点逐条回归），web **223 → 230**（新增 `full-review-regression.test.mjs` 7 条）。`pnpm lint` 0 error、`build:ts` / `vue-tsc -b` / `vite build` 全过。
+
 ### 2026-11-13 · v3.23.7（#167） · 修复账号运行状态从不更新：补齐后端状态机，登录中 / 等待重登 / 停止中终于可见
 
 - **问题**：前端 `utils/account-runtime.ts` 早就判了 `logging_in` / `relogin_waiting` / `running` / `offline` / `stopping` / `stopped` 六个状态，`relogin_waiting` 还会按 `reloginAt` 算「掉线重登，剩余 N 秒」，但 `/api/accounts` 从来没有下发过 `runtimeState`——`data-provider.getAccounts()` 只写了一个布尔 `running`。结果是这些分支全是死代码：账号卡片只会显示「运行中 / 已停止」，刚点启动还在建连接和真跑起来长得一样，掉线等 60 秒自动重登看起来像被手动停了，停止过程中按钮也不会置灰。

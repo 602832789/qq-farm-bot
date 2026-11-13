@@ -64,6 +64,33 @@ function sendToMaster(payload: Record<string, any>): void {
     }
 }
 
+/**
+ * 回送面板 API 结果。
+ *
+ * result 里混入 BigInt / 循环引用时 `process.send` 会同步抛 TypeError；worker 正在
+ * 退出、IPC 已关闭时也会抛。原实现把这一句放在 try/catch 之外，异常直接变成
+ * handleApiCall 的 Promise 拒绝 → Node 20 fatal，且主进程永远收不到回包。
+ */
+function sendApiResponse(id: any, result: any, error: any): void {
+    try {
+        sendToMaster({ type: 'api_response', id, result, error });
+    } catch (e: any) {
+        try {
+            sendToMaster({
+                type: 'api_response',
+                id,
+                result: null,
+                error: {
+                    message: `回包发送失败: ${String((e && e.message) || e)}`,
+                    name: 'WorkerApiResponseError',
+                },
+            });
+        } catch {
+            // IPC 已彻底关闭，主进程侧的调用定时器会兜底。
+        }
+    }
+}
+
 function onMasterMessage(handler: (msg: any) => void): void {
     if (process.send) {
         process.on('message', handler);
@@ -827,11 +854,27 @@ function applyRuntimeConfig(snapshot: any, syncNow: boolean = false): number {
 onMasterMessage(async (msg: any) => {
     try {
         if (msg.type === 'start') {
-            await startBot(msg.config);
+            try {
+                await startBot(msg.config);
+            } catch (startError: any) {
+                // startBot 一进来就把 isRunning 置 true；初始化阶段（config 缺字段 /
+                // loadProto 失败 / connect 因空 Code 抛错）失败时不回滚，之后所有 start
+                // 消息都会被 `if (isRunning) return` 静默吞掉，账号再也起不来。
+                isRunning = false;
+                shutdownStarted = false;
+                throw startError;
+            }
         } else if (msg.type === 'stop') {
             await stopBot();
         } else if (msg.type === 'api_call') {
-            handleApiCall(msg);
+            // fire-and-forget 的 async 函数一旦拒绝就是 Node 20 的致命错误，
+            // 外层同步 try/catch 完全拦不住，必须显式挂 catch。
+            void handleApiCall(msg).catch((error: any) => {
+                sendApiResponse(msg.id, null, {
+                    message: String((error && error.message) || error || 'Worker API error'),
+                    name: String((error && error.name) || 'Error'),
+                });
+            });
         } else if (msg.type === 'config_sync') {
             applyRuntimeConfig(msg.config || {}, true);
         } else if (msg.type === 'reload_config') {
@@ -1535,7 +1578,7 @@ async function handleApiCall(msg: any): Promise<void> {
         };
     }
 
-    sendToMaster({ type: 'api_response', id, result, error });
+    sendApiResponse(id, result, error);
 }
 
 async function getDailyGiftOverview(propagateErrors: boolean = false): Promise<any> {

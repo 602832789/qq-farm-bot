@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 23,
-  "patch": 7,
-  "build": 167,
-  "version": "3.23.7",
-  "updatedAt": "2026-11-13T01:51:10.693Z",
+  "patch": 8,
+  "build": 168,
+  "version": "3.23.8",
+  "updatedAt": "2026-11-13T05:42:29.572Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.23.8",
+      "build": 168,
+      "date": "2026-11-13",
+      "summary": "全仓完整性复查（第四轮，含前四轮回归）：修复进程致命拒绝、启动失败卡死与切号串数据",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.23.7",
       "build": 167,
