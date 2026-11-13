@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 25,
-  "patch": 5,
-  "build": 173,
-  "version": "3.25.5",
-  "updatedAt": "2026-11-13T18:16:02.348Z",
+  "patch": 6,
+  "build": 175,
+  "version": "3.25.6",
+  "updatedAt": "2026-11-13T18:28:29.135Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.25.6",
+      "build": 175,
+      "date": "2026-11-14",
+      "summary": "补齐剩余 5 个零测试模块的 67 条测试，并修掉两处同类边界问题",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.25.5",
       "build": 173,
