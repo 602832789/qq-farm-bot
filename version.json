@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 25,
-  "patch": 7,
-  "build": 176,
-  "version": "3.25.7",
-  "updatedAt": "2026-11-13T18:53:33.991Z",
+  "patch": 8,
+  "build": 177,
+  "version": "3.25.8",
+  "updatedAt": "2026-11-13T19:13:30.829Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.25.8",
+      "build": 177,
+      "date": "2026-11-14",
+      "summary": "修复 Windows 上原子写偶发 EPERM 导致配置与当日状态丢失的问题",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.25.7",
       "build": 176,
