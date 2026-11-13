@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 25,
-  "patch": 3,
-  "build": 172,
-  "version": "3.25.3",
-  "updatedAt": "2026-11-13T18:00:08.142Z",
+  "patch": 5,
+  "build": 173,
+  "version": "3.25.5",
+  "updatedAt": "2026-11-13T18:16:02.348Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.25.5",
+      "build": 173,
+      "date": "2026-11-14",
+      "summary": "为 8 个零测试的高风险模块补 123 条测试，并修复好友 GID 归一化放行 Infinity",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.25.3",
       "build": 172,
