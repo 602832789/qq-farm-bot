@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 25,
-  "patch": 8,
-  "build": 177,
-  "version": "3.25.8",
-  "updatedAt": "2026-11-13T19:13:30.829Z",
+  "patch": 9,
+  "build": 178,
+  "version": "3.25.9",
+  "updatedAt": "2026-11-13T19:19:27.188Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.25.9",
+      "build": 178,
+      "date": "2026-11-14",
+      "summary": "测试不再往真实数据目录扔临时文件",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.25.8",
       "build": 177,

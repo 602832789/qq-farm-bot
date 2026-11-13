@@ -33,7 +33,7 @@ test('正常情况直接成功，内容可读回', () => {
         jsonDb.writeJsonFileAtomic(file, { hello: 'world' });
         assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { hello: 'world' });
     } finally {
-        fs.rmSync(dir, { recursive: true, force: true });
+        fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
 });
 
@@ -62,7 +62,7 @@ test('EPERM 会被重试，占用消失后写入成功', () => {
 
     assert.equal(attempts, 3, '应当重试到成功为止');
     assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { n: 1 });
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
 });
 
 test('EBUSY 与 EACCES 同样重试', () => {
@@ -88,7 +88,7 @@ test('EBUSY 与 EACCES 同样重试', () => {
         }
         assert.equal(attempts, 2, `${code} 应当被重试`);
     }
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
 });
 
 test('不可重试的错误立刻抛出，不做退避等待', () => {
@@ -111,7 +111,7 @@ test('不可重试的错误立刻抛出，不做退避等待', () => {
         assert.ok(elapsed < 100, `不该为不可重试的错误等待，实际 ${elapsed}ms`);
     } finally {
         fs.renameSync = realRename;
-        fs.rmSync(dir, { recursive: true, force: true });
+        fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
 });
 
@@ -134,7 +134,7 @@ test('重试耗尽后抛出最后一次错误，且不留下临时文件', () =>
         assert.deepEqual(leftovers, [], '失败后必须清理临时文件，否则数据目录会被垃圾堆满');
     } finally {
         fs.renameSync = realRename;
-        fs.rmSync(dir, { recursive: true, force: true });
+        fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
 });
 
@@ -162,5 +162,5 @@ test('真实占用场景：持有读句柄时写入会失败，放开后成功�
         jsonDb.writeJsonFileAtomic(file, { n: 2 });
         assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).n, 2);
     }
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
 });

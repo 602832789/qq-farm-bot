@@ -35,7 +35,7 @@ const cache = require('../dist/models/store/gid-cache');
 
 test.after(() => {
     try {
-        fs.rmSync(tmpDir, { recursive: true, force: true });
+        fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     } catch {
         // 清理失败不影响结论
     }
