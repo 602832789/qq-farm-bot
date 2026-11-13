@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 25,
-  "patch": 6,
-  "build": 175,
-  "version": "3.25.6",
-  "updatedAt": "2026-11-13T18:28:29.135Z",
+  "patch": 7,
+  "build": 176,
+  "version": "3.25.7",
+  "updatedAt": "2026-11-13T18:53:33.991Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.25.7",
+      "build": 176,
+      "date": "2026-11-14",
+      "summary": "修复单个 HTTP 请求可打死主进程的问题，并补上真实冒烟与前端逻辑测试",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.25.6",
       "build": 175,

@@ -15,6 +15,7 @@
 
 | 版本 | 更新序号 | 日期 | 更新内容 | 提交 |
 | --- | --- | --- | --- | --- |
+| v3.25.7 | #176 | 2026-11-14 | 修复单个 HTTP 请求可打死主进程的问题，并补上真实冒烟与前端逻辑测试 | — |
 | v3.25.6 | #175 | 2026-11-14 | 补齐剩余 5 个零测试模块的 67 条测试，并修掉两处同类边界问题 | — |
 | v3.25.5 | #173 | 2026-11-14 | 为 8 个零测试的高风险模块补 123 条测试，并修复好友 GID 归一化放行 Infinity | — |
 | v3.25.3 | #172 | 2026-11-14 | 修复请求参数以 Infinity 绕过校验，并把外部输入面收成清单闸门 | — |
@@ -181,6 +182,25 @@ flowchart TB
 ```
 
 ## 详细记录
+
+### 2026-11-14 · v3.25.7（#176） · 修复单个 HTTP 请求可打死主进程的问题，并补上真实冒烟与前端逻辑测试
+
+- **这轮第一次真的把服务启动起来发请求**。之前 915 条单测全是 mock 出来的，从没验证过 Express 能不能跑、路由挂没挂上、错误处理是不是 500 —— 这些都是单测的结构性盲区。做法是写一个冒烟脚本：用 `node -r` 预加载把**可写数据目录整体重定向到临时目录**（`runtime-paths` 在 require 阶段就被 logger、`KNOWN_FRIEND_GIDS_DIR`、`admin.json` 用到，事后改来不及），再真实启动 admin 服务，打 50 多个接口（鉴权、只读、写、非法参数、路由边界、账号解析）。跑完核对过 `core/data` 的文件时间戳，全程没碰真实账号数据。
+- **第一个请求就把进程打死了**：`GET /api/friend-blacklist` 抛 `TypeError: friendsList is not iterable`，然后**整个进程退出**，所有账号一起掉线。原因有两层：
+  - `friendsList = await ctx.provider.getFriends(id) || []` —— `||` 只兜住 `null` / `undefined`，provider 返回对象（错误包或空响应）时原样赋值，后面的 `for...of` 就炸；
+  - 那段 `for...of` 在 `try` 之外，而 **Express 4 不捕获 async handler 的 Promise 拒绝** —— 拒绝变成 `unhandledRejection`，Node 默认直接结束进程。
+- **三层修复**：
+  1. **具体缺陷**：抽出 `readFriendsForDisplay()`，用 `Array.isArray` 显式判数组，非数组一律当空列表（两处调用点都改了）；
+  2. **系统性**：新增 `guardAsyncRoutes(app)`，在注册阶段把所有路由 handler 包一层——同步抛错和 Promise 拒绝统一转成 `next(err)`，再由新加的 JSON 错误中间件返回 500。**请求失败，但进程活着**，而且改动集中在一处，覆盖全部现有与将来的路由；
+  3. **兜底**：`client.ts` 装 `unhandledRejection`（只记日志不退出，主进程管着所有账号，不该因为一个请求的意外而全部掉线）与 `uncaughtException`（记录完整堆栈后退出，未知状态继续跑风险更大）。
+- **修复是靠注入验证过的，不是靠「看起来对」**：把数组判断改回 `|| []` → 冒烟测试报 500 `friendsList is not iterable`（不再崩溃）；在路由里注入一个 `try` 之外的 async 抛出 → 返回 500 `smoke-inject-outside-try`；**同时去掉守卫 + 同样的抛出 → 进程真的崩了**。三个注入把「bug 是真的」「守卫确实在救」「没有守卫就会崩」全部坐实。
+- **顺手补的一处边界**：`/api/farm/fertilize` 没校验化肥类型，而 `/api/farm/fertilize-all` 校验了 —— 同一个枚举两套行为，非法值要跑到 worker 里才报错。统一在边界返回 400。
+- **前端补了 25 条真逻辑测试**。前端原来只有「读源码做静态断言」，等于只验证代码长什么样、不验证算得对不对。用一个不依赖 Node 版本的加载方式（仓库自带的 typescript 转译 → `data:` URL 导入，避开只有 Node 22.6+ 才有的 `--experimental-strip-types`），覆盖数字缩写、化肥时间换算、互动道具可用性判定、一键催熟步进状态机。
+- **因此抓到一处显示 bug**：`formatGoldAmount(99999999)` 显示成 **`10000.00万`** —— `(99999999/10000).toFixed(2)` 正好进位到 10000.00，看着像坏了。改成进位成 `1.00亿`。边界值现在单调：9999.99万 → 1.00亿 → 1.00亿。
+- **另外探查后确认没问题的**：`number-format` 对 `Infinity` / `NaN` / `null` / 非法文本一律显示 0；`fertilizer-time` 的负数与非法值都归零、未知单位按秒处理（不会除零）；`interaction-item-rules` 的整张决策表（未解锁 / 枯萎 / 成熟 / 已生效 / 种子期 / 天工 / 多格 / 闪电变异）行为一致，`land` 为 `null` 也不崩。
+- **闸门**：`core/tests/admin-route-safety.test.js`（4 条）锁住守卫的注册位置（必须早于第一个路由挂载）、错误中间件必须在 SPA 兜底之后、`unhandledRejection` 分支里不许有 `process.exit`、冒烟预加载必须重定向数据目录；`web/tests/utils-logic.test.mjs`（25 条）覆盖上面四个模块。三个静态回退注入各被抓 1 条。
+- **冒烟脚本保留为手工工具**：`cd core && pnpm test:smoke`（默认端口 34567，可用 `SMOKE_PORT` 覆盖），不进 `pnpm test`，避免 CI 里抢端口。
+- **验证**：`pnpm verify` 全绿（core 915 → **919**、web 248 → **273**、lint 0、类型检查 0），冒烟 0 失败。
 
 ### 2026-11-14 · v3.25.6（#175） · 补齐剩余 5 个零测试模块的 67 条测试，并修掉两处同类边界问题
 

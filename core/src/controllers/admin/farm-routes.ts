@@ -641,9 +641,14 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
         const id = getAccId(ctx, req);
         if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
 
+        // 与 /api/farm/fertilize-all 保持一致：化肥类型是枚举，非法值在边界就拒掉，
+        // 不要等 worker 里再报错（那条路径会被统一错误处理映射成 500）。
+        if (req.body?.fertilizerType !== 'normal' && req.body?.fertilizerType !== 'organic') {
+            return res.status(400).json({ ok: false, error: '化肥类型必须是 normal 或 organic' });
+        }
         try {
             const landId = readId(req.body?.landId, 'landId');
-            const data = await ctx.provider.fertilizeOwnLand(id, landId, req.body?.fertilizerType);
+            const data = await ctx.provider.fertilizeOwnLand(id, landId, req.body.fertilizerType);
             res.json({ ok: true, data });
         } catch (e: any) {
             handleFarmError(res, e);
