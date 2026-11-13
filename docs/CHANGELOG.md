@@ -15,6 +15,7 @@
 
 | 版本 | 更新序号 | 日期 | 更新内容 | 提交 |
 | --- | --- | --- | --- | --- |
+| v3.25.11 | #180 | 2026-11-14 | 修复删号后旧账号缓存被新号继承，并让当日统计走统一数据目录 | — |
 | v3.25.10 | #179 | 2026-11-14 | 真实启动整个项目做全量路由扫描，修客户端错误被当成 500、测试写脏真实日志 | — |
 | v3.25.9 | #178 | 2026-11-14 | 测试不再往真实数据目录扔临时文件 | — |
 | v3.25.8 | #177 | 2026-11-14 | 修复 Windows 上原子写偶发 EPERM 导致配置与当日状态丢失的问题 | — |
@@ -185,6 +186,17 @@ flowchart TB
 ```
 
 ## 详细记录
+
+### 2026-11-14 · v3.25.11（#180） · 修复删号后旧账号缓存被新号继承，并让当日统计走统一数据目录
+
+- **怎么发现的**：把最后 28 个写接口纳入真实服务验证时，顺手沿删号路径数了一遍落盘文件。删掉一个账号后，数据目录里仍留着 `known_friend_gids/<id>.json`、`stats/<id>.json`、`friend-pet-<sha256>.json`、`friend-bad-state-<sha256>.json` 和 `tsdk/<id>/` —— `deleteAccount()` 只清了 `account-configs/<id>.json`。
+- **为什么是真缺陷而不是脏文件**：账号清空后 `nextId` 会退回 1，下一个新建的账号拿到**同一个 id**，于是直接继承旧号的好友 GID 缓存（带着别人的好友去互动）、当日统计（面板显示「今日偷菜 1439」）、好友宠物缓存与「已停手」状态。这是串号，不只是占空间。
+- **清理清单逐条对过写盘方**：`pet-cache.ts` / `friend/scheduler.ts` 用 `sha256(FARM_ACCOUNT_ID)` 拼出 `friend-pet-*.json` 与 `friend-bad-state-*.json`，`shared-state.ts` 用 `known_friend_gids/`，`tsdk-runtime.ts` 用 `tsdk/<accountId>/`。新增 `core/src/models/store/account-artifacts.ts`，按同一套命名规则只删这几个具体文件、不做目录遍历；单个文件删不掉只跳过，不阻断删号本身。
+- **顺带修掉一处绕过**：`stats.ts` 原来硬拼 `process.env.FARM_DATA_DIR || path.join(__dirname, '../../data')`，而全项目只有它认这个 env。测试 / 冒烟 / 真实扫描把 `runtime-paths` 指到临时副本时，统计仍往真实 `core/data` 写；打包成单文件后 `__dirname` 在快照里同样不对。改成 `getDataDir()`，并对 id 做一次归一化再拼文件名。
+- **测试脚手架跟着改**：`today-stats-gold-bean.test.js` 原来靠 `FARM_DATA_DIR` 隔离，stats 不再认它之后改为临时替换 `require.cache` 里 `runtime-paths` 的导出（`getDataDir` / `getDataFile` / `ensureDataDir`），`try/finally` 用完还原；probe id 带上 pid 与时间戳，避免并行用例撞名或上次残留文件造成假阳性。
+- **闸门**：新增 `core/tests/account-delete-cleanup.test.js` 5 条 —— 删号清干净、不牵连其它账号、id 复用后不继承、怪 id 不能路径穿越删到 `store.json`、统计必须跟随 `runtime-paths`。缺陷注入验证：去掉 `purgeAccountArtifacts` 抓到 2 条，stats 改回 `__dirname` 抓到 1 条。
+- **验证**：`pnpm verify` 全绿（core 931 / web 273 / lint 0 / 类型 0），HTTP 冒烟 0 失败，真实服务 171 路由 / 143 请求 / 28 跳过 / 0 失败且进程存活，`npx vite build` 通过；跑完工作区只剩本批 5 个改动文件，`core/data` 未被写脏。
+
 
 ### 2026-11-14 · v3.25.10（#179） · 真实启动整个项目做全量路由扫描，修客户端错误被当成 500、测试写脏真实日志
 

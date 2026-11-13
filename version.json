@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 25,
-  "patch": 10,
-  "build": 179,
-  "version": "3.25.10",
-  "updatedAt": "2026-11-13T23:15:23.885Z",
+  "patch": 11,
+  "build": 180,
+  "version": "3.25.11",
+  "updatedAt": "2026-11-13T23:47:05.550Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.25.11",
+      "build": 180,
+      "date": "2026-11-14",
+      "summary": "修复删号后旧账号缓存被新号继承，并让当日统计走统一数据目录",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.25.10",
       "build": 179,
