@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 23,
-  "patch": 3,
-  "build": 163,
-  "version": "3.23.3",
-  "updatedAt": "2026-11-12T22:36:44.765Z",
+  "patch": 5,
+  "build": 165,
+  "version": "3.23.5",
+  "updatedAt": "2026-11-13T00:08:49.100Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.23.5",
+      "build": 165,
+      "date": "2026-11-13",
+      "summary": "全仓完整性复查：修复统计跨日错位、好友帮忙自锁与 2×2 预留组误释放",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.23.3",
       "build": 163,

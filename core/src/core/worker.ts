@@ -8,7 +8,7 @@ const { CONFIG, updateRuntimeConfig } = require('../config/config');
 const { getLevelExpProgress, loadConfigs } = require('../config/gameConfig');
 const { getAutomation, getPreferredSeed, getConfigSnapshot, applyConfigSnapshot } = require('../models/store');
 const { checkAndClaimEmails, configureEmailClaim, getEmailDailyState } = require('../services/email');
-const { checkFarm, startFarmCheckLoop, stopFarmCheckLoop, refreshFarmCheckLoop, getOwnFarmMaturityDelayMs, consumeFarmWakeup, getLandsDetail, getAvailableSeeds, purchaseSeed, runFarmOperation, runFertilizerByConfig, fertilizeOwnLand } = require('../services/farm');
+const { checkFarm, startFarmCheckLoop, stopFarmCheckLoop, refreshFarmCheckLoop, startFertilizerBuyCheckTimer, getOwnFarmMaturityDelayMs, consumeFarmWakeup, getLandsDetail, getAvailableSeeds, purchaseSeed, runFarmOperation, runFertilizerByConfig, fertilizeOwnLand } = require('../services/farm');
 const { checkFriends, startFriendCheckLoop, stopFriendCheckLoop, refreshFriendCheckLoop, getFriendsList, getFriendsListCacheOnly, getFriendLandsDetail, doFriendOperation, deleteFriend, runScheduledStealCheck, runGoldenBugPlacement } = require('../services/friend');
 const { getInteractRecords } = require('../services/interact');
 const { processInviteCodes } = require('../services/invite');
@@ -758,6 +758,11 @@ function applyRuntimeConfig(snapshot: any, syncNow: boolean = false): number {
             startMysteryShopTimer();
             startActivityAutomationTimer();
             startPetFeedCheckTimer();
+            // 化肥自动购买检测：原来只在 startFarmCheckLoop（登录/启动）建一次，
+            // 而两个开关默认都是关的，登录时定时器根本不会建；之后在面板打开开关
+            // 也不会再调用，功能永远不启动，间隔改了也不生效。这里随配置下发重建
+            // （内部按「开关 + 间隔」签名去重，配置没变不会重置计时）。
+            startFertilizerBuyCheckTimer();
 
             // 对齐老版 mystery_shop_auto_buy_after_save：神秘商人相关开关变化且巡查已启用时，
             // 保存后 2 秒立即巡查一次，不用等下一个 10 分钟周期。
@@ -981,12 +986,14 @@ async function startBot(config: any): Promise<void> {
         const latest = getUserState();
         const accountId = process.env.FARM_ACCOUNT_ID || '';
         try {
+            // 传原始值而不是 Number(x || 0)：登录回包缺字段时 0 是「假基线」，
+            // 会把整个账户余额算成今日净增。未知就让 stats 留 null，等首次有效观测起算。
             initStatsWithPersistence(
                 accountId,
-                Number(latest.gold || 0),
-                Number(latest.exp || 0),
-                Number(latest.coupon || 0),
-                goldBeanReady ? Number(latest.goldBean || 0) : null,
+                latest.gold ?? null,
+                latest.exp ?? null,
+                latest.coupon ?? null,
+                goldBeanReady ? (latest.goldBean ?? 0) : null,
             );
             resetSessionGains();
         } catch (e: any) {
