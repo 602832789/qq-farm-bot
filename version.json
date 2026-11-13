@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 25,
-  "patch": 2,
-  "build": 171,
-  "version": "3.25.2",
-  "updatedAt": "2026-11-13T12:21:33.042Z",
+  "patch": 3,
+  "build": 172,
+  "version": "3.25.3",
+  "updatedAt": "2026-11-13T18:00:08.142Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.25.3",
+      "build": 172,
+      "date": "2026-11-14",
+      "summary": "修复请求参数以 Infinity 绕过校验，并把外部输入面收成清单闸门",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.25.2",
       "build": 171,

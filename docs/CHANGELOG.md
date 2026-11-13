@@ -15,6 +15,7 @@
 
 | 版本 | 更新序号 | 日期 | 更新内容 | 提交 |
 | --- | --- | --- | --- | --- |
+| v3.25.3 | #172 | 2026-11-14 | 修复请求参数以 Infinity 绕过校验，并把外部输入面收成清单闸门 | — |
 | v3.25.2 | #171 | 2026-11-13 | 参数与边界复查：间隔上限缺失、定时器延时溢出、Infinity 放行与管理端口校验 | — |
 | v3.25.1 | #170 | 2026-11-13 | 重构切号竞态：27 处手写序号计数器全部收口到统一请求守卫 | — |
 | v3.25.0 | #169 | 2026-11-13 | 新增防复发门禁：把「未处理 Promise」这类反复出现的问题变成写的时候就报错 | — |
@@ -178,6 +179,27 @@ flowchart TB
 ```
 
 ## 详细记录
+
+### 2026-11-14 · v3.25.3（#172） · 修复请求参数以 Infinity 绕过校验，并把外部输入面收成清单闸门
+
+- **这轮换了做法：不猜下一个 bug 在哪，而是把「进程外能写进来的东西」列成清单**。前几轮的问题是「读代码找坏味道」，读只能发现「看起来不对」的，发现不了「看起来对但语义错」的。这次先把所有入口点扫出来——`src/controllers/admin/` 下 17 个路由文件、78 个「文件 + 字段 + 来源」的接入点、127 处引用——再逐条问「它是什么类型、值域多少、在哪里被拦」。
+- **同一个洞的五个副本**：`Number(x) || 0` 不构成校验。`JSON.parse` 吃到 `1e400` 得到的是 `Infinity`，它是 truthy，`||` 根本不生效；`Math.max(0, Infinity)` 还是 `Infinity`。上一轮修的是宠物资本模式和两个宠物接口，这轮顺着同一条线又找出四处——**修实例而不修模式，就一定会漏掉副本**：
+  - `/api/pets/food/use` 的 `itemId`：上次只改了 `count` 和 `uid`，`itemId` 仍是 `Math.max(0, Math.trunc(Number(...) || 0))`；
+  - worker 侧 `removePlant([Number(args[0]) || 0])`：地块编号为 `Infinity` 时直接编进 int64；
+  - `planting.fertilizeOwnLand` 走 `toNum`：`!landId || landId <= 0` 对 `Infinity` 两个条件都不成立；
+  - worker 侧 `useItem` 的 `itemId` / `count` / `uid` 与 `buyFertilizer` 的 `count`。
+- **`toNum` 本身不承担校验职责**：它只做「Long → number」的转换（`LongModule.isLong(val) ? val.toNumber() : val || 0`），拿它当校验器用就是把 `Infinity` 原样传下去。现在明确规定：**外部可写的数值一律先过 `read*` 守卫，`toNum` 只用于服务端返回值**。`warehouse.sellItems` 里两处 `toNum(item.id)` / `toNum(item.count)` 一并改掉——原来的症状是「背包中未找到物品Infinity」这种看不懂的报错。
+- **统一守卫模块 `core/src/utils/input-guards.ts`**：`readId` / `readInt` / `readCount` / `readNonNegativeInt` / `readIdList` / `readEnumOr` 以及静默变体 `read*Or`。只认整数与纯整数文本，布尔 / 对象 / 数组 / 小数 / `NaN` / `±Infinity` / 超出安全整数 / 超过 19 位的数字文本一律拒绝；抛 `InputError` 并带字段名，路由侧映射成 400（其余错误仍走 `handleApiError`，保持既有 200/500 形状）。顺带把化肥阈值的区间与账户配置对齐（数量 ≤10000、阈值 ≤990 小时）——之前手工调接口能写进配置层夹不住的值。
+- **闸门 `core/tests/input-surface.test.js`（9 条）**，这才是这轮的产出：
+  - 清单与源码**双向**比对：新增路由字段不登记就红（逼着当场分类），清单里有源码已删的字段也红；
+  - 标为「路由层校验」的数值字段，每一处接入点都必须在 `read*` 或既有校验器（`parseLogLimit` / `positiveInteger` / `boundedInteger` / `safePositiveNumber` / `Number.isInteger` …）的窗口内；
+  - 标为「下游校验」的字段，钉住那个校验器还在（例如 `positiveDecimal(countInput`、`normalizeLandIds(landIdsInput`、`if (!ACTIONS[action]`）；
+  - 18 组敌意输入的实跑断言（`'1e400'`、`Number('1e400')`、`±Infinity`、`NaN`、负数、小数、布尔、数组、对象、`null`、`undefined`、空白、尾随字符、超安全整数、超长数组）；
+  - 控制器层禁止 `Number(req...) || …`、`Math.max(0, Math.trunc(Number(req...)))`、`toNum(req...)`；worker 层禁止 `Number(args[...]) || 0`。
+- **这套闸门能证明什么、不能证明什么**（写在测试文件头部，避免以后误读）：能证明清单与源码一致、没有任何路径把未经整数性检查的请求值当数值用、极端值会被拒绝；**不能**证明每个转发点都在本地校验——本仓库的约定是「路由转发、服务层校验」，大量数值在下游由 `positiveDecimal` 一族拦住，清单只能钉住校验器还在，逐字段证明得靠服务层自己的测试。
+- **顺手核对、结论是「没问题」的**：商城 `purchaseProps` / `purchaseMallProduct` / `purchaseMysteryOffer` 的 `positiveInteger` 已经足够严（正则拒掉 `1e400` 文本，`isSafeInteger` 拒掉溢出）；好友互动道具的 `safePositiveNumber` + `normalizeLandIds`；活动中心 `weather-activity` / `qixi` / `stellar` / `qingmei` / `charity` / `pet-diary` 全部走 `positiveDecimal` 或动作白名单；`/api/farm/ripen-all/step` 的 `cursor` 靠与预览会话等值比较，非法值只会得到「预览已失效」。
+- **发现但没动的**：`buyWeatherBottle` 实际映射到 `exchangeWeatherCollectorBottle`（不接受任何参数），路由收的 `count` 是死参数；`operatePetDiary` 的 `gid` 只用于查询，不写协议。这两处在清单里分别标成 `ignored` 与 `service`，不断言其数值语义。
+- **验证**：`pnpm verify` 全绿（core 715 → **725**、web 248、lint 0、类型检查 0）。
 
 ### 2026-11-13 · v3.25.2（#171） · 参数与边界复查：间隔上限缺失、定时器延时溢出、Infinity 放行与管理端口校验
 
