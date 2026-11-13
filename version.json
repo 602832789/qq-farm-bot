@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 25,
-  "patch": 0,
-  "build": 169,
-  "version": "3.25.0",
-  "updatedAt": "2026-11-13T11:23:47.304Z",
+  "patch": 1,
+  "build": 170,
+  "version": "3.25.1",
+  "updatedAt": "2026-11-13T11:50:24.169Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.25.1",
+      "build": 170,
+      "date": "2026-11-13",
+      "summary": "重构切号竞态：27 处手写序号计数器全部收口到统一请求守卫",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.25.0",
       "build": 169,

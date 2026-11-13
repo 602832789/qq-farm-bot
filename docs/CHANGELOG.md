@@ -15,6 +15,7 @@
 
 | 版本 | 更新序号 | 日期 | 更新内容 | 提交 |
 | --- | --- | --- | --- | --- |
+| v3.25.1 | #170 | 2026-11-13 | 重构切号竞态：27 处手写序号计数器全部收口到统一请求守卫 | — |
 | v3.25.0 | #169 | 2026-11-13 | 新增防复发门禁：把「未处理 Promise」这类反复出现的问题变成写的时候就报错 | — |
 | v3.23.8 | #168 | 2026-11-13 | 全仓完整性复查（第四轮，含前四轮回归）：修复进程致命拒绝、启动失败卡死与切号串数据 | — |
 | v3.23.7 | #167 | 2026-11-13 | 修复账号运行状态从不更新：补齐后端状态机，登录中 / 等待重登 / 停止中终于可见 | — |
@@ -176,6 +177,18 @@ flowchart TB
 ```
 
 ## 详细记录
+
+### 2026-11-13 · v3.25.1（#170） · 重构切号竞态：27 处手写序号计数器全部收口到统一请求守卫
+
+- **为什么动这一块**：切号竞态是反复出现的缺陷类别，根因不是某一个 store 写错，而是**每个 store 各写一份 `let seq = 0`**。手写版本有四个容易漏的点：① 取票必须在 await 之前；② 回包落地前必须校验；③ 切号 / 关闭弹窗必须作废在途；④ 校验时还要顺带确认账号没被切走。任漏一处，症状都是「A 账号的数据写进了已切到 B 的面板」，不报错、只能肉眼发现。全仓共 27 处手写副本，其中 4 处（`commerce`、`AccountModal` 的三个 flow 版本）连上一轮的清单都漏掉了。
+- **新增 `web/src/utils/request-guard.ts`**：`createRequestGuard()` 返回三个动作——`next(account?)` 取票并快照账号、`isStale(ticket)` 一次判完「票是否最新 + 账号是否还是同一个」、`invalidate()` 作废全部在途；另加 `snapshot()` 给「由外部事件作废、自己不递增」的场景（关闭弹窗、组件卸载、活动结束）。账号绑定是可选项：全局数据（账号列表、登录配置）不绑，账号相关的拉取绑上。
+- **迁移范围**：`stores/account`、`stores/commerce`、`stores/farm`（土地 / 施肥 / 互动道具三个）、`stores/friend`（好友列表 / 互动道具两个）、`stores/pet`（宠物信息 / 礼包两个）、`stores/pet-diary`、`stores/setting`、`stores/status`（状态 / 日志 / 钻石 / 每日礼包四个）、`composables/settings/usePlantingStrategy`（四个）、`components/FarmPanel`（详情操作 / 催熟全部 / 批量施肥三个）、`components/IllustratedPanel`（购买 / 领取两个）、`components/activity/MilkTeaActivityPanel`（活动代际 + 记录版本两个）、`components/AccountModal`（登录配置 + 微信 / QQ 两条登录流三个）。
+- **顺带消掉的重复条件**：`usePlantingStrategy` 里每处都手写 `id !== currentAccountId()`、`IllustratedPanel` 里每处都手写 `accountId !== String(currentAccountId.value)`——绑定账号后这些条件并入 `isStale()`，漏写的风险随之消失。
+- **两处刻意保持原语义**：`pet` 的「拾取礼包」`finally` 只判票号不判账号——若切号也把 `claimingGifts` 卡在 true，新账号的按钮会一直转圈（切号时由 `clear()` 显式复位）；`IllustratedPanel` 的领取**加了**账号校验（原来只判票号），切号后不再给旧账号弹 toast 或重置列表，属于收紧而非放宽。
+- **测试**：新增 `web/tests/request-guard.test.mjs` 11 条——8 条行为（最新票生效、`invalidate` 作废、`snapshot` 不递增、绑定账号后切号即过期、显式账号快照、空票按过期、账号归一化），3 条仓库闸门（`src` 里不允许再出现 `let xxxSeq/Sequence/Revision/generation/Version = 0`、11 个已知并发拉取点必须接守卫、取了票必须校验）。web **234 → 245** 全绿。
+- **测试基建**：新增 `web/tests/helpers/ts-modules.mjs`，把「转译 TS 后塞进 require 别名表」这件事收成一处（`loadTsModule` + 复用的 `requestGuardModule`），4 个用真实 store 跑行为的测试不再各写一份转译逻辑。
+- **没动**：`stores/activity-center.ts` 的 `requestVersion` 是 `ref` 且承担「操作独占版本」，语义与请求守卫不同（mutate 需要让并发加载失效），继续保留。
+- **验证**：`pnpm verify` 全绿（core 707 / web 245 / lint 0 / 类型检查 0），`vite build` 真实退出码通过（22s）。
 
 ### 2026-11-13 · v3.25.0（#169） · 新增防复发门禁：把「未处理 Promise」这类反复出现的问题变成写的时候就报错
 

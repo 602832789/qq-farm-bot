@@ -2,6 +2,7 @@ import type { Ref } from 'vue'
 import { computed, ref, watch } from 'vue'
 import api, { getApiErrorMessage } from '@/api'
 import { useStatusStore } from '@/stores/status'
+import { createRequestGuard } from '@/utils/request-guard'
 
 /**
  * 种植策略的可视数据源：可售种子（优先种子下拉与预览）、背包种子（优先顺序与土地限制）。
@@ -58,10 +59,11 @@ export function usePlantingStrategy(options: {
   const draggingBagSeedId = ref<number | null>(null)
   const strategyPreviewLabel = ref<string | null>(null)
 
-  let seedOptionsRequestRevision = 0
-  let bagSeedsRequestRevision = 0
-  let bagSortRequestRevision = 0
-  let previewRequestRevision = 0
+  // 四个请求都绑定账号：切号后旧账号的回包一律作废（原来每处都手写 `id !== currentAccountId()`）。
+  const seedOptionsGuard = createRequestGuard({ accountId: () => currentAccountId() })
+  const bagSeedsGuard = createRequestGuard({ accountId: () => currentAccountId() })
+  const bagSortGuard = createRequestGuard({ accountId: () => currentAccountId() })
+  const previewGuard = createRequestGuard({ accountId: () => currentAccountId() })
   let seedOptionsRequestAccountId = ''
   let seedOptionsLoadedAccountId = ''
   let bagSeedsRequestAccountId = ''
@@ -107,14 +109,14 @@ export function usePlantingStrategy(options: {
   async function fetchSeedOptions(id: string) {
     if (!id || !isAccountConnected(id) || seedOptionsRequestAccountId === id || seedOptionsLoadedAccountId === id)
       return
-    const requestRevision = ++seedOptionsRequestRevision
+    const ticket = seedOptionsGuard.next(id)
     seedOptionsRequestAccountId = id
     try {
       const { data } = await api.get('/api/seeds', {
         headers: { 'x-account-id': id },
         skipErrorToast: true,
       } as any)
-      if (requestRevision !== seedOptionsRequestRevision || id !== currentAccountId())
+      if (seedOptionsGuard.isStale(ticket))
         return
       seedOptions.value = data?.ok ? (data.data || []) : []
       if (data?.ok)
@@ -124,7 +126,7 @@ export function usePlantingStrategy(options: {
         seedOptionsLoadedAccountId = id
     }
     catch {
-      if (requestRevision === seedOptionsRequestRevision && id === currentAccountId()) {
+      if (!seedOptionsGuard.isStale(ticket)) {
         seedOptions.value = []
         seedOptionsRevision.value++
         seedOptionsLoadedAccountId = id
@@ -139,7 +141,7 @@ export function usePlantingStrategy(options: {
   async function fetchBagSeeds(id = currentAccountId()) {
     if (!id || !isAccountConnected(id) || bagSeedsRequestAccountId === id || bagSeedsLoadedAccountId === id)
       return
-    const requestRevision = ++bagSeedsRequestRevision
+    const ticket = bagSeedsGuard.next(id)
     bagSeedsRequestAccountId = id
     bagSeedsLoading.value = true
     bagSeedsError.value = null
@@ -150,7 +152,7 @@ export function usePlantingStrategy(options: {
         headers: { 'x-account-id': id },
         skipErrorToast: true,
       } as any)
-      if (requestRevision !== bagSeedsRequestRevision || id !== currentAccountId())
+      if (bagSeedsGuard.isStale(ticket))
         return
       if (res.data.ok) {
         bagSeeds.value = (res.data.data || []).filter((seed: BagSeedItem) => seed.plantSize >= 1)
@@ -166,13 +168,13 @@ export function usePlantingStrategy(options: {
     }
     catch (e: any) {
       e.message = getApiErrorMessage(e, '加载失败')
-      if (requestRevision === bagSeedsRequestRevision && id === currentAccountId()) {
+      if (!bagSeedsGuard.isStale(ticket)) {
         bagSeedsError.value = e.message || '加载失败'
         bagSeedsLoadedAccountId = id
       }
     }
     finally {
-      if (requestRevision === bagSeedsRequestRevision && id === currentAccountId())
+      if (!bagSeedsGuard.isStale(ticket))
         bagSeedsLoading.value = false
       if (bagSeedsRequestAccountId === id)
         bagSeedsRequestAccountId = ''
@@ -273,7 +275,7 @@ export function usePlantingStrategy(options: {
   }
 
   function saveVisibleBagSeedOrder(visibleOrder: number[]) {
-    bagSortRequestRevision++
+    bagSortGuard.invalidate()
     strategy.value.bagSeedPriority = mergeVisibleBagSeedOrder(visibleOrder)
   }
 
@@ -286,7 +288,7 @@ export function usePlantingStrategy(options: {
   async function sortBagSeedsByFallbackStrategy(fallback: string, id = currentAccountId()) {
     if (!id || id !== currentAccountId())
       return
-    const requestRevision = ++bagSortRequestRevision
+    const ticket = bagSortGuard.next(id)
     const strategyAtRequest = fallback
     const items = [...bagSeeds.value]
     const ordered = [...items].sort(compareBagSeedsByLevel)
@@ -307,7 +309,7 @@ export function usePlantingStrategy(options: {
             params: { sort: sortBy },
             headers: { 'x-account-id': id },
           })
-          if (requestRevision !== bagSortRequestRevision || id !== currentAccountId() || strategy.value.bagSeedFallbackStrategy !== strategyAtRequest)
+          if (bagSortGuard.isStale(ticket) || strategy.value.bagSeedFallbackStrategy !== strategyAtRequest)
             return
           const rankMap = new Map<number, number>()
           const rankings: any[] = data?.ok ? (data.data || []) : []
@@ -324,7 +326,7 @@ export function usePlantingStrategy(options: {
       }
     }
 
-    if (requestRevision !== bagSortRequestRevision || id !== currentAccountId() || strategy.value.bagSeedFallbackStrategy !== strategyAtRequest)
+    if (bagSortGuard.isStale(ticket) || strategy.value.bagSeedFallbackStrategy !== strategyAtRequest)
       return
     saveVisibleBagSeedOrder(ordered.map(seed => seed.seedId))
   }
@@ -451,7 +453,7 @@ export function usePlantingStrategy(options: {
     currentAccountId(),
   ] as const, async ([plantingStrategy, fallbackStrategy, preferredSeedId, , id]) => {
     const currentSeeds = seedOptions.value
-    const requestRevision = ++previewRequestRevision
+    const ticket = previewGuard.next(id)
     let picked = plantingStrategy
     if (picked === 'preferred') {
       strategyPreviewLabel.value = null
@@ -502,14 +504,14 @@ export function usePlantingStrategy(options: {
         params: { sort: sortBy },
         headers: id ? { 'x-account-id': id } : undefined,
       })
-      if (requestRevision !== previewRequestRevision || id !== currentAccountId())
+      if (previewGuard.isStale(ticket))
         return
       const rankings: any[] = data?.ok ? (data.data || []) : []
       analyticsRankingsCache.set(cacheKey, { at: Date.now(), rankings })
       applyRankings(rankings)
     }
     catch {
-      if (requestRevision === previewRequestRevision && id === currentAccountId() && !cacheFresh)
+      if (!previewGuard.isStale(ticket) && !cacheFresh)
         strategyPreviewLabel.value = null
     }
   }, { immediate: true })
