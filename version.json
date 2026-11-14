@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 25,
-  "patch": 12,
-  "build": 181,
-  "version": "3.25.12",
-  "updatedAt": "2026-11-14T00:02:54.203Z",
+  "patch": 13,
+  "build": 182,
+  "version": "3.25.13",
+  "updatedAt": "2026-11-14T03:05:28.192Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.25.13",
+      "build": 182,
+      "date": "2026-11-14",
+      "summary": "修复自动出售全军覆没：背包回包的 Long 对象被输入守卫判成 0，并让汇总日志不再谎报成功",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.25.12",
       "build": 181,
