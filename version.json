@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 25,
-  "patch": 11,
-  "build": 180,
-  "version": "3.25.11",
-  "updatedAt": "2026-11-13T23:47:05.550Z",
+  "patch": 12,
+  "build": 181,
+  "version": "3.25.12",
+  "updatedAt": "2026-11-14T00:02:54.203Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.25.12",
+      "build": 181,
+      "date": "2026-11-14",
+      "summary": "补齐前后端接口契约对账闸门，115 个前端路径与 134 个调用全部对齐",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.25.11",
       "build": 180,
