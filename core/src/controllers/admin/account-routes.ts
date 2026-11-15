@@ -12,7 +12,7 @@ const { findAccountByRef } = require('../../services/account-resolver');
 const { toPublicAccountsData } = require('../../services/account-visibility');
 const { parseLogLimit, mergeLogLists } = require('../../services/log-query');
 const { clearAccountRuntimeState } = require('../../services/account-runtime-state');
-const { getPreflightStatsSnapshot } = require('../../services/preflight-stats');
+const { getPreflightStatsSnapshot, recordAutoRefreshSuccess } = require('../../services/preflight-stats');
 const { updateRuntimeConfig, getRuntimeConfig, getDefaultSystemConfig, getDevicePresets, getTimeZoneOptions } = require('../../config/config');
 
 const {
@@ -22,17 +22,6 @@ const {
     getAccountList,
     resolveAccId,
 } = require('./middleware');
-
-/** 账号 Code 自动监听：聚合微信凭证到期与 QQ 掉线日志，给出每账号的补 Code 状态。 */
-function buildProviderCodeHealth(ctx: AdminContext): any {
-    const { buildCodeHealthSnapshot } = require('../../services/code-watch');
-    const accounts = ctx.provider.getAccounts().accounts || [];
-    const rawLogs = ctx.provider.getAccountLogs ? ctx.provider.getAccountLogs(200) : [];
-    return buildCodeHealthSnapshot(accounts, {
-        accountLogs: Array.isArray(rawLogs) ? rawLogs : [],
-        isAccountRunning: (id: string) => !!(ctx.provider.isAccountRunning && ctx.provider.isAccountRunning(id)),
-    });
-}
 
 function mountAccountRoutes(app: Application, ctx: AdminContext): void {
 
@@ -48,46 +37,6 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
             const { hasWxCredential } = require('../../services/wx-credential');
             const { canRecoverAccount } = require('../../services/wx-keepalive');
             res.json({ ok: true, data: toPublicAccountsData(data, hasWxCredential, getPreflightStatsSnapshot(), canRecoverAccount) });
-        } catch (e: any) {
-            handleApiError(res, e);
-        }
-    });
-
-    // API: Code 自动监听快照（账号管理页 10 秒轮询；路由必须在 :id 之前注册）
-    app.get('/api/accounts/code-health', (_req: Request, res: Response) => {
-        try {
-            res.json({ ok: true, data: buildProviderCodeHealth(ctx) });
-        } catch (e: any) {
-            handleApiError(res, e);
-        }
-    });
-
-    // API: 自动补 Code（微信免扫码换码 / QQ 尽力重签），失败则引导重新扫码或手填 Code
-    app.post('/api/accounts/:id/auto-fix-code', async (req: Request, res: Response) => {
-        try {
-            const { autoFixAccountCode } = require('../../services/code-watch');
-            const { ensureFreshGameCode } = require('../../services/wx-credential');
-            const { tryRefreshQqGameCode } = require('../../services/qq-credential');
-            const { appendPanelNotification } = require('../../services/panel-notification');
-            const accountId = resolveAccId(ctx, req.params.id) || String(req.params.id || '');
-            const accounts = ctx.provider.getAccounts().accounts || [];
-            const health = buildProviderCodeHealth(ctx);
-            const target = health.items.find((entry: any) => String(entry.accountId) === accountId);
-            const result = await autoFixAccountCode(accountId, {
-                getAccount: (id: string) => accounts.find((account: any) => String(account.id) === id) || null,
-                latestLogAction: String(target?.latestLogAction || ''),
-                ensureFreshGameCode,
-                tryRefreshQqGameCode,
-                isAccountRunning: (id: string) => !!(ctx.provider.isAccountRunning && ctx.provider.isAccountRunning(id)),
-                restartAccount: (id: string) => ctx.provider.restartAccount(id),
-                addAccountLog: (...args: any[]) => {
-                    if (ctx.provider.addAccountLog) ctx.provider.addAccountLog(...args);
-                },
-                notify: (id: string, entry: any) => {
-                    try { appendPanelNotification(id, entry); } catch { /* 通知落盘失败不阻断补码结果 */ }
-                },
-            });
-            res.json({ ok: result.ok, ...(result.ok ? {} : { error: result.error }), data: result });
         } catch (e: any) {
             handleApiError(res, e);
         }
@@ -196,6 +145,14 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
                 const newAcc = data.accounts.at(-1);
                 if (newAcc) Promise.resolve(ctx.provider.startAccount(newAcc.id)).catch(() => {});
             } else if (isRelogin) {
+                // 重新扫码 / 填写新 Code 也是一次「凭证换新成功」，同样刷新卡片上那行
+                // 「上次自动续期」的时间与今日成功次数（用户明确要求把它算进去）。
+                // 只记微信：这行只在微信账号卡片上展示；QQ 没有长效凭证，也没有这行。
+                const saved = (data.accounts || []).find((acc: any) => String(acc.id) === String(payload.id));
+                if (String((saved && saved.platform) || payload.platform || '') === 'wx') {
+                    try { recordAutoRefreshSuccess(payload.id); }
+                    catch { /* 账本只用于展示，写失败不影响重新登录 */ }
+                }
                 // 在跑：重建 worker 让新凭据立即生效；已停止：直接启动（启动前会先换码）。
                 if (wasRunning) ctx.provider.restartAccount(payload.id);
                 else Promise.resolve(ctx.provider.startAccount(payload.id)).catch(() => {});
@@ -229,6 +186,13 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
             const results: any[] = [];
             for (const account of targetAccounts) {
                 const result = await ensureFreshGameCode(account.id);
+                // 手动续期成功同样算作「最近一次续期成功」：用户点了按钮、凭证确实换新了，
+                // 卡片上那行时间就该跳到此刻，否则会一直停在几天前或一条旧的失败记录上。
+                // 只记成功 —— 手动点一下失败不该把整行染红（失败仍由后端自动续期负责记录）。
+                if (result.ok) {
+                    try { recordAutoRefreshSuccess(account.id); }
+                    catch { /* 账本只用于展示，写失败不影响续期结果 */ }
+                }
                 results.push({
                     accountId: String(account.id),
                     name: result.accountName,
@@ -272,6 +236,11 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
             const { ensureFreshGameCode } = require('../../services/wx-credential');
             const accountId = resolveAccId(ctx, req.params.id) || String(req.params.id || '');
             const result = await ensureFreshGameCode(accountId);
+            // 与批量续期保持一致：成功也刷新「上次自动续期」那行的时间。
+            if (result.ok) {
+                try { recordAutoRefreshSuccess(accountId); }
+                catch { /* 账本只用于展示，写失败不影响续期结果 */ }
+            }
             res.status(result.ok ? 200 : 400).json({
                 ok: result.ok,
                 ...(result.ok ? {} : { error: result.error || '续期失败' }),

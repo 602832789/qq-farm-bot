@@ -24,7 +24,7 @@ const store = require('../models/store');
 const { normalizeAutoCodeRefresh, DEFAULT_AUTO_CODE_REFRESH } = require('../config/config');
 const { refreshAccountCredential, renewOAuthToken, ensureFreshGameCode, hasWxCredential } = require('./wx-credential');
 const { tryRefreshQqGameCode, isQqCodeRefreshConfigured } = require('./qq-credential');
-const { inspectAccountCodeHealth } = require('./code-watch');
+const { wxCredentialRemainingMs } = require('./code-watch');
 const { classifyProtocolError, computeRefreshBackoff, REFRESH_BACKOFF_MS } = require('./wx-login/recovery-policy');
 // 掉线重登是唯一的「账号不在跑但会自己回来」的窗口，面板要显示倒计时，
 // 所以等待期必须写进账号状态账本，而不是只在内部定时器里。
@@ -159,15 +159,15 @@ function createPreflightGovernor(nowFn: () => number = Date.now) {
 const preflight = createPreflightGovernor();
 
 /**
- * 与 code-watch 共用同一套到期判定（秒/毫秒兼容、以最近一次成功时间补算），
- * 避免两处逻辑分叉。remainingMs 为 0 表示已过期或暂无到期信息，都值得尝试一次。
+ * 到期判定统一走 code-watch 的纯函数（秒/毫秒兼容、以最近一次成功时间补算），
+ * 避免两处逻辑分叉。剩余 0 表示已过期或暂无到期信息，都值得尝试一次。
  */
 function isCredentialDue(account: any, now: number = Date.now()): boolean {
-    return inspectAccountCodeHealth(account, { now }).remainingMs <= PREFLIGHT_WINDOW_MS;
+    return wxCredentialRemainingMs(account, now) <= PREFLIGHT_WINDOW_MS;
 }
 
 function credentialRemainingMs(account: any, now: number = Date.now()): number {
-    return inspectAccountCodeHealth(account, { now }).remainingMs;
+    return wxCredentialRemainingMs(account, now);
 }
 
 function listWxAccounts(): any[] {

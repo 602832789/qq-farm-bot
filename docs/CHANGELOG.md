@@ -15,6 +15,7 @@
 
 | 版本 | 更新序号 | 日期 | 更新内容 | 提交 |
 | --- | --- | --- | --- | --- |
+| v3.25.16 | #185 | 2026-11-16 | 去除账号管理页 Code 自动监听，并让手动续期与重新登录计入「上次自动续期」 | — |
 | v3.25.15 | #183 | 2026-11-14 | 调整账号卡片「上次自动续期」：整行跟随最近一次结果，成功绿失败红且只显示一个计数 | — |
 | v3.25.13 | #182 | 2026-11-14 | 修复自动出售全军覆没：背包回包的 Long 对象被输入守卫判成 0，并让汇总日志不再谎报成功 | — |
 | v3.25.12 | #181 | 2026-11-14 | 补齐前后端接口契约对账闸门，115 个前端路径与 134 个调用全部对齐 | — |
@@ -189,6 +190,20 @@ flowchart TB
 ```
 
 ## 详细记录
+
+### 2026-11-16 · v3.25.16（#185） · 去除账号管理页 Code 自动监听，并让手动续期与重新登录计入「上次自动续期」
+
+- **去除 Code 自动监听（整条链路）**：删除账号管理页的「Code 自动监听」卡片、`codeAlerts` watch、10 分钟节流与失败停用、`tryAutoFix` / `openRefillCodeModal`；侧栏 10 秒轮询不再拉 `code-health`；`stores/account.ts` 删除 `CodeHealthItem` / `codeHealth` / `fetchCodeHealth` / `autoFixCode`；后端删除 `GET /api/accounts/code-health`、`POST /api/accounts/:id/auto-fix-code` 与 `buildProviderCodeHealth`。
+- **为什么这次删除不会重蹈 #97 的回滚**：#96 当初也整条删过，但 #97 立刻回滚，理由是「关掉网页 / 停在别的页面，后端就完全不续期」—— 那时后端确实没有自主续期。**#98 之后 `wx-keepalive` 已有常开的到期前 5 分钟滚令牌通道**，前端监听不再是唯一驱动，回滚前提已消失。
+- **根因：前端监听与后端保活设计直接冲突**。前端这套在「剩余 ≤ 10 分钟」就换 Code 并 `restartAccount` **重启运行中的账号**；而后端 `wx-keepalive`（#160 起）明确是「到期前 5 分钟只滚 token、不换 Code、不重启连接」。两者并行 = 每 2 小时主动断一次线，还额外消耗一次性 `refreshtoken`，**反而让 Code 失效来得更早、在线时间更短**——与用户观察到的「以前两三天才失败，现在一天就失败、QQ 直接掉线」一致。QQ 侧更明显：没有到期时间，靠掉线日志判定，命中就重签 + 重启，失败本身又写日志，形成自激循环。现在换 Code 只发生在两个明确时机：后端掉线重登、用户手动补码。
+- **`code-watch.ts` 收敛为纯函数**：只保留 `wxCredentialRemainingMs()`（回答「还剩多少毫秒到期」），`wx-keepalive` 的 `isCredentialDue` / `credentialRemainingMs` 改为调用它。删除 `CodeHealthLevel` / `CodeHealthItem` / `inspectAccountCodeHealth` / `buildCodeHealthSnapshot` / `autoFixAccountCode` / `WARNING_WINDOW_MS` / `OFFLINE_LOG_ACTIONS` —— 这些概念已无任何消费者。
+- **账本口径扩展（用户明确要求）**：`preflight-stats.json` 的「上次自动续期」不再只统计后端自动续期，以下动作成功也算一次续期成功、刷新时间与今日成功次数 —— ① 点「续期全部微信授权」（批量成功逐账号记账，失败不记）；② 单账号续期接口成功；③ 重新扫码 / 填写新 Code 重新登录（仅微信：这行只在微信卡片展示）。**手动失败不记**：点一下失败不该把整行染红，失败仍由后端自动续期负责记录。保活侧 `recordAutomaticResult` 继续跳过 `manual`，避免与路由层重复累加次数。
+- **顺带修掉一个真缺陷**：`wxCredentialRemainingMs` 里 `wxCredentialRefreshedAt` 若是 `Infinity`，`Infinity + TTL` 仍是 `Infinity`，keepalive 会认为「还剩无限久」，到期前再也不滚令牌 —— 账号直接过期掉线。新写的脏数据测试当场抓到（`Infinity 应返回有限数，实际 Infinity`），由末尾 `Number.isFinite(expiresAt)` 守卫兜住并补了注释。
+- **保留的手动通道**：账号卡片「编辑」仍可重新扫码或填写新 Code；顶部「续期全部微信授权」、单账号续期接口照常可用。删掉的只是「自动盯着并替你换码重启」。
+- **闸门**：`web/tests/code-health.test.mjs` 由正向断言重写为**负向守卫**（7 条：前端 store / 侧栏 / 面板 / 后端路由 / code-watch 导出都不得再出现监听痕迹，手动通道与账本记账必须还在）；`core/tests/code-watch.test.js` 重写为 10 条纯函数测试（含脏数据收敛、秒级兼容、`refreshedAt` 补算、导出面自锁）；新增 `core/tests/account-manual-refresh-ledger.test.js` 6 条**行为测试**（vm 沙箱驱动真实路由 handler：批量成功/失败、单账号、重新登录、QQ 不记、仅改备注不记）。`code-preflight.test.js` / `preflight-stats.test.js` / `account-visibility.test.js` / `manual/api-smoke.js` 的旧断言同步改成锁新不变量。
+- **缺陷注入 4/4 抓到**：手动续期成功不写账本 → 红 3；成功条件改成恒真（伪造成功）→ 红 1；重新登录不写账本 → 红 1；去掉 `expiresAt` 有限性守卫 → 红 1。每次 sha256 核对复原。中途一个注入点「没变红」被判定为**等价变异**（`safeMs` 被末尾守卫完全覆盖），据此删掉了这层冗余实现，改用真正生效的守卫做注入。
+- **验证**：`pnpm verify` core **942** / web **283** / lint 0 / 类型 0；`pnpm test:smoke` 0 失败；真实启动（数据副本、`FARM_AUTO_START_ACCOUNTS=0`）确认被删两条路由返回 **404**、`GET /api/accounts` 与 `POST /api/accounts/refresh-wx-credentials` 返回 **200**；全量路由扫描 **169 路由 / 142 请求 / 0 失败**（比上轮少 2 条正是被删的两个）；`npx vite build` 通过且产物中已无 `Code 自动监听` / `code-health` / `auto-fix-code`，`续期全部微信授权` / `上次自动续期` 仍在。
+
 
 ### 2026-11-14 · v3.25.15（#183） · 调整账号卡片「上次自动续期」：整行跟随最近一次结果，成功绿失败红且只显示一个计数
 

@@ -1,11 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {
-    WARNING_WINDOW_MS,
-    inspectAccountCodeHealth,
-    buildCodeHealthSnapshot,
-    autoFixAccountCode,
-} = require('../dist/services/code-watch');
+const { wxCredentialRemainingMs } = require('../dist/services/code-watch');
 
 const NOW = 1_800_000_000_000;
 const MINUTE = 60_000;
@@ -23,151 +18,59 @@ function wxAccount(patch = {}) {
     };
 }
 
-function qqAccount(patch = {}) {
-    return { id: '2', name: 'QQ 一号', platform: 'qq', ...patch };
-}
-
-test('凭证充足时 Code 正常，不做任何提示', () => {
-    const item = inspectAccountCodeHealth(wxAccount(), { now: NOW });
-    assert.equal(item.level, 'ok');
-    assert.equal(item.autoFixable, false);
-    assert.equal(item.needsManual, false);
-    assert.equal(item.remainingMs, 2 * HOUR);
+test('剩余时间直接由 expires_at 算出', () => {
+    assert.equal(wxCredentialRemainingMs(wxAccount({ expires_at: NOW + 2 * HOUR }), NOW), 2 * HOUR);
+    assert.equal(wxCredentialRemainingMs(wxAccount({ expires_at: NOW + 8 * MINUTE }), NOW), 8 * MINUTE);
 });
 
-test('剩余 10 分钟内判定即将过期，且有长效凭证时可自动补 Code', () => {
-    const near = inspectAccountCodeHealth(wxAccount({ expires_at: NOW + 8 * MINUTE }), { now: NOW });
-    assert.equal(near.level, 'expiring');
-    assert.equal(near.autoFixable, true);
-    assert.equal(near.needsManual, false);
-    assert.equal(WARNING_WINDOW_MS, 10 * MINUTE);
-    assert.equal(inspectAccountCodeHealth(wxAccount({ expires_at: NOW + 11 * MINUTE }), { now: NOW }).level, 'ok');
-});
-
-test('已过期且没有长效凭证时必须手动补 Code', () => {
-    const item = inspectAccountCodeHealth(wxAccount({ expires_at: NOW - 1000, refreshtoken: '', loginBuffer: '' }), { now: NOW });
-    assert.equal(item.level, 'expired');
-    assert.equal(item.autoFixable, false);
-    assert.equal(item.needsManual, true);
-    assert.match(item.reason, /需要补 Code/);
+test('已过期返回 0，不返回负数', () => {
+    assert.equal(wxCredentialRemainingMs(wxAccount({ expires_at: NOW - 1000 }), NOW), 0);
+    assert.equal(wxCredentialRemainingMs(wxAccount({ expires_at: NOW - 10 * HOUR }), NOW), 0);
 });
 
 test('秒级到期时间戳按秒解析，不会被误判为早已过期', () => {
-    const item = inspectAccountCodeHealth(wxAccount({ expires_at: Math.floor((NOW + HOUR) / 1000) }), { now: NOW });
-    assert.equal(item.level, 'ok');
-    assert.equal(item.remainingMs, HOUR);
+    const account = wxAccount({ expires_at: Math.floor((NOW + HOUR) / 1000) });
+    assert.equal(wxCredentialRemainingMs(account, NOW), HOUR);
 });
 
-test('续期失败标记只在失败晚于最近一次成功时生效', () => {
-    const stale = wxAccount({
-        wxCredentialRefreshedAt: NOW - MINUTE,
-        wxCredentialLastAttemptAt: NOW - 2 * MINUTE,
-        wxCredentialRefreshError: '旧失败',
-    });
-    assert.equal(inspectAccountCodeHealth(stale, { now: NOW }).level, 'ok');
-    const recent = wxAccount({
-        wxCredentialRefreshedAt: NOW - 2 * MINUTE,
-        wxCredentialLastAttemptAt: NOW - MINUTE,
-        wxCredentialRefreshError: 'ManualAuth rejected',
-    });
-    const item = inspectAccountCodeHealth(recent, { now: NOW });
-    assert.equal(item.level, 'refresh_failed');
-    assert.match(item.reason, /ManualAuth rejected/);
+test('缺 expires_at 时按「最近一次滚动 token 的时间 + TTL」补算', () => {
+    const account = wxAccount({ expires_at: 0, wxCredentialRefreshedAt: NOW - 30 * MINUTE, expires_in: 7200 });
+    assert.equal(wxCredentialRemainingMs(account, NOW), 2 * HOUR - 30 * MINUTE);
 });
 
-test('QQ 账号最后一条日志是 Code 失效类掉线且未运行 → 判定需要补 Code', () => {
-    const item = inspectAccountCodeHealth(qqAccount(), {
-        now: NOW,
-        running: false,
-        latestLogAction: 'disconnect_stop',
-    });
-    assert.equal(item.level, 'offline');
-    assert.equal(item.autoFixable, true);
-    assert.equal(item.needsManual, false);
+test('expires_at 与 refreshedAt 同时存在时取较晚的那个（重新扫码后不被旧到期时间拖回去）', () => {
+    // 旧 expires_at 只剩 5 分钟，但 refreshedAt 显示刚滚过 token → 应按 2 小时起算。
+    const account = wxAccount({ expires_at: NOW + 5 * MINUTE, wxCredentialRefreshedAt: NOW - MINUTE, expires_in: 7200 });
+    assert.equal(wxCredentialRemainingMs(account, NOW), 2 * HOUR - MINUTE);
 });
 
-test('用户手动停止后不再被历史掉线日志误判', () => {
-    const item = inspectAccountCodeHealth(qqAccount(), {
-        now: NOW,
-        running: false,
-        latestLogAction: 'stop',
-    });
-    assert.equal(item.level, 'ok');
+test('refreshedAt 在未来（时钟回拨）时不参与补算，避免算出超长剩余时间', () => {
+    const account = wxAccount({ expires_at: NOW + HOUR, wxCredentialRefreshedAt: NOW + 10 * MINUTE, expires_in: 7200 });
+    assert.equal(wxCredentialRemainingMs(account, NOW), HOUR);
 });
 
-test('快照只取每个账号最新一条日志，并汇总需要处理的账号数', () => {
-    const accounts = [wxAccount({ expires_at: NOW - 1000 }), qqAccount()];
-    const logs = [
-        { accountId: '2', action: 'stop' },
-        { accountId: '2', action: 'disconnect_stop' },
-        { accountId: '1', action: 'start' },
-    ];
-    const snapshot = buildCodeHealthSnapshot(accounts, {
-        now: NOW,
-        accountLogs: logs,
-        isAccountRunning: () => false,
-    });
-    assert.equal(snapshot.generatedAt, NOW);
-    assert.equal(snapshot.needsAttention, 1);
-    assert.equal(snapshot.items[0].level, 'expired');
-    assert.equal(snapshot.items[1].latestLogAction, 'stop');
-    assert.equal(snapshot.items[1].level, 'ok');
+test('完全没有到期信息时返回 0（keepalive 仍会尝试滚一次 token）', () => {
+    assert.equal(wxCredentialRemainingMs(wxAccount({ expires_at: 0 }), NOW), 0);
 });
 
-function fixDeps(patch = {}) {
-    const calls = { restart: [], logs: [], notify: [] };
-    return {
-        calls,
-        deps: {
-            getAccount: () => wxAccount(),
-            ensureFreshGameCode: async () => ({ ok: true, code: 'new-code' }),
-            tryRefreshQqGameCode: async () => ({ ok: true, code: 'new-code' }),
-            isAccountRunning: () => true,
-            restartAccount: id => calls.restart.push(id),
-            addAccountLog: (action, msg, id, name) => calls.logs.push({ action, msg, id, name }),
-            notify: (id, entry) => calls.notify.push({ id, entry }),
-            ...patch,
-        },
-    };
-}
-
-test('微信自动补 Code 成功后让运行中账号用新 Code 重连', async () => {
-    const { calls, deps } = fixDeps();
-    const result = await autoFixAccountCode('1', deps);
-    assert.equal(result.ok, true);
-    assert.equal(result.needsManual, false);
-    assert.equal(result.restarted, true);
-    assert.deepEqual(calls.restart, ['1']);
-    assert.equal(calls.logs[0].action, 'auto_code_fix');
-    assert.equal(calls.notify.length, 0);
+test('脏数据（NaN / Infinity / 负数 / 字符串）一律收敛为 0 而不是 NaN', () => {
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, -1, 'abc', null, undefined, {}]) {
+        const remaining = wxCredentialRemainingMs(wxAccount({ expires_at: bad, wxCredentialRefreshedAt: bad }), NOW);
+        assert.ok(Number.isFinite(remaining), `${String(bad)} 应返回有限数，实际 ${remaining}`);
+        assert.equal(remaining, 0, `${String(bad)} 应收敛为 0`);
+    }
 });
 
-test('掉线停下的账号补 Code 成功后直接拉起，且不会二次触发启动前换码', async () => {
-    const { calls, deps } = fixDeps({ isAccountRunning: () => false, latestLogAction: 'disconnect_stop' });
-    const result = await autoFixAccountCode('1', deps);
-    assert.equal(result.ok, true);
-    assert.deepEqual(calls.restart, ['1']);
-    assert.equal(calls.logs[0].action, 'auto_code_fix');
+test('QQ 账号没有微信凭证字段，剩余时间为 0 而不是抛错', () => {
+    assert.equal(wxCredentialRemainingMs({ id: '2', platform: 'qq' }, NOW), 0);
 });
 
-test('自动补 Code 失败时标记需手动补码，并写入局内通知与账号日志', async () => {
-    const { calls, deps } = fixDeps({
-        getAccount: () => qqAccount(),
-        tryRefreshQqGameCode: async () => ({ ok: false, error: 'QQ 授权服务不支持免扫码重签' }),
-    });
-    const result = await autoFixAccountCode('2', deps);
-    assert.equal(result.ok, false);
-    assert.equal(result.needsManual, true);
-    assert.match(result.error, /不支持免扫码重签/);
-    assert.equal(calls.logs[0].action, 'auto_code_fix_failed');
-    assert.equal(calls.notify.length, 1);
-    assert.match(calls.notify[0].entry.content, /请到账号管理页/);
-    assert.equal(calls.restart.length, 0);
-});
-
-test('账号不存在时不会调用续期接口', async () => {
-    const { deps } = fixDeps({ getAccount: () => null });
-    const result = await autoFixAccountCode('missing', deps);
-    assert.equal(result.ok, false);
-    assert.equal(result.error, '账号不存在');
+test('code-watch 不再导出任何「自动补 Code / 健康等级」能力（闸门）', () => {
+    const service = require('../dist/services/code-watch');
+    assert.deepEqual(Object.keys(service).sort(), ['wxCredentialRemainingMs']);
+    assert.equal(service.inspectAccountCodeHealth, undefined);
+    assert.equal(service.buildCodeHealthSnapshot, undefined);
+    assert.equal(service.autoFixAccountCode, undefined);
+    assert.equal(service.WARNING_WINDOW_MS, undefined);
+    assert.equal(service.OFFLINE_LOG_ACTIONS, undefined);
 });

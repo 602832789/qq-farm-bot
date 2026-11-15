@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 25,
-  "patch": 15,
-  "build": 183,
-  "version": "3.25.15",
-  "updatedAt": "2026-11-14T03:32:49.515Z",
+  "patch": 16,
+  "build": 185,
+  "version": "3.25.16",
+  "updatedAt": "2026-11-15T16:57:27.746Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.25.16",
+      "build": 185,
+      "date": "2026-11-16",
+      "summary": "去除账号管理页 Code 自动监听，并让手动续期与重新登录计入「上次自动续期」",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.25.15",
       "build": 183,

@@ -91,8 +91,8 @@ function formatAgo(ts: number, now: number): string {
  * 打架的计数。没有任何记录时显示灰色「暂无记录」，不编造时间。
  * 数据来自后端持久化的自动续期账本（preflight-stats.json），字段缺失说明服务
  * 还是旧版本，返回 null 不渲染，避免把「还没更新」误报成「没在续期」。
- * 手机端与 PC 端共用同一份文案；只统计后端自动发起的到期前续期与掉线重登，
- * 手动点按钮不计入。
+ * 手机端与 PC 端共用同一份文案。成功包含后端自动续期与用户主动换新凭证
+ * （手动续期、重新扫码登录）；失败只来自后端自动续期。
  */
 export function getWxPreflightSummary(acc: any, now: number = Date.now()): WxPreflightSummary | null {
   if (String(acc?.platform || '') !== 'wx')
@@ -119,7 +119,7 @@ export function getWxPreflightSummary(acc: any, now: number = Date.now()): WxPre
   const lastAt = lastFailed ? lastFailureAt : lastSuccessAt
   const hasRecord = lastAt > 0
 
-  const hintBase = '只统计后端自动发起的到期前续期与掉线重登，手动续期不计入；按北京时间自然日计数，容器重启不丢失。'
+  const hintBase = '成功包含后端自动续期与手动续期 / 重新登录，失败只统计后端自动续期；按北京时间自然日计数，容器重启不丢失。'
   const hint = hasRecord
     ? `${hintBase} 最近一次${lastFailed ? '失败' : '成功'}：${new Date(lastAt).toLocaleString('zh-CN', { hour12: false })}`
     : hintBase

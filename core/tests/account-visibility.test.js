@@ -105,14 +105,15 @@ test('空数据 / 异常 accounts 字段安全兜底', () => {
 
 test('/api/accounts 走对外投影，不再把 store 数据原样发给浏览器', () => {
     const source = readFileSync(path.join(__dirname, '../src/controllers/admin/account-routes.ts'), 'utf8');
+    // 切片终点改用「下一个路由」：原来的 code-health 路由已随 Code 自动监听整条移除。
     const listRoute = source.slice(
         source.indexOf("app.get('/api/accounts'"),
-        source.indexOf("app.get('/api/accounts/code-health'"),
+        source.indexOf("app.post('/api/account/remark'"),
     );
     assert.ok(listRoute.length > 0);
     assert.match(listRoute, /toPublicAccountsData\(data, hasWxCredential, getPreflightStatsSnapshot\(\), canRecoverAccount\)/);
     assert.match(listRoute, /require\('..\/..\/services\/wx-credential'\)/);
     assert.match(listRoute, /const \{ canRecoverAccount \} = require\('..\/..\/services\/wx-keepalive'\)/);
-    assert.match(source, /const \{ getPreflightStatsSnapshot \} = require\('..\/..\/services\/preflight-stats'\)/);
+    assert.match(source, /const \{ getPreflightStatsSnapshot, recordAutoRefreshSuccess \} = require\('..\/..\/services\/preflight-stats'\)/);
     assert.doesNotMatch(listRoute, /res\.json\(\{ ok: true, data \}\)/);
 });

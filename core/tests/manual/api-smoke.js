@@ -199,7 +199,6 @@ async function main() {
         ['设备预设', '/api/settings/device-presets', {}],
         ['运行日志', '/api/logs', {}],
         ['账号日志', '/api/account-logs', {}],
-        ['代码健康', '/api/accounts/code-health', {}],
         ['游戏版本', '/api/game-version', {}],
         ['状态快照', '/api/status', {}],
         ['调度器快照', '/api/scheduler', {}],

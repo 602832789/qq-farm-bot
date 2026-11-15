@@ -61,7 +61,6 @@ Module._load = function (request, parent, isMain) {
 };
 
 const ka = require('../dist/services/wx-keepalive');
-const { OFFLINE_LOG_ACTIONS } = require('../dist/services/code-watch');
 
 after(() => {
     ka.stopWxKeepAlive();
@@ -491,11 +490,14 @@ test('接线断言：预检只滚令牌、只有掉线才重启、登录失败�
     assert.match(network, /交由主进程补 Code 后重试登录/);
 });
 
-test('Code 失效信号：ws_400（worker 实际写入）与预防续期失败日志均已纳入判定', () => {
-    assert.ok(OFFLINE_LOG_ACTIONS.has('ws_400'));
-    assert.ok(OFFLINE_LOG_ACTIONS.has('auto_code_preflight_failed'));
+test('Code 失效时 worker 仍写入 ws_400（供日志与人工排查），但不再有「按日志动作自动补码」的判定', () => {
     const workerManager = fs.readFileSync(path.join(SRC, 'runtime/worker-manager.ts'), 'utf8');
     assert.match(workerManager, /'ws_400'/);
+    // 账号管理页的 Code 自动监听已整条移除：code-watch 只剩到期剩余毫秒计算，
+    // 不再导出日志动作集合，也不再有「能否自动补 Code / 是否需手动」这类判定。
+    const codeWatch = fs.readFileSync(path.join(SRC, 'services/code-watch.ts'), 'utf8');
+    assert.doesNotMatch(codeWatch, /OFFLINE_LOG_ACTIONS/, '不得把按日志动作补码的判定加回来');
+    assert.doesNotMatch(codeWatch, /autoFixable|needsManual/, '不得把自动补码标记加回来');
 });
 
 test('续期抛异常时被吸收成一次失败：不冒未处理拒绝，且退避会前进', async () => {

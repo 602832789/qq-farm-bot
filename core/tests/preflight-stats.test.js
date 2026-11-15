@@ -162,19 +162,23 @@ test('账号列表投影：微信账号附带账本，QQ 不下发，凭证明�
     }
 });
 
-test('接线断言：保活只给自动路径记账，runtime-engine 注入账本，路由读取快照', () => {
+test('接线断言：保活只给自动路径记账，手动成功由路由单独记，runtime-engine 注入账本', () => {
     const src = path.join(__dirname, '..', 'src');
     const keepAlive = fs.readFileSync(path.join(src, 'services/wx-keepalive.ts'), 'utf8');
     const engine = fs.readFileSync(path.join(src, 'runtime/runtime-engine.ts'), 'utf8');
     const routes = fs.readFileSync(path.join(src, 'controllers/admin/account-routes.ts'), 'utf8');
     assert.match(keepAlive, /recordAutomaticResult\(key, reason, true, now\)/);
     assert.match(keepAlive, /recordAutomaticResult\(key, reason, false, now\)/);
-    assert.match(keepAlive, /if \(reason === 'manual'.*return/, '手动续期不计入无人值守账本');
+    // 保活侧跳过 manual，避免与路由层的记账重复累加次数；手动路径由路由负责。
+    assert.match(keepAlive, /if \(reason === 'manual'.*return/, '保活不得给手动路径重复记账');
     assert.match(keepAlive, /try \{[\s\S]{0,220}deps\.recordPreflightResult/, '记账异常必须被兜住');
     assert.match(engine, /recordPreflightResult: \(accountId: string, ok: boolean, at: number\)/);
     assert.match(engine, /recordAutoRefreshSuccess\(accountId, at\)/);
     assert.match(engine, /recordAutoRefreshFailure\(accountId, at\)/);
     assert.match(routes, /getPreflightStatsSnapshot\(\)/);
+    // 用户要求：点「续期全部微信授权」与重新登录成功，都要算一次续期成功（只记成功）。
+    assert.match(routes, /recordAutoRefreshSuccess/, '路由层必须给手动续期 / 重新登录记账');
+    assert.doesNotMatch(routes, /recordAutoRefreshFailure/, '手动失败不记账，避免点一下就把整行染红');
 });
 
 test('账本文件损坏时先留档再重建，不能用空表覆盖唯一副本', (t) => {
