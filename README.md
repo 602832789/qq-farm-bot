@@ -85,8 +85,11 @@
 
 需要 Node.js 20.19+、Git 和 pnpm 10（本项目锁定 `10.30.2`），推荐 Node.js 24 LTS 或 22 LTS。
 
+> [!NOTE]
+> 本仓库是私密仓库，clone 与 pull 都需要认证：SSH 用 `git@github.com:602832789/qq-farm-bot.git`（需先配好密钥）；走 HTTPS 则在提示时填写个人访问令牌（PAT，需 `repo` 读权限）。
+
 ```bash
-git clone https://github.com/602832789/qq-farm-bot.git
+git clone git@github.com:602832789/qq-farm-bot.git
 cd qq-farm-bot
 
 corepack enable
@@ -104,7 +107,7 @@ pnpm dev:core
 | 后台常驻（Windows） | 双击 `start.bat`，用 `stop.bat` 停止 |
 | 完整重建 | `bash ./start.sh --rebuild` |
 | 开发模式 | 两个终端分别跑 `pnpm dev:web` 与 `pnpm dev:core` |
-| 免装 Node.js | 从 [Releases](https://github.com/602832789/qq-farm-bot/releases) 下载二进制，或执行 `pnpm package:release` 自行构建 |
+| 免装 Node.js | 从 [Releases](https://github.com/602832789/qq-farm-bot/releases)（仅仓库成员可见）下载二进制，或执行 `pnpm package:release` 自行构建 |
 
 `pnpm dev:core` 只启动后端，需先构建一次前端；`pnpm dev` 会先构建前端再启动后端。更新时先停服务，`git pull --ff-only` 后重新执行 `pnpm install` 与 `pnpm build:web`。
 
@@ -118,7 +121,7 @@ pnpm dev:core
 需要 Git 和 Docker Compose。
 
 ```bash
-git clone https://github.com/602832789/qq-farm-bot.git
+git clone git@github.com:602832789/qq-farm-bot.git
 cd qq-farm-bot
 docker compose up -d --build
 ```

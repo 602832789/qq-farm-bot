@@ -23,6 +23,12 @@
 #   3. image prune 要在 build 之后。这次构建出来的镜像还要留给容器用，能清的
 #      只有上一版留下的 <none>。
 #
+# 私密仓库的认证（本仓库已转私密，更新前必须二选一）：
+#   git remote set-url origin git@github.com:602832789/qq-farm-bot.git
+#     —— 改用 SSH，需先把 NAS 的公钥加到仓库 Deploy keys（推荐，一次配好长期有效）
+#   GIT_TOKEN=<PAT> bash scripts/nas-deploy.sh
+#     —— 用访问令牌只跑这一次，不会写入 .git/config
+#
 # 修饰开关，可与任意模式组合：
 #   --prune-logs      额外截断应用日志卷里的日志（只截断，不删文件）
 #   --deep            清空全部构建缓存 + 回收 1 小时前的所有未使用镜像
@@ -539,13 +545,62 @@ prune_orphans() {
 
 step_pull() {
   echo "==== [1/4] 拉取最新代码 ===="
-  if ! git pull --ff-only; then
+  # 本仓库是私密仓库：NAS 上没配凭据时，HTTPS 会在这一步直接认证失败。
+  # 两种认证方式（任选其一）：
+  #   A. SSH（推荐，一次配好长期有效；先把 NAS 的公钥加到仓库 Deploy keys）
+  #      git remote set-url origin git@github.com:602832789/qq-farm-bot.git
+  #   B. 访问令牌（只对本次执行生效，不写入 .git/config）
+  #      GIT_TOKEN=<你的 PAT> bash scripts/nas-deploy.sh
+  # 失败时先把输出存下来再判断，避免 set -e 让脚本在诊断前就退出。
+  pull_log="/tmp/.farm_pull.$$"
+  pull_status=0
+
+  if [ -n "${GIT_TOKEN:-}" ]; then
+    origin_url=$(git remote get-url origin 2>/dev/null || echo "")
+    case "$origin_url" in
+      https://github.com/*)
+        # 一次性凭据 URL：token 不会落进 .git/config；跑完就从进程参数里消失。
+        auth_url=$(printf '%s' "$origin_url" | sed "s|^https://github.com/|https://x-access-token:${GIT_TOKEN}@github.com/|")
+        branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)
+        if ! git pull --ff-only "$auth_url" "$branch" > "$pull_log" 2>&1; then
+          pull_status=1
+        fi
+        ;;
+      *)
+        if ! git pull --ff-only > "$pull_log" 2>&1; then
+          pull_status=1
+        fi
+        ;;
+    esac
+  else
+    if ! git pull --ff-only > "$pull_log" 2>&1; then
+      pull_status=1
+    fi
+  fi
+
+  if [ -s "$pull_log" ]; then
+    cat "$pull_log"
+  fi
+
+  if [ "$pull_status" -ne 0 ]; then
     echo "" >&2
     echo "[错误] git pull 失败，流水线停在这里。服务没被动，仍在运行。" >&2
-    echo "  常见原因：本地有未提交的改动，或本地分支和远程分叉。" >&2
-    echo "  处理干净再重跑：git status    /    git stash -u" >&2
+    if grep -qiE "authentication failed|could not read username|terminal prompts disabled|permission denied|could not resolve host|repository not found|401|403" "$pull_log"; then
+      echo "  这看起来是认证失败 —— 仓库已转为私密，NAS 上当前没有可用凭据。" >&2
+      echo "  任选一种配好再重跑：" >&2
+      echo "    A. SSH（推荐，一次配好长期有效；需先把 NAS 的公钥加到仓库 Deploy keys）" >&2
+      echo "       git remote set-url origin git@github.com:602832789/qq-farm-bot.git" >&2
+      echo "    B. 访问令牌（只对本次生效，不会写进 .git/config）" >&2
+      echo "       GIT_TOKEN=<你的 PAT> bash scripts/nas-deploy.sh" >&2
+    else
+      echo "  常见原因：本地有未提交的改动，或本地分支和远程分叉。" >&2
+      echo "  处理干净再重跑：git status    /    git stash -u" >&2
+    fi
+    rm -f "$pull_log"
     exit 1
   fi
+
+  rm -f "$pull_log"
   echo ""
 }
 

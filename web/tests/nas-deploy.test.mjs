@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import test from 'node:test'
 
@@ -324,4 +327,100 @@ test('compose 仍保留两个命名卷与容器日志上限', () => {
   assert.match(compose, /qq-farm-logs:\/app\/core\/data\/logs/)
   assert.match(compose, /max-size: "10m"/)
   assert.match(compose, /max-file: "3"/)
+})
+
+// ---- 私密仓库认证：pull 失败要能诊断，token 不得落盘 ----
+
+/** 从部署脚本里取出 step_pull 函数体，单独驱动，避免跑 docker。 */
+function extractStepPull() {
+  const start = deploy.indexOf('step_pull() {')
+  assert.ok(start > 0, 'step_pull 函数应存在')
+  const rest = deploy.slice(start)
+  const close = rest.match(/\n\}\n/)
+  assert.ok(close, 'step_pull 函数应正常闭合')
+  return rest.slice(0, close.index + 2)
+}
+
+function hasShell() {
+  try {
+    execFileSync('sh', ['-c', 'exit 0'], { stdio: 'pipe' })
+    return true
+  }
+  catch {
+    return false
+  }
+}
+
+/** 用 mock git 驱动真实的 step_pull，返回退出码与合并输出。 */
+function runStepPull({ token = '', origin = 'https://github.com/602832789/qq-farm-bot.git', ok = false, stderrText = '' } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'farm-pull-'))
+  const script = `set -eu
+${extractStepPull()}
+git() {
+  case "$1" in
+    pull)
+      if [ "${ok}" = "true" ]; then echo "Already up to date."; return 0; fi
+      echo "${stderrText}" >&2
+      return 1
+      ;;
+    remote) echo "${origin}" ;;
+    rev-parse) echo "main" ;;
+    *) return 0 ;;
+  esac
+}
+step_pull
+`
+  const file = join(dir, 'step-pull.sh')
+  writeFileSync(file, script)
+  try {
+    const stdout = execFileSync('sh', [file], {
+      encoding: 'utf8',
+      stdio: 'pipe',
+      env: { ...process.env, GIT_TOKEN: token },
+    })
+    return { code: 0, output: stdout }
+  }
+  catch (error) {
+    return { code: error.status, output: `${error.stdout || ''}${error.stderr || ''}` }
+  }
+}
+
+test('step_pull 支持 GIT_TOKEN，且认证信息不会写进 .git/config', () => {
+  assert.match(deployCode, /GIT_TOKEN/, '要支持用环境变量传访问令牌')
+  assert.match(deployCode, /x-access-token:/, '用一次性凭据 URL 拉取')
+  assert.doesNotMatch(deployCode, /git config[^\n]*GIT_TOKEN/, '不得把令牌写进 git 配置')
+  assert.doesNotMatch(deployCode, /remote set-url[^\n]*GIT_TOKEN/, '不得把令牌烧进 remote 地址')
+  // 原有行为不能丢：无令牌时仍走标准 pull。
+  assert.match(deploy, /git pull --ff-only/)
+})
+
+test('认证失败时给出 SSH / PAT 两条明确出路，而不是只报「本地有改动」', (t) => {
+  if (!hasShell())
+    return t.skip('当前环境没有 sh')
+
+  const result = runStepPull({ stderrText: 'fatal: Authentication failed for \'https://github.com/602832789/qq-farm-bot.git/\'' })
+  assert.equal(result.code, 1, '失败必须让流水线停下')
+  assert.match(result.output, /认证失败/, '要认出这是认证问题而不是本地改动')
+  assert.match(result.output, /git remote set-url origin git@github\.com/, '给出改 SSH 的命令')
+  assert.match(result.output, /GIT_TOKEN=<你的 PAT>/, '给出用令牌跑一次的写法')
+  assert.match(result.output, /服务没被动，仍在运行/, '要让用户知道线上没被影响')
+})
+
+test('非认证类失败仍然提示本地改动，不误报成认证问题', (t) => {
+  if (!hasShell())
+    return t.skip('当前环境没有 sh')
+
+  const result = runStepPull({ stderrText: 'error: Your local changes would be overwritten by merge' })
+  assert.equal(result.code, 1)
+  assert.match(result.output, /未提交的改动/)
+  assert.doesNotMatch(result.output, /认证失败/, '别把分叉/脏工作区误判成认证失败')
+})
+
+test('pull 成功时静默通过，不打印任何错误指引', (t) => {
+  if (!hasShell())
+    return t.skip('当前环境没有 sh')
+
+  const result = runStepPull({ ok: true })
+  assert.equal(result.code, 0)
+  assert.doesNotMatch(result.output, /错误|认证失败/)
 })

@@ -15,6 +15,7 @@
 
 | 版本 | 更新序号 | 日期 | 更新内容 | 提交 |
 | --- | --- | --- | --- | --- |
+| v3.25.17 | #186 | 2026-11-16 | 适配私密仓库：README 改用 SSH，部署脚本认得出认证失败并给出两条认证出路 | — |
 | v3.25.16 | #185 | 2026-11-16 | 去除账号管理页 Code 自动监听，并让手动续期与重新登录计入「上次自动续期」 | — |
 | v3.25.15 | #183 | 2026-11-14 | 调整账号卡片「上次自动续期」：整行跟随最近一次结果，成功绿失败红且只显示一个计数 | — |
 | v3.25.13 | #182 | 2026-11-14 | 修复自动出售全军覆没：背包回包的 Long 对象被输入守卫判成 0，并让汇总日志不再谎报成功 | — |
@@ -190,6 +191,18 @@ flowchart TB
 ```
 
 ## 详细记录
+
+### 2026-11-16 · v3.25.17（#186） · 适配私密仓库：README 改用 SSH，部署脚本认得出认证失败并给出两条认证出路
+
+- **背景**：仓库准备转为私密（GitHub 上不是 fork，`fork: false`，可在 Settings → Danger Zone 直接改），但 NAS 的 `scripts/nas-deploy.sh` 用 `git pull --ff-only` 走 HTTPS，改私密后没有凭据会认证失败；README 里两处 `git clone https://...` 也会对后来者失效。先把本地侧改成能在私密仓库下正常工作，再改可见性。
+- **README**：两处 clone 示例改为 SSH（`git@github.com:602832789/qq-farm-bot.git`）；源码部署章节加一条 NOTE 说明「clone / pull 都需要认证：SSH 需配好密钥，HTTPS 需 PAT（`repo` 读权限）」；「免装 Node.js」那行注明 Releases 仅仓库成员可见。Docker 章节保持精简（该章节有「< 40 行」的闸门，只替换了命令行本身）。
+- **部署脚本 `step_pull`**：① 可用 `GIT_TOKEN=<PAT> bash scripts/nas-deploy.sh` 传一次性令牌 —— 只拼成本次 `git pull` 的凭据 URL，**不写进 `.git/config`**、不改 remote，跑完即从进程参数消失；② pull 失败时把输出落盘再判断，认得出 `Authentication failed` / `could not read username` / `permission denied` / `401` / `403` 这类认证错误，输出「仓库已转为私密，NAS 上当前没有可用凭据」并给出 SSH 与令牌两条具体命令；③ 非认证类失败（脏工作区、分支分叉）仍给原来的 `git status` / `git stash -u` 提示，不误报。
+- **一个必须绕开的坑**：脚本是 `set -eu`，直接写 `git pull ...; status=$?` 会在 pull 失败时被 `set -e` 直接终止，后面的诊断代码永远走不到。全部 pull 调用都改成 `if ! git pull ...; then` 形式，并用重定向 + `cat` 代替 `| tee`（管道退出码是 tee 的，判断会失效）。脚本头部的 `-h` 用法说明也补上了两种认证方式。
+- **闸门**：`web/tests/nas-deploy.test.mjs` 由 18 条扩到 22 条 —— ① 静态：必须含 `GIT_TOKEN` 与 `x-access-token:`，且不得出现 `git config ... GIT_TOKEN` / `remote set-url ... GIT_TOKEN`（防止令牌落盘）；② 行为：从脚本里提取真实的 `step_pull` 函数体，用 mock `git` 驱动，分别验证「认证失败给出 SSH/PAT 两条出路且 exit 1」「非认证失败不误报」「pull 成功静默通过」。没有 `sh` 的环境自动 skip。
+- **缺陷注入 3/3 抓到**：删掉认证诊断分支 → 红 1；把 pull 改成不被 `if` 捕获（`set -e` 下走不到诊断）→ 红 2；把令牌烧进 `remote set-url` → 红 1。每次 sha256 核对复原。
+- **验证**：`sh -n scripts/nas-deploy.sh` 通过、`-h` 输出含新说明；`pnpm verify` core 942 / web **287**（+4）/ lint 0 / 类型 0。本轮只改文档、部署脚本与其测试，未触及运行时代码，故未重跑 vite build 与 HTTP 冒烟。
+- **仍需人工完成的两步**（不在代码里）：① 在 NAS 上先把认证配好（`git remote set-url origin git@github.com:602832789/qq-farm-bot.git` 配部署密钥，或每次用 `GIT_TOKEN`），再改仓库可见性；② 改私密不会让已有的公开 fork 变私密 —— GitHub 会把这些 fork 与本仓库分离，它们继续公开。
+
 
 ### 2026-11-16 · v3.25.16（#185） · 去除账号管理页 Code 自动监听，并让手动续期与重新登录计入「上次自动续期」
 
