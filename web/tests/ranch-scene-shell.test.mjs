@@ -87,6 +87,25 @@ test('牧场 store 只走统一 api，并用请求守卫丢弃过期回包', () 
   assert.match(store, /function clearRanchData\(\) \{\n {4}fetchGuard\.invalidate\(\)/)
 })
 
+test('栏舍有场景视图：动物形象、状态与倒计时都来自真实数据', () => {
+  const visual = read('../src/components/ranch/RanchVisualScene.vue')
+  // 页面上能在「场景 / 列表」之间切换，默认场景。
+  assert.match(page, /import RanchVisualScene from '@\/components\/ranch\/RanchVisualScene\.vue'/)
+  assert.match(page, /animalMode = ref<'scene' \| 'list'>\('scene'\)/)
+  assert.match(page, /<RanchVisualScene v-if="animalMode === 'scene'"/)
+
+  // 精灵图按动物配置 ID 取，缺图时回落到后端给的产物图。
+  assert.match(visual, /\/game-config\/seed_images_named\/seed_images\/\$\{animal\.animalId\}\.png/)
+  assert.match(visual, /@error="onSpriteError\(animal\)"/)
+  // 状态、倒计时、产物进度都必须渲染，不能只画图不说话。
+  assert.match(visual, /animal\.stageName/)
+  assert.match(visual, /countdownText\(animal\)/)
+  assert.match(visual, /animal\.maxProduceCount/)
+  // 点动物能就地展开动作，动作仍然走统一的 onRequest 两阶段提交。
+  assert.match(visual, /v-for="action in selectedAnimal\.actions"/)
+  assert.match(visual, /emit\('request'/)
+})
+
 test('牧场页顶部复用农场的资产条', () => {
   // 等级 / 金币 / 点券 / 化肥 与「我的农场」同一份组件，切场景不用换地方看。
   assert.match(page, /import PersonalResourceStrip from '@\/components\/PersonalResourceStrip\.vue'/)

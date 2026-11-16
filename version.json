@@ -1,12 +1,20 @@
 {
   "major": 3,
-  "minor": 27,
-  "patch": 1,
-  "build": 192,
-  "version": "3.27.1",
-  "updatedAt": "2026-11-16T20:02:15.529Z",
+  "minor": 28,
+  "patch": 0,
+  "build": 193,
+  "version": "3.28.0",
+  "updatedAt": "2026-11-16T20:18:02.446Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.28.0",
+      "build": 193,
+      "date": "2026-11-17",
+      "summary": "牧场栏舍新增场景视图：动物形象、状态倒计时与就地操作",
+      "commit": "—",
+      "type": "minor"
+    },
     {
       "version": "3.27.1",
       "build": 192,
