@@ -96,16 +96,20 @@ const INPUT_SURFACE = [
     ['commerce-routes.ts', 'expectedOffer', 'body', 'object', 'route'],
     ['commerce-routes.ts', 'expectedPrice', 'body', 'object', 'route'],
     ['commerce-routes.ts', 'goodsId', 'body', 'int', 'service', ['src/services/commerce.ts', 'positiveInteger(goodsIdInput']],
+    ['commerce-routes.ts', 'hostGid', 'query', 'text', 'route'],
     ['commerce-routes.ts', 'key', 'params', 'text', 'route'],
     ['commerce-routes.ts', 'kind', 'body', 'text', 'route'],
     ['commerce-routes.ts', 'npcId', 'body', 'int', 'service', ['src/services/commerce.ts', 'positiveInteger(npcIdInput']],
     // 奶茶活动的 page 是页签名（'shop' / 'sales'），不是页码。
     ['commerce-routes.ts', 'page', 'query', 'text', 'route'],
     ['commerce-routes.ts', 'params', 'body', 'object', 'route'],
+    // 牧场商店只认 5/6，越界由 ranch/state 的 catalog 拒绝。
+    ['commerce-routes.ts', 'shopId', 'query', 'int', 'service', ['src/services/ranch/state.ts', '不支持的牧场商店']],
     ['commerce-routes.ts', 'slotType', 'body', 'enum', 'service', ['src/services/commerce.ts', "INVALID_MALL_SLOT"]],
     ['commerce-routes.ts', 'slotType', 'query', 'int', 'service', ['src/services/commerce.ts', 'boundedInteger(slotTypeInput']],
     ['commerce-routes.ts', 'subSlotType', 'query', 'int', 'service', ['src/services/commerce.ts', 'boundedInteger(subSlotTypeInput']],
     ['commerce-routes.ts', 'type', 'body', 'text', 'route'],
+    ['commerce-routes.ts', 'view', 'query', 'text', 'route'],
 
     // 农场：本轮修复的重点。地块 / 物品 / 数量全部走 read*。
     ['farm-routes.ts', 'action', 'params', 'text', 'route'],

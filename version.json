@@ -1,12 +1,20 @@
 {
   "major": 3,
-  "minor": 25,
-  "patch": 18,
-  "build": 187,
-  "version": "3.25.18",
-  "updatedAt": "2026-11-16T00:16:21.329Z",
+  "minor": 26,
+  "patch": 0,
+  "build": 188,
+  "version": "3.26.0",
+  "updatedAt": "2026-11-16T17:42:14.069Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.26.0",
+      "build": 188,
+      "date": "2026-11-17",
+      "summary": "同步上游牧场大版本：接入牧场后端与游戏数据，前端保留本地版本并新增牧场页",
+      "commit": "—",
+      "type": "minor"
+    },
     {
       "version": "3.25.18",
       "build": 187,

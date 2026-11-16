@@ -33,7 +33,8 @@ test('场景登录只有超时类错误降级，协议级回包不完整仍按�
     const network = read('src/utils/network.ts');
     assert.match(network, /场景登录请求超时（不影响在线状态）/);
     assert.match(network, /只有「请求超时」是可重试的瞬时故障/);
-    assert.match(network, /农场场景登录回包不完整/);
+    assert.match(network, /游戏场景登录回包不完整/);
+    assert.match(network, /await loginGameScene\(1\);/, '场景登录必须走统一入口');
     assert.match(network, /source: 'login_init_failed'/, '外层致命 catch 不能被动过');
 });
 

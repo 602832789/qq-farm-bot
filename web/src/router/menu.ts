@@ -58,6 +58,15 @@ export const menuRoutes: MenuItem[] = [
     component: () => import('@/views/Pet.vue'),
   },
   {
+    path: 'ranch',
+    name: 'ranch',
+    group: 'estate',
+    navLabel: '牧场',
+    label: '牧场',
+    icon: 'i-carbon-garden',
+    component: () => import('@/views/Ranch.vue'),
+  },
+  {
     path: 'activity',
     name: 'activity-center',
     group: 'explore',
