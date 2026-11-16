@@ -15,6 +15,7 @@
 
 | 版本 | 更新序号 | 日期 | 更新内容 | 提交 |
 | --- | --- | --- | --- | --- |
+| v3.26.2 | #190 | 2026-11-17 | 修复 Docker 构建卡在 frozen-lockfile：锁文件恢复成本地依赖集 | — |
 | v3.26.1 | #189 | 2026-11-17 | 修正牧场入口图标为图标集里真实存在的名字 | — |
 | v3.26.0 | #188 | 2026-11-17 | 同步上游牧场大版本：接入牧场后端与游戏数据，前端保留本地版本并新增牧场页 | — |
 | v3.25.18 | #187 | 2026-11-16 | 部署脚本拦住「私密仓库 + 公共加速代理」，并禁止 pull 停在用户名提示 | — |
@@ -194,6 +195,13 @@ flowchart TB
 ```
 
 ## 详细记录
+
+### 2026-11-17 · v3.26.2（#190） · 修复 Docker 构建卡在 frozen-lockfile：锁文件恢复成本地依赖集
+
+- **现场**：NAS 上 `docker compose up -d --build` 在 `prod-deps` 阶段失败，报 `ERR_PNPM_OUTDATED_LOCKFILE`，明细是 `web/package.json` 里 `naive-ui@^2.43.2` 为新增、`marked@^18.0.6` 已移除。
+- **原因**：本次同步对 `web/` 采取「保留本地版本」，但根 `pnpm-lock.yaml` 在合并时取了上游那份——上游 web 用 `marked`、没有 `naive-ui`，本地正好相反。本地因为 `node_modules` 早已装好，测试与构建都不受影响，直到干净构建触发 `--frozen-lockfile` 才暴露。
+- **修复**：`pnpm-lock.yaml` 恢复成同步前（`b892aefb`）那份。三个 `package.json` 相对同步前只改了版本号、依赖一字未动，旧锁文件与当前依赖集完全一致。
+- **验证**：`pnpm install --frozen-lockfile --ignore-scripts` 输出 `Lockfile is up to date, resolution step is skipped`；`vue-tsc` 仍通过。
 
 ### 2026-11-17 · v3.26.1（#189） · 修正牧场入口图标为图标集里真实存在的名字
 

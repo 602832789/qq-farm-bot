@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 26,
-  "patch": 1,
-  "build": 189,
-  "version": "3.26.1",
-  "updatedAt": "2026-11-16T17:48:20.106Z",
+  "patch": 2,
+  "build": 190,
+  "version": "3.26.2",
+  "updatedAt": "2026-11-16T18:01:05.228Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.26.2",
+      "build": 190,
+      "date": "2026-11-17",
+      "summary": "修复 Docker 构建卡在 frozen-lockfile：锁文件恢复成本地依赖集",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.26.1",
       "build": 189,
