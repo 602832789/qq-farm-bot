@@ -40,6 +40,15 @@ export const menuRoutes: MenuItem[] = [
     component: () => import('@/views/Personal.vue'),
   },
   {
+    path: 'ranch',
+    name: 'ranch',
+    group: 'estate',
+    navLabel: '我的牧场',
+    label: '牧场',
+    icon: 'i-carbon-tree',
+    component: () => import('@/views/Ranch.vue'),
+  },
+  {
     path: 'friends',
     name: 'friends',
     group: 'estate',
@@ -56,15 +65,6 @@ export const menuRoutes: MenuItem[] = [
     label: '宠物',
     icon: 'i-fas-paw',
     component: () => import('@/views/Pet.vue'),
-  },
-  {
-    path: 'ranch',
-    name: 'ranch',
-    group: 'estate',
-    navLabel: '牧场',
-    label: '牧场',
-    icon: 'i-carbon-crop-growth',
-    component: () => import('@/views/Ranch.vue'),
   },
   {
     path: 'activity',

@@ -1,12 +1,20 @@
 {
   "major": 3,
-  "minor": 26,
-  "patch": 2,
-  "build": 190,
-  "version": "3.26.2",
-  "updatedAt": "2026-11-16T18:01:05.228Z",
+  "minor": 27,
+  "patch": 0,
+  "build": 191,
+  "version": "3.27.0",
+  "updatedAt": "2026-11-16T18:59:18.011Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.27.0",
+      "build": 191,
+      "date": "2026-11-17",
+      "summary": "牧场页补全 10 个分区面板，菜单改名「我的牧场」并接入场景切换",
+      "commit": "—",
+      "type": "minor"
+    },
     {
       "version": "3.26.2",
       "build": 190,

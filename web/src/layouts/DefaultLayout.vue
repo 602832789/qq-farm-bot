@@ -6,13 +6,16 @@ import { useRoute, useRouter } from 'vue-router'
 import Sidebar from '@/components/Sidebar.vue'
 import ThemeSwitcher from '@/components/ThemeSwitcher.vue'
 import TopAccountMenu from '@/components/TopAccountMenu.vue'
+import SceneSwitch from '@/components/ui/SceneSwitch.vue'
 import { useAccountSwitchScrollPreserve } from '@/composables/useAccountSwitchScroll'
 import { isMenuActive, matchMenu, menuGroups, menuLink, visibleMenuRoutes } from '@/router/menu'
 import { useAppStore } from '@/stores/app'
+import { useSceneStore } from '@/stores/scene'
 import { useToastStore } from '@/stores/toast'
 import { useUserStore } from '@/stores/user'
 
 const appStore = useAppStore()
+const sceneStore = useSceneStore()
 const userStore = useUserStore()
 const route = useRoute()
 const router = useRouter()
@@ -27,6 +30,11 @@ const currentMenu = computed(() => matchMenu(route.path))
 const currentGroup = computed(() => menuGroups.find(group => group.key === currentMenu.value?.group)?.label || '我的庄园')
 const mobileItems = computed(() => visibleMenuRoutes().filter(item => item.mobileLabel))
 const moreActive = computed(() => !mobileItems.value.some(item => isMenuActive(item, route.path)))
+// 路由是场景的真值来源：直接点菜单进「我的牧场」也要把开关切过去，
+// 否则会出现「页面已经在牧场、顶栏还写着去牧场」的矛盾状态。
+watch(() => route.path, (path) => {
+  sceneStore.setScene(path.startsWith('/ranch') ? 'ranch' : 'farm')
+}, { immediate: true })
 // 活动详情自带标题栏并要求撑满内容区，这时把滚动交给活动自己的外壳。
 const activityDetail = computed(() => route.name === 'activity-center' && activityDetailOpen.value)
 
@@ -74,6 +82,7 @@ async function logout() {
           </div>
         </div>
         <div class="farm-topbar-actions">
+          <SceneSwitch />
           <ThemeSwitcher />
           <TopAccountMenu />
           <button class="farm-icon-button" type="button" title="退出验证" aria-label="退出验证" :disabled="loggingOut" @click="logout">

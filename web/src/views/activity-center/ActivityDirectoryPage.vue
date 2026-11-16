@@ -35,7 +35,6 @@ const statusFilters: Array<{ key: StatusFilter, label: string }> = [
   { key: 'all', label: '全部' },
   { key: 'active', label: '进行中' },
   { key: 'upcoming', label: '未开始' },
-  { key: 'ended', label: '已结束' },
 ]
 
 const accountDataLoaded = computed(() => !!currentAccountId.value && loadedAccountId.value === String(currentAccountId.value))
@@ -165,53 +164,6 @@ const timedActivities = computed(() => displayActivities.value.filter(activity =
 const standingActivities = computed(() => displayActivities.value.filter(isStandingActivity))
 /** 进行中与即将开始的限时活动用大卡片；已结束的折叠到往期列表。 */
 const currentActivities = computed(() => timedActivities.value.filter(activity => activityStatus(activity) !== 'ended'))
-interface PastActivityRow { key: string, name: string, activity: ActivityDirectoryItemDto, ids: string[] }
-/** 同名同时间的往期条目（同一活动的多个子 ID）合并成一行。顺序沿用目录排序：结束越晚越靠前。 */
-const pastActivities = computed(() => {
-  const rows = new Map<string, PastActivityRow>()
-  for (const activity of timedActivities.value) {
-    if (activityStatus(activity) !== 'ended')
-      continue
-    const name = activityDisplayName(activity)
-    const key = `${name}|${activity.startTime ?? ''}|${activity.endTime ?? ''}`
-    const row = rows.get(key)
-    if (row)
-      row.ids.push(activity.id)
-    else
-      rows.set(key, { key, name, activity, ids: [activity.id] })
-  }
-  return [...rows.values()]
-})
-const pastGroups = computed(() => {
-  const groups: Array<{ key: string, label: string, rows: PastActivityRow[] }> = []
-  for (const row of pastActivities.value) {
-    const endTime = validActivityTime(row.activity.endTime)
-    const date = endTime === null ? null : new Date(endTime)
-    const key = date ? `${date.getFullYear()}-${date.getMonth()}` : 'unknown'
-    let group = groups.find(entry => entry.key === key)
-    if (!group) {
-      group = { key, label: date ? `${date.getFullYear()} 年 ${date.getMonth() + 1} 月结束` : '结束时间未知', rows: [] }
-      groups.push(group)
-    }
-    group.rows.push(row)
-  }
-  return groups
-})
-/**
- * 同名活动通常是同一玩法在不同时期复办。按“名称 + 起止时间”去重后统计期数，
- * 只统计当前目录里能看到的期次（包括进行中的那一期）。
- */
-const editionCounts = computed(() => {
-  const periods = new Map<string, Set<string>>()
-  for (const activity of timedActivities.value) {
-    const name = activityDisplayName(activity)
-    const set = periods.get(name) || new Set<string>()
-    set.add(`${activity.startTime ?? ''}|${activity.endTime ?? ''}`)
-    periods.set(name, set)
-  }
-  return new Map([...periods].map(([name, set]) => [name, set.size]))
-})
-const pastOpen = ref(false)
 
 /** 卡片列表：进行中的限时活动按状态筛选，已结束的走往期折叠区。 */
 const cardActivities = computed(() => {
@@ -228,8 +180,6 @@ const pickerSummary = computed(() => {
   const parts = [`${currentActivities.value.length} 个进行中`]
   if (standingActivities.value.length)
     parts.push(`${standingActivities.value.length} 项常驻`)
-  if (pastActivities.value.length)
-    parts.push(`${pastActivities.value.length} 个往期`)
   return parts.join(' · ')
 })
 const closedCardCount = computed(() => currentActivities.value.filter(activity => !activityCanOpen(activity)).length)
@@ -267,14 +217,6 @@ function activityIcon(activity: ActivityDirectoryItemDto) {
   return map[activity.gameplayKey || ''] || 'i-carbon-calendar'
 }
 
-const shortDateFormatter = new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit' })
-function formatShortPeriod(activity: ActivityDirectoryItemDto) {
-  const startTime = validActivityTime(activity.startTime)
-  const endTime = validActivityTime(activity.endTime)
-  const start = startTime === null ? '?' : shortDateFormatter.format(startTime)
-  const end = endTime === null ? '?' : shortDateFormatter.format(endTime)
-  return `${start} – ${end}`
-}
 function standingDescription(activity: ActivityDirectoryItemDto) {
   return isNewbieActivity(activity) ? '新手开园福利：签到、开园特权与引导奖励' : '长期开放的常驻内容'
 }
@@ -432,36 +374,6 @@ function openActivity(activity: ActivityDirectoryItemDto) {
             <span class="standing-chip__meta">{{ standingPeriod(activity) }}<template v-if="isNewbieActivity(activity) && !activityCanOpen(activity)"> · 资格以游戏内为准</template></span>
             <span v-if="activityCanOpen(activity)" class="i-carbon-arrow-right" aria-hidden="true" />
           </component>
-        </div>
-      </section>
-
-      <section v-if="pastActivities.length" class="picker-section" aria-labelledby="past-activities-title">
-        <button
-          id="past-activities-title"
-          type="button"
-          class="picker-section__title picker-section__toggle"
-          :aria-expanded="pastOpen"
-          aria-controls="past-activities-list"
-          @click="pastOpen = !pastOpen"
-        >
-          往期活动<small>{{ pastActivities.length }}</small>
-          <span class="picker-section__chevron i-carbon-chevron-down" :class="{ 'is-open': pastOpen }" aria-hidden="true" />
-        </button>
-        <div v-if="pastOpen" id="past-activities-list" class="past-list">
-          <div v-for="group in pastGroups" :key="group.key" class="past-group">
-            <h4>{{ group.label }}</h4>
-            <ul>
-              <li v-for="row in group.rows" :key="row.key" class="past-row">
-                <span class="past-row__icon"><img v-if="activityIconSrc(row.activity)" :src="activityIconSrc(row.activity)" alt=""><span v-else class="i-carbon-calendar" /></span>
-                <span class="past-row__name">
-                  <strong>{{ row.name }}</strong>
-                  <span v-if="(editionCounts.get(row.name) || 0) > 1" class="past-row__edition" title="目录中同名活动的不同期次数">共 {{ editionCounts.get(row.name) }} 期</span>
-                </span>
-                <span class="past-row__period">{{ formatShortPeriod(row.activity) }}</span>
-                <span class="past-row__ids" :title="row.ids.join('、')">{{ row.ids[0] }}<template v-if="row.ids.length > 1"> 等 {{ row.ids.length }} 个</template></span>
-              </li>
-            </ul>
-          </div>
         </div>
       </section>
     </template>
