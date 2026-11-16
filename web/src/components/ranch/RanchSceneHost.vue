@@ -24,10 +24,13 @@ const props = withDefaults(defineProps<{
   params?: Record<string, any>
   title?: string
   icon?: string
+  /** 页面自己在顶部渲染资产条时置 true，卡片内不再重复显示同一批资源。 */
+  hideResources?: boolean
 }>(), {
   params: undefined,
   title: '牧场',
   icon: 'i-carbon-wheat',
+  hideResources: false,
 })
 
 const accountStore = useAccountStore()
@@ -205,7 +208,7 @@ defineExpose({ refresh, switchView })
           </div>
         </div>
 
-        <div class="flex flex-wrap gap-1.5 text-xs">
+        <div v-if="!hideResources" class="flex flex-wrap gap-1.5 text-xs">
           <div
             v-for="resource in resources"
             :key="resource.key"

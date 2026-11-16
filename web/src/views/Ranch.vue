@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { RanchView } from '@/utils/ranch'
+import { storeToRefs } from 'pinia'
 import { computed, ref } from 'vue'
-import PersonalResourceStrip from '@/components/PersonalResourceStrip.vue'
 import RanchActivitiesPanel from '@/components/ranch/RanchActivitiesPanel.vue'
 import RanchAnimalsPanel from '@/components/ranch/RanchAnimalsPanel.vue'
 import RanchBagPanel from '@/components/ranch/RanchBagPanel.vue'
@@ -10,14 +10,18 @@ import RanchFacilitiesPanel from '@/components/ranch/RanchFacilitiesPanel.vue'
 import RanchFriendsPanel from '@/components/ranch/RanchFriendsPanel.vue'
 import RanchIllustratedPanel from '@/components/ranch/RanchIllustratedPanel.vue'
 import RanchMarketPanel from '@/components/ranch/RanchMarketPanel.vue'
+import RanchResourceStrip from '@/components/ranch/RanchResourceStrip.vue'
 import RanchSceneHost from '@/components/ranch/RanchSceneHost.vue'
 import RanchShopPanel from '@/components/ranch/RanchShopPanel.vue'
 import RanchTasksPanel from '@/components/ranch/RanchTasksPanel.vue'
 import RanchVisualScene from '@/components/ranch/RanchVisualScene.vue'
+import { useRanchStore } from '@/stores/ranch'
 import { RANCH_VIEW_LABELS, RANCH_VIEWS } from '@/utils/ranch'
 
 // 牧场在协议上是独立场景（game_scene_id=2），每个分区都要临时切场景再切回来，
 // 所以这里只保留分区与查询参数，读取、缓存与待核对账本全部交给 RanchSceneHost。
+const ranchStore = useRanchStore()
+const { state: ranchState } = storeToRefs(ranchStore)
 const view = ref<RanchView>('animals')
 // 栏舍分区默认给场景视图；想批量看数值时可以切回列表。
 const animalMode = ref<'scene' | 'list'>('scene')
@@ -46,8 +50,8 @@ function switchView(next: RanchView) {
 
 <template>
   <div class="space-y-4">
-    <!-- 与「我的农场」同一份资产条：等级 / 金币 / 点券 / 化肥，切场景时不用换地方看。 -->
-    <PersonalResourceStrip />
+    <!-- 与「我的农场」同款资产条，但数据全部来自牧场：牧场等级、牧场货币、牧草与罐头桶。 -->
+    <RanchResourceStrip :state="ranchState" />
 
     <div class="flex flex-wrap items-center gap-1.5">
       <button
@@ -84,6 +88,7 @@ function switchView(next: RanchView) {
       :params="params"
       title="我的牧场"
       icon="i-carbon-wheat"
+      hide-resources
     >
       <template #default="{ state, onRequest, activeView }">
         <template v-if="activeView === 'animals'">

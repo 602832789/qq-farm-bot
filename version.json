@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 28,
-  "patch": 0,
-  "build": 193,
-  "version": "3.28.0",
-  "updatedAt": "2026-11-16T20:18:02.446Z",
+  "patch": 1,
+  "build": 195,
+  "version": "3.28.1",
+  "updatedAt": "2026-11-16T20:47:16.306Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.28.1",
+      "build": 195,
+      "date": "2026-11-17",
+      "summary": "牧场顶部资产条改用牧场自身数据，不再借用农场资产",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.28.0",
       "build": 193,

@@ -53,7 +53,8 @@ test('每个分区都挂了面板：场景壳的面板区是插槽，不传就�
 
 test('牧场页把协议全部收在场景壳里，页面自己不管读取与待核对账本', () => {
   assert.match(page, /<RanchSceneHost[\s\S]{0,120}:params="params"/)
-  assert.doesNotMatch(page, /useRanchStore|api\.|fetch\(/)
+  // 页面只读 store 里的快照给顶部资产条用，读取与写入仍然全部留在场景壳。
+  assert.doesNotMatch(page, /api\.|fetch\(|acknowledge\(/)
   assert.match(host, /document\.addEventListener\('visibilitychange'/)
   assert.match(host, /ranchStore\.acknowledge\(/)
   // 挂载时按页面要求的分区读取，不能沿用上一页残留的 activeView。
@@ -106,10 +107,20 @@ test('栏舍有场景视图：动物形象、状态与倒计时都来自真实�
   assert.match(visual, /emit\('request'/)
 })
 
-test('牧场页顶部复用农场的资产条', () => {
-  // 等级 / 金币 / 点券 / 化肥 与「我的农场」同一份组件，切场景不用换地方看。
-  assert.match(page, /import PersonalResourceStrip from '@\/components\/PersonalResourceStrip\.vue'/)
-  assert.match(page, /<PersonalResourceStrip \/>/)
+test('牧场页顶部是牧场自己的资产条，不混用农场数据', () => {
+  // 同款视觉、不同数据源：牧场等级 / 牧场货币 / 牧草 / 罐头桶。
+  assert.match(page, /import RanchResourceStrip from '@\/components\/ranch\/RanchResourceStrip\.vue'/)
+  assert.match(page, /<RanchResourceStrip :state="ranchState" \/>/)
+  assert.doesNotMatch(page, /PersonalResourceStrip/, '不能再用农场那条资产条')
+  // 场景壳内的紧凑资源条要关掉，否则同一批资源显示两遍。
+  assert.match(page, /hide-resources/)
+
+  const strip = read('../src/components/ranch/RanchResourceStrip.vue')
+  assert.match(strip, /defineProps<\{ state: RanchState \| null \}>/)
+  assert.match(strip, /props\.state\?\.level/)
+  assert.match(strip, /props\.state\?\.resources/)
+  // 不得引用农场的 store，避免又串回农场数据。
+  assert.doesNotMatch(strip, /useStatusStore|useBagStore|useIllustratedStore|useFarmStore/)
 })
 
 test('顶部场景开关负责跳转，路由反向同步场景', () => {
