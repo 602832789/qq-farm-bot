@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { RanchView } from '@/utils/ranch'
 import { computed, ref } from 'vue'
+import PersonalResourceStrip from '@/components/PersonalResourceStrip.vue'
 import RanchActivitiesPanel from '@/components/ranch/RanchActivitiesPanel.vue'
 import RanchAnimalsPanel from '@/components/ranch/RanchAnimalsPanel.vue'
 import RanchBagPanel from '@/components/ranch/RanchBagPanel.vue'
@@ -42,6 +43,9 @@ function switchView(next: RanchView) {
 
 <template>
   <div class="space-y-4">
+    <!-- 与「我的农场」同一份资产条：等级 / 金币 / 点券 / 化肥，切场景时不用换地方看。 -->
+    <PersonalResourceStrip />
+
     <div class="flex flex-wrap gap-1.5">
       <button
         v-for="item in RANCH_VIEWS"

@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 27,
-  "patch": 0,
-  "build": 191,
-  "version": "3.27.0",
-  "updatedAt": "2026-11-16T18:59:18.011Z",
+  "patch": 1,
+  "build": 192,
+  "version": "3.27.1",
+  "updatedAt": "2026-11-16T20:02:15.529Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.27.1",
+      "build": 192,
+      "date": "2026-11-17",
+      "summary": "牧场日志改用「牧场」标签，设置页隐藏已结束活动，牧场页补资产条",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.27.0",
       "build": 191,

@@ -8,7 +8,8 @@ const milkPanel = readFileSync(new URL('../src/components/activity/MilkTeaActivi
 const teaCss = readFileSync(new URL('../src/styles/milk-tea-workbench.css', import.meta.url), 'utf8')
 
 test('功能模块「快乐不独享」去除旁边写死的活动日期', () => {
-  const section = featureSettings.match(/<section class="border border-orange-100[\s\S]*?<\/section>/)?.[0] || ''
+  // section 上可能带 v-if（活动结束后隐藏），选择器只认 class。
+  const section = featureSettings.match(/<section[^>]*class="border border-orange-100[\s\S]*?<\/section>/)?.[0] || ''
   assert.ok(section, '快乐不独享区块应存在')
   assert.match(section, /快乐不独享/, '标题保留')
   assert.match(section, /自动分享领取首次分享快乐值/, '说明文案保留')

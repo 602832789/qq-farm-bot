@@ -77,6 +77,7 @@ const modules = [
   { label: '仓库', value: 'warehouse' },
   { label: '任务', value: 'task' },
   { label: '活动', value: 'activity' },
+  { label: '牧场', value: 'ranch' },
   { label: '系统', value: 'system' },
 ]
 
@@ -438,6 +439,8 @@ function getLogTagClass(tag: string) {
     return 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300'
   if (tag === '宠物')
     return 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300'
+  if (tag === '牧场')
+    return 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300'
   if (tag === '警告')
     return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
   return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'

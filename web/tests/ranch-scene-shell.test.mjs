@@ -87,6 +87,12 @@ test('牧场 store 只走统一 api，并用请求守卫丢弃过期回包', () 
   assert.match(store, /function clearRanchData\(\) \{\n {4}fetchGuard\.invalidate\(\)/)
 })
 
+test('牧场页顶部复用农场的资产条', () => {
+  // 等级 / 金币 / 点券 / 化肥 与「我的农场」同一份组件，切场景不用换地方看。
+  assert.match(page, /import PersonalResourceStrip from '@\/components\/PersonalResourceStrip\.vue'/)
+  assert.match(page, /<PersonalResourceStrip \/>/)
+})
+
 test('顶部场景开关负责跳转，路由反向同步场景', () => {
   assert.match(sceneStore, /defineStore\('scene'/)
   assert.match(sceneStore, /function setScene\(value: GameScene\)/)

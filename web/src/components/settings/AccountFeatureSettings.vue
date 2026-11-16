@@ -9,7 +9,7 @@ import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 import BaseSwitch from '@/components/ui/BaseSwitch.vue'
 import HourInput from '@/components/ui/HourInput.vue'
-import { MILK_TEA_AUTOMATION_OPTIONS } from '@/constants/activity-windows'
+import { MILK_TEA_ACTIVITY_WINDOW, MILK_TEA_AUTOMATION_OPTIONS, SHARE_REWARD_ACTIVITY_WINDOW } from '@/constants/activity-windows'
 import { FERTILIZER_TIME_UNITS, fertilizerTimeSeconds, fertilizerTimeValue } from '@/utils/fertilizer-time'
 import {
   isRanchSwitchDefaultOn,
@@ -43,8 +43,11 @@ const automation = defineModel<any>('automation', { required: true })
 const activeModule = ref<ModuleKey | null>(null)
 const mutationTestActive = ref(false)
 const editSnapshot = ref<{ strategy: any, automation: any } | null>(null)
-// 活动按常显处理：用户可以提前把配置做好，真正执行仍由服务端在活动开启后才会成功。
-const showMilkTeaActivity = computed(() => true)
+// 活动结束后就不再展示它的自动化开关：留一个怎么点都不会生效的开关只会误导。
+// 活动未开始时仍然展示，用户可以提前把配置做好，真正执行由服务端在活动开启后判定。
+const shareRewardEnded = computed(() => Date.now() > SHARE_REWARD_ACTIVITY_WINDOW.endMs)
+const milkTeaEnded = computed(() => Date.now() > MILK_TEA_ACTIVITY_WINDOW.endMs)
+const showMilkTeaActivity = computed(() => !milkTeaEnded.value)
 const milkTeaSettings = computed(() => MILK_TEA_AUTOMATION_OPTIONS)
 const fertilizerSmartUnit = ref<FertilizerTimeUnit>('seconds')
 const fertilizerSmartValue = computed({
@@ -78,8 +81,18 @@ const activityKeys = computed(() => [
   'share_reward_daily',
   'share_reward_milestones',
 ])
-const activityEnabledCount = computed(() => activityKeys.value.filter(key => automation.value.automation[key]).length)
-const shareRewardActivityEnabled = computed(() => ['share_reward_share', 'share_reward_daily', 'share_reward_milestones'].some(key => automation.value.automation[key]))
+/** 已结束活动的开关不再出现在界面上，也不能算进「已开 N 项」。 */
+function activityKeyVisible(key: string) {
+  if (shareRewardEnded.value && key.startsWith('share_reward_'))
+    return false
+  if (milkTeaEnded.value && milkTeaSettings.value.some(setting => setting.key === key))
+    return false
+  return true
+}
+const visibleActivityKeys = computed(() => activityKeys.value.filter(activityKeyVisible))
+const activityEnabledCount = computed(() => visibleActivityKeys.value.filter(key => automation.value.automation[key]).length)
+const shareRewardActivityEnabled = computed(() => !shareRewardEnded.value
+  && ['share_reward_share', 'share_reward_daily', 'share_reward_milestones'].some(key => automation.value.automation[key]))
 
 function intervalTag(min: number, max: number) {
   if (!Number.isFinite(min) || !Number.isFinite(max))
@@ -671,7 +684,7 @@ function cancel() {
                 </div>
               </section>
 
-              <section class="border border-orange-100 rounded-lg p-4 space-y-3 dark:border-orange-900/40">
+              <section v-if="!shareRewardEnded" class="border border-orange-100 rounded-lg p-4 space-y-3 dark:border-orange-900/40">
                 <div>
                   <div class="text-sm text-gray-700 font-medium dark:text-gray-300">
                     快乐不独享
@@ -703,7 +716,7 @@ function cancel() {
                 </div>
               </section>
 
-              <MilkTeaActivityPanel v-model:automation="automation" />
+              <MilkTeaActivityPanel v-if="!milkTeaEnded" v-model:automation="automation" />
             </div>
           </div>
           <footer class="flex justify-end gap-2 border-t bg-gray-50/70 px-5 py-4 dark:border-gray-700 dark:bg-gray-900/20 sm:px-6">
