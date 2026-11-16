@@ -63,7 +63,7 @@ export const menuRoutes: MenuItem[] = [
     group: 'estate',
     navLabel: '牧场',
     label: '牧场',
-    icon: 'i-carbon-garden',
+    icon: 'i-carbon-crop-growth',
     component: () => import('@/views/Ranch.vue'),
   },
   {

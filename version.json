@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 26,
-  "patch": 0,
-  "build": 188,
-  "version": "3.26.0",
-  "updatedAt": "2026-11-16T17:42:14.069Z",
+  "patch": 1,
+  "build": 189,
+  "version": "3.26.1",
+  "updatedAt": "2026-11-16T17:48:20.106Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.26.1",
+      "build": 189,
+      "date": "2026-11-17",
+      "summary": "修正牧场入口图标为图标集里真实存在的名字",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.26.0",
       "build": 188,

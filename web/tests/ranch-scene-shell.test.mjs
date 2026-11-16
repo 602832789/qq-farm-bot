@@ -35,7 +35,7 @@ test('牧场页把协议全部收在场景壳里，页面自己不管读取与�
 test('牧场只有一个菜单入口，路由指向独立页面', () => {
   assert.equal([...menu.matchAll(/path:\s*'ranch'/g)].length, 1)
   assert.match(menu, /name:\s*'ranch'[\s\S]{0,200}views\/Ranch\.vue/)
-  assert.match(menu, /icon:\s*'i-carbon-garden'/)
+  assert.match(menu, /icon:\s*'i-carbon-crop-growth'/)
   // 不能把牧场塞进农场页面里再各写一份场景状态。
   assert.doesNotMatch(menu, /views\/Ranch\.vue[\s\S]{0,80}scenes:/)
 })
