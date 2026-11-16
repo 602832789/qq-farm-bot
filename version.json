@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 25,
-  "patch": 17,
-  "build": 186,
-  "version": "3.25.17",
-  "updatedAt": "2026-11-15T17:46:49.316Z",
+  "patch": 18,
+  "build": 187,
+  "version": "3.25.18",
+  "updatedAt": "2026-11-16T00:16:21.329Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.25.18",
+      "build": 187,
+      "date": "2026-11-16",
+      "summary": "部署脚本拦住「私密仓库 + 公共加速代理」，并禁止 pull 停在用户名提示",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.25.17",
       "build": 186,

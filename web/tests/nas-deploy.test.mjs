@@ -363,7 +363,10 @@ git() {
       echo "${stderrText}" >&2
       return 1
       ;;
-    remote) echo "${origin}" ;;
+    remote)
+      if [ -z "${origin}" ]; then return 1; fi
+      echo "${origin}"
+      ;;
     rev-parse) echo "main" ;;
     *) return 0 ;;
   esac
@@ -423,4 +426,47 @@ test('pull 成功时静默通过，不打印任何错误指引', (t) => {
   const result = runStepPull({ ok: true })
   assert.equal(result.code, 0)
   assert.doesNotMatch(result.output, /错误|认证失败/)
+})
+
+test('origin 指向公共加速代理时提前拦下，并说明「私密仓库 + 代理」为什么不成立', (t) => {
+  if (!hasShell())
+    return t.skip('当前环境没有 sh')
+
+  // 实测踩过的坑：NAS 上 origin 是 gh-proxy，改私密后它取不到，
+  // git 退化成反复问 Username，脚本看起来像卡死。
+  const result = runStepPull({ origin: 'https://gh-proxy.org/https://github.com/602832789/qq-farm-bot.git' })
+  assert.equal(result.code, 1, '必须直接失败，不能再去等用户名')
+  assert.match(result.output, /加速代理/, '要点明代理不适用')
+  assert.match(result.output, /私密/, '要说明原因是仓库已转私密')
+  assert.match(result.output, /git remote set-url origin git@github\.com/, '给出改 SSH 的命令')
+  assert.match(result.output, /ssh\.github\.com/, '22 端口不通时要给出 443 方案')
+  assert.match(result.output, /服务没被动，仍在运行/, '要让用户知道线上没受影响')
+})
+
+test('SSH 直连（scp 形式）正常走 pull，不被误拦', (t) => {
+  if (!hasShell())
+    return t.skip('当前环境没有 sh')
+
+  const result = runStepPull({ origin: 'git@github.com:602832789/qq-farm-bot.git', ok: true })
+  assert.equal(result.code, 0, 'SSH 直连是推荐配置，不能拦')
+  assert.doesNotMatch(result.output, /加速代理/)
+})
+
+test('读不到 origin 时给出「确认是否在仓库根」而不是空报错', (t) => {
+  if (!hasShell())
+    return t.skip('当前环境没有 sh')
+
+  const result = runStepPull({ origin: '' })
+  assert.equal(result.code, 1)
+  assert.match(result.output, /读不到 origin 地址/)
+  assert.match(result.output, /git remote -v/)
+})
+
+test('pull 全部禁交互，不允许停下来问用户名', () => {
+  // 出现 Username 提示会让无人值守的部署脚本永久挂住，
+  // 所以每一处 pull 都必须带 GIT_TERMINAL_PROMPT=0。
+  const pulls = deployCode.split('\n').filter(line => /git pull --ff-only/.test(line))
+  assert.ok(pulls.length >= 3, `应覆盖三条 pull 路径，实际 ${pulls.length}`)
+  for (const line of pulls)
+    assert.match(line, /GIT_TERMINAL_PROMPT=0/, `这行缺少禁交互参数：${line.trim()}`)
 })

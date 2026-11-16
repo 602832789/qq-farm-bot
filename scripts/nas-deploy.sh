@@ -28,6 +28,10 @@
 #     —— 改用 SSH，需先把 NAS 的公钥加到仓库 Deploy keys（推荐，一次配好长期有效）
 #   GIT_TOKEN=<PAT> bash scripts/nas-deploy.sh
 #     —— 用访问令牌只跑这一次，不会写入 .git/config
+# 注意：origin 必须是 github.com 直连。公共加速代理（gh-proxy 之类）只转发
+# 公开仓库，私密仓库取不到，只会卡在反复要用户名；把令牌交给代理也等于公开凭据。
+# 22 端口不通时用 SSH over 443：
+#   ~/.ssh/config 写 Host github.com / HostName ssh.github.com / Port 443 / User git
 #
 # 修饰开关，可与任意模式组合：
 #   --prune-logs      额外截断应用日志卷里的日志（只截断，不删文件）
@@ -551,9 +555,42 @@ step_pull() {
   #      git remote set-url origin git@github.com:602832789/qq-farm-bot.git
   #   B. 访问令牌（只对本次执行生效，不写入 .git/config）
   #      GIT_TOKEN=<你的 PAT> bash scripts/nas-deploy.sh
-  # 失败时先把输出存下来再判断，避免 set -e 让脚本在诊断前就退出。
+  # 失败时先把输出存下来再判断，避免 set -e 让脚本在诊断前就退出；
+# GIT_TERMINAL_PROMPT=0 让「需要凭据」直接失败，而不是停下来等人敲用户名。
   pull_log="/tmp/.farm_pull.$$"
   pull_status=0
+
+  # 私密仓库必须直连 github.com。公共加速代理（gh-proxy 之类）只转发公开
+  # 仓库，私密仓库它根本取不到；而且把令牌交给第三方代理，等于把凭据交给它。
+  # 更要紧的是：代理拿不到会退化成「要用户名」，git 会停在那里等输入，
+  # 看起来像卡死。这里提前拦下，并给出改用 SSH 的具体命令。
+  origin_url=$(git remote get-url origin 2>/dev/null || echo "")
+  case "$origin_url" in
+    git@github.com:*|ssh://git@github.com/*|https://github.com/*|http://github.com/*)
+      ;;
+    *)
+      echo "" >&2
+      echo "[错误] 流水线停在这里。服务没被动，仍在运行。" >&2
+      if [ -z "$origin_url" ]; then
+        echo "  读不到 origin 地址（不在仓库根？）。先确认：git remote -v" >&2
+      else
+        echo "  origin 指向的不是 github.com 直连地址：" >&2
+        echo "    $origin_url" >&2
+        echo "  本仓库已转私密，公共 GitHub 加速代理（gh-proxy 等）不再适用：" >&2
+        echo "    1) 代理只转发公开仓库，私密仓库它取不到，只会退化成反复要用户名；" >&2
+        echo "    2) 把访问令牌交给第三方代理，等于把凭据交给它。" >&2
+        echo "  改成 SSH 直连后重跑：" >&2
+        echo "    git remote set-url origin git@github.com:602832789/qq-farm-bot.git" >&2
+        echo "  22 端口不通时，把下面四行写进 ~/.ssh/config，走 443：" >&2
+        echo "    Host github.com" >&2
+        echo "      HostName ssh.github.com" >&2
+        echo "      Port 443" >&2
+        echo "      User git" >&2
+      fi
+      rm -f "$pull_log"
+      exit 1
+      ;;
+  esac
 
   if [ -n "${GIT_TOKEN:-}" ]; then
     origin_url=$(git remote get-url origin 2>/dev/null || echo "")
@@ -562,18 +599,18 @@ step_pull() {
         # 一次性凭据 URL：token 不会落进 .git/config；跑完就从进程参数里消失。
         auth_url=$(printf '%s' "$origin_url" | sed "s|^https://github.com/|https://x-access-token:${GIT_TOKEN}@github.com/|")
         branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)
-        if ! git pull --ff-only "$auth_url" "$branch" > "$pull_log" 2>&1; then
+        if ! GIT_TERMINAL_PROMPT=0 git pull --ff-only "$auth_url" "$branch" > "$pull_log" 2>&1; then
           pull_status=1
         fi
         ;;
       *)
-        if ! git pull --ff-only > "$pull_log" 2>&1; then
+        if ! GIT_TERMINAL_PROMPT=0 git pull --ff-only > "$pull_log" 2>&1; then
           pull_status=1
         fi
         ;;
     esac
   else
-    if ! git pull --ff-only > "$pull_log" 2>&1; then
+    if ! GIT_TERMINAL_PROMPT=0 git pull --ff-only > "$pull_log" 2>&1; then
       pull_status=1
     fi
   fi
