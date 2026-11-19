@@ -140,8 +140,7 @@ watch(stellarDetailsAvailable, (available) => {
 
 onMounted(() => {
   activityStore.refresh(accountId())
-  // 活动中心默认进入奶茶热销中；点返回仍会回到活动目录选择其它活动。
-  selectedActivity.value = 'milk'
+  // 与 liyang 版一致：进活动中心先看活动目录，不自动跳进奶茶热销中。
 })
 onUnmounted(() => {
   window.clearTimeout(stellarAvailabilityTimer)

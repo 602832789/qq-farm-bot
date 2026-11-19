@@ -219,6 +219,76 @@ textarea * {
   --spring-pop-duration: 632ms;
 }
 
+/* ── 主题配色（桌面副本移植）────────────────────────────────────────────
+   只覆盖主色一族变量：--ui-primary / soft / fill、--theme-gradient 与
+   --theme-primary-rgb。背景、文字、阴影仍走各自的明暗主题，不动结构色，
+   避免换配色时整页对比度塌掉。默认（未设置 data-palette）就是清新绿。 */
+html[data-palette='blue'] {
+  --ui-primary: #2563eb;
+  --ui-primary-soft: #e8effd;
+  --ui-primary-fill: #2563eb;
+  --theme-gradient: linear-gradient(135deg, #60a5fa, #2563eb);
+  --theme-primary-rgb: 37, 99, 235;
+}
+html[data-palette='pink'] {
+  --ui-primary: #db2777;
+  --ui-primary-soft: #fdeaf3;
+  --ui-primary-fill: #db2777;
+  --theme-gradient: linear-gradient(135deg, #f472b6, #db2777);
+  --theme-primary-rgb: 219, 39, 119;
+}
+html[data-palette='orange'] {
+  --ui-primary: #ea580c;
+  --ui-primary-soft: #fdece1;
+  --ui-primary-fill: #ea580c;
+  --theme-gradient: linear-gradient(135deg, #fb923c, #ea580c);
+  --theme-primary-rgb: 234, 88, 12;
+}
+html[data-palette='purple'] {
+  --ui-primary: #7c3aed;
+  --ui-primary-soft: #efe8fd;
+  --ui-primary-fill: #7c3aed;
+  --theme-gradient: linear-gradient(135deg, #a78bfa, #7c3aed);
+  --theme-primary-rgb: 124, 58, 237;
+}
+html[data-palette='teal'] {
+  --ui-primary: #0f766e;
+  --ui-primary-soft: #e2f4f2;
+  --ui-primary-fill: #0f766e;
+  --theme-gradient: linear-gradient(135deg, #2dd4bf, #0f766e);
+  --theme-primary-rgb: 15, 118, 110;
+}
+html[data-palette='blue'].dark {
+  --ui-primary: #60a5fa;
+  --ui-primary-soft: rgba(96, 165, 250, 0.16);
+  --ui-primary-fill: #3b82f6;
+  --theme-primary-rgb: 96, 165, 250;
+}
+html[data-palette='pink'].dark {
+  --ui-primary: #f472b6;
+  --ui-primary-soft: rgba(244, 114, 182, 0.16);
+  --ui-primary-fill: #db2777;
+  --theme-primary-rgb: 244, 114, 182;
+}
+html[data-palette='orange'].dark {
+  --ui-primary: #fb923c;
+  --ui-primary-soft: rgba(251, 146, 60, 0.16);
+  --ui-primary-fill: #ea580c;
+  --theme-primary-rgb: 251, 146, 60;
+}
+html[data-palette='purple'].dark {
+  --ui-primary: #a78bfa;
+  --ui-primary-soft: rgba(167, 139, 250, 0.16);
+  --ui-primary-fill: #7c3aed;
+  --theme-primary-rgb: 167, 139, 250;
+}
+html[data-palette='teal'].dark {
+  --ui-primary: #2dd4bf;
+  --ui-primary-soft: rgba(45, 212, 191, 0.16);
+  --ui-primary-fill: #0f766e;
+  --theme-primary-rgb: 45, 212, 191;
+}
+
 .dark {
   --fw-300: 260;
   --fw-400: 360;

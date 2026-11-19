@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { NButton } from 'naive-ui/es/button'
 import { storeToRefs } from 'pinia'
-import { computed, ref, watch } from 'vue'
-import { BUCKETS, formatCount, formatDuration, formatHours, RANCH_IMAGE, sortFacilities, useRanchClock, useRanchLoader, useRanchUnmountReset } from '@/components/ranch/ranch-shared'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { BUCKETS, formatCount, formatHours, RANCH_IMAGE, sortFacilities, useRanchLoader, useRanchUnmountReset } from '@/components/ranch/ranch-shared'
 import RanchGate from '@/components/ranch/RanchGate.vue'
 import RunLogCard from '@/components/RunLogCard.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
@@ -10,21 +10,19 @@ import EmptyState from '@/components/ui/EmptyState.vue'
 import { getPlatformLabel, useAccountStore } from '@/stores/account'
 import { useRanchStore } from '@/stores/ranch'
 import { useStatusStore } from '@/stores/status'
+import { ranchActionIcons, ranchActionLabels, ranchTodayOperations } from '@/utils/ranch-display'
 
 const accountStore = useAccountStore()
 const { currentAccountId, currentAccount } = storeToRefs(accountStore)
 const { status, currentAccountConnected: isOnline } = storeToRefs(useStatusStore())
 const { state, loading } = storeToRefs(useRanchStore())
 const { refresh } = useRanchLoader('animals')
-const { remainingSeconds } = useRanchClock()
 useRanchUnmountReset()
 
 const facilities = computed<any[]>(() => sortFacilities(state.value?.facilities || []))
 const pens = computed(() => facilities.value.filter(f => f.ranch))
 const animals = computed(() => pens.value.flatMap(f => (f.ranch.animals || []).map((animal: any) => ({ animal, pen: f.name }))))
 const capacity = computed(() => pens.value.reduce((sum, f) => sum + (Number(f.ranch.capacity) || 0), 0))
-const shelvesReady = computed(() => pens.value.reduce((sum, f) => sum + f.ranch.shelves.filter((s: any) => s.canCollect).length, 0))
-const hazards = computed(() => pens.value.reduce((sum, f) => sum + (f.ranch.hazards?.length || 0), 0))
 const blocked = computed(() => animals.value.filter(({ animal }) => animal.grassBlocked).length)
 
 const displayName = computed(() => {
@@ -70,24 +68,54 @@ const stockTiles = computed(() => {
   ]
 })
 
-const todo = computed(() => [
-  { key: 'harvest', label: '可收获', icon: 'i-carbon-wheat text-amber-500', value: animals.value.filter(({ animal }) => animal.canHarvest).length + shelvesReady.value },
-  { key: 'produce', label: '可生产', icon: 'i-carbon-circle-dash text-green-500', value: animals.value.filter(({ animal }) => animal.canProduce).length },
-  { key: 'feed', label: '可喂养', icon: 'i-carbon-flash text-sky-500', value: animals.value.filter(({ animal }) => animal.canFeed).length },
-  { key: 'clean', label: '待清理', icon: 'i-carbon-clean text-violet-400', value: hazards.value },
-])
+/* ── 下次检查倒计时 / 今日统计 ─────────────────────────────────────
+   位置与农场首页右侧那两栏一致：先倒计时、再今日统计，
+   倒计时三环（任务 / 分享 / 福利）来自牧场的每日例程。 */
+const now = ref(Date.now())
+const ticker = window.setInterval(() => { now.value = Date.now() }, 1000)
+onBeforeUnmount(() => window.clearInterval(ticker))
 
-function facilityMeter(f: any) {
-  if (f.state === 2)
-    return { text: '待建造', percent: 0 }
-  if (f.upgradeState)
-    return { text: `升级中 · ${formatDuration(remainingSeconds(f.upgradeEndTime))}`, percent: 0 }
-  if (f.ranch)
-    return { text: `${f.ranch.count} / ${f.ranch.capacity}`, percent: f.ranch.capacity ? f.ranch.count / f.ranch.capacity * 100 : 0 }
-  if (f.feed)
-    return { text: `牧草 ${f.feed.count} / ${f.capacity}`, percent: f.capacity ? f.feed.count / f.capacity * 100 : 0 }
-  return { text: `容量 ${f.capacity}`, percent: 0 }
+const RANCH_CHECKS = [
+  { key: 'task', label: '任务', icon: 'i-carbon-task', color: '#22c55e' },
+  { key: 'share', label: '分享', icon: 'i-carbon-share', color: '#3b82f6' },
+  { key: 'benefit', label: '福利', icon: 'i-carbon-gift', color: '#f97316' },
+]
+
+function formatCountdown(seconds: number) {
+  if (seconds <= 0)
+    return '00:00:00'
+  const d = Math.floor(seconds / 86400)
+  const h = Math.floor(seconds % 86400 / 3600)
+  const m = Math.floor(seconds % 3600 / 60)
+  const s = Math.floor(seconds % 60)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return d > 0 ? `${d}天 ${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(h)}:${pad(m)}:${pad(s)}`
 }
+
+const checks = computed(() => RANCH_CHECKS.map((item) => {
+  const queue = state.value?.nextChecks?.[item.key]
+  const remain = Math.max(0, Math.ceil(((Number(queue?.nextAt) || 0) - now.value) / 1000))
+  const ready = !!queue?.done && !remain
+  const value = !queue
+    ? '读取中'
+    : !queue.enabled
+      ? '未开启'
+      : queue.done && !queue.nextAt
+        ? '已完成'
+        : remain > 0 ? formatCountdown(remain) : '检查中…'
+  // 进度环：没有下一次检查时间就按「本轮已完成」画满。
+  const progress = queue && queue.enabled ? (queue.nextAt ? Math.min(100, Math.max(0, 100 - remain / Math.max(1, Math.round((Number(queue.nextAt) - Number(queue.lastAt || 0)) / 1000)) * 100)) : 100) : 0
+  return { ...item, value, progress: ready ? 100 : progress }
+}))
+
+const todayKey = computed(() => {
+  const d = new Date(now.value)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+})
+
+const todayOperations = computed(() => ranchTodayOperations(state.value?.operations, state.value?.operationsDate, todayKey.value))
+const operationEntries = computed(() => Object.entries(todayOperations.value).filter(([, count]) => Number(count) > 0))
 </script>
 
 <template>
@@ -179,40 +207,67 @@ function facilityMeter(f: any) {
         <RunLogCard />
 
         <div class="min-w-0 flex flex-col gap-6 md:w-1/4">
-          <!-- 待处理：对应农场的“今日统计” -->
+          <!-- 下次检查倒计时：与农场首页同位置、同三环布局 -->
           <section class="farm-card rounded-2xl p-5">
-            <header class="ranch-card-head">
-              <h3 class="flex items-center gap-2 text-lg font-display font-medium">
-                <span class="i-carbon-task" /> <span>待处理</span>
-              </h3>
-              <BaseButton variant="text" size="sm" to="/ranch/personal">
-                管理动物<span class="i-carbon-chevron-right" aria-hidden="true" />
-              </BaseButton>
-            </header>
-            <div class="grid grid-cols-2 gap-2 2xl:gap-3">
-              <div v-for="item in todo" :key="item.key" class="ranch-todo" :class="{ 'is-zero': !item.value }">
-                <div class="flex items-center gap-2">
-                  <span class="select-none text-base" :class="item.icon" />
-                  <span class="text-xs text-gray-500">{{ item.label }}</span>
+            <h3 class="mb-3 flex items-center gap-2 text-lg font-display font-medium">
+              <span class="i-carbon-hourglass" /> <span>下次检查倒计时</span>
+            </h3>
+            <div class="grid grid-cols-3 gap-2">
+              <div
+                v-for="check in checks"
+                :key="check.key"
+                class="min-w-0 flex flex-col items-center text-center"
+              >
+                <div
+                  class="h-18 w-18 flex items-center justify-center rounded-full p-1"
+                  :style="{ background: `conic-gradient(${check.color} ${check.progress}%, color-mix(in srgb, ${check.color} 14%, transparent) 0)` }"
+                >
+                  <div class="h-full w-full flex flex-col items-center justify-center rounded-full bg-white dark:bg-gray-800">
+                    <span :class="check.icon" class="text-xl" :style="{ color: check.color }" aria-hidden="true" />
+                    <span class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{{ check.label }}</span>
+                  </div>
                 </div>
-                <b>{{ item.value }}</b>
+                <div class="mt-1.5 w-full truncate text-sm font-bold font-mono 2xl:text-base" :title="check.value">
+                  {{ check.value }}
+                </div>
               </div>
             </div>
           </section>
 
-          <!-- 设施 -->
+          <!-- 今日统计：牧场动作计数，位置与农场首页一致 -->
           <section class="farm-card rounded-2xl p-5">
-            <h3 class="mb-4 flex items-center gap-2 text-lg font-display font-medium">
-              <span class="i-carbon-building" /> <span>牧场设施</span>
+            <h3 class="mb-3 flex items-center justify-between gap-2 text-lg font-display font-medium">
+              <span class="flex items-center gap-2"><span class="i-carbon-chart-column" /> <span>今日统计</span></span>
+              <span class="text-xs text-gray-400 font-normal">{{ operationEntries.length }} 项有记录</span>
             </h3>
-            <div class="ranch-facilities">
-              <div v-for="f in facilities" :key="f.id" class="ranch-facility" :class="{ 'is-pending': f.state === 2 }">
-                <div class="ranch-facility__row">
-                  <span class="ranch-facility__name">{{ f.name }}<small>Lv.{{ f.level }}</small></span>
-                  <span class="ranch-facility__value">{{ facilityMeter(f).text }}</span>
+            <EmptyState
+              v-if="!isOnline"
+              bare
+              title="账号未登录"
+              description="启动账号后显示牧场操作统计"
+              icon="i-carbon-connection-signal-off"
+            />
+            <div v-else-if="!operationEntries.length" class="flex flex-col items-center justify-center gap-1 py-6 text-center">
+              <span class="i-fas-paw text-3xl text-gray-300 dark:text-gray-600" />
+              <strong class="text-sm text-gray-700 dark:text-gray-200">今天还没有牧场操作</strong>
+              <p class="text-xs text-gray-400">
+                收获、喂养、清理等动作完成后会在这里累计。
+              </p>
+            </div>
+            <div v-else class="grid grid-cols-2 gap-2 2xl:gap-3" role="region" aria-label="今日牧场动作统计">
+              <div
+                v-for="[key, val] in operationEntries"
+                :key="key"
+                class="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2 dark:bg-gray-700/30"
+              >
+                <div class="min-w-0 flex items-center gap-2">
+                  <span class="select-none text-base text-teal-600 2xl:text-lg" :class="ranchActionIcons[key] || 'i-carbon-chart-column'" />
+                  <div class="truncate text-xs text-gray-500 2xl:text-sm" :title="ranchActionLabels[key] || key">
+                    {{ ranchActionLabels[key] || key }}
+                  </div>
                 </div>
-                <div class="ranch-facility__track" aria-hidden="true">
-                  <i :style="{ width: `${Math.min(100, facilityMeter(f).percent)}%` }" />
+                <div class="text-sm font-bold 2xl:text-base">
+                  {{ val }}
                 </div>
               </div>
             </div>

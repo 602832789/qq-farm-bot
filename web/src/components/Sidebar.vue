@@ -5,6 +5,7 @@ import { storeToRefs } from 'pinia'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/api'
+import ThemePalette from '@/components/ThemePalette.vue'
 import ThemeSwitcher from '@/components/ThemeSwitcher.vue'
 import { isMenuActive, menuLink, visibleMenuRoutes } from '@/router/menu'
 import { isRanchMenuActive, ranchMenu } from '@/router/ranch-menu'
@@ -134,7 +135,7 @@ interface NavItem {
 const farmItems = computed<NavItem[]>(() => visibleMenuRoutes().map(item => ({
   key: item.name,
   to: menuLink(item),
-  label: item.navLabel || item.label,
+  label: item.label,
   icon: item.icon,
   active: isMenuActive(item, route.path),
 })))
@@ -285,7 +286,10 @@ watch(
       </div>
       <div class="mt-3 flex items-center justify-between gap-1">
         <span class="text-[11px] text-[var(--muted-text)] tabular-nums">{{ formattedTime }}</span>
-        <ThemeSwitcher />
+        <div class="flex items-center gap-0.5">
+          <ThemePalette />
+          <ThemeSwitcher />
+        </div>
       </div>
       <div class="mt-2 flex items-center justify-between text-[11px] text-[var(--muted-text)]">
         <span>{{ versionLabel }}</span>
@@ -411,22 +415,21 @@ watch(
   position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 46px;
+  gap: 12px;
+  min-height: 44px;
   margin-bottom: 2px;
-  padding: 5px 8px;
+  padding: 6px 8px;
   border-radius: 12px;
   color: var(--theme-text);
   font-size: 14px;
-  opacity: 0.82;
+  font-weight: 500;
+  opacity: 1;
   transition:
-    background 150ms,
-    color 150ms,
-    opacity 150ms;
+    background 150ms ease,
+    color 150ms ease;
 }
 .farm-nav-item:hover {
   background: var(--surface-2);
-  opacity: 1;
 }
 .farm-nav-icon {
   display: inline-grid;
@@ -434,12 +437,12 @@ watch(
   height: 36px;
   flex: none;
   place-items: center;
-  border-radius: 10px;
-  color: color-mix(in srgb, var(--theme-text) 58%, transparent);
-  font-size: 21px;
+  border-radius: 9px;
+  color: color-mix(in srgb, var(--theme-text) 62%, transparent);
+  font-size: 22px;
   transition:
-    background 150ms,
-    color 150ms;
+    background 150ms ease,
+    color 150ms ease;
 }
 .farm-nav-item:hover .farm-nav-icon {
   background: color-mix(in srgb, var(--theme-text) 7%, transparent);

@@ -21,7 +21,7 @@ export const ranchMenu: RanchMenuItem[] = [
   { path: '/ranch/activity', name: 'ranch-activity', label: '活动', icon: 'i-carbon-gift', mobileLabel: '活动' },
   { path: '/ranch/friends', name: 'ranch-friends', label: '好友', icon: 'i-carbon-user-multiple' },
   { path: '/ranch/strategy', name: 'ranch-strategy', label: '策略', icon: 'i-carbon-settings-adjust' },
-  { path: '/ranch/game-mall', name: 'ranch-game-mall', label: '游戏商城', icon: 'i-carbon-shopping-cart', mobileLabel: '商城' },
+  { path: '/ranch/game-mall', name: 'ranch-game-mall', label: '商城', icon: 'i-carbon-shopping-cart', mobileLabel: '商城' },
   { path: '/ranch/settings', name: 'ranch-settings', label: '设置', icon: 'i-carbon-settings', mobileLabel: '设置' },
 ]
 

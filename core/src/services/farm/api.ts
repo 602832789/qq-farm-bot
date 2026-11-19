@@ -41,6 +41,12 @@ async function fetchAllLandsRaw(): Promise<any> {
     const { body: replyBody } = await sendMsgAsync('gamepb.plantpb.PlantService', 'AllLands', body);
     const reply = types.AllLandsReply.decode(replyBody);
     forecast.rememberLandForecast(reply.lands, getUserState(), revision);
+    // 顺手记一份成熟时刻，供好友页「外挂检测」判定秒偷。
+    try {
+        if (process.env.FARM_ACCOUNT_ID)
+            require('../friend/cheat-detect').recordOwnMaturityHistory(reply.lands);
+    }
+    catch { /* 采样失败不影响巡田 */ }
     // 更新操作限制
     if (reply.operation_limits && onOperationLimitsUpdate) {
         onOperationLimitsUpdate(reply.operation_limits);
@@ -122,12 +128,27 @@ async function fertilizeOne(landId: number, fertilizerId: number = NORMAL_FERTIL
 async function fertilizeBatch(landIds: number[], fertilizerId: number, options: { validateBeforeSend?: () => void } = {}): Promise<any> {
     if (typeof options?.validateBeforeSend === 'function')
         options.validateBeforeSend();
-    const body = types.FertilizeRequest.encode(types.FertilizeRequest.create({
-        land_ids: landIds.map((landId: number) => toLong(landId)),
-        fertilizer_id: toLong(fertilizerId),
-    })).finish();
-    const { body: replyBody } = await sendMsgAsync('gamepb.plantpb.PlantService', 'Fertilize', body);
-    const reply = types.FertilizeReply.decode(replyBody);
+    const send = async () => {
+        const body = types.FertilizeRequest.encode(types.FertilizeRequest.create({
+            land_ids: landIds.map((landId: number) => toLong(landId)),
+            fertilizer_id: toLong(fertilizerId),
+        })).finish();
+        const { body: replyBody } = await sendMsgAsync('gamepb.plantpb.PlantService', 'Fertilize', body);
+        return types.FertilizeReply.decode(replyBody);
+    };
+    let reply: any;
+    try {
+        reply = await send();
+    }
+    catch (error: any) {
+        // 一键施肥撞上空容器时补一次货再重发，避免整批被网关直接拒掉。
+        if (getGatewayErrorCode(error) !== FERTILIZER_CONTAINER_EMPTY_CODE)
+            throw error;
+        const refilled = await refillFertilizer(Number(fertilizerId) === 1012 ? 'organic' : 'normal');
+        if (!refilled)
+            throw error;
+        reply = await send();
+    }
     if (reply.operation_limits && onOperationLimitsUpdate) {
         onOperationLimitsUpdate(reply.operation_limits);
     }
@@ -146,32 +167,115 @@ function isSkippableFertilizeLandError(error: any): boolean {
     return code === 1001024 || code === 1001025;
 }
 
+/** 化肥容器不足：施肥请求被网关拒绝，需要先补货。 */
+const FERTILIZER_CONTAINER_EMPTY_CODE = 1000019;
+const fertilizerRefillInFlight: { normal: Promise<boolean> | null; organic: Promise<boolean> | null } = { normal: null, organic: null };
+
+/**
+ * 施肥时发现容器空了就地补一次化肥。
+ *
+ * 原来的补货只挂在「化肥自动购买」的定时器上（默认 30 分钟一轮），
+ * 巡田施肥一密集就会在两次补货之间撞上空容器，日志里就是
+ * `Fertilize code=1000019 普通化肥容器不足`。这里改成被动触发：
+ * 撞到 1000019 就按用户已配置的数量/阈值立刻买一次，然后重试当前地块。
+ * 购买开关没开时直接返回 false，保持「用户没要求就别花钱」。
+ */
+async function refillFertilizer(type: 'normal' | 'organic'): Promise<boolean> {
+    const store = require('../../models/store');
+    if (typeof store.isAutomationOn === 'function' && !store.isAutomationOn(`fertilizer_buy_${type}`))
+        return false;
+
+    const pending = fertilizerRefillInFlight[type];
+    if (pending) return pending;
+
+    const count = type === 'organic'
+        ? Number(store.getFertilizerBuyOrganicCount?.() ?? 0)
+        : Number(store.getFertilizerBuyNormalCount?.() ?? 0);
+    if (!Number.isFinite(count) || count <= 0) return false;
+
+    const options = type === 'organic'
+        ? { buyOrganic: true, organicCount: count, organicThresholdHours: Number(store.getFertilizerBuyOrganicThresholdHours?.() ?? 0) }
+        : { buyNormal: true, normalCount: count, normalThresholdHours: Number(store.getFertilizerBuyNormalThresholdHours?.() ?? 0) };
+
+    const task = (async () => {
+        try {
+            const { checkAndBuyFertilizerBoth } = require('../mall');
+            const result = await checkAndBuyFertilizerBoth(options, false);
+            const bought = Number(type === 'organic' ? result?.organicBought : result?.normalBought) || 0;
+            if (bought > 0) {
+                log('施肥', `${type === 'organic' ? '有机' : '普通'}化肥容器已空，已自动补货 ${bought} 个`, {
+                    module: 'farm',
+                    event: 'fertilizer_refill',
+                    result: 'ok',
+                    type,
+                    count: bought,
+                });
+            }
+            else {
+                logWarn('施肥', `${type === 'organic' ? '有机' : '普通'}化肥容器不足，自动补货未成功（检查购买开关、金币或商城库存）`, {
+                    module: 'farm',
+                    event: 'fertilizer_refill',
+                    result: 'skip',
+                    type,
+                });
+            }
+            return bought > 0;
+        }
+        catch (error: any) {
+            logWarn('施肥', `化肥自动补货失败: ${error?.message || error}`, {
+                module: 'farm',
+                event: 'fertilizer_refill',
+                result: 'error',
+                type,
+                error: String(error?.message || error),
+            });
+            return false;
+        }
+        finally {
+            fertilizerRefillInFlight[type] = null;
+        }
+    })();
+    fertilizerRefillInFlight[type] = task;
+    return task;
+}
+
 /**
  * 自动施肥保留逐块执行方式；手动一键施肥使用 fertilizeBatch。
  * 游戏中拖动施肥间隔很短，这里用 50ms
  */
 async function fertilize(landIds: number[], fertilizerId: number = NORMAL_FERTILIZER_ID, propagateErrors: boolean = false): Promise<number> {
     let successCount: number = 0;
+    const fertilizerType: 'normal' | 'organic' = Number(fertilizerId) === 1012 ? 'organic' : 'normal';
+    let refillAttempted: boolean = false;
     for (const landId of landIds) {
-        try {
-            const body = types.FertilizeRequest.encode(types.FertilizeRequest.create({
-                land_ids: [toLong(landId)],
-                fertilizer_id: toLong(fertilizerId),
-            })).finish();
-            await sendMsgAsync('gamepb.plantpb.PlantService', 'Fertilize', body);
-            successCount++;
-        } catch (error) {
-            if (isSkippableFertilizeLandError(error)) {
-                log('施肥', `第 ${landId} 块地当前不能施肥，已跳过`, {
-                    module: 'farm',
-                    event: '施肥',
-                    result: 'skip',
-                    landId,
-                    code: getGatewayErrorCode(error),
-                });
-            } else if (propagateErrors) {
-                throw error;
-            } else {
+        for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+                const body = types.FertilizeRequest.encode(types.FertilizeRequest.create({
+                    land_ids: [toLong(landId)],
+                    fertilizer_id: toLong(fertilizerId),
+                })).finish();
+                await sendMsgAsync('gamepb.plantpb.PlantService', 'Fertilize', body);
+                successCount++;
+                break;
+            } catch (error: any) {
+                const code = getGatewayErrorCode(error);
+                // 容器不足：补一次货，成功就重试同一块地，别把这一轮施肥白丢掉。
+                if (code === FERTILIZER_CONTAINER_EMPTY_CODE && !refillAttempted) {
+                    refillAttempted = true;
+                    const refilled = await refillFertilizer(fertilizerType);
+                    if (refilled) continue;
+                }
+                if (isSkippableFertilizeLandError(error)) {
+                    log('施肥', `第 ${landId} 块地当前不能施肥，已跳过`, {
+                        module: 'farm',
+                        event: '施肥',
+                        result: 'skip',
+                        landId,
+                        code,
+                    });
+                } else if (propagateErrors) {
+                    throw error;
+                }
                 break;
             }
         }

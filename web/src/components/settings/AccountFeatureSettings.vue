@@ -67,6 +67,21 @@ const moduleInfo: Record<ModuleKey, { title: string, description: string, icon: 
 }
 
 const activeInfo = computed(() => activeModule.value ? moduleInfo[activeModule.value] : null)
+
+/**
+ * 功能模块分三大类（参考 BUGDey 版的排序与分类）：
+ * 农场 → 牧场 → 活动。分类只影响展示顺序，开关与弹窗逻辑保持原样。
+ */
+const MODULE_GROUPS: Array<{ key: string, label: string, icon: string, description: string, modules: ModuleKey[] }> = [
+  { key: 'farm', label: '农场', icon: 'i-carbon-sprout', description: '种植、土地、好友互动、神秘商人与宠物', modules: ['planting', 'fertilizer', 'friends', 'steal', 'merchant', 'pet'] },
+  { key: 'ranch', label: '牧场', icon: 'i-fas-paw', description: '牧场养殖、收获与好友互动', modules: ['ranch'] },
+  { key: 'activity', label: '活动', icon: 'i-carbon-events', description: '日常任务、节令活动与限时道具', modules: ['activity'] },
+]
+
+const moduleGroups = computed(() => MODULE_GROUPS.map(group => ({
+  ...group,
+  items: group.modules.filter(key => moduleInfo[key]).map(key => ({ key, info: moduleInfo[key]! })),
+})).filter(group => group.items.length > 0))
 const fertilizerName = computed(() => props.fertilizerOptions.find(item => item.value === automation.value.automation.fertilizer)?.label || '未设置')
 const selectedLandNames = computed(() => props.fertilizerLandTypeOptions.filter(item => automation.value.automation.fertilizer_land_types?.includes(item.value)).map(item => item.label))
 const selectedLandTypeCount = computed(() => Array.isArray(automation.value.automation.fertilizer_land_types) ? automation.value.automation.fertilizer_land_types.length : 0)
@@ -312,12 +327,21 @@ function cancel() {
         <span class="ml-auto text-xs">已开启 {{ Object.keys(moduleInfo).filter(key => moduleEnabled(key as ModuleKey)).length }} / {{ Object.keys(moduleInfo).length }} 项</span>
       </div>
 
-      <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <article
-          v-for="(info, key) in moduleInfo"
-          :key="key"
-          class="group min-h-[184px] flex flex-col border border-gray-200 rounded-lg bg-white p-4 transition dark:border-gray-700 hover:border-[var(--theme-primary)] dark:bg-gray-800 hover:shadow-sm"
-        >
+      <div v-for="group in moduleGroups" :key="group.key" class="space-y-3">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="inline-grid h-6 w-6 place-items-center rounded-md bg-[var(--ui-primary-soft)] text-sm text-[var(--ui-primary)]" :class="group.icon" />
+          <h4 class="text-sm text-gray-800 font-semibold dark:text-gray-100">
+            {{ group.label }}
+          </h4>
+          <span class="text-xs text-gray-400">{{ group.description }}</span>
+          <span class="ml-auto text-xs text-gray-400">{{ group.items.length }} 个模块</span>
+        </div>
+        <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <article
+            v-for="{ key, info } in group.items"
+            :key="key"
+            class="group min-h-[184px] flex flex-col border border-gray-200 rounded-lg bg-white p-4 transition dark:border-gray-700 hover:border-[var(--theme-primary)] dark:bg-gray-800 hover:shadow-sm"
+          >
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0 flex items-center gap-3">
               <img v-if="info.image" :src="info.image" alt="" class="h-10 w-10 shrink-0 rounded-lg bg-gray-100 object-contain p-1.5 dark:bg-gray-700">
@@ -358,7 +382,8 @@ function cancel() {
               配置
             </BaseButton>
           </div>
-        </article>
+          </article>
+        </div>
       </div>
     </template>
 

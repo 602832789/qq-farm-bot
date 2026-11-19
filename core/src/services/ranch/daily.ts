@@ -171,4 +171,29 @@ function markTasksChanged(): void {
     if (tasks.result !== 'error') tasks.nextCheckAt = 0;
 }
 
-module.exports = { claimShare, claimTasks, claimBenefit, getBenefitRoutineState, getShareRoutineState, getTaskRoutineState, getOverview, markTasksChanged };
+/**
+ * 牧场概览的三条倒计时：任务 / 分享 / 福利。
+ *
+ * 这三项都是「到了下一次检查时间才会再跑」的每日例程，天然适合做倒计时；
+ * 真正执行与否仍由 automation 开关决定，这里只把开关状态一并带出去，
+ * 前端据此显示「未开启 / 已完成 / 倒计时」。
+ */
+function getRoutineChecks(): any {
+    const auto = getAutomation() || {};
+    tasks = today(tasks);
+    share = today(share);
+    benefit = today(benefit);
+    const row = (state: RoutineState, enabled: boolean) => ({
+        enabled,
+        done: !!state.doneToday && state.result !== 'error',
+        nextAt: Number(state.nextCheckAt) > 0 ? Number(state.nextCheckAt) : 0,
+        lastAt: Number(state.lastAt) || 0,
+    });
+    return {
+        task: row(tasks, auto.ranch_task !== false),
+        share: row(share, auto.ranch_share !== false),
+        benefit: row(benefit, auto.ranch_daily_benefit !== false),
+    };
+}
+
+module.exports = { claimShare, claimTasks, claimBenefit, getBenefitRoutineState, getShareRoutineState, getTaskRoutineState, getOverview, getRoutineChecks, markTasksChanged };

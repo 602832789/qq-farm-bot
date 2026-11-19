@@ -14,7 +14,6 @@ import { getPlatformLabel, useAccountStore } from '@/stores/account'
 import { useBagStore } from '@/stores/bag'
 import { useStatusStore } from '@/stores/status'
 import { useToastStore } from '@/stores/toast'
-import { milkTeaCountdown } from '@/utils/dashboard-activity-check'
 import { partitionOperations } from '@/utils/dashboard-operations'
 import { compactRuntimeLogs, matchesRuntimeLog, normalizeRuntimeLog } from '@/utils/runtime-log'
 
@@ -204,7 +203,6 @@ const localUptime = computed(() => {
   const drift = Math.max(0, (countdownNow.value - uptimeAnchorAt.value) / 1000)
   return Math.floor(uptimeAnchorSec.value + drift)
 })
-const milkTeaCheck = computed(() => milkTeaCountdown(status.value?.nextChecks?.milkTea, countdownNow.value))
 const farmCountdownTotal = ref(1)
 const helpCountdownTotal = ref(1)
 const stealCountdownTotal = ref(1)
@@ -223,6 +221,14 @@ function syncCountdownTotal(total: typeof farmCountdownTotal, remain: number, pr
 
 function getCountdownProgress(remain: number, total: number) {
   return Math.max(0, Math.min(100, (remain / Math.max(1, total)) * 100))
+}
+
+/** 环形进度：与桌面副本一致，用 conic-gradient 画圆环，外圈颜色按模块区分。 */
+function getCountdownRingStyle(remain: number, total: number, color: string) {
+  const progress = getCountdownProgress(remain, total)
+  return {
+    background: `conic-gradient(${color} ${progress}%, color-mix(in srgb, ${color} 14%, transparent) 0)`,
+  }
 }
 
 function updateCountdowns() {
@@ -363,34 +369,26 @@ interface DashboardCheck {
 const countdowns = computed((): DashboardCheck[] => [
   {
     key: 'farm',
-    label: '农场巡查',
+    label: '农场',
     icon: 'i-carbon-sprout',
     time: nextFarmCheck.value,
     progress: getCountdownProgress(localNextFarmRemainSec, farmCountdownTotal.value),
   },
   {
     key: 'help',
-    label: '好友帮助',
-    icon: 'i-carbon-rain-drop',
+    label: '帮助',
+    icon: 'i-carbon-user-multiple',
     time: nextHelpCheck.value,
     progress: helpEnabled ? getCountdownProgress(localNextHelpRemainSec, helpCountdownTotal.value) : 0,
     description: helpEnabled ? '与偷菜同轮好友巡查' : '好友帮助已关闭',
   },
   {
     key: 'steal',
-    label: '好友偷菜',
+    label: '偷菜',
     icon: 'i-carbon-run',
     time: nextStealCheck.value,
     progress: stealEnabled ? getCountdownProgress(localNextStealRemainSec, stealCountdownTotal.value) : 0,
     description: stealEnabled ? '与帮助同轮好友巡查' : '好友偷菜已关闭',
-  },
-  {
-    key: 'milk-tea',
-    label: '奶茶自动化',
-    icon: 'i-carbon-cafe',
-    time: milkTeaCheck.value.time,
-    progress: milkTeaCheck.value.progress,
-    description: milkTeaCheck.value.description,
   },
 ])
 
@@ -1022,29 +1020,31 @@ useIntervalFn(updateCountdowns, 1000)
 
       <!-- Right Column Stack -->
       <div class="min-w-0 flex flex-col gap-6 md:w-1/4 md:self-start">
-        <!-- 自动巡查：旧版四项倒计时 -->
-        <section class="dashboard-checks farm-card rounded-2xl bg-white p-5 shadow-md dark:bg-gray-800">
-          <div class="dashboard-panel-heading">
-            <h2>自动巡查</h2>
+        <!-- 下次检查倒计时：桌面副本的三环布局（农场 / 帮助 / 偷菜） -->
+        <section class="farm-card rounded-2xl bg-white p-5 shadow-md dark:bg-gray-800">
+          <h3 class="mb-3 flex items-center justify-between gap-2 text-lg font-display font-medium">
+            <span class="flex items-center gap-2"><span class="i-carbon-hourglass" /> <span>下次检查倒计时</span></span>
             <span class="dashboard-sync" :class="{ 'is-online': checksReady }">
               <span class="dashboard-sync-dot" />{{ syncLabel }}
             </span>
-          </div>
-          <div
-            v-for="check in countdowns"
-            :key="check.key"
-            class="dashboard-check"
-            :class="`dashboard-check--${check.key}`"
-          >
-            <span class="dashboard-check-icon"><span :class="check.icon" aria-hidden="true" /></span>
-            <div class="dashboard-check-info">
-              <h3>{{ check.label }}</h3>
-              <p>{{ checksReady ? check.description || '下次检查倒计时' : syncLabel }}</p>
-            </div>
-            <div class="dashboard-check-time">
-              {{ checksReady ? check.time : '—' }}
-              <div class="dashboard-check-progress">
-                <span :style="{ width: `${checksReady ? check.progress : 0}%` }" />
+          </h3>
+          <div class="grid grid-cols-3 gap-2">
+            <div
+              v-for="check in countdowns"
+              :key="check.key"
+              class="min-w-0 flex flex-col items-center text-center"
+            >
+              <div
+                class="h-18 w-18 flex items-center justify-center rounded-full p-1"
+                :style="getCountdownRingStyle(check.progress, 100, check.key === 'farm' ? '#22c55e' : check.key === 'help' ? '#3b82f6' : '#f97316')"
+              >
+                <div class="h-full w-full flex flex-col items-center justify-center rounded-full bg-white dark:bg-gray-800">
+                  <span :class="check.icon" class="text-xl" :style="{ color: check.key === 'farm' ? '#22c55e' : check.key === 'help' ? '#3b82f6' : '#f97316' }" aria-hidden="true" />
+                  <span class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{{ check.label }}</span>
+                </div>
+              </div>
+              <div class="mt-1.5 w-full truncate text-sm font-bold font-mono 2xl:text-base" :title="checksReady ? check.time : syncLabel">
+                {{ checksReady ? check.time : '—' }}
               </div>
             </div>
           </div>

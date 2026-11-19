@@ -271,7 +271,7 @@ function unknown(action: string, reason: string): never {
     throw error('RANCH_RESULT_UNKNOWN', `${LABELS[action]}结果未能确认：${reason}，请刷新核对，勿重复提交`);
 }
 
-async function operate(action: string, input: any = {}): Promise<any> {
+async function operateCore(action: string, input: any = {}): Promise<any> {
     if (['stroke', 'putMosquito', 'cleanFriend'].includes(action)) return require('./friends').interact(action, input);
     if (action === 'acknowledge') return inScene(async () => {
         reservations.forCurrentAccount().acknowledge(String(input.id));
@@ -403,6 +403,20 @@ async function operate(action: string, input: any = {}): Promise<any> {
                 harvestedAnimals: action === 'harvest' ? reply.op_results.filter((entry: any) => entry.kind === 1).length : 0 };
         });
     }));
+}
+
+/** 牧场动作统一入口：执行成功后记一次当日统计，供概览的「今日统计」展示。 */
+async function operate(action: string, input: any = {}): Promise<any> {
+    const result = await operateCore(action, input);
+    if (result && result.status === 'confirmed' && action !== 'acknowledge') {
+        try {
+            require('./stats').recordAction(action);
+        }
+        catch {
+            // 统计失败不影响动作结果
+        }
+    }
+    return result;
 }
 
 module.exports = { prepareAction, operate, ACTIONS, planAction };

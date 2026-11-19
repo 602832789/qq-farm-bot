@@ -70,7 +70,7 @@ test('好友黑名单不再对 provider 返回值直接 for...of', () => {
         /await ctx\.provider\.getFriends\([^)]*\) \|\| \[\]/,
         '`await x || []` 只兜 null/undefined，对象会让后面的 for...of 抛错并打死进程',
     );
-    // 两个使用点都要走辅助函数
+    // 两个使用点都要走辅助函数（外挂检测只做本地分析，好友昵称失败时自行降级）
     assert.equal((routes.match(/await readFriendsForDisplay\(ctx, id, res\)/g) || []).length, 2);
 });
 

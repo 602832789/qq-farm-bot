@@ -1,12 +1,20 @@
 {
   "major": 3,
-  "minor": 31,
-  "patch": 1,
-  "build": 200,
-  "version": "3.31.1",
-  "updatedAt": "2026-11-19T11:06:33.702Z",
-  "lastCommit": "—",
+  "minor": 32,
+  "patch": 0,
+  "build": 201,
+  "version": "3.32.0",
+  "updatedAt": "2026-11-19T16:55:33.928Z",
+  "lastCommit": "4ff832e6",
   "history": [
+    {
+      "version": "3.32.0",
+      "build": 201,
+      "date": "2026-11-20",
+      "summary": "界面与功能对齐桌面副本与 BUGDey 版：侧栏文案/主题配色、首页与牧场首页倒计时统计、好友外挂检测、设置分三类、化肥自动补货",
+      "commit": "4ff832e6",
+      "type": "minor"
+    },
     {
       "version": "3.31.1",
       "build": 200,

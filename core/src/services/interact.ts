@@ -136,9 +136,18 @@ function normalizeInteractRecord(record: any, index: number): any {
 async function fetchInteractRecords(priority: 'low' | 'normal'): Promise<any[]> {
     const reply: any = await fetchInteractReply(priority);
     const records: any[] = Array.isArray(reply && reply.records) ? reply.records : [];
-    return records
+    const normalized: any[] = records
         .map((record: any, index: number) => normalizeInteractRecord(record, index))
         .sort((a: any, b: any) => (b.serverTimeSec - a.serverTimeSec) || (b.visitorGid - a.visitorGid) || (b.actionType - a.actionType));
+    // 每次拉到访客记录就顺手累积外挂检测样本（72h 滚动窗口），供好友页「外挂检测」分析。
+    const accountId: string = String(process.env.FARM_ACCOUNT_ID || '');
+    if (accountId) {
+        try {
+            require('./friend/cheat-detect').recordInteractSamples(accountId, normalized);
+        }
+        catch { /* 采样失败不影响访客记录返回 */ }
+    }
+    return normalized;
 }
 
 async function getInteractRecords(priority: 'low' | 'normal' = 'normal'): Promise<any[]> {

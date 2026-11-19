@@ -217,6 +217,11 @@ async function getState(view = 'animals', shopId?: number, hostGid?: string): Pr
         const raw = await loadRaw(cells);
         const state = snapshot(raw);
         state.pendingOperations = require('./operation-state').forCurrentAccount().pending().map(pendingOperationView);
+        // 概览用：今日动作计数（今日统计）与三条每日例程倒计时。
+        const todayStats = require('./stats').getToday();
+        state.operations = todayStats.actions;
+        state.operationsDate = todayStats.date;
+        state.nextChecks = require('./daily').getRoutineChecks();
         if (view === 'bag') state.bag = inventory(raw);
         if (view === 'shop') state.shop = await catalog(raw, Number(shopId ?? 5));
         if (view === 'market') state.market = await market(raw);

@@ -20,6 +20,7 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
+import FriendCheatPanel from '@/components/friends/FriendCheatPanel.vue'
 import { useAccountStore } from '@/stores/account'
 import { useFriendStore } from '@/stores/friend'
 import { useStatusStore } from '@/stores/status'
@@ -131,6 +132,7 @@ const TABS = [
   { key: 'friends', label: '好友列表', icon: 'i-carbon-user-multiple' },
   { key: 'blacklist', label: '好友黑名单', icon: 'i-carbon-rule-cancelled' },
   { key: 'visitors', label: '最近访客', icon: 'i-carbon-recently-viewed' },
+  { key: 'cheat', label: '外挂检测', icon: 'i-carbon-warning-alt' },
 ] as const
 
 type TabKey = typeof TABS[number]['key']
@@ -1296,6 +1298,10 @@ async function handleBatchAddKnownFriendGids() {
             </NButton>
           </div>
         </div>
+      </div>
+
+      <div v-else-if="activeTab === 'cheat'" class="space-y-4">
+        <FriendCheatPanel />
       </div>
 
       <div v-else-if="activeTab === 'visitors'" class="space-y-4">

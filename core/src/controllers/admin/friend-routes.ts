@@ -314,6 +314,49 @@ function mountFriendRoutes(app: Application, ctx: AdminContext): void {
         res.json({ ok: true, data: saved });
     });
 
+    /**
+     * 外挂检测：基于访客互动样本（72 小时窗口）的行为分析。
+     * 纯本地数据，不触发游戏请求；好友昵称/头像从缓存名单里补。
+     */
+    app.get('/api/friend-cheat-analysis', async (req: Request, res: Response) => {
+        const id = getAccId(ctx, req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+
+        let analysis: any;
+        try {
+            analysis = require('../../services/friend/cheat-detect').analyzeFriendCheat(String(id));
+        } catch (e: any) {
+            return handleApiError(res, e);
+        }
+
+        // 好友昵称/头像只是锦上添花：账号离线或 provider 报错时直接跳过，
+        // 不能让「本地样本分析」被一次网络请求拖成失败。
+        let friendsList: any[] = [];
+        try {
+            const raw = typeof ctx.provider?.getFriends === 'function' ? await ctx.provider.getFriends(id) : [];
+            friendsList = Array.isArray(raw) ? raw : [];
+        }
+        catch {
+            friendsList = [];
+        }
+        const friendMap = new Map<number, { name: string, avatarUrl: string }>();
+        for (const f of friendsList) {
+            const gid = Number(f && f.gid);
+            if (gid > 0)
+                friendMap.set(gid, { name: f.name || f.remark || '', avatarUrl: f.avatarUrl || f.avatar_url || '' });
+        }
+        const visitors = (analysis.visitors || []).map((visitor: any) => {
+            const info = friendMap.get(Number(visitor.gid));
+            return {
+                ...visitor,
+                name: info?.name || visitor.nick || `GID:${visitor.gid}`,
+                avatarUrl: info?.avatarUrl || '',
+            };
+        });
+
+        return res.json({ ok: true, data: { ...analysis, visitors } });
+    });
+
     // ============ 好友GID管理 API ============
 
     // 获取已知好友GID设置
