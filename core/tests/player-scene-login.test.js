@@ -1,3 +1,6 @@
+// 数据目录指向临时区：否则测试会通过真实 logger 往 core/data/logs 里追加日志。
+require('./helpers/isolate-data');
+
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -20,7 +23,7 @@ async function harness(platform) {
         '../services/ace': { startAceRuntime: () => steps.push('ace') },
         '../services/status': { updateStatusFromLogin() {} },
         './crypto-wasm': { bindUser: async () => steps.push('bind'), getEncryptedInitInfo: () => '' },
-        './utils': { toLong: Number, toNum: Number, log() {}, logWarn() {}, syncServerTime() {} },
+        './utils': { toLong: Number, toNum: Number, log() {}, logWarn() {}, syncServerTime() {}, getServerTimeSec: () => 0, formatDateKeyInTimeZone: () => '1970-01-01' },
     };
     const sandbox = { require: name => overrides[name] || realRequire(name), module: { exports: {} }, exports: {}, Buffer, console: { warn() {} }, process, steps };
     vm.runInNewContext(`${fs.readFileSync(file, 'utf8')}

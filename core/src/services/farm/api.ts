@@ -6,7 +6,9 @@ export {};
 const protobuf = require('protobufjs');
 const { sendMsgAsync, getUserState } = require('../../utils/network');
 const { types } = require('../../utils/proto');
-const { toLong, toNum, sleep, randomDelay, log, logWarn } = require('../../utils/utils');
+const { toLong, toNum, sleep, randomDelay, log, logWarn, toTimeSec } = require('../../utils/utils');
+const { PlantPhase } = require('../../config/config');
+const { getCurrentPhase } = require('./land-analysis');
 
 // 操作限制更新回调 (由 friend.js 设置)
 let onOperationLimitsUpdate: ((limits: any) => void) | null = null;
@@ -32,7 +34,7 @@ async function sendPlantRequest(
     return ReplyType.decode(replyBody);
 }
 
-async function getAllLands(): Promise<any> {
+async function fetchAllLandsRaw(): Promise<any> {
     const forecast = require('../level-forecast');
     const revision = forecast.getLandForecastRevision();
     const body = types.AllLandsRequest.encode(types.AllLandsRequest.create({})).finish();
@@ -44,6 +46,18 @@ async function getAllLands(): Promise<any> {
         onOperationLimitsUpdate(reply.operation_limits);
     }
     return reply;
+}
+
+/**
+ * 读自家地块。
+ *
+ * 每次调用都直接读服务端最新状态。2026-11-05 回滚了「1.2s TTL 快照 + 并发合并」：
+ * 那份缓存在硬预算时期用来省请求，但它会让「刚种完/刚收完立刻再读」拿到旧地块，
+ * 手动操作与自动任务在同一秒内交错时尤其容易误判。现在预算已改为只约束自动任务的
+ * 保险丝，前台操作不会再被限额，因此恢复每次都读实时数据。
+ */
+async function getAllLands(): Promise<any> {
+    return fetchAllLandsRaw();
 }
 
 async function harvest(landIds: number[]): Promise<any> {
@@ -105,7 +119,9 @@ async function fertilizeOne(landId: number, fertilizerId: number = NORMAL_FERTIL
 }
 
 // 官方一键施肥：一条请求提交多个地块，每个地块只施一次。
-async function fertilizeBatch(landIds: number[], fertilizerId: number): Promise<any> {
+async function fertilizeBatch(landIds: number[], fertilizerId: number, options: { validateBeforeSend?: () => void } = {}): Promise<any> {
+    if (typeof options?.validateBeforeSend === 'function')
+        options.validateBeforeSend();
     const body = types.FertilizeRequest.encode(types.FertilizeRequest.create({
         land_ids: landIds.map((landId: number) => toLong(landId)),
         fertilizer_id: toLong(fertilizerId),
@@ -167,13 +183,26 @@ async function fertilize(landIds: number[], fertilizerId: number = NORMAL_FERTIL
 /**
  * 有机肥循环施肥:
  * 按地块顺序循环施肥，失败或达到单次操作上限时停止。
+ *
+ * options.ripenSize2（老版 2x2 催熟模式）：每施一次都校验施肥结果里的作物状态，
+ * 成熟/枯死/确认不了生长推进/肥料耗尽时立即停止，避免把肥料浪费在打不满的循环上。
  */
-async function fertilizeOrganicLoop(landIds: number[] | any[], propagateErrors: boolean = false): Promise<number> {
+async function fertilizeOrganicLoop(
+    landIds: number[] | any[],
+    options: { propagateErrors?: boolean; ripenSize2?: boolean } | boolean = false,
+): Promise<number> {
+    // 兼容旧的布尔参数签名（propagateErrors）。
+    const opts: { propagateErrors?: boolean; ripenSize2?: boolean } = typeof options === 'boolean'
+        ? { propagateErrors: options }
+        : (options || {});
+    const propagateErrors = opts.propagateErrors === true;
+    const ripenSize2 = opts.ripenSize2 === true;
     const ids: number[] = (Array.isArray(landIds) ? landIds : []).filter(Boolean);
     if (ids.length === 0) return 0;
 
     let successCount: number = 0;
     let idx: number = 0;
+    let previousMatureTime: number = 0;
     const operationLimit = Math.min(
         MAX_ORGANIC_FERTILIZE_OPERATIONS,
         ids.length * MAX_ORGANIC_FERTILIZE_ROUNDS,
@@ -186,10 +215,31 @@ async function fertilizeOrganicLoop(landIds: number[] | any[], propagateErrors: 
                 land_ids: [toLong(landId)],
                 fertilizer_id: toLong(ORGANIC_FERTILIZER_ID),
             })).finish();
-            await sendMsgAsync('gamepb.plantpb.PlantService', 'Fertilize', body);
+            const { body: replyBody } = await sendMsgAsync('gamepb.plantpb.PlantService', 'Fertilize', body);
             successCount++;
-        } catch (error) {
+            if (ripenSize2) {
+                const reply = types.FertilizeReply.decode(replyBody);
+                const updatedLand = (reply.land || []).find((land: any) => toNum(land && land.id) === toNum(landId));
+                const plant = updatedLand && updatedLand.plant;
+                const phase = plant && getCurrentPhase(plant.phases, false, '', toNum(plant.id));
+                if (!phase || phase.phase === PlantPhase.UNKNOWN) {
+                    logWarn('施肥', `2x2催熟：土地 ${landId} 缺少有效施肥结果，已停止本轮催熟`);
+                    break;
+                }
+                if (phase.phase === PlantPhase.MATURE || phase.phase === PlantPhase.DEAD) break;
+                const matureTime = Math.max(0, ...(Array.isArray(plant.phases) ? plant.phases : []).map((p: any) => toTimeSec(p && p.begin_time)));
+                if (!matureTime || (previousMatureTime && matureTime >= previousMatureTime)) {
+                    logWarn('施肥', `2x2催熟：土地 ${landId} 未确认生长推进，已停止本轮催熟`);
+                    break;
+                }
+                previousMatureTime = matureTime;
+                if (reply.fertilizer && Object.prototype.hasOwnProperty.call(reply.fertilizer, 'count') && toNum(reply.fertilizer.count) <= 0) break;
+            }
+        } catch (error: any) {
             // 常见是有机肥耗尽，按需求直接停止
+            if (ripenSize2) {
+                logWarn('施肥', `2x2催熟：土地 ${landId} 有机肥施肥停止: ${error && error.message ? error.message : error}`);
+            }
             if (propagateErrors) throw error;
             break;
         }
@@ -283,6 +333,8 @@ module.exports = {
     fertilizeOne,
     fertilizeBatch,
     fertilize,
+    NORMAL_FERTILIZER_ID,
+    ORGANIC_FERTILIZER_ID,
     isSkippableFertilizeLandError,
     fertilizeOrganicLoop,
     removePlant,

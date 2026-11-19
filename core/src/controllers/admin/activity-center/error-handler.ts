@@ -87,8 +87,10 @@ function activityErrorResponse(error: any): { code: string; message: string } {
     if (rawMessage === '账号未运行' || rawMessage === '账号已离线') return { code: 'ACCOUNT_OFFLINE', message: '当前账号尚未运行，请先启动账号后再试' };
     if (rawMessage === 'API Timeout' || rawMessage.includes('请求超时')) return { code: 'ACTIVITY_TIMEOUT', message: '活动服务响应超时，请稍后重试' };
     if (rawMessage.includes('连接未打开') || rawMessage.includes('账号尚未登录')) return { code: 'GAME_OFFLINE', message: '游戏连接尚未就绪，请稍后重试' };
-    if (rawMessage.includes('请求队列已满')) return { code: 'ACTIVITY_BUSY', message: '活动操作过于频繁，请稍后再试' };
-    if (rawMessage.includes('发送失败') || rawMessage.includes('请求被中断')) return { code: 'ACTIVITY_REQUEST_INTERRUPTED', message: '活动请求未能完成，请稍后重试' };
+    // 网关实际文案是「请求等待队列已满」，旧串「请求队列已满」保留兼容历史日志。
+    if (rawMessage.includes('请求等待队列已满') || rawMessage.includes('请求队列已满')) return { code: 'ACTIVITY_BUSY', message: '活动操作过于频繁，请稍后再试' };
+    // 断线清理抛出的是「请求已中断」，本地前序校验用的是「请求被中断」，两者都要认。
+    if (rawMessage.includes('发送失败') || rawMessage.includes('请求已中断') || rawMessage.includes('请求被中断')) return { code: 'ACTIVITY_REQUEST_INTERRUPTED', message: '活动请求未能完成，请稍后重试' };
     if (rawMessage.includes('不匹配的活动 ID') || rawMessage.includes('未知操作类型') || rawMessage.includes('回包缺少动态状态')) {
         return { code: 'ACTIVITY_DATA_CHANGED', message: '活动数据已经更新，请刷新页面后再试' };
     }

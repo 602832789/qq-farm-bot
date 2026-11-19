@@ -65,7 +65,7 @@ function isGatewayProtocolError(err: any): boolean {
     return String(err?.name || '') === 'GatewayError'
         || typeof err?.errorMessage === 'string'
         || typeof err?.error_message === 'string'
-        || /^(?:[\w-]+\.)+[\w-]+(?:\s+.*?)?\bcode=\d+(?:\s|$)/.test(message);
+        || /^(?:[\w-]+\.)+[\w-]+(?:\s+(?:\S.*?)??)?\bcode=\d+(?:\s|$)/.test(message);
 }
 
 function getProtocolErrorMessage(err: any): string {
@@ -74,7 +74,7 @@ function getProtocolErrorMessage(err: any): string {
 
     const message = String(typeof err === 'string' ? err : err?.message || '').trim();
     if (!isGatewayProtocolError(err)) return '';
-    return message.match(/\bcode=\d+\b\s*(.*)$/)?.[1]?.trim() || '';
+    return message.match(/\bcode=\d+\b([^\n]*)$/)?.[1]?.trim() || '';
 }
 
 function handleApiError(res: Response, err: any): void {

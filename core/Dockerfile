@@ -1,6 +1,19 @@
-# syntax=docker/dockerfile:1.7
+# 刻意不声明外部的 syntax=docker/dockerfile:x.y 指令：那是 Dockerfile parser
+# directive，BuildKit 会先去 docker.io 把对应镜像拉下来当解析器，再读本文件。
+# 部分国内镜像加速站（如 docker.fnnas.com）不代理 docker/dockerfile 这个
+# namespace，HEAD manifest 返回 401，构建会在第一步直接失败。本文件只用多阶段
+# 构建、ARG before FROM、COPY --from、RUN --mount=type=cache（Dockerfile 1.2
+# 起即内置支持）和 HEALTHCHECK，交给 Docker 引擎自带的解析器即可，无需外部镜像。
+# 如确需升级 frontend，请改用能访问该镜像的 registry，不要直接加回这一行。
 
-ARG NODE_IMAGE=node:20.19.6-alpine3.21
+# NODE_IMAGE 默认写成全限定名而不是短名 node:...：短名会被补成
+# docker.io/library/node，一旦宿主机配了失效的 registry mirror（如飞牛 fnOS 的
+# docker.fnnas.com），metadata 阶段就返回 401，构建第一步直接失败。带域名的地址
+# 不经过 docker.io，也就不受 mirror 影响，无需改动宿主机任何配置。
+# DaoCloud public-image-mirror 按需同步，镜像 sha256 与 Docker Hub 源站一致。
+# 想切回官方源：NODE_IMAGE=node:20.19.6-alpine3.21 docker compose up -d --build
+# （compose 已用 ${NODE_IMAGE:-...} 注入；这里的 ARG 默认值须与 compose 保持一致）。
+ARG NODE_IMAGE=docker.m.daocloud.io/library/node:20.19.6-alpine3.21
 ARG PNPM_VERSION=10.30.2
 ARG NPM_REGISTRY=https://registry.npmjs.org/
 
@@ -22,6 +35,11 @@ RUN npm config set registry "${NPM_REGISTRY}" \
 FROM pnpm-base AS workspace-deps
 
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+# .npmrc 里有 node-linker=hoisted，必须跟着进镜像：不带它时 pnpm 会退回默认
+# 符号链接布局，core/tsconfig.json（declaration: true）在为 JS 生成 .d.ts 时
+# 无法命名 Express 的推断类型，构建阶段报 TS2742。这里只影响构建阶段布局，
+# 运行阶段仍用下面 prod-deps 的默认布局。
+COPY .npmrc ./
 COPY core/package.json ./core/
 COPY web/package.json ./web/
 
@@ -32,6 +50,15 @@ RUN --mount=type=cache,id=qq-farm-pnpm-store,target=/pnpm/store,sharing=locked \
 # independently instead of rebuilding Web after a Core-only source change.
 FROM workspace-deps AS web-builder
 
+# 根目录 version.json 是版本号单一真源，界面上的「第 N 次更新」由它注入。
+# 不拷进来时 vite 读不到会回退成 0；版本每次递增让该层缓存失效，正是期望行为。
+COPY version.json ./version.json
+
+# Web 有一个文件跨目录引用 core 的配置，必须在 COPY web 之前显式拷进来，
+# 否则本阶段没有 ./core，Vite 会报 Could not resolve "../../../core/...":
+#   web/src/utils/notification-template.ts -> core/src/config/notification-templates.json
+# 只拷这一个文件，不能整体拷 core/src/gameConfig（素材太大）。
+COPY core/src/config/notification-templates.json ./core/src/config/notification-templates.json
 COPY web ./web
 RUN pnpm -C web build
 
@@ -85,7 +112,9 @@ VOLUME ["/app/core/data"]
 
 EXPOSE 3007
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD wget -q --spider http://localhost:3007/api/game-version || exit 1
+# 健康检查用 node 自带 fetch 打 127.0.0.1，不用 busybox wget：wget 解析 localhost
+# 时可能先试 ::1，而应用监听的是 IPv4，容器会一直挂 unhealthy（探测失败≠服务没起）。
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD node -e "fetch('http://127.0.0.1:3007/api/game-version',{signal:AbortSignal.timeout(5000)}).then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
 
 CMD ["node", "client.js"]

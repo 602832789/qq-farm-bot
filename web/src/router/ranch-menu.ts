@@ -1,0 +1,41 @@
+/**
+ * 牧场侧边栏菜单：牧场是独立场景（game_scene_id=2），有自己的信息架构，
+ * 进牧场后侧栏整套换成这一份，农场那套（土地 / 宠物 / 农场商城）不掺进来。
+ *
+ * 与 `router/menu.ts` 的区别：农场菜单里不再出现「牧场」入口，两边靠侧栏的
+ * 「农场 / 牧场」分段开关互跳，避免同一个目的地出现两个入口。
+ */
+export interface RanchMenuItem {
+  path: string
+  name: string
+  label: string
+  icon: string
+  /** 手机底部导航使用的短名称，未设置则不出现在底部导航。 */
+  mobileLabel?: string
+}
+
+export const ranchMenu: RanchMenuItem[] = [
+  { path: '/ranch', name: 'ranch', label: '概览', icon: 'i-carbon-chart-pie', mobileLabel: '概览' },
+  { path: '/ranch/personal', name: 'ranch-personal', label: '个人', icon: 'i-carbon-user', mobileLabel: '个人' },
+  { path: '/ranch/friends', name: 'ranch-friends', label: '好友', icon: 'i-carbon-user-multiple' },
+  { path: '/ranch/activity', name: 'ranch-activity', label: '活动', icon: 'i-carbon-gift', mobileLabel: '活动' },
+  { path: '/ranch/shop', name: 'ranch-shop', label: '商城', icon: 'i-carbon-shopping-cart', mobileLabel: '商城' },
+  { path: '/ranch/illustrated', name: 'ranch-illustrated', label: '图鉴', icon: 'i-carbon-book' },
+  { path: '/ranch/analytics', name: 'ranch-analytics', label: '分析', icon: 'i-carbon-analytics' },
+  { path: '/settings', name: 'Settings', label: '设置', icon: 'i-carbon-settings', mobileLabel: '设置' },
+]
+
+const normalize = (value: string) => value.replace(/\/+$/, '') || '/'
+
+/** 概览是 `/ranch` 本身，其余按前缀匹配，`/ranch/personal?view=warehouse` 也算命中。 */
+export function isRanchMenuActive(item: Pick<RanchMenuItem, 'path'>, path: string) {
+  const target = normalize(path)
+  const base = normalize(item.path)
+  if (base === '/ranch')
+    return target === '/ranch'
+  return target === base || target.startsWith(`${base}/`)
+}
+
+export function matchRanchMenu(path: string) {
+  return ranchMenu.find(item => isRanchMenuActive(item, path))
+}

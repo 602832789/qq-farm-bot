@@ -42,7 +42,7 @@ defineEmits<{ refresh: [] }>()
         <CommerceItemImage :src="currency.image" :alt="currency.name" size="sm" />
         <b>{{ currency.amount === null ? '--' : currency.amount.toLocaleString() }}</b>
       </span>
-      <NButton secondary circle :loading="loading" :disabled="disabled" :title="refreshLabel" :aria-label="refreshLabel" @click="$emit('refresh')">
+      <NButton class="base-button" secondary circle :loading="loading" :disabled="disabled" :title="refreshLabel" :aria-label="refreshLabel" @click="$emit('refresh')">
         <template #icon>
           <span class="i-carbon-renew" />
         </template>

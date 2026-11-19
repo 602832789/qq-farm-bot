@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-// eslint-disable-next-line test/no-import-node-test
+
 import test from 'node:test'
 
 const require = createRequire(import.meta.url)
@@ -10,7 +10,7 @@ const ts = require('typescript')
 const source = readFileSync(new URL('../src/utils/hour-of-day.ts', import.meta.url), 'utf8')
 const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } })
 const exports = {}
-// eslint-disable-next-line no-new-func
+
 new Function('exports', outputText)(exports)
 const { parseHourOfDay } = exports
 

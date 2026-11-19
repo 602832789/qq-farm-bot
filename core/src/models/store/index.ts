@@ -1,5 +1,4 @@
 export {};
-const sharedState = require('./shared-state');
 const globalConfig = require('./global-config');
 const accountConfig = require('./account-config');
 const accounts = require('./accounts');
@@ -12,11 +11,14 @@ module.exports = {
     setAutomation: accountConfig.setAutomation,
     isAutomationOn: accountConfig.isAutomationOn,
     getPreferredSeed: accountConfig.getPreferredSeed,
+    getCapitalMode: accountConfig.getCapitalMode,
+    setCapitalMode: accountConfig.setCapitalMode,
     getPlantingStrategy: accountConfig.getPlantingStrategy,
     getBagSeedPriority: accountConfig.getBagSeedPriority,
     getBagSeedMultiLandReservationEnabled: accountConfig.getBagSeedMultiLandReservationEnabled,
     getBagSeedLandTypes: accountConfig.getBagSeedLandTypes,
     getBagSeedFallbackStrategy: accountConfig.getBagSeedFallbackStrategy,
+    getPrioritize2x2Crops: accountConfig.getPrioritize2x2Crops,
     getIntervals: accountConfig.getIntervals,
     getFriendQuietHours: accountConfig.getFriendQuietHours,
     getKnownFriendGids: accountConfig.getKnownFriendGids,

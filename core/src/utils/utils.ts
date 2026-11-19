@@ -125,10 +125,11 @@ function normalizeMeta(meta: any): Record<string, any> {
 function resolveModuleTag(moduleName: string): string {
     const moduleMap: Record<string, string> = {
         farm: '农场',
-        ranch: '牧场',
         friend: '好友',
         warehouse: '仓库',
         task: '任务',
+        activity: '活动',
+        ranch: '牧场',
         system: '系统',
     };
     const m = String(moduleName || '').trim();
@@ -139,13 +140,15 @@ function inferModuleFromTag(tag: string): string {
     const t = String(tag || '').trim();
     const tagMap: Record<string, string> = {
         农场: 'farm',
-        牧场: 'ranch',
         商店: 'warehouse',
         购买: 'warehouse',
         仓库: 'warehouse',
         好友: 'friend',
         任务: 'task',
         活跃: 'task',
+        活动: 'activity',
+        活动自动化: 'activity',
+        牧场: 'ranch',
         系统: 'system',
         错误: 'system',
         WS: 'system',
@@ -194,10 +197,42 @@ function logWarn(arg1: string, arg2: string | object | null, arg3: any = null): 
     const safeMeta = normalizeMeta(meta);
     if (!safeMeta.module) safeMeta.module = inferModuleFromTag(tag);
     const displayTag = resolveModuleTag(safeMeta.module);
+    // 预算/排队让路不是业务失败：只留文件证据，不进前端日志面板。
+    // 否则「网关请求超预算」会跟着每一轮巡田刷屏，看起来像账号一直报错。
+    if (isTransientGatewaySkip(msg)) {
+        coreLogger.info(msg, { tag: displayTag, ...safeMeta });
+        return;
+    }
     coreLogger.warn(msg, { tag: displayTag, ...safeMeta });
     if (logHook) {
         try { logHook(displayTag, msg, true, safeMeta); } catch {}
     }
+}
+
+// 只写日志文件、不进前端日志面板（对齐老版：「无可领取/未开放」类常态跳过不显示）。
+function logFileOnly(arg1: string, arg2: string | object | null, arg3: any = null): void {
+    const { tag, msg, meta } = normalizeLogArgs(arg1, arg2, arg3);
+    const safeMeta = normalizeMeta(meta);
+    if (!safeMeta.module) safeMeta.module = inferModuleFromTag(tag);
+    const displayTag = resolveModuleTag(safeMeta.module);
+    coreLogger.info(msg, { tag: displayTag, ...safeMeta });
+}
+
+/**
+ * 网关预算/排队让路：不是业务失败，而是「这一轮先不占用连接」。
+ * 调用方应当按「本轮无可做」处理并静默等下一轮，不要写 warn/error 日志。
+ */
+function isTransientGatewaySkip(error: any): boolean {
+    if (!error) return false;
+    if (String(error.name || '') === 'GatewayBusyError') return true;
+    const msg = String(error.message || error || '');
+    // 与 utils/network.ts、net-diagnosis-text.ts 中文化后的真实文案对齐；
+    // 旧版预算文案已不再产生，budget_total 作为历史兼容保留。
+    return msg.includes('自动任务请求已达流量上限')
+        || msg.includes('总量额度用尽')
+        || msg.includes('单方法额度用尽')
+        || msg.includes('请求等待队列已满')
+        || msg.includes('budget_total');
 }
 
 // ============ 异步工具 ============
@@ -217,5 +252,5 @@ module.exports = {
     setLogHook,
     getServerTimeSec, syncServerTime, getSystemDateKey, getSystemClockMinutes,
     formatDateKeyInTimeZone, formatSystemDateTime24, toTimeSec,
-    log, logWarn, sleep, randomDelay,
+    log, logWarn, logFileOnly, isTransientGatewaySkip, sleep, randomDelay,
 };

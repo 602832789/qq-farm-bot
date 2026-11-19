@@ -56,7 +56,9 @@ const query = defineModel<string>('query', { default: '' })
 .book-toolbar__chips {
   display: flex;
   min-width: 0;
-  flex: 1;
+  /* 不再伸展占满整行：筛选按钮保持自身宽度，搜索框紧跟其后，
+     避免在宽屏上被推到页面最右侧、离筛选区过远。 */
+  flex: 0 1 auto;
   gap: 6px;
   overflow-x: auto;
   scrollbar-width: none;

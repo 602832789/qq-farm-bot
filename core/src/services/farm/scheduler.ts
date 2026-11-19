@@ -7,7 +7,7 @@ const { CONFIG } = require('../../config/config');
 const { getPlantById, getItemById } = require('../../config/gameConfig');
 const { isAutomationOn, getAutomation, getFertilizerBuyOrganicCount, getFertilizerBuyOrganicThresholdHours, getFertilizerBuyNormalCount, getFertilizerBuyNormalThresholdHours, getFertilizerBuyCheckIntervalMinutes } = require('../../models/store');
 const { getUserState, networkEvents } = require('../../utils/network');
-const { toNum, log, logWarn, randomDelay } = require('../../utils/utils');
+const { toNum, log, logWarn, logFileOnly, isTransientGatewaySkip, randomDelay } = require('../../utils/utils');
 const { createScheduler } = require('../scheduler');
 const { runExclusiveAutomationTask } = require('../automation-lock');
 const { recordOperation } = require('../stats');
@@ -23,8 +23,8 @@ const {
     ALL_FERTILIZER_LAND_TYPES,
 } = require('./land-analysis');
 const { autoPlantEmptyLands, getRemainingPlantDelayMs, runFertilizerByConfig } = require('./planting');
-const { isRipeningOnlyMode, runRipeningFertilizer } = require('./ripening');
 const { checkAndBuyFertilizerBoth } = require('../mall');
+const ownMaturity = require('./own-maturity');
 // 延迟加载以打破循环依赖: visit-strategy → farm/index → scheduler → visit-strategy
 function inFarmQuietHours() {
     return require('../friend/visit-strategy').inFarmQuietHours();
@@ -35,10 +35,16 @@ let isCheckingFarm: boolean = false;
 let isFirstFarmCheck: boolean = true;
 let farmLoopRunning: boolean = false;
 let externalSchedulerMode: boolean = false;
-let farmLoopGeneration = 0;
+let farmLoopGeneration: number = 0;
 let automaticPlantPacing: any = { lastPlantAt: null, defer: true };
 const farmScheduler = createScheduler('farm');
-let lastPushTime: number = 0;
+// 两类推送各自节流：以前共用一个节流时间戳和一个 farm_push_check 计时器，
+// 土地推送会把同时到达的社交事件推送直接挤掉（同名计时器会先 clear 旧的）。
+let lastLandsPushTime: number = 0;
+let lastSocialPushTime: number = 0;
+// 自动巡田的整轮软预算：超过就停在阶段边界，剩余动作交下一轮，
+// 不让一次慢请求 / 长施肥循环把整条自动化链路无限期占住。
+const FARM_ROUND_BUDGET_MS = 5 * 60 * 1000;
 
 // ============ 农场循环 ============
 
@@ -47,9 +53,10 @@ function canContinueFarm(generation: number): boolean {
         && !!getUserState().gid && isAutomationOn('farm') && !inFarmQuietHours();
 }
 
-function schedulePlantContinuation(generation: number, pacing: any, delayMs?: number): void {
+function schedulePlantContinuation(generation: number, pacing: any): void {
     if (!farmLoopRunning || !canContinueFarm(generation) || pacing !== automaticPlantPacing || !pacing.deferred) return;
-    farmScheduler.setTimeoutTask('farm_plant_continue', delayMs ?? getRemainingPlantDelayMs(pacing), async () => {
+    // 延迟只能由「配置种植间隔 - 本轮已耗时」决定，外部刷新不得覆盖。
+    farmScheduler.setTimeoutTask('farm_plant_continue', getRemainingPlantDelayMs(pacing), async () => {
         // 计时器会继承创建时的异步上下文，必须独立入队，不能当作旧锁的重入。
         await runExclusiveAutomationTask('farm_plant_continue', async () => {
             if (!farmLoopRunning || !canContinueFarm(generation) || pacing !== automaticPlantPacing) return;
@@ -64,28 +71,48 @@ async function checkFarm(): Promise<boolean> {
     if (inFarmQuietHours()) return false;
     const generation = farmLoopGeneration;
     const pacing = automaticPlantPacing;
+    // 本轮开头会清掉待触发的分次种植续跑。若本轮没走到种植决策（异常/让路/
+    // 空快照），清掉后必须在 finally 按原剩余间隔接回，否则剩余地块要等下一次
+    // 20~25s 常规巡查，配置的种植间隔形同虚设。
+    const hadPendingContinuation = farmScheduler.has('farm_plant_continue');
     farmScheduler.clear('farm_plant_continue');
     pacing.deferred = false;
+    pacing.plantingResolved = false;
     isCheckingFarm = true;
 
     try {
         // 复用手动操作逻辑
-        const result = await runFarmOperation('all', null, false, { generation, pacing });
+        const result = await runFarmOperation('all', null, false, {
+            generation,
+            pacing,
+            deadlineMs: Date.now() + FARM_ROUND_BUDGET_MS,
+        });
         isFirstFarmCheck = false;
         return !!(result && result.hadWork);
     } catch (err: any) {
+        if (isTransientGatewaySkip(err)) {
+            // 不是业务失败，只是这一轮自动任务给前台/心跳让路：不进前端日志，下一轮按正常间隔重试。
+            logFileOnly('巡田', `本轮让路: ${err.message}`);
+            return false;
+        }
         logWarn('巡田', `检查失败: ${err.message}`);
         return false;
     } finally {
         isCheckingFarm = false;
+        // 只有「本轮确实走到了种植决策」才相信 pacing.deferred；否则把进入本轮时
+        // 被清掉的续跑接回。剩余间隔为 0 时不重排，交给常规 tick，避免 0ms 空转。
+        if (hadPendingContinuation && !pacing.plantingResolved
+            && farmLoopRunning && canContinueFarm(generation)
+            && pacing === automaticPlantPacing
+            && getRemainingPlantDelayMs(pacing) > 0) {
+            pacing.deferred = true;
+        }
         schedulePlantContinuation(generation, pacing);
     }
 }
 
 async function runMultiSeasonFertilizer(growingLandIds: any[], propagateErrors: boolean = false): Promise<void> {
     if (!isAutomationOn('fertilizer_multi_season')) return;
-    const mode = getAutomation().fertilizer;
-    if (mode === 'none' || isRipeningOnlyMode(mode)) return;
     const multiSeasonTargets: number[] = [...new Set(
         (Array.isArray(growingLandIds) ? growingLandIds : []).map((v: any) => toNum(v)).filter(Boolean),
     )];
@@ -119,7 +146,7 @@ function autoHarvestLandIds(status: any): number[] {
 }
 
 /**
- * 催熟施肥后只重查并收获一次，避免形成请求循环。
+ * smart 有机肥可能让作物在本轮成熟。施肥后只重查并收获一次，避免形成请求循环。
  * 跟随收获也会走多季补肥：这批作物进入下一季后，主循环里的补肥已经跑完了。
  */
 async function harvestMatureOwnLandsOnce(actions: string[], propagateErrors: boolean = false): Promise<number> {
@@ -148,6 +175,12 @@ async function harvestMatureOwnLandsOnce(actions: string[], propagateErrors: boo
             landIds: [...harvestable],
             opType: 'fertilizer_followup',
         });
+        // 宠物资本模式：施肥后跟随收获同样触发召回。
+        try {
+            require('../capital-mode').handleFarmHarvested();
+        } catch (e: any) {
+            logWarn('宠物', `资本模式召回调度失败: ${e?.message || e}`);
+        }
         log('收获', `施肥后立即收获 ${harvestable.length} 块土地`, {
             module: 'farm',
             event: '施肥后收获作物',
@@ -177,9 +210,21 @@ async function runFarmOperation(
     opType: string,
     targetLandIdInput: unknown = null,
     propagateErrors: boolean = false,
-    automatic?: { generation: number; pacing: any },
+    automatic?: { generation: number; pacing: any; deadlineMs?: number },
 ): Promise<{ hadWork: boolean; actions: string[] }> {
+    const roundDeadlineMs = Number(automatic && automatic.deadlineMs) || 0;
+    // 只在阶段边界检查，不打断已经发出去的单个请求；超预算时登记一次提前唤醒，
+    // 剩余动作交给下一轮，避免「本轮做不完、又等 20~25 秒」的叠加延迟。
+    const overBudget = (): boolean => {
+        if (!roundDeadlineMs || Date.now() <= roundDeadlineMs) return false;
+        logWarn('巡田', '本轮已超过整轮时间预算，剩余阶段留到下一轮', {
+            module: 'farm', event: '农场循环', result: 'budget_exceeded',
+        });
+        ownMaturity.requestFarmWakeup('budget_exceeded');
+        return true;
+    };
     const landsReply = await getAllLands();
+    // 这一轮已经被停掉或账号换了代次，就别再动任何土地。
     if (automatic && !canContinueFarm(automatic.generation)) return { hadWork: false, actions: [] };
     if (!landsReply.lands || landsReply.lands.length === 0) {
         if (opType !== 'all') {
@@ -189,10 +234,18 @@ async function runFarmOperation(
     }
 
     const lands = landsReply.lands;
-    let fertilizerSnapshot: any[] | undefined = lands;
+    // 整片土地快照是自家成熟时间的权威来源：记录下一块作物的成熟墙钟，
+    // worker 据此把 nextFarmRunAt 提前到成熟点，不必再白等半个轮询周期。
+    ownMaturity.observeOwnFarmMaturity(lands, 'round');
 
     const state = getUserState();
     const status = analyzeLands(lands, isFirstFarmCheck, state.gid);
+    // 宠物资本模式：临近成熟时先派出守护宠物（老版逻辑）。
+    try {
+        await require('../capital-mode').prepareForFarmOperation({ lands, analysis: status, opType });
+    } catch (e: any) {
+        logWarn('宠物', `资本模式派出检查失败: ${e?.message || e}`);
+    }
     const socialEventItemIds: number[] = getCleanableFarmSocialEventItemIds(landsReply);
     const hasTargetLandId = targetLandIdInput !== null
         && targetLandIdInput !== undefined
@@ -231,6 +284,15 @@ async function runFarmOperation(
             ...status.needInteractionCleanup,
         ])];
 
+        // golden_bug_clear：开关关掉时，自家地块上的黄金虫不进务农集合，避免被自动清理。
+        // 开关打开（默认）时行为与之前一致：黄金虫随一键务农一起清掉。
+        if (!isAutomationOn('golden_bug_clear')) {
+            const goldenBugExclude = new Set(status.goldenBugLandIds || []);
+            if (goldenBugExclude.size > 0) {
+                farmingLandIds = farmingLandIds.filter((id: number) => !goldenBugExclude.has(id));
+            }
+        }
+
         const validSingleLandIds = new Set<number>([
             ...status.growing,
             ...status.harvestable,
@@ -249,7 +311,6 @@ async function runFarmOperation(
         }
 
         if (!skipOwnWeedBug && farmingLandIds.length > 0) {
-            fertilizerSnapshot = undefined;
             try {
                 await farming(farmingLandIds, socialEventItemIds);
                 const parts: string[] = [];
@@ -276,7 +337,6 @@ async function runFarmOperation(
     if (opType === 'all' || opType === 'harvest') {
         const harvestable = opType === 'all' ? autoHarvestLandIds(status) : status.harvestable;
         if (harvestable.length > 0) {
-            fertilizerSnapshot = undefined;
             try {
                 harvestReply = await harvest(harvestable);
                 log('收获', `收获完成 ${harvestable.length} 块土地`, {
@@ -294,12 +354,21 @@ async function runFarmOperation(
                     landIds: [...harvestable],
                     opType,
                 });
+                // 宠物资本模式：收获完成后召回守护宠物。
+                try {
+                    require('../capital-mode').handleFarmHarvested();
+                } catch (e: any) {
+                    logWarn('宠物', `资本模式召回调度失败: ${e?.message || e}`);
+                }
             } catch (e: any) {
                 logWarn('收获', e.message, {
                     module: 'farm',
                     event: '收获作物',
                     result: 'error',
                 });
+                // 收获失败时本轮不会铲地也不会补种，别让剩下的动作等下一轮
+                // 20~25 秒才被重试；登记一次提前唤醒即可。
+                ownMaturity.requestFarmWakeup('harvest_failed');
                 if (propagateErrors) throw e;
             }
         }
@@ -307,6 +376,10 @@ async function runFarmOperation(
 
     // 执行种植
     if (opType === 'all' || opType === 'plant') {
+        if (overBudget()) return { hadWork: actions.length > 0, actions };
+        // 已走到种植决策：即使最终没有空地可种，也不该触发 checkFarm 的续跑兜底，
+        // 避免「确实没地」时按剩余间隔无限空转。
+        if (automatic) automatic.pacing.plantingResolved = true;
         const allEmptyLands: number[] = [...new Set(status.empty)] as number[];
         let allDeadLands: number[] = [...new Set(status.dead)] as number[];
 
@@ -320,18 +393,17 @@ async function runFarmOperation(
         if (allDeadLands.length > 0 || allEmptyLands.length > 0) {
             try {
                 if (automatic && !canContinueFarm(automatic.generation)) return { hadWork: actions.length > 0, actions };
-                fertilizerSnapshot = undefined;
                 const plantResult = await autoPlantEmptyLands(allDeadLands, allEmptyLands, {
-                    propagateErrors, knownLands: lands,
+                    propagateErrors, knownLands: lands, force: opType !== 'all',
                     pacing: automatic ? automatic.pacing : { lastPlantAt: null, delaySeconds: 0 },
                 });
                 const plantedCount = Array.isArray(plantResult?.plantedLands) ? plantResult.plantedLands.length : 0;
-                const deferredCount = Array.isArray(plantResult?.deferredLandIds) ? plantResult.deferredLandIds.length : 0;
                 if (plantedCount > 0) {
                     actions.push(`种植${plantedCount}`);
                     recordOperation('plant', plantedCount);
                 }
-                if (deferredCount > 0) actions.push(`预留${deferredCount}`);
+                // 「预留 N 块地」不是实际动作，计入 hadWork 会让上层误判为本轮有进展、
+                // 提前拉起下一轮巡田，从而造成 2×2 部分空出时的高频重复请求。
             } catch (e: any) {
                 logWarn('种植', e.message);
                 if (propagateErrors) throw e;
@@ -343,9 +415,9 @@ async function runFarmOperation(
     }
 
     // 执行土地解锁/升级（手动 upgrade 总是执行；自动 all 受开关控制）
+    if (overBudget()) return { hadWork: actions.length > 0, actions };
     const shouldAutoUpgrade = opType === 'all' && isAutomationOn('land_upgrade');
     if (shouldAutoUpgrade || opType === 'upgrade') {
-        if (status.unlockable.length > 0 || status.upgradable.length > 0) fertilizerSnapshot = undefined;
         if (status.unlockable.length > 0) {
             let unlocked: number = 0;
             for (const landId of status.unlockable) {
@@ -394,17 +466,15 @@ async function runFarmOperation(
     }
 
     if (opType === 'all') {
-        if (automatic && !canContinueFarm(automatic.generation)) return { hadWork: actions.length > 0, actions };
-        const automation = getAutomation();
-        const fertilizerConfig = automation.fertilizer || 'none';
+        if (overBudget()) return { hadWork: actions.length > 0, actions };
+        const fertilizerConfig = getAutomation().fertilizer || 'none';
         const canApplyNormal = fertilizerConfig === 'normal'
             || fertilizerConfig === 'both'
             || fertilizerConfig === 'smart';
         if (isAutomationOn('fertilizer_multi_season') && canApplyNormal) {
             try {
-                const latest = fertilizerSnapshot ?? (await getAllLands())?.lands;
-                const latestLands = Array.isArray(latest) ? latest : [];
-                fertilizerSnapshot = latestLands;
+                const latest = await getAllLands();
+                const latestLands = Array.isArray(latest && latest.lands) ? latest.lands : [];
                 let targets = getNormalFertilizerTargetsFromLands(latestLands);
                 // 先按施肥土地范围过滤，避免范围外地块每轮都触发"检测到但目标为空"的无效调用。
                 // 过滤规则与 runFertilizerByConfig 内部一致：勾满全部类型视为不限制；确认不了土地类型时跳过本轮。
@@ -429,7 +499,6 @@ async function runFarmOperation(
                         count: targets.length,
                         landIds: targets,
                     });
-                    fertilizerSnapshot = undefined;
                     const result = await runFertilizerByConfig(targets, { reason: 'multi_season', propagateErrors });
                     if (result.normal > 0) actions.push(`补肥${result.normal}`);
                 }
@@ -442,12 +511,16 @@ async function runFarmOperation(
                 if (propagateErrors) throw e;
             }
         }
-        if (fertilizerConfig === 'smart' || isRipeningOnlyMode(fertilizerConfig)) {
+        // 巡田施肥（老版口径）：smart 策略照常；另外只要开了「2x2催熟」，即使策略为
+        // 不施肥/普通肥，也要进入施肥流程 —— runFertilizerByConfig 内部会单独催熟 2×2 作物。
+        if (fertilizerConfig === 'smart' || isAutomationOn('fertilizer_2x2_ripen')) {
             try {
-                const count = await runRipeningFertilizer(getAutomation(), fertilizerSnapshot, propagateErrors);
-                if (count > 0) {
-                    actions.push(`催熟${count}`);
+                const result = await runFertilizerByConfig([], { skipNormal: true, propagateErrors });
+                if (result.organic > 0) {
+                    actions.push(`有机肥${result.organic}`);
                     await harvestMatureOwnLandsOnce(actions, propagateErrors);
+                } else if (result.normal > 0) {
+                    actions.push(`2x2催熟${result.normal}`);
                 }
             } catch (e: any) {
                 logWarn('施肥', `巡田时施肥失败: ${e.message}`);
@@ -468,7 +541,8 @@ async function runFarmOperation(
 function scheduleNextFarmCheck(delayMs: number = CONFIG.farmCheckInterval): void {
     if (externalSchedulerMode) return;
     if (!farmLoopRunning) return;
-    farmScheduler.setTimeoutTask('farm_check_loop', Math.max(0, delayMs), async () => {
+    const waitMs = Math.max(0, delayMs);
+    farmScheduler.setTimeoutTask('farm_check_loop', waitMs, async () => {
         if (!farmLoopRunning) return;
         await runExclusiveAutomationTask('farm_check_loop', checkFarm);
         if (!farmLoopRunning) return;
@@ -490,43 +564,70 @@ function startFarmCheckLoop(options: { externalScheduler?: boolean } = {}): void
     startFertilizerBuyCheckTimer();
 }
 
+const FARM_PUSH_LOCK_WAIT_MS = 30 * 1000;
+
+/** 巡查中 / 计时器落地时撞上巡查的推送不再无声丢弃，改成登记一次提前唤醒。 */
+function markFarmPushDuringCheck(reason: string): void {
+    logFileOnly('巡田', `巡查中收到${reason}，登记延后检查`);
+    ownMaturity.requestFarmWakeup(reason);
+}
+
+function scheduleFarmPushCheck(taskName: string, reason: string): void {
+    farmScheduler.setTimeoutTask(taskName, 100, async () => {
+        if (isCheckingFarm) {
+            markFarmPushDuringCheck(reason);
+            return;
+        }
+        await runExclusiveAutomationTask(taskName, checkFarm, {
+            priority: true,
+            timeoutMs: FARM_PUSH_LOCK_WAIT_MS,
+        });
+    });
+}
+
 function onLandsChangedPush(lands: any[]): void {
-    if (!isAutomationOn('farm_push')) {
+    if (!isAutomationOn('farm_push')) return;
+    // 局部通知也可能带成熟时刻：只收紧计划，不清掉整片快照算出的更晚成熟点。
+    ownMaturity.observeOwnFarmMaturity(lands, 'push');
+    if (isCheckingFarm) {
+        markFarmPushDuringCheck('土地变化推送');
         return;
     }
-    if (isCheckingFarm) return;
     const now: number = Date.now();
-    if (now - lastPushTime < 500) return;
-    lastPushTime = now;
-    log('农场', `收到推送: ${lands.length}块土地变化，检查中...`, {
-        module: 'farm', event: '土地推送通知', result: 'trigger_check', count: lands.length
+    if (now - lastLandsPushTime < 500) return;
+    lastLandsPushTime = now;
+    const count = Array.isArray(lands) ? lands.length : 0;
+    log('农场', `收到推送: ${count}块土地变化，检查中...`, {
+        module: 'farm', event: '土地推送通知', result: 'trigger_check', count
     });
-    farmScheduler.setTimeoutTask('farm_push_check', 100, async () => {
-        if (!isCheckingFarm) await runExclusiveAutomationTask('farm_push_check', checkFarm);
-    });
+    scheduleFarmPushCheck('farm_push_check_lands', 'lands_push');
 }
 
 function onFarmSocialEventsChangedPush(events: any[]): void {
     if (!isAutomationOn('farm_push')) return;
-    if (isCheckingFarm) return;
+    if (isCheckingFarm) {
+        markFarmPushDuringCheck('农场社交事件推送');
+        return;
+    }
     const now: number = Date.now();
-    if (now - lastPushTime < 500) return;
-    lastPushTime = now;
+    if (now - lastSocialPushTime < 500) return;
+    lastSocialPushTime = now;
     const count = Array.isArray(events) ? events.length : 0;
     log('农场', `收到农场社交事件推送: ${count}个，检查中...`, {
         module: 'farm', event: '农场社交事件通知', result: 'trigger_check', count
     });
-    farmScheduler.setTimeoutTask('farm_push_check', 100, async () => {
-        if (!isCheckingFarm) await runExclusiveAutomationTask('farm_push_check', checkFarm);
-    });
+    scheduleFarmPushCheck('farm_push_check_social', 'social_push');
 }
 
 function stopFarmCheckLoop(): void {
     farmLoopRunning = false;
     farmLoopGeneration++;
-    automaticPlantPacing = { lastPlantAt: null, defer: true };
+    automaticPlantPacing = { lastPlantAt: null, defer: true, plantingResolved: false };
     externalSchedulerMode = false;
     farmScheduler.clearAll();
+    ownMaturity.resetOwnFarmMaturity();
+    lastLandsPushTime = 0;
+    lastSocialPushTime = 0;
     networkEvents.removeListener('landsChanged', onLandsChangedPush);
     networkEvents.removeListener('farmSocialEventsChanged', onFarmSocialEventsChangedPush);
     // 停止化肥自动购买检测定时器
@@ -535,26 +636,44 @@ function stopFarmCheckLoop(): void {
 
 function refreshFarmCheckLoop(delayMs: number = 200): void {
     if (!farmLoopRunning) return;
+    // 分次种植的续跑有自己的计时（配置间隔减已耗时），配置下发不能把它压成 200ms，
+    // 否则每轮 config_sync 都会提前叫醒一整轮巡田。setTimeoutTask 同名会先清旧计时器，
+    // 所以这里不手动 clear：守卫不通过时旧计时器原样保留，剩余地块不会被晾到下一轮。
     if (farmScheduler.has('farm_plant_continue')) {
-        farmScheduler.clear('farm_plant_continue');
-        schedulePlantContinuation(farmLoopGeneration, automaticPlantPacing, delayMs);
+        schedulePlantContinuation(farmLoopGeneration, automaticPlantPacing);
+    }
+    if (externalSchedulerMode) {
+        // 统一调度器模式下 scheduleNextFarmCheck 会直接 return，配置下发叫不醒农场线。
+        // 登记一次唤醒请求，由 worker 的 resetUnifiedSchedule 消费成短到期线。
+        ownMaturity.requestFarmWakeup('config_sync');
+        return;
     }
     scheduleNextFarmCheck(delayMs);
 }
 
 // ============ 化肥自动购买定时检测 ============
+// 当前已生效的开关与间隔（用于判断配置下发后是否需要重建）。
+let fertilizerTimerSignature = '';
+
 function startFertilizerBuyCheckTimer(): void {
-    farmScheduler.clear('fertilizer_buy_check');
+    const buyOrganic: boolean = isAutomationOn('fertilizer_buy_organic');
+    const buyNormal: boolean = isAutomationOn('fertilizer_buy_normal');
 
     // 检查是否有开启的化肥购买功能
-    if (!isAutomationOn('fertilizer_buy_organic') && !isAutomationOn('fertilizer_buy_normal')) {
+    if (!buyOrganic && !buyNormal) {
+        if (fertilizerTimerSignature) stopFertilizerBuyCheckTimer();
         return;
     }
 
     // 设置定时检测
     const intervalMinutes: number = getFertilizerBuyCheckIntervalMinutes();
     const intervalMs: number = intervalMinutes * 60 * 1000;
+    const signature: string = `${buyOrganic ? 1 : 0}${buyNormal ? 1 : 0}|${intervalMinutes}`;
+    // 配置没变就不重建：重建会把计时重新起算，频繁保存设置会让巡检永远等不到触发。
+    if (signature === fertilizerTimerSignature && farmScheduler.has('fertilizer_buy_check')) return;
+    fertilizerTimerSignature = signature;
 
+    farmScheduler.clear('fertilizer_buy_check');
     farmScheduler.setIntervalTask('fertilizer_buy_check', intervalMs, () => {
         runExclusiveAutomationTask('fertilizer_buy_check', checkFertilizerBuyOnce).catch(() => null);
     });
@@ -568,6 +687,7 @@ function startFertilizerBuyCheckTimer(): void {
 }
 
 function stopFertilizerBuyCheckTimer(): void {
+    fertilizerTimerSignature = '';
     farmScheduler.clear('fertilizer_buy_check');
     log('农场', '化肥自动购买检测定时器已停止', {
         module: 'farm',
@@ -614,4 +734,7 @@ module.exports = {
     startFertilizerBuyCheckTimer,
     stopFertilizerBuyCheckTimer,
     checkFertilizerBuyOnce,
+    getOwnFarmMaturityDelayMs: ownMaturity.getOwnFarmMaturityDelayMs,
+    consumeFarmWakeup: ownMaturity.consumeFarmWakeup,
+    requestFarmWakeup: ownMaturity.requestFarmWakeup,
 };

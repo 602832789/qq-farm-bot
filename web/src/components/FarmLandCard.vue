@@ -13,12 +13,15 @@ const props = withDefaults(defineProps<{
   selectionLabel?: string
   /** 非选择模式下点击卡片触发 open（查看土地详情）。 */
   openable?: boolean
+  /** 紧凑视图：缩小间距与作物图，隐藏标签行，一屏放下更多土地。 */
+  compact?: boolean
 }>(), {
   selectable: false,
   selected: false,
   selectionDisabled: false,
   selectionLabel: '',
   openable: false,
+  compact: false,
 })
 
 const emit = defineEmits<{
@@ -162,6 +165,18 @@ const traits = computed(() => {
   return list
 })
 
+/** 倒计时前只保留变异效果小图标：从 traits 里取变异类，普通加成不参与。 */
+const mutantTraits = computed(() => traits.value.filter(item => item.kind === 'mutant'))
+
+/** 成长阶段小字：仅生长中且有倒计时时显示（无倒计时时由阶段文案兑底，避免重复）。 */
+const phaseText = computed(() => {
+  if (stateTag.value || isFollower.value || isLocked.value || isEmpty.value)
+    return ''
+  if (!(Number(land.value.matureInSec) > 0))
+    return ''
+  return String(land.value.phaseName || '').trim()
+})
+
 // 状态行宽度有限：最多 4 个图标，超出合并为 “+N”。需处理的问题排在最前，永远可见。
 const MAX_TAGS = 4
 const allTags = computed(() => [
@@ -218,6 +233,7 @@ const ariaLabel = computed(() => {
         'plot--selectable': selectable,
         'plot--selected': selectable && selected,
         'plot--disabled': selectable && selectionDisabled,
+        'plot--compact': compact,
       },
     ]"
     :role="interactive ? (selectable ? 'checkbox' : 'button') : undefined"
@@ -226,6 +242,7 @@ const ariaLabel = computed(() => {
     :aria-disabled="selectable ? selectionDisabled : undefined"
     :aria-label="ariaLabel"
     :title="selectable && selectionDisabled ? (selectionLabel || '这块地当前不能选择') : undefined"
+    :data-land-id="land.id"
     @click="activate"
     @keydown.enter.prevent="activate"
     @keydown.space.prevent="activate"
@@ -255,8 +272,9 @@ const ariaLabel = computed(() => {
 
     <div class="plot__time">
       <span v-if="stateTag" class="plot__state" :class="`is-${stateTag.kind}`"><span :class="stateTag.icon" aria-hidden="true" />{{ stateTag.text }}</span>
-      <span v-else-if="Number(land.matureInSec) > 0" class="plot__countdown"><span class="i-carbon-time" aria-hidden="true" />{{ formatTime(land.matureInSec) }}</span>
+      <span v-else-if="Number(land.matureInSec) > 0" class="plot__countdown"><span class="i-carbon-time" aria-hidden="true" /><span v-for="item in mutantTraits" :key="item.key" class="plot__countdown-mutant" :title="item.title"><img v-if="item.image" :src="item.image" alt="" @error="markMutantFailed(item.key)"><span v-else :class="item.icon" /></span>{{ formatTime(land.matureInSec) }}</span>
       <span v-else class="plot__state is-muted">{{ land.phaseName || '生长中' }}</span>
+      <span v-if="phaseText" class="plot__phase">{{ phaseText }}</span>
       <span v-if="seasonText && !isFollower && !isLocked && !isEmpty" class="plot__season">{{ seasonText }}</span>
     </div>
 
@@ -479,6 +497,35 @@ const ariaLabel = computed(() => {
   font-weight: var(--fw-700);
   font-variant-numeric: tabular-nums;
 }
+.plot__countdown-mutant {
+  display: inline-flex;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  align-items: center;
+  justify-content: center;
+  color: #c08a12;
+  font-size: 12px;
+  line-height: 0;
+  cursor: help;
+}
+.plot__countdown-mutant img,
+.plot__countdown-mutant > span {
+  display: block;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  object-fit: contain;
+}
+.plot__phase {
+  overflow: hidden;
+  max-width: 40%;
+  margin-left: 4px;
+  color: var(--ui-subtle);
+  font-size: 10px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 .plot__state {
   display: inline-flex;
   align-items: center;
@@ -686,5 +733,105 @@ const ariaLabel = computed(() => {
 }
 .dark .plot--lv6 {
   --soil-tint: #82bddf;
+}
+
+/* 紧凑视图：压缩到原来约七成高，一屏能多放两列，标签只缩小不隐藏 */
+.plot--compact {
+  padding: 5px 6px 6px;
+  border-radius: 10px;
+}
+.plot--compact .plot__top {
+  height: 16px;
+  gap: 3px;
+}
+.plot--compact .plot__no {
+  font-size: 9px;
+}
+.plot--compact .plot__soil {
+  padding: 0 4px;
+  font-size: 9px;
+  line-height: 13px;
+}
+.plot--compact .plot__joint {
+  font-size: 9px;
+}
+.plot--compact .plot__check {
+  width: 16px;
+  height: 16px;
+  font-size: 10px;
+}
+.plot--compact .plot__crop {
+  width: 30px;
+  height: 30px;
+  margin-top: 1px;
+}
+.plot--compact .plot__crop img {
+  max-width: 92%;
+  max-height: 92%;
+}
+.plot--compact .plot__placeholder {
+  font-size: 17px;
+}
+.plot--compact .plot__name {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 14px;
+}
+.plot--compact .plot__time {
+  height: 16px;
+  margin-top: 1px;
+}
+.plot--compact .plot__countdown {
+  gap: 2px;
+  font-size: 10px;
+}
+.plot--compact .plot__countdown-mutant,
+.plot--compact .plot__countdown-mutant img,
+.plot--compact .plot__countdown-mutant > span {
+  width: 9px;
+  height: 9px;
+  font-size: 9px;
+}
+.plot--compact .plot__phase {
+  margin-left: 2px;
+  font-size: 9px;
+}
+.plot--compact .plot__state {
+  padding: 0 5px;
+  font-size: 9px;
+  line-height: 14px;
+}
+.plot--compact .plot__bar {
+  height: 3px;
+  margin-top: 3px;
+}
+.plot--compact .plot__tags {
+  height: 15px;
+  gap: 2px;
+  margin-top: 3px;
+}
+.plot--compact .plot__need,
+.plot--compact .plot__trait {
+  width: 14px;
+  height: 14px;
+}
+.plot--compact .plot__need > span,
+.plot--compact .plot__trait > span {
+  width: 9px;
+  height: 9px;
+}
+.plot--compact .plot__trait img {
+  width: 9px;
+  height: 9px;
+}
+.plot--compact .plot__more {
+  height: 14px;
+  padding: 0 4px;
+  font-size: 9px;
+  line-height: 14px;
+}
+.plot--compact .plot__season {
+  margin-left: 2px;
+  font-size: 9px;
 }
 </style>

@@ -1,548 +1,226 @@
 <script setup lang="ts">
-import { NButton } from 'naive-ui/es/button'
-import { storeToRefs } from 'pinia'
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { formatCount, useRanchActions } from '@/components/ranch/ranch-shared'
-import RanchAnimalCard from '@/components/ranch/RanchAnimalCard.vue'
-import RanchGate from '@/components/ranch/RanchGate.vue'
-import EmptyState from '@/components/ui/EmptyState.vue'
-import { useAccountStore } from '@/stores/account'
-import { useRanchStore } from '@/stores/ranch'
+import type { RanchAnimal, RanchRequest, RanchState } from '@/utils/ranch'
+import { computed, ref } from 'vue'
+import BaseButton from '@/components/ui/BaseButton.vue'
+import BaseInput from '@/components/ui/BaseInput.vue'
+import { formatQuantity, itemListLine } from '@/utils/ranch'
 
-const ranch = useRanchStore()
-const { state, loading, error } = storeToRefs(ranch)
-const { currentAccountId } = storeToRefs(useAccountStore())
-const { disabled, request } = useRanchActions()
+const props = defineProps<{ state: RanchState | null }>()
 
-const friends = ref<any[]>([])
-const listLoaded = ref(false)
-const selected = ref('')
-const query = ref('')
-const failedAvatars = ref<Record<string, boolean>>({})
-let alive = true
-onBeforeUnmount(() => alive = false)
+const emit = defineEmits<{
+  request: [payload: RanchRequest]
+  hostGid: [hostGid: string]
+}>()
 
-const visible = computed(() => {
-  const keyword = query.value.trim()
-  return keyword ? friends.value.filter(f => String(f.name || '').includes(keyword) || String(f.gid).includes(keyword)) : friends.value
+const keyword = ref('')
+
+const friends = computed(() => props.state?.friends || [])
+const ranch = computed(() => props.state?.friendRanch ?? null)
+const visibleFriends = computed(() => {
+  const text = keyword.value.trim().toLowerCase()
+  if (!text)
+    return friends.value
+  return friends.value.filter(friend => friend.name.toLowerCase().includes(text) || friend.gid.includes(text))
 })
-const detail = computed(() => selected.value && state.value?.friendRanch?.gid === selected.value ? state.value.friendRanch : null)
-const detailShelves = computed(() => (detail.value?.ranches || []).flatMap((r: any) => r.shelves.map((s: any) => ({ ...s, key: `${r.id}:${s.slot}` }))))
 
-async function loadList(id: string) {
-  await ranch.load(id, 'friends')
-  if (id === String(currentAccountId.value || '') && state.value?.friends) {
-    friends.value = state.value.friends
-    listLoaded.value = true
-  }
+function requestStealAll() {
+  if (!ranch.value)
+    return
+  emit('request', {
+    action: 'steal',
+    input: { hostGid: ranch.value.gid },
+    title: `偷取${ranch.value.name}的牧场产物`,
+    note: '服务端按进入牧场那一刻的可偷货架执行，可能少于页面显示的数量；每位好友每天可偷次数由服务端控制。',
+  })
 }
 
-// 打开面板即满足“打开好友面板”任务条件：先静默上报，再读取好友列表。
-async function enter(id: string) {
-  const current = () => alive && id === String(currentAccountId.value || '')
-  ranch.reset(id)
-  await nextTick()
-  if (!current())
+function requestCleanFriend() {
+  if (!ranch.value)
     return
-  const quote = await ranch.quote(id, 'reportEntry', { entry: 'friends' })
-  if (quote && !quote.skipped && current())
-    await ranch.execute(id, 'reportEntry', { entry: 'friends' }, quote.expected, { quiet: true })
-  if (!current())
-    return
-  const reportError = error.value
-  await loadList(id)
-  if (current() && reportError && !error.value && state.value?.unlocked)
-    error.value = reportError
+  emit('request', {
+    action: 'cleanFriend',
+    input: { hostGid: ranch.value.gid },
+    title: `清理${ranch.value.name}的栏舍`,
+    note: '只清理他人投放且允许清理的危险物，自己放的蚊子不会被清除。',
+  })
 }
 
-watch(currentAccountId, (id) => {
-  selected.value = ''
-  friends.value = []
-  listLoaded.value = false
-  if (id)
-    void enter(String(id))
-  else ranch.reset()
-}, { immediate: true })
-
-async function toggle(friend: any) {
-  const id = String(currentAccountId.value || '')
-  if (!id || disabled.value)
+function requestStroke(ranchId: string, animal: RanchAnimal) {
+  if (!ranch.value)
     return
-  if (selected.value === friend.gid) {
-    selected.value = ''
-    return
-  }
-  selected.value = friend.gid
-  await ranch.load(id, 'friends', undefined, friend.gid)
+  emit('request', {
+    action: 'stroke',
+    input: { hostGid: ranch.value.gid, ranchId, animalId: animal.id },
+    title: `抚摸${animal.name}`,
+    note: '抚摸有概率触发巨大变异，每日次数由服务端下发。',
+  })
 }
-async function reloadList() {
-  const id = String(currentAccountId.value || '')
-  if (id && !disabled.value) {
-    selected.value = ''
-    await loadList(id)
-  }
+
+function requestMosquito(ranchId: string, label: string) {
+  if (!ranch.value)
+    return
+  emit('request', {
+    action: 'putMosquito',
+    input: { hostGid: ranch.value.gid, ranchId },
+    title: `向${ranch.value.name}的${label}放蚊子`,
+    note: '会影响好友的牧场产出，属于对抗性操作，每日次数与每栏上限由服务端控制。',
+    danger: true,
+  })
+}
+
+function shelfText(shelf: any) {
+  return shelf.products.length ? itemListLine(shelf.products) : '货架已空'
 }
 </script>
 
 <template>
-  <div class="friends">
-    <div class="page-toolbar !mb-0">
-      <span class="friends__count">共 {{ friends.length }} 位好友</span>
-      <div class="page-toolbar__actions">
-        <label class="friends__search">
-          <span class="i-carbon-search" aria-hidden="true" />
-          <input v-model="query" type="search" placeholder="搜索好友" aria-label="搜索好友">
-        </label>
-        <NButton secondary circle title="刷新好友" aria-label="刷新好友" :loading="loading && !selected" :disabled="disabled && !loading" @click="reloadList">
-          <template #icon>
-            <span class="i-carbon-renew" />
-          </template>
-        </NButton>
-      </div>
+  <div class="space-y-3">
+    <div v-if="!state?.friends && !state?.friendRanch" class="border border-gray-200 rounded-lg border-dashed px-6 py-10 text-center text-sm text-gray-500 dark:border-gray-700">
+      好友牧场数据未下发，请点击刷新重新读取。
     </div>
 
-    <RanchGate @retry="reloadList">
-      <div v-if="loading && !listLoaded" class="friends__loading" role="status" aria-label="正在读取好友">
-        <span class="i-svg-spinners-90-ring-with-bg" />
+    <template v-if="ranch">
+      <div class="flex flex-wrap items-center gap-2 border border-gray-200 rounded-xl bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        <BaseButton variant="ghost" size="sm" @click="emit('hostGid', '')">
+          ← 返回列表
+        </BaseButton>
+        <div class="min-w-0 flex-1">
+          <p class="truncate text-sm font-medium">
+            {{ ranch.name }} · Lv.{{ ranch.level }}
+          </p>
+          <p class="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
+            GID {{ ranch.gid }} · 可偷货架 {{ ranch.stealableShelves }} 个 · 可清理危险物 {{ ranch.cleanableHazards }} 个
+          </p>
+        </div>
+        <span class="rounded-lg bg-gray-50 px-2 py-1 text-[11px] text-gray-600 dark:bg-gray-900/40 dark:text-gray-300">
+          今日抚摸剩余 {{ ranch.strokeRemaining ?? '未下发' }} 次
+        </span>
+        <span class="rounded-lg bg-gray-50 px-2 py-1 text-[11px] text-gray-600 dark:bg-gray-900/40 dark:text-gray-300">
+          今日放蚊剩余 {{ ranch.mosquitoRemaining ?? '未下发' }} 次
+        </span>
+        <BaseButton variant="primary" size="sm" :disabled="!ranch.canSteal" @click="requestStealAll">
+          一键偷取
+        </BaseButton>
+        <BaseButton variant="secondary" size="sm" :disabled="!ranch.cleanableHazards" @click="requestCleanFriend">
+          一键清理
+        </BaseButton>
       </div>
-      <EmptyState v-else-if="listLoaded && !friends.length" title="暂无好友" description="添加游戏好友后可以互相拜访牧场" icon="i-carbon-user-multiple" />
-      <EmptyState v-else-if="listLoaded && !visible.length" title="没有匹配的好友" description="换个昵称或 GID 试试" icon="i-carbon-search" />
 
-      <div v-else class="friends__list">
-        <div v-for="friend in visible" :key="friend.gid" class="friend-card" :class="{ 'is-expanded': selected === friend.gid }">
-          <div
-            class="friend-row"
-            role="button"
-            tabindex="0"
-            :aria-expanded="selected === friend.gid"
-            :aria-label="`${friend.name}，查看牧场`"
-            @click="toggle(friend)"
-            @keydown.enter.self.prevent="toggle(friend)"
-            @keydown.space.self.prevent="toggle(friend)"
-          >
-            <div class="friend-avatar">
-              <img v-if="friend.avatarUrl && !failedAvatars[friend.gid]" :src="friend.avatarUrl" alt="" loading="lazy" @error="failedAvatars[friend.gid] = true">
-              <span v-else class="i-carbon-user" />
-            </div>
-            <div class="friend-main">
-              <div class="friend-name-row">
-                <strong class="friend-name" :title="friend.name">{{ friend.name }}</strong>
-                <span class="friend-gid">{{ friend.gid }}</span>
-              </div>
-              <div class="friend-tags">
-                <template v-if="selected === friend.gid && detail">
-                  <span class="f-tag f-tag--level">牧场 Lv.{{ detail.level }}</span>
-                  <span class="f-tag" :class="{ 'f-tag--steal': detail.canSteal }">
-                    <span class="i-carbon-shopping-bag" />{{ detail.canSteal ? `可偷 ${detail.stealableShelves} 个货架` : '暂无可偷产物' }}
-                  </span>
-                </template>
-                <span v-else class="f-tag">点击查看牧场</span>
-              </div>
-            </div>
-            <span class="friend-chevron i-carbon-chevron-down" aria-hidden="true" />
+      <p class="text-[11px] text-gray-500 leading-5 dark:text-gray-400">
+        进入好友牧场本身即是一次真实访问：报价阶段服务端已进入并离开过对方牧场，操作结果以再次进入后的回包为准。
+      </p>
+
+      <div v-if="!ranch.ranches.length" class="border border-gray-200 rounded-lg border-dashed px-6 py-8 text-center text-sm text-gray-500 dark:border-gray-700">
+        该好友尚未建造窝或棚。
+      </div>
+
+      <div class="grid gap-3 lg:grid-cols-2">
+        <div
+          v-for="row in ranch.ranches"
+          :key="row.id"
+          class="border border-gray-200 rounded-xl bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800"
+        >
+          <div class="flex items-center gap-2">
+            <span class="i-fa-solid-paw h-4 w-4 shrink-0" :style="{ color: 'var(--theme-primary)' }" />
+            <p class="min-w-0 flex-1 truncate text-sm font-medium">
+              {{ row.name }}
+            </p>
+            <span class="shrink-0 rounded bg-gray-50 px-1.5 py-0.5 text-[11px] text-gray-600 dark:bg-gray-900/40 dark:text-gray-300">
+              蚊子 {{ row.mosquitoes }} / {{ row.mosquitoLimit || '未配置' }}
+            </span>
+            <BaseButton
+              variant="outline"
+              size="sm"
+              :disabled="!(row.mosquitoRoom > 0) || ranch.mosquitoRemaining === 0"
+              @click="requestMosquito(row.id, row.name)"
+            >
+              放蚊子
+            </BaseButton>
           </div>
 
-          <div v-if="selected === friend.gid" class="friend-shelves">
-            <div v-if="loading && !detail" class="flex justify-center py-6">
-              <span class="i-svg-spinners-90-ring-with-bg text-2xl text-green-600" />
+          <div v-if="row.shelves.length" class="mt-2 space-y-1.5">
+            <div
+              v-for="shelf in row.shelves"
+              :key="`${row.id}-${shelf.slot}`"
+              class="flex items-center gap-2 rounded-lg bg-gray-50 px-2 py-1.5 text-xs dark:bg-gray-900/40"
+            >
+              <span class="shrink-0 text-gray-500">架 {{ shelf.slot }}</span>
+              <span class="min-w-0 flex-1 truncate text-gray-600 dark:text-gray-300">{{ shelfText(shelf) }}</span>
+              <span
+                v-if="shelf.canSteal"
+                class="shrink-0 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
+              >
+                可偷
+              </span>
             </div>
-            <template v-else-if="detail">
-              <p v-if="detail.notice" class="friend-shelves__notice" role="alert">
-                {{ detail.notice }}
+          </div>
+          <p v-else class="mt-2 text-xs text-gray-500">
+            该栏舍暂无产物货架。
+          </p>
+
+          <div v-if="row.animals.length" class="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] mt-3 gap-2">
+            <div
+              v-for="animal in row.animals"
+              :key="`${row.id}-${animal.id}`"
+              class="border border-gray-200 rounded-lg px-2 py-1.5 dark:border-gray-700"
+            >
+              <p class="truncate text-xs font-medium">
+                {{ animal.name }}
               </p>
-              <div class="friend-interactions">
-                <span>今日可抚摸 <b>{{ detail.strokeRemaining }}</b> 次</span>
-                <span>今日可放蚊子 <b>{{ detail.mosquitoRemaining }}</b> 次</span>
-                <NButton size="small" secondary :disabled="disabled || !detail.cleanableHazards" @click="request('cleanFriend', { hostGid: friend.gid })">
-                  一键清理
-                </NButton>
-              </div>
-              <section v-for="pen in detail.ranches" :key="pen.id" class="friend-pen">
-                <div class="friend-shelves__head">
-                  <h4>{{ pen.name }} <small>蚊子 {{ pen.mosquitoes }} / {{ pen.mosquitoLimit }}</small></h4>
-                  <NButton size="small" secondary :disabled="disabled || !pen.mosquitoRoom || !detail.mosquitoRemaining" :aria-label="`向好友${pen.name}放蚊子`" @click="request('putMosquito', { hostGid: friend.gid, ranchId: pen.id })">
-                    放蚊子
-                  </NButton>
-                </div>
-                <div class="friend-pen__animals">
-                  <RanchAnimalCard
-                    v-for="animal in pen.animals" :key="animal.id" :animal="animal" :pen="pen.name"
-                    friend actionable :disabled="disabled"
-                    @stroke="request('stroke', { hostGid: friend.gid, ranchId: pen.id, animalId: animal.id })"
-                  />
-                </div>
-              </section>
-              <div class="friend-shelves__head">
-                <span><span class="i-carbon-box" aria-hidden="true" />货架产物</span>
-                <NButton size="small" type="primary" :disabled="disabled || !detail.canSteal" @click="request('steal', { hostGid: friend.gid })">
-                  <template #icon>
-                    <span class="i-carbon-shopping-bag" />
-                  </template>
-                  一键偷取
-                </NButton>
-              </div>
-              <div v-if="detailShelves.length" class="friend-shelves__grid">
-                <div v-for="shelf in detailShelves" :key="shelf.key" class="shelf" :class="{ 'is-stealable': shelf.canSteal }">
-                  <span class="shelf__slot">货架 {{ shelf.slot }}</span>
-                  <div class="shelf__products">
-                    <span v-for="product in shelf.products" :key="product.id" :title="product.name">
-                      <img :src="product.image" alt="">{{ product.name }}<b>×{{ formatCount(product.count) }}</b>
-                    </span>
-                  </div>
-                  <span class="shelf__state">{{ shelf.canSteal ? '可偷取' : '不可偷' }}</span>
-                </div>
-              </div>
-              <p v-else class="friend-shelves__empty">
-                好友的货架上暂时没有产物
+              <p class="truncate text-[11px] text-gray-500">
+                {{ animal.stageName }} · 产物 {{ formatQuantity(animal.produceCount) }}
               </p>
-            </template>
-            <p v-else-if="error" class="friend-shelves__notice" role="alert">
-              {{ error }}
-            </p>
+              <BaseButton
+                variant="secondary"
+                size="sm"
+                class="mt-1.5 w-full"
+                :disabled="!animal.canStroke || animal.stroked || ranch.strokeRemaining === 0"
+                @click="requestStroke(row.id, animal)"
+              >
+                {{ animal.stroked ? '今日已抚摸' : '抚摸' }}
+              </BaseButton>
+            </div>
           </div>
         </div>
       </div>
-    </RanchGate>
+    </template>
+
+    <template v-else-if="state?.friends">
+      <div class="flex flex-wrap items-center gap-2">
+        <BaseInput v-model="keyword" placeholder="搜索好友昵称或 GID" class="w-56" clearable />
+        <span class="rounded-lg bg-gray-50 px-3 py-1.5 text-xs text-gray-600 dark:bg-gray-900/40 dark:text-gray-300">
+          共 {{ friends.length }} 位好友
+        </span>
+      </div>
+
+      <div v-if="!friends.length" class="border border-gray-200 rounded-lg border-dashed px-6 py-10 text-center text-sm text-gray-500 dark:border-gray-700">
+        没有可访问的好友。
+      </div>
+      <div v-else-if="!visibleFriends.length" class="border border-gray-200 rounded-lg border-dashed px-6 py-8 text-center text-sm text-gray-500 dark:border-gray-700">
+        没有匹配 {{ keyword }} 的好友。
+      </div>
+
+      <div v-else class="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
+        <div
+          v-for="friend in visibleFriends"
+          :key="friend.gid"
+          class="flex items-center gap-2 border border-gray-200 rounded-xl bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800"
+        >
+          <img v-if="friend.avatarUrl" :src="friend.avatarUrl" :alt="friend.name" class="h-9 w-9 shrink-0 rounded-full object-cover">
+          <div v-else class="i-carbon-user-avatar h-9 w-9 shrink-0 text-xl text-gray-300" />
+          <div class="min-w-0 flex-1">
+            <p class="truncate text-sm font-medium">
+              {{ friend.name }}
+            </p>
+            <p class="truncate text-[11px] text-gray-500">
+              {{ friend.gid }}
+            </p>
+          </div>
+          <BaseButton variant="secondary" size="sm" @click="emit('hostGid', friend.gid)">
+            进入
+          </BaseButton>
+        </div>
+      </div>
+    </template>
   </div>
 </template>
-
-<style scoped>
-.friend-interactions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 20px;
-  color: var(--ui-muted);
-  font-size: 12px;
-}
-
-.friend-interactions b {
-  color: var(--ui-primary);
-}
-.friend-pen {
-  display: grid;
-  gap: 10px;
-  margin: 14px 0;
-}
-.friend-pen h4 {
-  margin: 0;
-  font-size: 14px;
-}
-.friend-pen h4 small {
-  margin-left: 6px;
-  color: var(--ui-subtle);
-  font-weight: normal;
-}
-.friend-pen__animals {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
-  gap: 10px;
-}
-
-.friends {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 12px;
-  padding-bottom: 24px;
-}
-
-.friends__count {
-  color: var(--ui-muted);
-  font-size: 13px;
-}
-
-.friends__search {
-  display: flex;
-  width: 16rem;
-  height: 34px;
-  align-items: center;
-  gap: 8px;
-  padding: 0 12px;
-  border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-control);
-  color: var(--ui-subtle);
-  background: var(--glass-input);
-}
-
-.friends__search:focus-within {
-  border-color: var(--ui-primary);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-primary) 14%, transparent);
-}
-
-.friends__search input {
-  min-width: 0;
-  flex: 1;
-  border: 0;
-  outline: 0;
-  color: var(--ui-ink);
-  background: transparent;
-  font-size: 13px;
-}
-
-.friends__loading {
-  display: grid;
-  min-height: 240px;
-  place-items: center;
-  color: var(--ui-primary);
-  font-size: 28px;
-}
-
-.friends__list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.friend-card {
-  overflow: hidden;
-  border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-card);
-  background: var(--ui-surface);
-  box-shadow:
-    inset 0 1px 0 var(--glass-highlight),
-    var(--ui-shadow-sm);
-  transition: border-color 0.15s ease;
-}
-
-.friend-card.is-expanded {
-  border-color: color-mix(in srgb, var(--ui-primary) 32%, var(--ui-border));
-}
-
-.friend-row {
-  display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) 20px;
-  align-items: center;
-  gap: 14px;
-  padding: 14px 16px;
-  cursor: pointer;
-  transition: background-color 0.15s ease;
-}
-
-.friend-row:hover {
-  background: color-mix(in srgb, var(--ui-surface-soft) 60%, transparent);
-}
-
-.friend-row:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--ui-primary) 55%, transparent);
-  outline-offset: -2px;
-}
-
-.friend-avatar {
-  display: grid;
-  width: 44px;
-  height: 44px;
-  overflow: hidden;
-  place-items: center;
-  border-radius: 14px;
-  color: var(--ui-subtle);
-  background: var(--ui-surface-soft);
-  font-size: 20px;
-}
-
-.friend-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.friend-main {
-  min-width: 0;
-}
-
-.friend-name-row {
-  display: flex;
-  min-width: 0;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.friend-name {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ui-ink);
-  font-size: 15px;
-  font-weight: var(--fw-650);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.friend-gid {
-  flex: none;
-  color: var(--ui-subtle);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-
-.friend-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 6px;
-}
-
-.f-tag {
-  height: 22px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 8px;
-  border-radius: 7px;
-  color: var(--ui-muted);
-  background: var(--ui-surface-soft);
-  font-size: 12px;
-  line-height: 1;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-
-.f-tag--level {
-  color: var(--ui-ink);
-  font-weight: var(--fw-600);
-}
-
-.f-tag--steal {
-  color: var(--ui-primary);
-  background: var(--ui-primary-soft);
-  font-weight: var(--fw-600);
-}
-
-.friend-chevron {
-  justify-self: end;
-  color: var(--ui-subtle);
-  font-size: 16px;
-  transition: transform 0.2s ease;
-}
-
-.friend-card.is-expanded .friend-chevron {
-  transform: rotate(180deg);
-}
-
-.friend-shelves {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 16px;
-  border-top: 1px solid var(--ui-border);
-  background: color-mix(in srgb, var(--ui-surface-soft) 55%, transparent);
-}
-
-.friend-shelves__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.friend-shelves__head > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--ui-ink);
-  font-size: 14px;
-  font-weight: var(--fw-600);
-}
-
-.friend-shelves__notice {
-  margin: 0;
-  padding: 8px 12px;
-  border-radius: 10px;
-  color: var(--ui-danger);
-  background: var(--ui-danger-soft);
-  font-size: 13px;
-}
-
-.friend-shelves__empty {
-  margin: 0;
-  color: var(--ui-subtle);
-  font-size: 13px;
-  text-align: center;
-}
-
-.friend-shelves__grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
-  gap: 8px;
-}
-
-.shelf {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  border: 1px solid var(--ui-border);
-  border-radius: 12px;
-  background: var(--ui-surface);
-}
-
-.shelf.is-stealable {
-  border-color: color-mix(in srgb, var(--ui-primary) 40%, var(--ui-border));
-}
-
-.shelf__slot {
-  color: var(--ui-subtle);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.shelf__products {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  gap: 4px 10px;
-}
-
-.shelf__products > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--ui-muted);
-  font-size: 13px;
-}
-
-.shelf__products img {
-  width: 28px;
-  height: 28px;
-  object-fit: contain;
-}
-
-.shelf__products b {
-  color: var(--ui-ink);
-  font-variant-numeric: tabular-nums;
-}
-
-.shelf__state {
-  color: var(--ui-subtle);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.shelf.is-stealable .shelf__state {
-  color: var(--ui-primary);
-  font-weight: var(--fw-600);
-}
-
-@media (max-width: 767px) {
-  .friend-row {
-    grid-template-columns: 40px minmax(0, 1fr) 20px;
-    gap: 12px;
-    padding: 12px;
-  }
-
-  .friend-avatar {
-    width: 40px;
-    height: 40px;
-    border-radius: 12px;
-  }
-
-  .friends__search {
-    width: auto;
-    flex: 1;
-  }
-
-  .friend-shelves {
-    padding: 12px;
-  }
-}
-</style>

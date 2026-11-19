@@ -44,10 +44,15 @@ test('让路错误识别：让路、队列已满、连接断开都算「该整�
     assert.ok(isGatewayYieldError(new Error('请求已中断: 93s 无入站数据，连续 3 次心跳失败')));
     assert.ok(isGatewayYieldError(new Error('连接未打开: Enter')));
     assert.ok(isGatewayYieldError(new Error('账号尚未登录: Enter')));
+    // 运行日志改成中文后的实际形态：还卡在队列里没排到连接，同样属于「该整轮让路」
+    assert.ok(isGatewayYieldError(new Error('请求超时：Enter（尚未排到连接；等待回包 3 个、排队 1 个；回包中：AllLands#1（2 秒））')));
+    assert.ok(isGatewayYieldError(new Error('网关繁忙，后台请求已让路：Bag（已等待 8 秒；等待回包 2 个、排队 0 个）')));
 
     // 好友维度的真实失败仍要交给 handleFriendEnterError 处理，不能被当成让路
     assert.equal(isGatewayYieldError(new Error('VisitService.Enter 错误: code=1001 好友不存在')), false);
     assert.equal(isGatewayYieldError(new Error('请求超时: Enter (stage=pending)')), false);
+    // 已经发到网关只是没回包，是网关静默而不是排队让路
+    assert.equal(isGatewayYieldError(new Error('请求超时：Enter（已发往网关但未回包；等待回包 1 个、排队 0 个）')), false);
     assert.equal(isGatewayYieldError(null), false);
 });
 

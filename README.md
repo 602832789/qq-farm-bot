@@ -11,6 +11,7 @@
 <kbd>🌱 Node.js 20.19+</kbd> &nbsp; <kbd>📦 pnpm 10</kbd> &nbsp; <kbd>💚 Vue 3</kbd> &nbsp; <kbd>🐳 Docker Compose</kbd>
 
 <br><br>
+<img src="web/public/activity/star-festival/star-farm.png" width="320" alt="农场主题插画：绿植环绕的小屋与庭院">
 
 [🌾 看看功能](#功能) · [🤖 AI 安装](#ai安装) · [🚜 源码部署](#源码部署) · [🐳 Docker 部署](#docker-部署) · [🔑 账号登录](#账号登录) · [📖 使用文档](#文档)
 
@@ -31,17 +32,17 @@
 <table>
 <tr>
 <td align="center" width="33%">
-<img src="core/src/gameConfig/seed_images_named/seed_images/10007.png" height="64" alt="浇水壶图标">
+<img src="core/src/gameConfig/seed_images_named/10007_浇水_icon_watering.png" height="64" alt="浇水壶图标">
 <br><br><b>🌱 打理日常农活</b>
 <p>收获、种植、浇水、除草、除虫<br>自动施肥、批量操作与多种种植策略</p>
 </td>
 <td align="center" width="33%">
-<img src="core/src/gameConfig/seed_images_named/seed_images/42254.png" height="64" alt="作物图鉴图标">
+<img src="core/src/gameConfig/seed_images_named/42254.png" height="64" alt="作物图鉴图标">
 <br><br><b>🌻 认识每株作物</b>
 <p>作物图鉴、超变图鉴与土地状态<br>等级、进度、收藏与属性加成一目了然</p>
 </td>
 <td align="center" width="33%">
-<img src="core/src/gameConfig/seed_images_named/seed_images/1001.png" height="64" alt="活动道具图标">
+<img src="web/public/activity/star-festival/star-token.png" height="64" alt="活动道具图标">
 <br><br><b>🎉 看看任务与活动</b>
 <p>任务、商城、背包与已适配活动<br>奖励预览、领取和兑换都能操作</p>
 </td>
@@ -64,14 +65,16 @@
 ```text
 请帮我在当前机器安装 GitHub 项目 602832789/qq-farm-bot。
 
-先克隆仓库，阅读根目录 README.md 与 docs/README.md，按「源码部署」章节执行：
+先克隆仓库，阅读根目录 README.md 与 AGENTS.md，按「源码部署」章节执行：
 1. 检查 Node.js >= 20.19、pnpm 10.x，缺失时用 corepack enable 启用；
 2. 执行 pnpm install 与 pnpm build:web；
-3. 后台常驻启动：用 bash ./start.sh，确认 3007 端口已监听、日志无报错；
+3. 后台常驻启动：Linux/macOS 用 bash ./start.sh，Windows 用 start.bat；
+   确认 3007 端口已监听、日志无报错；
 4. 告诉我访问地址、进程怎么停、运行数据存在哪个目录；
 5. 提醒我首次登录用 admin / admin，并在面板里改掉默认密码。
 
-注意：不要删除 pnpm-lock.yaml，安装依赖时保持锁文件不变。
+注意：不要删除仓库根目录的 .npmrc（node-linker=hoisted），
+否则 core 的 tsc 会因 TS2742 无法推断类型而构建失败。
 ```
 
 助手会复用已有依赖和构建产物，只重建缺失或过期的部分；修改密码、微信扫码和账号登录仍由你在面板里完成。
@@ -101,12 +104,15 @@ pnpm dev:core
 | 场景 | 做法 |
 | --- | --- |
 | 后台常驻（Linux / macOS） | `bash ./start.sh`，日志 `tail -f app_dev.log`，停止 `bash ./stop.sh` |
-| 后台常驻（Windows） | 安装 Git for Windows 后在 Git Bash 里执行 `bash ./start.sh`，停止 `bash ./stop.sh` |
+| 后台常驻（Windows） | 双击 `start.bat`，用 `stop.bat` 停止 |
 | 完整重建 | `bash ./start.sh --rebuild` |
 | 开发模式 | 两个终端分别跑 `pnpm dev:web` 与 `pnpm dev:core` |
 | 免装 Node.js | 从 [Releases](https://github.com/602832789/qq-farm-bot/releases)（仅仓库成员可见）下载二进制，或执行 `pnpm package:release` 自行构建 |
 
 `pnpm dev:core` 只启动后端，需先构建一次前端；`pnpm dev` 会先构建前端再启动后端。更新时先停服务，`git pull --ff-only` 后重新执行 `pnpm install` 与 `pnpm build:web`。
+
+> [!TIP]
+> 根目录 `.npmrc` 的 `node-linker=hoisted` 让 `node_modules` 使用扁平布局。删除后 `tsc` 会因 TS2742 无法推断 Express 类型而中断 `core` 构建，请保留它。
 
 <a name="docker-部署"></a>
 
@@ -138,7 +144,7 @@ docker compose down        # 停止并移除容器
 
 `docker compose down` 不会删除命名卷；加 `-v` 会连账号数据一起删掉，请勿使用。备份与迁移见[数据与备份](#数据)。
 
-QQ 扫码登录所需的 NapCat 服务不随 Compose 启动，需要自建，说明见[账号登录](#账号登录)。
+QQ 扫码登录所需的 NapCat 服务默认不随 Compose 启动，需要时用 `napcat/Dockerfile` 自行构建。其余环境变量、构建参数与镜像细节见 [详细参考](docs/detailed-reference.md#部署细节)。
 
 <a name="账号登录"></a>
 
@@ -154,7 +160,7 @@ QQ 扫码登录所需的 NapCat 服务不随 Compose 启动，需要自建，说
 | 微信扫码 | 面板内直接扫码授权，无需另行部署扫码服务 |
 | QQ 扫码 | 需自建 [qq-miniapp-auth](https://github.com/liyangpengs/qq-miniapp-auth) 服务，并在登录设置里填写地址与接口签名 |
 
-Code 有时效性，登录失败时先重新获取或重新扫码。
+Code 有时效性，登录失败时先重新获取或重新扫码。QQ 扫码的 NapCat 容器与凭据存放说明见 [详细参考](docs/detailed-reference.md#账号登录细节)。
 
 <a name="命令"></a>
 
@@ -165,10 +171,11 @@ Code 有时效性，登录失败时先重新获取或重新扫码。
 | `pnpm dev:core` | 启动后端和已构建的面板 |
 | `pnpm dev:web` | 启动前端开发服务器 |
 | `pnpm build:web` | 构建前端 |
-| `pnpm build:core` | 编译后端 TypeScript |
 | `pnpm lint` | 检查并自动修复前后端代码 |
 | `pnpm -C core test` | 编译并运行后端测试 |
 | `pnpm typecheck:web` | 前端类型检查 |
+
+完整的构建、打包、清理与抓包分析命令见 [详细参考](docs/detailed-reference.md#开发命令)。
 
 <a name="数据"></a>
 
@@ -186,17 +193,20 @@ Code 有时效性，登录失败时先重新获取或重新扫码。
 
 ## 📖 继续逛逛
 
-- [专题文档索引](docs/README.md) —— 协议研究、活动实现、配置存储与工具说明
+- [详细参考](docs/detailed-reference.md) —— 环境变量、策略与施肥模式、项目结构、全部开发命令、来源与许可
+- [专题文档索引](docs/README.md) —— 协议研究、活动实现与工具说明
+- [仓库约定与 AI 安装指南](AGENTS.md)
+- [更新记录](docs/CHANGELOG.md)
 
-本项目仅供学习与研究使用；使用前请确认你已了解相关风险。
+本项目沿用 [PolyForm Noncommercial License 1.0.0](LICENSE)，仅限非商业用途；使用前请阅读 [免责声明](docs/detailed-reference.md#免责声明)。
 
 ---
 
 <div align="center">
 
-<img src="core/src/gameConfig/seed_images_named/seed_images/1001.png" height="44" alt="金币图标"> &nbsp;
-<img src="core/src/gameConfig/seed_images_named/seed_images/10001.png" height="44" alt="收获图标"> &nbsp;
-<img src="core/src/gameConfig/seed_images_named/seed_images/41435.png" height="44" alt="作物果实图标">
+<img src="core/src/gameConfig/seed_images_named/1001_金币_golds.png" height="44" alt="金币图标"> &nbsp;
+<img src="core/src/gameConfig/seed_images_named/10001_收获_icon_harvest.png" height="44" alt="收获图标"> &nbsp;
+<img src="core/src/gameConfig/seed_images_named/41435.png" height="44" alt="作物果实图标">
 
 **一块小田，一点期待。🌿**
 

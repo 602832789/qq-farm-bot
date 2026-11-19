@@ -6,6 +6,7 @@ const {
     MAX_BUSINESS_IN_FLIGHT,
     MAX_NON_FOREGROUND_BUSINESS_IN_FLIGHT,
     describeRequestClassMarker,
+    describeRequestClassLabel,
     isClassQueueFull,
     maxQueuedForClass,
     resolveRequestClass,
@@ -139,4 +140,16 @@ test('压力日志标记能区分心跳/ACE 与各业务班次', () => {
     assert.equal(describeRequestClassMarker({ requestClass: 'farm' }), '#');
     assert.equal(describeRequestClassMarker({ requestClass: 'friend' }), '&');
     assert.equal(describeRequestClassMarker({ requestClass: 'background' }), '~');
+});
+
+test('面板日志用中文班次名，不再输出 !H: / ~ 这类标记', () => {
+    assert.equal(describeRequestClassLabel({ requestClass: 'critical', criticalLane: 'heartbeat' }), '心跳');
+    assert.equal(describeRequestClassLabel({ requestClass: 'critical', criticalLane: 'ace' }), 'ACE 上报');
+    assert.equal(describeRequestClassLabel({ requestClass: 'critical' }), '心跳/ACE');
+    assert.equal(describeRequestClassLabel({ requestClass: 'foreground' }), '前台');
+    assert.equal(describeRequestClassLabel({ requestClass: 'farm' }), '自己农场');
+    assert.equal(describeRequestClassLabel({ requestClass: 'friend' }), '好友农场');
+    assert.equal(describeRequestClassLabel({ requestClass: 'background' }), '后台补数据');
+    // 没带班次信息的请求按前台算，和 classOf 的默认一致
+    assert.equal(describeRequestClassLabel(null), '前台');
 });

@@ -1,4 +1,4 @@
-import type { AccountConfig, AutomationConfig, BagSeedFallbackStrategy, FertilizerLandType, FertilizerMode, GlobalConfig, IntervalConfig, LoginSettings, OfflineReminder, PlantingStrategy, QuietHoursConfig } from '../../types/config';
+import type { AccountConfig, AutomationConfig, BagSeedFallbackStrategy, CapitalModeConfig, FertilizerLandType, GlobalConfig, IntervalConfig, LoginSettings, OfflineReminder, PlantingStrategy, QuietHoursConfig } from '../../types/config';
 export {};
 
 const { DEFAULT_TIME_ZONE, normalizeTimeZone, resolveClientVersion } = require('../../config/config');
@@ -23,7 +23,6 @@ const PUSHOO_CHANNELS: Set<string> = new Set([
 ]);
 
 const DEFAULT_FERTILIZER_LAND_TYPES: FertilizerLandType[] = ['purple-gold', 'gold', 'black', 'red', 'normal'];
-const FERTILIZER_MODES = new Set<FertilizerMode>(['both', 'normal', 'organic', 'smart', 'none', 'normal_ripen', 'organic_ripen']);
 const ALL_FERTILIZER_LAND_TYPES: FertilizerLandType[] = ['blue-crystal', ...DEFAULT_FERTILIZER_LAND_TYPES];
 const FERTILIZER_LAND_TYPE_SET: Set<string> = new Set(ALL_FERTILIZER_LAND_TYPES);
 const INTERVAL_MAX_SEC: number = 86400;
@@ -48,6 +47,32 @@ const DEFAULT_LOGIN_SETTINGS: LoginSettings = {
     napCatEndpoint: '',
     napCatSignature: '',
 };
+
+/**
+ * 收敛成「有限整数」。
+ * `Number(x) || fallback` 会把 Infinity 当成合法值放行（JSON 里的 `1e400` 解析出来就是
+ * Infinity），这类值进到等于比较 / 位运算里不会报错，只会静默失效。
+ */
+function toFiniteInt(input: unknown, fallback: unknown, minFallback: number = 0): number {
+    const value = Number(input);
+    if (Number.isFinite(value)) return Math.max(minFallback, Math.trunc(value));
+    const fb = Number(fallback);
+    return Number.isFinite(fb) ? Math.max(minFallback, Math.trunc(fb)) : minFallback;
+}
+
+const DEFAULT_CAPITAL_MODE: CapitalModeConfig = { enabled: false, dogId: 0, leadSeconds: 10 };
+
+function normalizeCapitalMode(value: unknown, fallback: CapitalModeConfig = DEFAULT_CAPITAL_MODE): CapitalModeConfig {
+    const input = (value && typeof value === 'object') ? value as Record<string, any> : {};
+    const base = (fallback && typeof fallback === 'object') ? fallback : DEFAULT_CAPITAL_MODE;
+    return {
+        enabled: input.enabled !== undefined ? input.enabled === true : base.enabled === true,
+        // `Number(x) || 0` 会原样放行 Infinity（JSON 里写 1e400 就是 Infinity），
+        // 之后 `dog.id === dogId` 永远不成立，资本模式静默变成「从不派狗」。
+        dogId: toFiniteInt(input.dogId ?? input.selectedDogId, base.dogId, 0),
+        leadSeconds: Math.max(5, Math.min(300, toFiniteInt(input.leadSeconds ?? input.secondsBeforeMature, base.leadSeconds, 10))),
+    };
+}
 
 const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
     automation: {
@@ -75,25 +100,107 @@ const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
         mystery_shop_arrival_notify: false,
         mystery_shop_purchase_notify: false,
         sell: true,
-        fertilizer: 'none',
+        fertilizer: 'smart',
         fertilizer_multi_season: true,
         fertilizer_land_types: [...DEFAULT_FERTILIZER_LAND_TYPES],
         fertilizer_smart_seconds: 300,
         skip_own_weed_bug: true,
         show_manual_fertilizer: true,
+
+        // ---- 宠物（自动喂狗粮，默认开启） ----
+        pet_feed_dog_food: true,
+        pet_feed_dog_food_auto_buy: true,
+
+        // ---- 收藏图鉴（每天检查一次；自动领奖/补种默认关闭，一键购买跳过背包已有种子默认开启） ----
+        illustrated_auto_claim_rewards: false,
+        illustrated_auto_buy_missing_seeds: false,
+        illustrated_buy_skip_bag: true,
+
+        // ---- 活动自动化（旧版功能模块「日常与活动」，默认关闭） ----
+        task_after_farm: false,
+        fertilizer_2x2_ripen: false,
+        friend_golden_bug: false,
+        golden_bug_clear: true,
+        mall_coupon_gift_buy: false,
+
+        star_passport_claim: false,
+        star_solar_claim: false,
+        star_solar_quiz_claim: false,
+        star_record_claim: false,
+        qingmei_seed_claim: false,
+        qingmei_wine_brew: false,
+        qixi_dew_use: false,
+        qixi_bridge_build: false,
+        qixi_sachet_gift: false,
+        qixi_friend_priority: [],
+        rain_poem_bottle_buy: false,
+        rain_poem_weather_collect: false,
+        rain_poem_summon_use: false,
+        rain_poem_prank_use: false,
+        rain_poem_research_unlock: false,
+        charity_flower_share_claim: false,
+        charity_flower_donate: false,
+        charity_flower_reward_claim: false,
+        charity_flower_public_fund_claim: false,
+        wish_sign_draw: false,
+        wish_sign_choice: 1,
+        wish_sign_claim: false,
+        share_reward_share: false,
+        share_reward_daily: false,
+        share_reward_milestones: false,
+        pet_diary_adopt: false,
+        pet_diary_feed: false,
+        pet_diary_draw: false,
+        pet_diary_story_claim: false,
+        pet_diary_seed_claim: false,
+        pet_diary_solar_claim: false,
+        pet_diary_treasure_open: false,
+        pet_diary_compensation_claim: false,
+        pet_diary_charm_equip: false,
+        pet_diary_battle: false,
+        milk_tea_share: false,
+        milk_tea_share_daily: false,
+        milk_tea_share_rewards: false,
+        milk_tea_fund_rewards: false,
+        milk_tea_cashier: false,
+        milk_tea_wages: false,
+        milk_tea_upgrade: false,
+        milk_tea_craft: false,
+        milk_tea_boost: false,
+        milk_tea_interact: false,
+        milk_tea_interaction_type: 1,
+        milk_tea_hire: false,
+        milk_tea_hire_duration: 1,
+        milk_tea_hire_talent: 0,
+        milk_tea_hire_primary_talent: 0,
+        milk_tea_hire_backup_talent: 0,
+        milk_tea_seed_buy: false,
+        // 「同时购买金币果/经验蘑菇种子」默认不买，且只有主开关开启时才生效。
+        milk_tea_seed_buy_coin: false,
+        milk_tea_seed_buy_exp: false,
+        // 化肥购买相互独立，默认关闭。
+        milk_tea_fertilizer_buy_normal: false,
+        milk_tea_fertilizer_buy_organic: false,
+        milk_tea_auto_open: false,
+        milk_tea_work_interaction_type: 1,
+        milk_tea_seed_policy: {},
+        milk_tea_hire_policy: {},
     },
     plantingStrategy: 'max_exp',
     preferredSeedId: 0,
+    capitalMode: { ...DEFAULT_CAPITAL_MODE },
+    // 农场巡查 20-25 秒、好友任务 30-35 秒。2-5 秒一轮会把网关打满（每次轮询都要
+    // AllLands + 一批操作请求），这里回到更早的 20-25 秒方案；好友任务保持 30-35 秒。
     intervals: {
-        farm: 2,
+        farm: 20,
         farmMin: 20,
         farmMax: 25,
-        friendMin: 20,
-        friendMax: 25,
-        helpMin: 20,
-        helpMax: 25,
-        stealMin: 20,
-        stealMax: 25,
+        friendMin: 30,
+        friendMax: 35,
+        helpMin: 30,
+        helpMax: 35,
+        stealMin: 30,
+        stealMax: 35,
     },
     friendQuietHours: {
         enabled: false,
@@ -123,10 +230,13 @@ const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
     fertilizerBuyNormalThresholdHours: 10,
     fertilizerBuyCheckIntervalMinutes: 60,
     emailClaimHour: 10,
+    goldenBugKeepCount: 0,
+    goldenBugRoundLimit: 24,
     bagSeedPriority: [],
     bagSeedMultiLandReservationEnabled: false,
     bagSeedLandTypes: {},
     bagSeedFallbackStrategy: 'level',
+    prioritize2x2Crops: true,
     autoAcceptFriendMinLevel: 0,
     autoAcceptRequireOwnLevel: false,
     autoAcceptHarvestStealEnabled: true,
@@ -135,6 +245,23 @@ const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
 };
 
 const ALLOWED_AUTOMATION_KEYS: Set<string> = new Set(Object.keys(DEFAULT_ACCOUNT_CONFIG.automation));
+
+// 活动自动化里不是布尔的字段：数值、好友优先列表、奶茶策略对象。
+// 归一化时必须保留原类型，否则会被 !!v 压成 true/false。
+const AUTOMATION_NUMBER_KEYS: Set<string> = new Set([
+    'wish_sign_choice',
+    'milk_tea_interaction_type',
+    'milk_tea_work_interaction_type',
+    'milk_tea_hire_duration',
+    'milk_tea_hire_talent',
+    'milk_tea_hire_primary_talent',
+    'milk_tea_hire_backup_talent',
+]);
+
+const AUTOMATION_OBJECT_KEYS: Set<string> = new Set([
+    'milk_tea_seed_policy',
+    'milk_tea_hire_policy',
+]);
 
 // ============ Normalization Helpers ============
 
@@ -246,21 +373,49 @@ function normalizeTimeString(v: unknown, fallback: string): string {
     return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
 }
 
+/**
+ * 历史版本落盘过的「没改过」默认组，统一迁移到当前默认（农场 20-25 秒 / 好友 30-35 秒）。
+ * - 组 A（b108a3d ~ 289c8d6 的对齐老版方案）：农场 2-5 秒 + 好友 30-35 秒
+ * - 组 B（更早的 20-25 秒全组）：农场 20-25 秒 + 好友 20-25 秒
+ * 只有整组完全命中才算「用户没改过」；任意一项被改过就原样保留，不覆盖手动配置。
+ */
+function isStockDefaultIntervals(src: Partial<IntervalConfig>): boolean {
+    const actual = src as Record<string, unknown>;
+    const eq = (key: string, want: number): boolean => Number.parseInt(actual[key] as string, 10) === want;
+    const groupA = eq('farmMin', 2) && eq('farmMax', 5)
+        && eq('friendMin', 30) && eq('friendMax', 35)
+        && eq('helpMin', 30) && eq('helpMax', 35)
+        && eq('stealMin', 30) && eq('stealMax', 35);
+    const groupB = eq('farmMin', 20) && eq('farmMax', 25)
+        && eq('friendMin', 20) && eq('friendMax', 25)
+        && eq('helpMin', 20) && eq('helpMax', 25)
+        && eq('stealMin', 20) && eq('stealMax', 25);
+    return groupA || groupB;
+}
+
 function normalizeIntervals(intervals: Partial<IntervalConfig> | undefined): IntervalConfig {
     const src = (intervals && typeof intervals === 'object') ? intervals : {} as Partial<IntervalConfig>;
-    const toSec = (v: unknown, d: number): number => Math.max(1, Number.parseInt(v as string, 10) || d);
-    const farm = toSec(src.farm, 2);
+    // 旧的默认组合（2-5 秒方案、更早的 20-25 秒全组）一次性收敛到当前默认：
+    // 农场 20-25 秒、好友/帮助/偷菜 30-35 秒。
+    if (isStockDefaultIntervals(src)) {
+        return { farm: 20, farmMin: 20, farmMax: 25, friendMin: 30, friendMax: 35, helpMin: 30, helpMax: 35, stealMin: 30, stealMax: 35 };
+    }
+    // 上界必须夹到 INTERVAL_MAX_SEC：面板只写了 min="1" 没有 max，`1e15` 这类值会一路
+    // 变成 `*1000` 之后交给 setTimeout 的毫秒数，超过 32 位上限时 Node 会折成 1ms。
+    const toSec = (v: unknown, d: number): number =>
+        Math.max(1, Math.min(INTERVAL_MAX_SEC, Number.parseInt(v as string, 10) || d));
+    const farm = toSec(src.farm, 20);
 
-    let farmMin = toSec(src.farmMin, farm);
-    let farmMax = toSec(src.farmMax, farm);
+    let farmMin = toSec(src.farmMin, 20);
+    let farmMax = toSec(src.farmMax, 25);
     if (farmMin > farmMax) [farmMin, farmMax] = [farmMax, farmMin];
 
-    let helpMin = toSec(src.helpMin, 10);
-    let helpMax = toSec(src.helpMax, 10);
+    let helpMin = toSec(src.helpMin, 30);
+    let helpMax = toSec(src.helpMax, 35);
     if (helpMin > helpMax) [helpMin, helpMax] = [helpMax, helpMin];
 
-    let stealMin = toSec(src.stealMin, 10);
-    let stealMax = toSec(src.stealMax, 10);
+    let stealMin = toSec(src.stealMin, 30);
+    let stealMax = toSec(src.stealMax, 35);
     if (stealMin > stealMax) [stealMin, stealMax] = [stealMax, stealMin];
 
     // 新配置使用统一好友任务间隔；旧账号自动取帮助/偷菜两组间隔中较快的一组。
@@ -292,10 +447,6 @@ function cloneAccountConfig(base: Partial<AccountConfig> = DEFAULT_ACCOUNT_CONFI
             automation[key] = normalizeFertilizerLandTypes(srcAutomation[key], DEFAULT_FERTILIZER_LAND_TYPES);
             continue;
         }
-        if (key === 'ranch_coop_cub_priority' || key === 'ranch_shed_cub_priority') {
-            automation[key] = [...(srcAutomation[key] ?? automation[key])];
-            continue;
-        }
         if (srcAutomation[key] !== undefined) (automation as any)[key] = (srcAutomation as any)[key];
     }
 
@@ -320,6 +471,7 @@ function cloneAccountConfig(base: Partial<AccountConfig> = DEFAULT_ACCOUNT_CONFI
         plantingStrategy: ALLOWED_PLANTING_STRATEGIES.includes(String(base.plantingStrategy || '') as PlantingStrategy)
             ? String(base.plantingStrategy) as PlantingStrategy
             : DEFAULT_ACCOUNT_CONFIG.plantingStrategy,
+        capitalMode: normalizeCapitalMode(base.capitalMode),
         preferredSeedId: Math.max(0, Number.parseInt(String(base.preferredSeedId), 10) || 0),
         plantBlacklist: rawPlantBlacklist.map(Number).filter(n => Number.isFinite(n) && n > 0),
         stealDelaySeconds: Math.max(0, Math.min(300, Number(base.stealDelaySeconds) || 0)),
@@ -331,12 +483,17 @@ function cloneAccountConfig(base: Partial<AccountConfig> = DEFAULT_ACCOUNT_CONFI
         fertilizerBuyNormalThresholdHours: Math.max(0, Math.min(990, Number(base.fertilizerBuyNormalThresholdHours) || 0)),
         fertilizerBuyCheckIntervalMinutes: Math.max(1, Math.min(1440, Number(base.fertilizerBuyCheckIntervalMinutes) || 30)),
         emailClaimHour: normalizeEmailClaimHour(base.emailClaimHour, DEFAULT_ACCOUNT_CONFIG.emailClaimHour),
+        goldenBugKeepCount: Math.max(0, Math.min(10000, Math.floor(Number(base.goldenBugKeepCount) || 0))),
+        goldenBugRoundLimit: Math.max(1, Math.min(100, Math.floor(Number(base.goldenBugRoundLimit) || DEFAULT_ACCOUNT_CONFIG.goldenBugRoundLimit))),
         bagSeedPriority: normalizeBagSeedPriority(base.bagSeedPriority),
         bagSeedMultiLandReservationEnabled: base.bagSeedMultiLandReservationEnabled !== undefined
             ? !!base.bagSeedMultiLandReservationEnabled
             : DEFAULT_ACCOUNT_CONFIG.bagSeedMultiLandReservationEnabled,
         bagSeedLandTypes: normalizeBagSeedLandTypes(base.bagSeedLandTypes),
         bagSeedFallbackStrategy: normalizeBagSeedFallbackStrategy(base.bagSeedFallbackStrategy),
+        prioritize2x2Crops: base.prioritize2x2Crops !== undefined
+            ? !!base.prioritize2x2Crops
+            : DEFAULT_ACCOUNT_CONFIG.prioritize2x2Crops,
         autoAcceptFriendMinLevel: normalizeAutoAcceptFriendMinLevel(base.autoAcceptFriendMinLevel, DEFAULT_ACCOUNT_CONFIG.autoAcceptFriendMinLevel),
         autoAcceptRequireOwnLevel: !!base.autoAcceptRequireOwnLevel,
         autoAcceptHarvestStealEnabled: base.autoAcceptHarvestStealEnabled !== undefined
@@ -347,10 +504,6 @@ function cloneAccountConfig(base: Partial<AccountConfig> = DEFAULT_ACCOUNT_CONFI
     };
 }
 
-function normalizeFertilizerMode(value: unknown, fallback: FertilizerMode): FertilizerMode {
-    return FERTILIZER_MODES.has(value as FertilizerMode) ? value as FertilizerMode : fallback;
-}
-
 function normalizeAccountConfig(input: unknown, fallback: AccountConfig = accountFallbackConfig): AccountConfig {
     const src: Record<string, any> = (input && typeof input === 'object') ? input as Record<string, any> : {};
     const cfg = cloneAccountConfig(fallback || DEFAULT_ACCOUNT_CONFIG);
@@ -359,13 +512,23 @@ function normalizeAccountConfig(input: unknown, fallback: AccountConfig = accoun
         for (const [k, v] of Object.entries(migrateRanchMarketAutomation(src.automation))) {
             if (!ALLOWED_AUTOMATION_KEYS.has(k)) continue;
             if (k === 'fertilizer') {
-                cfg.automation.fertilizer = normalizeFertilizerMode(v, cfg.automation.fertilizer);
+                const allowed = ['both', 'normal', 'organic', 'smart', 'none'];
+                (cfg.automation as any)[k] = allowed.includes(v as string) ? v : cfg.automation[k as keyof AutomationConfig];
             } else if (k === 'fertilizer_land_types') {
                 cfg.automation.fertilizer_land_types = normalizeFertilizerLandTypes(v, cfg.automation.fertilizer_land_types);
             } else if (k.startsWith('ranch_')) {
                 (cfg.automation as any)[k] = normalizeRanchSetting(k, v);
             } else if (k === 'fertilizer_smart_seconds') {
                 cfg.automation.fertilizer_smart_seconds = Math.max(30, Math.min(3600, Number(v) || 300));
+            } else if (AUTOMATION_NUMBER_KEYS.has(k)) {
+                const n = Number(v);
+                if (Number.isFinite(n)) (cfg.automation as any)[k] = Math.max(0, Math.floor(n));
+            } else if (k === 'qixi_friend_priority') {
+                (cfg.automation as any)[k] = Array.isArray(v)
+                    ? v.map(item => Number(item)).filter(item => Number.isFinite(item) && item > 0).slice(0, 50)
+                    : cfg.automation.qixi_friend_priority;
+            } else if (AUTOMATION_OBJECT_KEYS.has(k)) {
+                if (v && typeof v === 'object' && !Array.isArray(v)) (cfg.automation as any)[k] = { ...v };
             } else {
                 (cfg.automation as any)[k] = !!v;
             }
@@ -378,6 +541,10 @@ function normalizeAccountConfig(input: unknown, fallback: AccountConfig = accoun
 
     if (src.preferredSeedId !== undefined && src.preferredSeedId !== null) {
         cfg.preferredSeedId = Math.max(0, Number.parseInt(src.preferredSeedId, 10) || 0);
+    }
+
+    if (src.capitalMode && typeof src.capitalMode === 'object') {
+        cfg.capitalMode = normalizeCapitalMode(src.capitalMode, cfg.capitalMode);
     }
 
     if (src.intervals && typeof src.intervals === 'object') {
@@ -464,6 +631,14 @@ function normalizeAccountConfig(input: unknown, fallback: AccountConfig = accoun
         cfg.emailClaimHour = normalizeEmailClaimHour(src.emailClaimHour, cfg.emailClaimHour);
     }
 
+    if (src.goldenBugKeepCount !== undefined && src.goldenBugKeepCount !== null) {
+        cfg.goldenBugKeepCount = Math.max(0, Math.min(10000, Math.floor(Number(src.goldenBugKeepCount) || 0)));
+    }
+
+    if (src.goldenBugRoundLimit !== undefined && src.goldenBugRoundLimit !== null) {
+        cfg.goldenBugRoundLimit = Math.max(1, Math.min(100, Math.floor(Number(src.goldenBugRoundLimit) || DEFAULT_ACCOUNT_CONFIG.goldenBugRoundLimit)));
+    }
+
     if (src.bagSeedPriority !== undefined && src.bagSeedPriority !== null) {
         cfg.bagSeedPriority = normalizeBagSeedPriority(src.bagSeedPriority);
     }
@@ -478,6 +653,10 @@ function normalizeAccountConfig(input: unknown, fallback: AccountConfig = accoun
 
     if (src.bagSeedFallbackStrategy !== undefined && src.bagSeedFallbackStrategy !== null) {
         cfg.bagSeedFallbackStrategy = normalizeBagSeedFallbackStrategy(src.bagSeedFallbackStrategy, cfg.bagSeedFallbackStrategy);
+    }
+
+    if (src.prioritize2x2Crops !== undefined && src.prioritize2x2Crops !== null) {
+        cfg.prioritize2x2Crops = !!src.prioritize2x2Crops;
     }
 
     if (src.autoAcceptFriendMinLevel !== undefined && src.autoAcceptFriendMinLevel !== null) {
@@ -598,6 +777,9 @@ function loadGlobalConfig(): void {
                     platform: String(data.systemConfig.platform || 'qq').trim(),
                     os: deviceOs,
                     timeZone: normalizeTimeZone(data.systemConfig.timeZone || DEFAULT_TIME_ZONE),
+                    // 旧 store.json 没有该字段：默认开启服务启动自动登录。
+                    autoStartAccounts: data.systemConfig.autoStartAccounts !== false,
+                    autoCodeRefresh: data.systemConfig.autoCodeRefresh,
                     deviceInfo: {
                         os: deviceOs,
                         clientVersion: deviceClientVersion,
@@ -656,13 +838,14 @@ module.exports = {
     normalizeBagSeedPriority,
     normalizeBagSeedLandTypes,
     normalizeBagSeedFallbackStrategy,
-    normalizeFertilizerMode,
     normalizeFertilizerLandTypes,
     normalizeTimeString,
     normalizeIntervals,
     normalizeAutoAcceptFriendMinLevel,
     normalizeAutoAcceptHarvestStealHarvest,
     normalizeAutoAcceptHarvestStealSteal,
+    normalizeCapitalMode,
+    DEFAULT_CAPITAL_MODE,
     normalizeAccountConfig,
     cloneAccountConfig,
     resolveAccountId,

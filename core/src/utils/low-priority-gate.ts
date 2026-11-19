@@ -79,7 +79,9 @@ function isGatewayYieldError(error: any): boolean {
     const message = String((error && error.message) || error || '');
     if (!message) return false;
     return message.includes('已让路')
-        // 超时的时候还卡在队列里，说明压根没排到连接，和让路是同一回事
+        // 超时的时候还卡在队列里，说明压根没排到连接，和让路是同一回事。
+        // 「尚未排到连接」是运行日志中文化后的说法，`stage=queued` 留着兼容旧日志与外部调用。
+        || message.includes('尚未排到连接')
         || message.includes('stage=queued')
         || message.includes('请求等待队列已满')
         || message.includes('请求已中断')

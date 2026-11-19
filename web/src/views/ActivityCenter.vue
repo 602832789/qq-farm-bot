@@ -3,10 +3,11 @@ import type { ActivityTab } from '@/components/activity/BottomNav.vue'
 import type { ActivityDirectoryItemDto, ActivityGameplayKey } from '@/stores/activity-center'
 import { useNotification } from 'naive-ui/es/notification'
 import { storeToRefs } from 'pinia'
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { resolveActivityGameplay } from '@/components/activity/gameplays'
 import ShareRewardActivity from '@/components/activity/ShareRewardActivity.vue'
+import { ACCOUNT_SWITCH_WINDOW_MS, isAccountSwitching } from '@/composables/useAccountSwitchScroll'
 import { useAccountStore } from '@/stores/account'
 import { useActivityCenterStore } from '@/stores/activity-center'
 import { useAppStore } from '@/stores/app'
@@ -14,15 +15,18 @@ import { useFriendStore } from '@/stores/friend'
 import ActivityDirectoryPage from './activity-center/ActivityDirectoryPage.vue'
 import AutumnActivityPage from './activity-center/AutumnActivityPage.vue'
 import CharityActivityPage from './activity-center/CharityActivityPage.vue'
-import MilkTeaPage from './activity-center/MilkTeaPage.vue'
 import MugePage from './activity-center/MugePage.vue'
 import PetDiaryPage from './activity-center/PetDiaryPage.vue'
 import QingMeiActivityPage from './activity-center/QingMeiActivityPage.vue'
 import QixiActivityPage from './activity-center/QixiActivityPage.vue'
 import StellarActivityPage from './activity-center/StellarActivityPage.vue'
 import WeatherActivityPage from './activity-center/WeatherActivityPage.vue'
+import SolarCalendarPage from './SolarCalendar.vue'
 
-const props = withDefaults(defineProps<{ space?: 'farm' | 'ranch' }>(), { space: 'farm' })
+const MilkTeaPage = defineAsyncComponent(() => import('@/components/activity/MilkTeaActivityPanel.vue'))
+
+type CenterActivity = ActivityGameplayKey | 'solar'
+
 const router = useRouter()
 const notification = useNotification()
 const accountStore = useAccountStore()
@@ -30,7 +34,7 @@ const activityStore = useActivityCenterStore()
 const friendStore = useFriendStore()
 const { currentAccountId } = storeToRefs(accountStore)
 const { season, shop, solarTerms, constellation, notice, actionError } = storeToRefs(activityStore)
-const selectedActivity = ref<ActivityGameplayKey | null>(null)
+const selectedActivity = ref<CenterActivity | null>(null)
 const selectedInstanceId = ref('')
 const appStore = useAppStore()
 watch(selectedActivity, (value) => {
@@ -52,15 +56,25 @@ async function openActivity(activity: ActivityDirectoryItemDto) {
 
   selectedActivity.value = gameplay.module.key
   selectedInstanceId.value = activity.instanceId || activity.activityIds.find(id => ['2026092501', '2026110104'].includes(id)) || ''
-  if (['pet', 'wish', 'happy', 'milk', 'muge'].includes(gameplay.module.key))
+  await loadActivitySideData(gameplay.module.key)
+}
+
+/** 打开活动或切换账号后，为需要按账号拉取详情的活动重载数据；
+ *  milk/wish/happy/pet/solar 页面自带账号监听，自行刷新。 */
+async function loadActivitySideData(key: CenterActivity) {
+  if (['pet', 'wish', 'happy', 'milk', 'muge', 'solar'].includes(key))
     return
-  const detailsLoaded = await activityStore.loadDetails(accountId(), gameplay.module.key)
-  if (gameplay.module.key === 'qixi' && currentAccountId.value) {
+  const detailsLoaded = await activityStore.loadDetails(accountId(), key as ActivityGameplayKey)
+  if (key === 'qixi' && currentAccountId.value) {
     await friendStore.fetchFriends(String(currentAccountId.value))
   }
-  else if (gameplay.module.key === 'weather' && currentAccountId.value && detailsLoaded) {
+  else if (key === 'weather' && currentAccountId.value && detailsLoaded) {
     void activityStore.loadWeatherFriends(String(currentAccountId.value))
   }
+}
+
+function openSolarCalendar() {
+  selectedActivity.value = 'solar'
 }
 
 function goBack() {
@@ -72,9 +86,11 @@ function goBack() {
 }
 
 watch(currentAccountId, () => {
-  selectedActivity.value = null
-  if (props.space === 'farm')
-    activityStore.refresh(accountId())
+  // 切换账号后保持在当前活动页面（含奶茶热销中），只重拉当前活动的新账号数据。
+  activityStore.refresh(accountId())
+  const key = selectedActivity.value
+  if (key)
+    void loadActivitySideData(key)
 }, { flush: 'post' })
 
 watch([notice, actionError], ([successMessage, failureMessage]) => {
@@ -104,16 +120,31 @@ watch([notice, actionError], ([successMessage, failureMessage]) => {
   activityStore.clearActionMessages()
 })
 
+let stellarAvailabilityTimer: number | undefined
+
 watch(stellarDetailsAvailable, (available) => {
-  if (selectedActivity.value === 'stellar' && !available)
-    selectedActivity.value = null
+  if (selectedActivity.value !== 'stellar' || available)
+    return
+  // 切号会先清空活动快照，此时数据短暂不可用；等切号窗口结束再复核，
+  // 避免把用户从当前活动页踢回活动目录。
+  if (isAccountSwitching()) {
+    window.clearTimeout(stellarAvailabilityTimer)
+    stellarAvailabilityTimer = window.setTimeout(() => {
+      if (selectedActivity.value === 'stellar' && !stellarDetailsAvailable.value)
+        selectedActivity.value = null
+    }, ACCOUNT_SWITCH_WINDOW_MS + 200)
+    return
+  }
+  selectedActivity.value = null
 })
 
 onMounted(() => {
-  if (props.space === 'farm')
-    activityStore.refresh(accountId())
+  activityStore.refresh(accountId())
+  // 活动中心默认进入奶茶热销中；点返回仍会回到活动目录选择其它活动。
+  selectedActivity.value = 'milk'
 })
 onUnmounted(() => {
+  window.clearTimeout(stellarAvailabilityTimer)
   appStore.activityDetailOpen = false
 })
 </script>
@@ -121,11 +152,12 @@ onUnmounted(() => {
 <template>
   <ActivityDirectoryPage
     v-if="!selectedActivity"
-    :space="space"
     @back="goBack"
     @open="openActivity"
+    @open-solar="openSolarCalendar"
   />
   <MugePage v-else-if="selectedActivity === 'muge'" @back="goBack" />
+  <SolarCalendarPage v-else-if="selectedActivity === 'solar'" @back="goBack" />
   <MilkTeaPage v-else-if="selectedActivity === 'milk'" @back="goBack" />
   <ShareRewardActivity v-else-if="selectedActivity === 'happy'" :activity-id="selectedInstanceId" @back="goBack" />
   <AutumnActivityPage
@@ -247,13 +279,17 @@ onUnmounted(() => {
   font-size: 18px;
 }
 
-.picker-state span {
+/* 只作用于空状态里的说明文字，避免把 BaseButton 内部的 .n-button__content
+   也染成灰绿色，导致绿底按钮上的白字看不清。 */
+.picker-state > span {
   max-width: 420px;
   color: var(--ui-muted);
   font-size: 12px;
 }
 
-.picker-state button {
+/* 活动目录页的空状态按钮已统一为 BaseButton primary；这里只保留旧页面中
+   原生 button 的兜底样式，避免全局规则把主按钮覆盖成白底绿字。 */
+.picker-state button:not(.base-button) {
   min-height: 36px;
   margin-top: 8px;
   padding: 0 15px;
@@ -265,7 +301,7 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-.picker-state button:disabled {
+.picker-state button:not(.base-button):disabled {
   opacity: 0.55;
   cursor: wait;
 }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { RequestTicket } from '@/utils/request-guard'
 import { NCard } from 'naive-ui/es/card'
 import { NModal } from 'naive-ui/es/modal'
 import { NRadio, NRadioGroup } from 'naive-ui/es/radio'
@@ -8,6 +9,7 @@ import api, { getApiErrorMessage } from '@/api'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
+import { createRequestGuard } from '@/utils/request-guard'
 import { runWxLoginStatusPoll } from '@/utils/wx-login-poll'
 
 const props = defineProps<{
@@ -27,7 +29,7 @@ const loginSettings = ref({
   napCatEndpoint: '',
   napCatSignature: '',
 })
-let loginSettingsRequestVersion = 0
+const loginSettingsGuard = createRequestGuard()
 const wxTaskId = ref('')
 const wxStatus = ref('')
 const wxError = ref('')
@@ -35,18 +37,20 @@ const wxLoading = ref(false)
 const wxQrUrl = ref('')
 let wxPollTimer: ReturnType<typeof setTimeout> | undefined
 let wxQrObjectUrl = ''
-let wxFlowVersion = 0
+const wxFlowGuard = createRequestGuard()
 let wxPollController: AbortController | undefined
 let wxPollInFlight: Promise<void> | undefined
 let wxPollKey = ''
 let wxPendingCode = ''
+// 扫码确认后后端会返回续期凭据（refreshtoken 等），随账号一起保存才能免扫码续期。
+let wxPendingCredential: Record<string, any> | null = null
 const qqTaskId = ref('')
 const qqStatus = ref('')
 const qqError = ref('')
 const qqLoading = ref(false)
 const qqQrUrl = ref('')
 let qqPollTimer: ReturnType<typeof setTimeout> | undefined
-let qqFlowVersion = 0
+const qqFlowGuard = createRequestGuard()
 let qqPollController: AbortController | undefined
 let qqPollInFlight: Promise<void> | undefined
 let qqPollKey = ''
@@ -101,12 +105,18 @@ function clearQrNameSubmitTimer() {
   }
 }
 
-async function addQrAccount(platform: 'wx' | 'qq', code: string, nickname: string) {
+async function addQrAccount(platform: 'wx' | 'qq', code: string, nickname: string, credential: Record<string, any> | null = null) {
   const name = form.name.trim() || nickname
-  if (platform === 'wx')
+  if (platform === 'wx') {
     wxPendingCode = code
-  else
+    // 部分环境不回传 refreshtoken，但 loginBuffer 仍是长效凭证，
+    // 不能因为缺刷新令牌就把整套续期凭据丢掉。
+    if (credential && (credential.refreshtoken || credential.loginBuffer || credential.expires_at))
+      wxPendingCredential = credential
+  }
+  else {
     qqPendingCode = code
+  }
 
   if (!name) {
     if (platform === 'wx') {
@@ -141,9 +151,35 @@ async function submitPendingQrAccount(platform: 'wx' | 'qq') {
     qqStatus.value = props.editData ? '正在重新登录...' : '正在添加账号...'
   }
 
-  const payload: any = { name, code, platform, loginType: 'manual' }
+  const credential = platform === 'wx' ? wxPendingCredential : null
+  const payload: any = {
+    // 编辑态重扫时直接更新原账号，不再靠备注名碰巧匹配（不匹配会新增重复账号）。
+    ...(props.editData?.id ? { id: String(props.editData.id) } : {}),
+    name,
+    code,
+    platform,
+    loginType: 'manual',
+    // 重新登录即代表上一次的续期失败已恢复：显式清空失败标记，
+    // 否则账号管理页会一直显示「待续期」的琥珀色。
+    wxCredentialRefreshError: '',
+    wxCredentialLastAttemptAt: Date.now(),
+    ...(credential
+      ? {
+          wxid: credential.wxid,
+          refreshtoken: credential.refreshtoken,
+          accesstoken: credential.accesstoken,
+          loginBuffer: credential.loginBuffer,
+          expires_in: credential.expires_in,
+          expires_at: credential.expires_at,
+          wxCredentialRefreshedAt: Number(credential.wxCredentialRefreshedAt) || Date.now(),
+        }
+      : {}),
+  }
   const saved = await addAccount(payload, !!props.editData)
-  if (!saved && props.show && activeLoginTab.value === `${platform}_qr`) {
+  if (saved) {
+    wxPendingCredential = null
+  }
+  else if (props.show && activeLoginTab.value === `${platform}_qr`) {
     if (platform === 'wx')
       wxPendingCode = code
     else
@@ -152,11 +188,11 @@ async function submitPendingQrAccount(platform: 'wx' | 'qq') {
 }
 
 async function loadLoginSettings() {
-  const requestVersion = ++loginSettingsRequestVersion
+  const ticket = loginSettingsGuard.next()
   loginSettingsLoaded.value = false
   try {
     const response = await api.get('/api/settings/login-config', { skipErrorToast: true } as any)
-    if (requestVersion !== loginSettingsRequestVersion)
+    if (loginSettingsGuard.isStale(ticket))
       return
     const data = response.data?.data
     loginSettings.value = {
@@ -167,7 +203,7 @@ async function loadLoginSettings() {
     }
   }
   catch {
-    if (requestVersion !== loginSettingsRequestVersion)
+    if (loginSettingsGuard.isStale(ticket))
       return
     // Keep the existing login entries available when an older server has no endpoint yet.
     loginSettings.value = {
@@ -178,7 +214,7 @@ async function loadLoginSettings() {
     }
   }
   finally {
-    if (requestVersion === loginSettingsRequestVersion) {
+    if (!loginSettingsGuard.isStale(ticket)) {
       loginSettingsLoaded.value = true
       if (activeLoginTab.value === 'wx_qr' && !loginSettings.value.wechatQrLogin)
         activeLoginTab.value = 'code'
@@ -211,10 +247,13 @@ async function submitManual() {
   }
 
   const payload: any = {
+    ...(props.editData?.id ? { id: String(props.editData.id) } : {}),
     name: form.name,
     code,
     platform: props.editData ? (props.editData.platform || 'qq') : form.platform,
     loginType: 'manual',
+    // 手动填 Code 重新登录同样要清掉上一次的续期失败标记。
+    ...(props.editData ? { wxCredentialRefreshError: '', wxCredentialLastAttemptAt: Date.now() } : {}),
   }
 
   await addAccount(payload, !!props.editData)
@@ -231,7 +270,7 @@ function stopWxPolling() {
 
 function resetWxLogin() {
   const oldTaskId = wxTaskId.value
-  wxFlowVersion += 1
+  wxFlowGuard.invalidate()
   stopWxPolling()
   if (oldTaskId) {
     void api.delete(`/api/wx-login/tasks/${oldTaskId}`, { skipErrorToast: true } as any).catch(() => undefined)
@@ -245,29 +284,34 @@ function resetWxLogin() {
   wxError.value = ''
   wxQrUrl.value = ''
   wxLoading.value = false
+  wxPendingCredential = null
   wxPendingCode = ''
   clearQrNameSubmitTimer()
 }
 
-function isWxFlowActive(taskId: string, flowVersion: number) {
-  return flowVersion === wxFlowVersion && taskId === wxTaskId.value
+function isWxFlowActive(taskId: string, flowVersion: RequestTicket) {
+  return !wxFlowGuard.isStale(flowVersion) && taskId === wxTaskId.value
 }
 
-async function getWxCodeAndAdd(taskId: string, flowVersion: number) {
+async function getWxCodeAndAdd(taskId: string, flowVersion: RequestTicket) {
   if (!isWxFlowActive(taskId, flowVersion))
     return
-  const codeResult = await api.post(`/api/wx-login/tasks/${taskId}/code`)
+  // 编辑态重扫把账号 id 一并交给后端，让新凭据直接写回原账号；
+  // 即便前端后续保存失败，也不会留下旧 token / 旧错误标记。
+  const editAccountId = props.editData?.id ? String(props.editData.id) : ''
+  const codeResult = await api.post(`/api/wx-login/tasks/${taskId}/code`, editAccountId ? { account_id: editAccountId } : undefined)
   if (!isWxFlowActive(taskId, flowVersion))
     return
   const code = String(codeResult.data?.data?.code || '').trim()
   const nickname = String(codeResult.data?.data?.nickname || '').trim()
+  const credential = codeResult.data?.data?.credential || null
   if (!code)
     throw new Error('未获取到登录 Code')
 
-  await addQrAccount('wx', code, nickname)
+  await addQrAccount('wx', code, nickname, credential)
 }
 
-async function confirmWxLogin(taskId: string, flowVersion: number) {
+async function confirmWxLogin(taskId: string, flowVersion: RequestTicket) {
   if (!isWxFlowActive(taskId, flowVersion))
     return
   wxStatus.value = '正在建立登录会话...'
@@ -277,7 +321,7 @@ async function confirmWxLogin(taskId: string, flowVersion: number) {
   await getWxCodeAndAdd(taskId, flowVersion)
 }
 
-async function pollWxLoginRequest(taskId: string, flowVersion: number) {
+async function pollWxLoginRequest(taskId: string, flowVersion: RequestTicket) {
   if (!isWxFlowActive(taskId, flowVersion))
     return
 
@@ -320,7 +364,7 @@ async function pollWxLoginRequest(taskId: string, flowVersion: number) {
   }
 }
 
-async function pollWxLogin(taskId: string, flowVersion: number) {
+async function pollWxLogin(taskId: string, flowVersion: RequestTicket) {
   if (!isWxFlowActive(taskId, flowVersion))
     return
 
@@ -354,7 +398,7 @@ async function startWxLogin() {
     return
   }
   resetWxLogin()
-  const flowVersion = wxFlowVersion
+  const flowVersion = wxFlowGuard.snapshot()
   wxLoading.value = true
   try {
     const response = await api.post('/api/wx-login/tasks', { app_id: 'wx5306c5978fdb76e4' })
@@ -362,7 +406,7 @@ async function startWxLogin() {
     const taskId = String(task?.task_id || '')
     if (!taskId)
       throw new Error('未创建登录任务')
-    if (flowVersion !== wxFlowVersion) {
+    if (wxFlowGuard.isStale(flowVersion)) {
       void api.delete(`/api/wx-login/tasks/${taskId}`, { skipErrorToast: true } as any).catch(() => undefined)
       return
     }
@@ -376,12 +420,12 @@ async function startWxLogin() {
     void pollWxLogin(taskId, flowVersion)
   }
   catch (error: any) {
-    if (flowVersion !== wxFlowVersion)
+    if (wxFlowGuard.isStale(flowVersion))
       return
     wxError.value = getApiErrorMessage(error, '二维码获取失败')
   }
   finally {
-    if (flowVersion === wxFlowVersion)
+    if (!wxFlowGuard.isStale(flowVersion))
       wxLoading.value = false
   }
 }
@@ -397,7 +441,7 @@ function stopQqPolling() {
 
 function resetQqLogin() {
   const taskId = qqTaskId.value
-  qqFlowVersion += 1
+  qqFlowGuard.invalidate()
   stopQqPolling()
   if (taskId)
     void cancelQqLoginTask(taskId)
@@ -410,8 +454,8 @@ function resetQqLogin() {
   clearQrNameSubmitTimer()
 }
 
-function isQqFlowActive(taskId: string, flowVersion: number) {
-  return flowVersion === qqFlowVersion && taskId === qqTaskId.value
+function isQqFlowActive(taskId: string, flowVersion: RequestTicket) {
+  return !qqFlowGuard.isStale(flowVersion) && taskId === qqTaskId.value
 }
 
 function ensureQqApiOk(response: any, fallback: string) {
@@ -421,7 +465,7 @@ function ensureQqApiOk(response: any, fallback: string) {
   return payload
 }
 
-async function getQqCodeAndAdd(taskId: string, flowVersion: number) {
+async function getQqCodeAndAdd(taskId: string, flowVersion: RequestTicket) {
   if (!isQqFlowActive(taskId, flowVersion))
     return
   qqLoading.value = true
@@ -460,7 +504,7 @@ async function cancelQqLoginTask(taskId: string) {
   catch {}
 }
 
-async function pollQqLoginRequest(taskId: string, flowVersion: number) {
+async function pollQqLoginRequest(taskId: string, flowVersion: RequestTicket) {
   if (!isQqFlowActive(taskId, flowVersion))
     return
 
@@ -516,7 +560,7 @@ async function pollQqLoginRequest(taskId: string, flowVersion: number) {
   }
 }
 
-async function pollQqLogin(taskId: string, flowVersion: number) {
+async function pollQqLogin(taskId: string, flowVersion: RequestTicket) {
   if (!isQqFlowActive(taskId, flowVersion))
     return
 
@@ -550,7 +594,7 @@ async function startQqLogin() {
     return
   }
   resetQqLogin()
-  const flowVersion = qqFlowVersion
+  const flowVersion = qqFlowGuard.snapshot()
   qqLoading.value = true
   try {
     const response = await api.post('/api/qq-login/tasks')
@@ -560,7 +604,7 @@ async function startQqLogin() {
     const qrImage = String(task?.qr_image || '')
     if (!taskId || !qrImage)
       throw new Error('未创建 QQ 登录任务')
-    if (flowVersion !== qqFlowVersion)
+    if (qqFlowGuard.isStale(flowVersion))
       return
     qqTaskId.value = taskId
     qqQrUrl.value = qrImage
@@ -568,11 +612,11 @@ async function startQqLogin() {
     void pollQqLogin(taskId, flowVersion)
   }
   catch (error: any) {
-    if (flowVersion === qqFlowVersion)
+    if (!qqFlowGuard.isStale(flowVersion))
       qqError.value = getApiErrorMessage(error, 'QQ 登录二维码获取失败')
   }
   finally {
-    if (flowVersion === qqFlowVersion)
+    if (!qqFlowGuard.isStale(flowVersion))
       qqLoading.value = false
   }
 }
@@ -649,7 +693,7 @@ onBeforeUnmount(() => {
       :closable="!loading && !wxLoading && !qqLoading"
       @close="close"
     >
-      <div class="account-modal-content dialog-scroll overflow-y-auto">
+      <div class="account-modal-content overflow-y-auto">
         <!-- 错误信息 -->
         <div v-if="errorMessage" class="mb-4 rounded-xl p-3 text-sm" style="background: rgba(239, 68, 68, 0.1); color: #ef4444">
           {{ errorMessage }}

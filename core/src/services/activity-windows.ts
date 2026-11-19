@@ -73,6 +73,16 @@ function invalidateActivityWindows(): void {
     loadedAt = 0;
 }
 
+/**
+ * 只读缓存：拿不到（从未加载过）时返回 loaded=false。
+ *
+ * 活动自动化用它做「过期活动直接不发请求」的前置闸门：这是本地缓存，
+ * 不产生额外网络请求，也不需要为每个活动再拉一次状态。
+ */
+function getActivityWindowCache(): { loaded: boolean, windows: ReadonlyMap<string, ActivityWindow> } {
+    return { loaded: loadedAt > 0, windows: activityWindows };
+}
+
 async function getSellConditionContext(): Promise<SellConditionContext> {
     const fresh = loadedAt > 0 && Date.now() - loadedAt < CACHE_TTL_MS;
     if (!fresh) {
@@ -99,6 +109,7 @@ networkEvents.on('disconnected', invalidateActivityWindows);
 module.exports = {
     refreshActivityWindows,
     getActivityWindows,
+    getActivityWindowCache,
     invalidateActivityWindows,
     getSellConditionContext,
 };

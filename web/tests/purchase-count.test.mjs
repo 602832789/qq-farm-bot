@@ -2,8 +2,9 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 // This repository runs its tests with Node's built-in runner.
-// eslint-disable-next-line test/no-import-node-test
+
 import test from 'node:test'
+
 const require = createRequire(import.meta.url)
 const ts = require('typescript')
 

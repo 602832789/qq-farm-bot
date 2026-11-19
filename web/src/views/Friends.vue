@@ -269,6 +269,12 @@ watch(searchKeyword, () => {
   currentPage.value = 1
 })
 
+// 切号或好友同步后数量可能骤降，totalPages 缩了但 currentPage 还停在旧页，
+// slice 越界返回空数组，列表一片空白且没有「无数据」提示。
+watch(totalPages, (pages) => {
+  currentPage.value = Math.min(currentPage.value, pages)
+})
+
 const filteredInteractRecords = computed(() => {
   if (interactFilter.value === 'all')
     return interactRecords.value
@@ -491,6 +497,7 @@ watch(currentAccountId, () => {
   knownFriendSettingsLoadedAccount.value = ''
   friendStore.resetInteractionState()
   friendStore.resetFriendLandState()
+  currentPage.value = 1
 })
 watch(friendDataLoadScope, (scope) => {
   if (!scope) {
@@ -917,8 +924,8 @@ async function handleBatchAddKnownFriendGids() {
           clearable
           class="friends-search"
         />
-        <NButton
-          secondary
+        <BaseButton
+          variant="secondary"
           :loading="loading"
           :disabled="!currentAccountId || !currentAccountRunning"
           title="刷新好友列表"
@@ -928,7 +935,7 @@ async function handleBatchAddKnownFriendGids() {
           <template #icon>
             <span class="i-carbon-renew" />
           </template>
-        </NButton>
+        </BaseButton>
       </div>
     </div>
 
@@ -965,7 +972,7 @@ async function handleBatchAddKnownFriendGids() {
             </div>
             <div class="flex shrink-0 gap-2">
               <BaseButton
-                variant="secondary"
+                variant="primary"
                 size="sm"
                 :loading="knownFriendSettingsLoading"
                 @click="currentAccountId && friendStore.fetchKnownFriendSettings(currentAccountId)"
@@ -981,7 +988,7 @@ async function handleBatchAddKnownFriendGids() {
                 保存设置
               </BaseButton>
               <BaseButton
-                variant="secondary"
+                variant="primary"
                 size="sm"
                 @click="showBatchAddGidModal = true"
               >
@@ -1304,7 +1311,7 @@ async function handleBatchAddKnownFriendGids() {
             </NButton>
           </NButtonGroup>
           <BaseButton
-            variant="secondary"
+            variant="primary"
             size="sm"
             :loading="interactLoading"
             @click="refreshInteractRecords"
@@ -1427,7 +1434,7 @@ async function handleBatchAddKnownFriendGids() {
             删除未同步（{{ unsyncedGidCount }}）
           </BaseButton>
         </div>
-        <div class="gid-list-scroll dialog-scroll">
+        <div class="gid-list-scroll">
           <div v-if="filteredKnownFriendGids.length === 0" class="py-8 text-center text-gray-500 dark:text-gray-400">
             暂无数据
           </div>

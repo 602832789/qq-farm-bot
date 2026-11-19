@@ -17,6 +17,28 @@ const {
     buildKnownFriendGidSettings,
 } = require('./middleware');
 
+/**
+ * 取好友列表用于「附加昵称头像」。返回 null 表示已经写过响应，调用方直接 return。
+ *
+ * `await x || []` 只兜住 null/undefined：provider 若返回对象（错误包 / 空响应），
+ * 调用方的 `for...of` 会抛 TypeError —— 而那段代码在 try 之外，Express 4 不捕获
+ * async 拒绝，整个主进程会因此退出，所有账号一起掉线。
+ */
+async function readFriendsForDisplay(ctx: AdminContext, accountId: any, res: Response): Promise<any[] | null> {
+    if (!ctx.provider || typeof ctx.provider.getFriends !== 'function') return [];
+    try {
+        const raw = await ctx.provider.getFriends(accountId);
+        return Array.isArray(raw) ? raw : [];
+    } catch (error: any) {
+        if (isGatewayProtocolError(error) || isSoftRuntimeError(error)) {
+            handleApiError(res, error);
+            return null;
+        }
+        // 非协议错误不影响本地数据展示
+        return [];
+    }
+}
+
 function mountFriendRoutes(app: Application, ctx: AdminContext): void {
 
     // API: 好友列表
@@ -161,6 +183,11 @@ function mountFriendRoutes(app: Application, ctx: AdminContext): void {
                 return res.status(400).json({ ok: false, error: '无效的好友 GID' });
             }
             const data = await ctx.provider.delFriend(id, gid);
+            // provider 用 { ok:false } 表达游戏侧拒绝（不抛异常），同文件 /api/friend/:gid/op
+            // 已按这个形状判断。原来无条件写黑名单并回报成功，会让本地与游戏内数据分叉。
+            if (data && data.ok === false) {
+                return res.status(400).json({ ok: false, error: String(data.error || '游戏内删除好友失败') });
+            }
             if (store.addFriendToBlacklist) {
                 store.addFriendToBlacklist(id, gid);
             }
@@ -185,18 +212,21 @@ function mountFriendRoutes(app: Application, ctx: AdminContext): void {
         const id = getAccId(ctx, req);
         if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
 
-        const gids = store.getFriendBlacklist ? store.getFriendBlacklist(id) : [];
-
-        // 尝试获取好友列表以附加昵称和头像
-        let friendsList: any[] = [];
+        let gids: number[] = [];
         try {
-            if (ctx.provider && typeof ctx.provider.getFriends === 'function') {
-                friendsList = await ctx.provider.getFriends(id) || [];
-            }
-        } catch (error: any) {
-            if (isGatewayProtocolError(error) || isSoftRuntimeError(error)) return handleApiError(res, error);
-            // 非协议错误不影响黑名单本地数据展示
+            gids = store.getFriendBlacklist ? store.getFriendBlacklist(id) : [];
+        } catch (e: any) {
+            // Express 4 不捕获 async handler 的拒绝：读盘抛错必须就地转成响应，
+            // 否则请求永远挂着，并在 Node 20 上变成未处理拒绝。
+            return handleApiError(res, e);
         }
+
+        // 尝试获取好友列表以附加昵称和头像。
+        // `await x || []` 只兜住了 null/undefined：provider 若返回对象（错误包 / 空响应），
+        // 后面的 for...of 会抛 TypeError，而这段代码在 try 之外 —— Express 4 不捕获 async
+        // 拒绝，整个主进程会因此退出，所有账号一起掉线。所以这里必须显式判数组。
+        const friendsList = await readFriendsForDisplay(ctx, id, res);
+        if (friendsList === null) return;
 
         // 构建好友信息映射
         const friendMap = new Map<number, { name: string; avatarUrl: string }>();
@@ -228,31 +258,36 @@ function mountFriendRoutes(app: Application, ctx: AdminContext): void {
         if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
 
         const gid = Number((req.body || {}).gid);
-        if (!gid) return res.status(400).json({ ok: false, error: 'Missing gid' });
-        const current = store.getFriendBlacklist ? store.getFriendBlacklist(id) : [];
-        let next: number[];
-        if (current.includes(gid)) {
-            next = current.filter((g: number) => g !== gid);
-        } else {
-            next = [...current, gid];
+        // 原来 `!gid` 放行 -1 / Infinity：下游会静默过滤掉，路由却回报 ok:true，
+        // 前端以为已拉黑。与删除好友接口用同一套正整数校验。
+        if (!Number.isInteger(gid) || gid <= 0) {
+            return res.status(400).json({ ok: false, error: '无效的好友 GID' });
         }
-        const savedGids = store.setFriendBlacklist ? store.setFriendBlacklist(id, next) : next;
-
-        // 同步配置到 worker 进程
-        if (ctx.provider && typeof ctx.provider.broadcastConfig === 'function') {
-            ctx.provider.broadcastConfig(id);
-        }
-
-        // 尝试获取好友列表以附加昵称和头像
-        let friendsList: any[] = [];
+        let savedGids: number[];
         try {
-            if (ctx.provider && typeof ctx.provider.getFriends === 'function') {
-                friendsList = await ctx.provider.getFriends(id) || [];
+            const current = store.getFriendBlacklist ? store.getFriendBlacklist(id) : [];
+            let next: number[];
+            if (current.includes(gid)) {
+                next = current.filter((g: number) => g !== gid);
+            } else {
+                next = [...current, gid];
             }
-        } catch (error: any) {
-            if (isGatewayProtocolError(error) || isSoftRuntimeError(error)) return handleApiError(res, error);
-            // 非协议错误不影响黑名单本地数据展示
+            savedGids = store.setFriendBlacklist ? store.setFriendBlacklist(id, next) : next;
+
+            // 同步配置到 worker 进程
+            if (ctx.provider && typeof ctx.provider.broadcastConfig === 'function') {
+                ctx.provider.broadcastConfig(id);
+            }
+        } catch (e: any) {
+            return handleApiError(res, e);
         }
+
+        // 尝试获取好友列表以附加昵称和头像。
+        // `await x || []` 只兜住了 null/undefined：provider 若返回对象（错误包 / 空响应），
+        // 后面的 for...of 会抛 TypeError，而这段代码在 try 之外 —— Express 4 不捕获 async
+        // 拒绝，整个主进程会因此退出，所有账号一起掉线。所以这里必须显式判数组。
+        const friendsList = await readFriendsForDisplay(ctx, id, res);
+        if (friendsList === null) return;
 
         // 构建好友信息映射
         const friendMap = new Map<number, { name: string; avatarUrl: string }>();

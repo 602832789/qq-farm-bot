@@ -55,6 +55,46 @@ function readJsonFileStrict(filePath: string, fallbackFactory?: () => any): any 
     }
 }
 
+/** 同步睡一小会儿（不烧 CPU）：只在 rename 重试之间用。 */
+function sleepSync(ms: number): void {
+    try {
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+    } catch {
+        const until = Date.now() + ms;
+        while (Date.now() < until) { /* 退化路径：极少数环境没有 SharedArrayBuffer */ }
+    }
+}
+
+const RENAME_RETRY_DELAYS_MS = [10, 20, 40, 80, 160];
+
+/**
+ * 原子替换文件，对 Windows 特有的瞬时占用做重试。
+ *
+ * 实测：在 Windows 上只要目标文件被别的进程（杀毒软件、Everything、同步盘、
+ * 编辑器）持有读句柄，`renameSync` 就稳定报 `EPERM`——本机验证持有句柄时
+ * 200/200 全部失败、放开后 200/200 全部成功。这些占用通常只有几十毫秒，
+ * 直接抛出会让配置写盘、每日状态记录偶发失败（表现为「刚改的设置重启后没了」）。
+ *
+ * 只对 EPERM / EACCES / EBUSY 重试；其它错误（磁盘满、路径不存在）立刻抛出。
+ */
+function renameWithRetry(from: string, to: string): void {
+    let lastError: any = null;
+    for (let attempt = 0; attempt <= RENAME_RETRY_DELAYS_MS.length; attempt += 1) {
+        try {
+            fs.renameSync(from, to);
+            return;
+        } catch (error: any) {
+            const code = String(error?.code || '');
+            lastError = error;
+            if (code !== 'EPERM' && code !== 'EACCES' && code !== 'EBUSY') throw error;
+            const delay = RENAME_RETRY_DELAYS_MS[attempt];
+            if (delay === undefined) break;
+            sleepSync(delay);
+        }
+    }
+    throw lastError;
+}
+
 function writeJsonFileAtomic(filePath: string, data: any, space = 2): void {
     const json = JSON.stringify(data, null, space);
     writeTextFileAtomic(filePath, json);
@@ -62,12 +102,28 @@ function writeJsonFileAtomic(filePath: string, data: any, space = 2): void {
 
 function writeTextFileAtomic(filePath: string, text = ''): void {
     ensureParentDir(filePath);
-    const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+    // 临时名带随机后缀：worker 与主进程同 pid，同一毫秒写同一路径时只靠
+    // pid+毫秒会撞名，后写者覆盖前者的临时文件，先 rename 的会带走对方的内容。
+    const tmpPath = `${filePath}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}.tmp`;
 
+    let fd: number | null = null;
     try {
-        fs.writeFileSync(tmpPath, String(text), 'utf8');
-        fs.renameSync(tmpPath, filePath);
+        fd = fs.openSync(tmpPath, 'w');
+        fs.writeFileSync(fd, String(text), 'utf8');
+        // rename 之前必须 fsync：否则断电或容器被 kill 时，目录项已切换但数据还在页缓存里，
+        // 结果是一个 0 字节的「新」文件——对配置类文件等于整份配置归零。
+        try {
+            fs.fsyncSync(fd);
+        } catch {
+            // 少数文件系统（部分网络卷）不支持 fsync，退化为原来的行为
+        }
+        fs.closeSync(fd);
+        fd = null;
+        renameWithRetry(tmpPath, filePath);
     } finally {
+        if (fd !== null) {
+            try { fs.closeSync(fd); } catch { /* ignore */ }
+        }
         try {
             if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
         } catch {
@@ -77,6 +133,7 @@ function writeTextFileAtomic(filePath: string, text = ''): void {
 }
 
 module.exports = {
+    renameWithRetry,
     readTextFile,
     readJsonFile,
     readJsonFileStrict,

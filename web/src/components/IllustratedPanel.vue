@@ -10,29 +10,33 @@ import BookOverview from '@/components/illustrated/BookOverview.vue'
 import BookSection from '@/components/illustrated/BookSection.vue'
 import BookTile from '@/components/illustrated/BookTile.vue'
 import BookToolbar from '@/components/illustrated/BookToolbar.vue'
+import IllustratedAutomationSwitches from '@/components/illustrated/IllustratedAutomationSwitches.vue'
+import BaseButton from '@/components/ui/BaseButton.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import { vLazySrc } from '@/directives/lazy-src'
 import { useAccountStore } from '@/stores/account'
 import { useIllustratedStore } from '@/stores/illustrated'
+import { useSettingStore } from '@/stores/setting'
 import { useStatusStore } from '@/stores/status'
 import { useToastStore } from '@/stores/toast'
-import { purchaseMaxCount } from '@/utils/purchase-count'
+import { createRequestGuard } from '@/utils/request-guard'
 
 const props = withDefaults(defineProps<{ bookType?: 'crop' | 'mutant' }>(), { bookType: 'crop' })
 const accountStore = useAccountStore()
 const illustratedStore = useIllustratedStore()
+const settingStore = useSettingStore()
 const statusStore = useStatusStore()
 const { currentAccountId } = storeToRefs(accountStore)
-const { status, currentAccountConnected: isConnected } = storeToRefs(statusStore)
+const { currentAccountConnected: isConnected } = storeToRefs(statusStore)
 const { data, loading, error } = storeToRefs(illustratedStore)
+const { settings } = storeToRefs(settingStore)
 const currentType = computed(() => props.bookType)
 const isMutant = computed(() => currentType.value === 'mutant')
 const bookName = computed(() => isMutant.value ? '超变图鉴' : '作物图鉴')
 const detailsOpen = ref(false)
 const claiming = ref(false)
-const clearing = ref(false)
 const rewardList = ref<HTMLElement | null>(null)
-let claimRevision = 0
+const claimGuard = createRequestGuard({ accountId: () => currentAccountId.value })
 const toast = useToastStore()
 const purchaseDialogOpen = ref(false)
 const selectedSeedItem = ref<any>(null)
@@ -44,8 +48,19 @@ const query = ref('')
 const book = computed(() => data.value?.[currentType.value] || null)
 const items = computed<any[]>(() => Array.isArray(book.value?.items) ? book.value.items : [])
 const collectedCount = computed(() => items.value.filter(item => item.unlocked).length)
-const freshItems = computed<any[]>(() => items.value.filter((item: any) => item.isNew))
-const purchasableCount = computed(() => items.value.filter(canPurchaseSeed).length)
+const userLevel = computed(() => Number(statusStore.status?.status?.level) || 0)
+const bagSeedIds = ref<Set<number>>(new Set())
+const bagSeedsReady = ref(false)
+/** 一键购买时是否跳过背包里已有的种子（可在功能模块或奖励详情里关闭）。 */
+const skipBagExisting = computed(() => settings.value.automation?.illustrated_buy_skip_bag !== false)
+const bagSeedSkippedCount = computed(() => items.value.filter(item => !item.unlocked && canPurchaseSeed(item) && bagSeedIds.value.has(Number(item.seedId))).length)
+/** 可购买数量：未点亮 + 可下单 + （开关开启时）背包里没有该种子；背包没读成功就不买，避免重复下单。 */
+const buyableMissingItems = computed(() => {
+  if (skipBagExisting.value && !bagSeedsReady.value)
+    return []
+  return items.value.filter(item => !item.unlocked && canPurchaseSeed(item) && (!skipBagExisting.value || !bagSeedIds.value.has(Number(item.seedId))))
+})
+const purchasableCount = computed(() => buyableMissingItems.value.length)
 const illustratedBuffs = computed(() => Array.isArray(book.value?.buffs) ? book.value.buffs : [])
 const currentIllustratedBuffs = computed(() => Array.isArray(book.value?.currentBuffs) ? book.value.currentBuffs : [])
 const illustratedLevelMap = computed(() => new Map(
@@ -80,7 +95,7 @@ function matches(item: any) {
   if (filter.value === 'missing')
     return !item.unlocked
   if (filter.value === 'buyable')
-    return canPurchaseSeed(item)
+    return !item.unlocked && canPurchaseSeed(item)
   return true
 }
 
@@ -119,23 +134,9 @@ const progressHint = computed(() => {
   return book.value.nextLevelProgress && remain > 0 ? `距下一级还差 ${remain} 进度` : '已达到最高等级'
 })
 
-let purchaseRevision = 0
-const purchaseMax = computed(() => purchaseMaxCount({
-  limitRemaining: selectedSeedItem.value?.shopSeed?.remainingPurchaseCount ?? null,
-  costs: [{ count: selectedSeedItem.value?.shopSeed?.price ?? 0, balance: status.value?.status?.gold }],
-}))
+const purchaseGuard = createRequestGuard({ accountId: () => currentAccountId.value })
+const purchaseMax = computed(() => Math.min(9999, selectedSeedItem.value?.shopSeed?.remainingPurchaseCount ?? 9999))
 const purchaseValid = computed(() => isConnected.value && Number.isSafeInteger(purchaseCount.value) && purchaseCount.value >= 1 && purchaseCount.value <= purchaseMax.value)
-watch(items, (entries) => {
-  if (selectedSeedItem.value) {
-    selectedSeedItem.value = entries.find(item => item.seedId === selectedSeedItem.value.seedId) ?? null
-    if (!selectedSeedItem.value)
-      purchaseDialogOpen.value = false
-  }
-})
-watch(purchaseMax, (maximum) => {
-  if (purchaseCount.value > maximum)
-    purchaseCount.value = Math.max(1, maximum)
-})
 function canPurchaseSeed(item: any) {
   const seed = item?.shopSeed
   return !!(isConnected.value && seed?.goodsId && !seed.locked && !seed.soldOut && !seed.unknownMeta && !seed.requiresUnlockCard && Number.isSafeInteger(seed.price) && seed.price > 0)
@@ -144,11 +145,6 @@ function openSeedPurchase(item: any) {
   if (!canPurchaseSeed(item) || purchasingSeedId.value !== null)
     return
   selectedSeedItem.value = item
-  if (purchaseMax.value < 1) {
-    toast.error(status.value?.status?.gold == null ? '金币余额未确认，请刷新后重试' : '金币余额不足')
-    selectedSeedItem.value = null
-    return
-  }
   purchaseCount.value = 1
   purchaseDialogOpen.value = true
 }
@@ -160,14 +156,14 @@ async function purchaseSeed() {
     return
   const count = purchaseCount.value
   const accountId = String(currentAccountId.value)
-  const revision = ++purchaseRevision
+  const ticket = purchaseGuard.next(accountId)
   purchasingSeedId.value = item.seedId
   try {
     const response = await api.post('/api/seeds/purchase', { goodsId: seed.goodsId, count }, {
       headers: { 'x-account-id': accountId },
       skipErrorToast: true,
     } as any)
-    if (revision !== purchaseRevision || accountId !== String(currentAccountId.value))
+    if (purchaseGuard.isStale(ticket))
       return
     if (!response.data?.ok)
       throw new Error(getApiErrorMessage(response.data, '种子购买失败'))
@@ -177,11 +173,11 @@ async function purchaseSeed() {
     await refresh()
   }
   catch (cause: any) {
-    if (revision === purchaseRevision)
+    if (!purchaseGuard.isStale(ticket))
       toast.error(getApiErrorMessage(cause, '种子购买失败'))
   }
   finally {
-    if (revision === purchaseRevision)
+    if (!purchaseGuard.isStale(ticket))
       purchasingSeedId.value = null
   }
 }
@@ -202,20 +198,96 @@ function cropMeta(item: any) {
   return item.unlocked ? '已收藏' : '未收藏'
 }
 
+/** 一键购买未点亮种子（老版 buy-all 移植）：逐个走现有购种接口，失败不中断。 */
+const buyAllDialogOpen = ref(false)
+const buyAllRunning = ref(false)
+const buyAllProgress = ref({ done: 0, total: 0, success: 0, fail: 0 })
+
+async function runBuyAllMissing() {
+  if (!currentAccountId.value || buyAllRunning.value)
+    return
+  const targets = buyableMissingItems.value.filter(item => Number.isSafeInteger(item?.shopSeed?.goodsId) && item.shopSeed.goodsId > 0)
+  if (!targets.length)
+    return
+  const accountId = String(currentAccountId.value)
+  const ticket = purchaseGuard.next(accountId)
+  buyAllRunning.value = true
+  buyAllProgress.value = { done: 0, total: targets.length, success: 0, fail: 0 }
+  try {
+    for (const item of targets) {
+      try {
+        const response = await api.post('/api/seeds/purchase', { goodsId: item.shopSeed.goodsId, count: 1 }, {
+          headers: { 'x-account-id': accountId },
+          skipErrorToast: true,
+        } as any)
+        if (purchaseGuard.isStale(ticket))
+          return
+        if (!response.data?.ok)
+          throw new Error(getApiErrorMessage(response.data, '购买失败'))
+        buyAllProgress.value.success++
+      }
+      catch {
+        buyAllProgress.value.fail++
+      }
+      buyAllProgress.value.done++
+    }
+    if (purchaseGuard.isStale(ticket))
+      return
+    const { success, fail } = buyAllProgress.value
+    if (fail === 0)
+      toast.success(`一键购买完成：成功 ${success} 个`)
+    else
+      toast.warning(`一键购买完成：成功 ${success} 个，失败 ${fail} 个`)
+    buyAllDialogOpen.value = false
+    await refresh()
+  }
+  finally {
+    if (!purchaseGuard.isStale(ticket))
+      buyAllRunning.value = false
+  }
+}
+
+async function loadBagSeeds() {
+  if (!currentAccountId.value || !isConnected.value) {
+    bagSeedsReady.value = false
+    return
+  }
+  try {
+    const response = await api.get('/api/bag/seeds', {
+      headers: { 'x-account-id': String(currentAccountId.value) },
+      skipErrorToast: true,
+    } as any)
+    const list = Array.isArray(response.data?.data) ? response.data.data : []
+    bagSeedIds.value = new Set(list.map((seed: any) => Number(seed?.seedId)).filter((id: number) => Number.isFinite(id) && id > 0))
+    bagSeedsReady.value = true
+  }
+  catch {
+    bagSeedIds.value = new Set()
+    bagSeedsReady.value = false
+  }
+}
+
 async function refresh() {
-  if (currentAccountId.value && isConnected.value)
-    await illustratedStore.fetch(currentAccountId.value)
+  if (!currentAccountId.value || !isConnected.value)
+    return
+  const id = String(currentAccountId.value)
+  await Promise.all([
+    illustratedStore.fetch(id),
+    loadBagSeeds(),
+  ])
+  if (settingStore.loadedAccountId !== id)
+    await settingStore.fetchSettings(id)
 }
 
 async function claimRewards() {
   if (claiming.value || loading.value || !book.value?.claimable || !isConnected.value)
     return
   const accountId = currentAccountId.value
-  const revision = ++claimRevision
+  const ticket = claimGuard.next(accountId)
   claiming.value = true
   try {
     const response = await api.post('/api/illustrated/claim', { type: currentType.value === 'crop' ? 1 : 2 }, { headers: { 'x-account-id': accountId }, skipErrorToast: true } as any)
-    if (revision !== claimRevision)
+    if (claimGuard.isStale(ticket))
       return
     if (!response.data?.ok)
       throw new Error(getApiErrorMessage(response.data, '图鉴奖励领取失败'))
@@ -229,37 +301,16 @@ async function claimRewards() {
     else toast.success(message)
   }
   catch (cause) {
-    if (revision === claimRevision) {
+    if (!claimGuard.isStale(ticket)) {
       toast.error(getApiErrorMessage(cause, '图鉴奖励领取失败'))
       await refresh()
     }
   }
   finally {
-    if (revision === claimRevision)
+    if (!claimGuard.isStale(ticket))
       claiming.value = false
   }
 }
-async function clearAllNew() {
-  const accountId = currentAccountId.value
-  const fruitIds = freshItems.value.map((item: any) => Number(item.fruitId) || 0)
-  if (clearing.value || loading.value || !accountId || !isConnected.value)
-    return
-  clearing.value = true
-  try {
-    const cleared = await illustratedStore.clearNew(accountId, fruitIds)
-    if (cleared.length)
-      toast.success(`已读 ${cleared.length} 条新增图鉴`)
-    else
-      toast.warning('没有未读图鉴')
-  }
-  catch (cause) {
-    toast.error(getApiErrorMessage(cause, '图鉴已读清除失败'))
-  }
-  finally {
-    clearing.value = false
-  }
-}
-
 async function scrollToNextReward() {
   await nextTick()
   const target = rewardList.value?.querySelector<HTMLElement>('[data-next="true"]')
@@ -273,14 +324,18 @@ watch(currentType, () => {
   detailsOpen.value = false
 })
 watch([currentAccountId, isConnected], () => {
-  claimRevision++
+  claimGuard.invalidate()
   claiming.value = false
-  purchaseRevision++
+  purchaseGuard.invalidate()
   purchaseDialogOpen.value = false
   selectedSeedItem.value = null
   purchasingSeedId.value = null
+  buyAllDialogOpen.value = false
+  buyAllRunning.value = false
   detailsOpen.value = false
   illustratedStore.reset()
+  bagSeedIds.value = new Set()
+  bagSeedsReady.value = false
 }, { flush: 'sync' })
 watch([currentAccountId, isConnected], refresh, { immediate: true })
 </script>
@@ -309,15 +364,15 @@ watch([currentAccountId, isConnected], refresh, { immediate: true })
         :hint="progressHint"
       >
         <template #actions>
-          <NButton secondary @click="detailsOpen = true">
+          <BaseButton v-if="!isMutant" variant="primary" :disabled="purchasableCount <= 0" :title="`一键购买 ${purchasableCount} 个未点亮种子`" @click="buyAllDialogOpen = true">
+            一键购买未解锁
+          </BaseButton>
+          <BaseButton variant="secondary" @click="detailsOpen = true">
             {{ isMutant ? '加成详情' : '奖励详情' }}
-          </NButton>
-          <NButton v-if="book.claimable" type="primary" :loading="claiming" :disabled="loading" @click="claimRewards">
+          </BaseButton>
+          <BaseButton v-if="book.claimable" variant="primary" :loading="claiming" :disabled="loading" @click="claimRewards">
             领取奖励
-          </NButton>
-          <NButton secondary :loading="clearing" :disabled="loading" @click="clearAllNew">
-            全部已读
-          </NButton>
+          </BaseButton>
           <NButton secondary :loading="loading" aria-label="刷新图鉴" title="刷新图鉴" @click="refresh">
             <template #icon>
               <span class="i-carbon-renew" />
@@ -330,6 +385,13 @@ watch([currentAccountId, isConnected], refresh, { immediate: true })
             <span v-for="bonus in currentIllustratedBuffs" :key="`current-buff-${bonus.id}`" class="book-chip">{{ bonus.name }} · {{ formatBuffValue(bonus) }}</span>
           </template>
           <span v-else class="book-chip-label">暂无，提升图鉴等级后解锁</span>
+        </template>
+        <template v-else>
+          <span class="book-chip-label">图鉴统计</span>
+          <span class="book-chip">已解锁 {{ collectedCount }} / {{ items.length }}</span>
+          <span class="book-chip">未解锁 {{ items.length - collectedCount }}</span>
+          <span class="book-chip">可购买 {{ purchasableCount }}</span>
+          <span class="book-chip">等级 Lv.{{ userLevel }}</span>
         </template>
       </BookOverview>
 
@@ -375,6 +437,41 @@ watch([currentAccountId, isConnected], refresh, { immediate: true })
         :icon="items.length ? 'i-carbon-search' : 'i-carbon-book'"
       />
 
+      <NModal v-model:show="buyAllDialogOpen" :mask-closable="!buyAllRunning" :close-on-esc="!buyAllRunning">
+        <NCard class="max-w-sm w-[calc(100vw-32px)]" title="确认一键购买未解锁种子" :closable="!buyAllRunning" @close="buyAllDialogOpen = false">
+          <p class="buy-all-confirm__text">
+            将逐个购买当前图鉴中所有<b>未点亮</b>且可下单的种子。
+          </p>
+          <p class="buy-all-confirm__text">
+            可购买数量：<b>{{ buyableMissingItems.length }}</b>
+            <template v-if="buyAllRunning">
+              （进度 {{ buyAllProgress.done }}/{{ buyAllProgress.total }}，成功 {{ buyAllProgress.success }}，失败 {{ buyAllProgress.fail }}）
+            </template>
+          </p>
+          <p class="buy-all-confirm__hint">
+            <template v-if="skipBagExisting">
+              已按背包跳过 <b>{{ bagSeedSkippedCount }}</b> 个已有种子<template v-if="!bagSeedsReady">
+                ；背包读取失败，暂时不能一键购买，请刷新重试
+              </template>。
+            </template>
+            <template v-else>
+              当前未开启「跳过背包已有」，可能重复购买背包里已有的种子。
+            </template>
+            购买后种子会进入背包，需种植/收获后图鉴才会点亮；已达限购或等级不足的种子会自动跳过并计为失败。
+          </p>
+          <template #footer>
+            <div class="flex justify-end gap-2">
+              <NButton secondary :disabled="buyAllRunning" @click="buyAllDialogOpen = false">
+                取消
+              </NButton>
+              <NButton type="primary" :loading="buyAllRunning" :disabled="buyableMissingItems.length <= 0" @click="runBuyAllMissing">
+                开始购买
+              </NButton>
+            </div>
+          </template>
+        </NCard>
+      </NModal>
+
       <NModal v-model:show="purchaseDialogOpen" :mask-closable="purchasingSeedId === null" :close-on-esc="purchasingSeedId === null">
         <NCard class="max-w-sm w-[calc(100vw-32px)]" :title="`购买${selectedSeedItem?.name || ''}种子`" :closable="purchasingSeedId === null" @close="purchaseDialogOpen = false">
           <div class="seed-purchase">
@@ -387,7 +484,7 @@ watch([currentAccountId, isConnected], refresh, { immediate: true })
             </div>
             <label class="seed-purchase__row">
               <span>购买批次</span>
-              <NInputNumber v-model:value="purchaseCount" :min="1" :max="purchaseMax || 1" :precision="0" class="w-36" :disabled="purchasingSeedId !== null || purchaseMax < 1" />
+              <NInputNumber v-model:value="purchaseCount" :min="1" :max="purchaseMax" :precision="0" class="w-36" :disabled="purchasingSeedId !== null" />
             </label>
             <div class="seed-purchase__row seed-purchase__total">
               <span>合计</span>
@@ -410,7 +507,7 @@ watch([currentAccountId, isConnected], refresh, { immediate: true })
       <NModal v-model:show="detailsOpen" @after-enter="scrollToNextReward">
         <NCard :title="isMutant ? '超变图鉴属性加成' : '作物图鉴收藏奖励'" closable class="book-rewards-modal max-w-2xl w-[calc(100vw-24px)]" @close="detailsOpen = false">
           <template v-if="isMutant">
-            <div v-if="illustratedBuffs.length" class="buff-grid dialog-scroll custom-scrollbar">
+            <div v-if="illustratedBuffs.length" class="buff-grid custom-scrollbar">
               <div v-for="bonus in illustratedBuffs" :key="`all-buff-${bonus.id}`" class="buff-card" :class="{ 'is-reached': bonus.level <= (book.level || 0) }">
                 <div class="buff-card__head">
                   <b>Lv.{{ bonus.level }}</b>
@@ -421,7 +518,7 @@ watch([currentAccountId, isConnected], refresh, { immediate: true })
             </div>
             <EmptyState v-else bare title="暂无属性加成" icon="i-carbon-gem" />
           </template>
-          <div v-else ref="rewardList" class="reward-list dialog-scroll custom-scrollbar" role="region" aria-label="收藏奖励" tabindex="0">
+          <div v-else ref="rewardList" class="reward-list custom-scrollbar" role="region" aria-label="收藏奖励" tabindex="0">
             <div
               v-for="level in book.levels"
               :key="level.level"
@@ -442,6 +539,7 @@ watch([currentAccountId, isConnected], refresh, { immediate: true })
               </span>
             </div>
           </div>
+          <IllustratedAutomationSwitches />
           <template v-if="book.claimable" #footer>
             <NButton block type="primary" :loading="claiming" :disabled="loading || claiming" @click="claimRewards">
               领取奖励
@@ -454,6 +552,18 @@ watch([currentAccountId, isConnected], refresh, { immediate: true })
 </template>
 
 <style scoped>
+.buy-all-confirm__text {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+
+.buy-all-confirm__hint {
+  margin: 10px 0 0;
+  color: var(--ui-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 .book-page {
   display: flex;
   min-width: 0;
@@ -537,7 +647,7 @@ watch([currentAccountId, isConnected], refresh, { immediate: true })
   max-height: calc(100dvh - 32px);
 }
 
-.book-rewards-modal :deep(.n-card-content) {
+.book-rewards-modal :deep(.n-card__content) {
   display: flex;
   min-height: 0;
   flex-direction: column;

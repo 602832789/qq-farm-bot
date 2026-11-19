@@ -184,10 +184,6 @@ message RotationShopState {
     int64 npc_spawn_point_id = 9;
 }
 
-message RotationShopNotify {
-    repeated RotationShopState shops = 1;
-}
-
 message RotationShopInfoRequest {
     int64 shop_id = 1;
 }

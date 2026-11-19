@@ -2,8 +2,9 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 // This repository runs its tests with Node's built-in runner.
-// eslint-disable-next-line test/no-import-node-test
+
 import test from 'node:test'
+import { requestGuardModule } from './helpers/ts-modules.mjs'
 
 const require = createRequire(import.meta.url)
 const { createPinia, disposePinia, setActivePinia } = require('pinia')
@@ -16,12 +17,13 @@ function harness(t, api) {
   t.after(() => disposePinia(pinia))
   const imports = {
     '@/api': { __esModule: true, default: api, getApiErrorMessage: value => value?.error || value?.message || '请求失败' },
+    '@/utils/request-guard': requestGuardModule,
   }
   const source = readFileSync(new URL('../src/stores/pet-diary.ts', import.meta.url), 'utf8')
   const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } })
   const module = { exports: {} }
   // Execute the real transpiled store with test I/O, without adding a browser or bundler dependency.
-  // eslint-disable-next-line no-new-func
+
   new Function('require', 'module', 'exports', outputText)(id => imports[id] || require(id), module, module.exports)
   return { store: module.exports.usePetDiaryStore(pinia) }
 }

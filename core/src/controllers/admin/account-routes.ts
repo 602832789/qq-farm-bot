@@ -9,6 +9,10 @@ export {};
 const store = require('../../models/store');
 const { addOrUpdateAccount, deleteAccount } = store;
 const { findAccountByRef } = require('../../services/account-resolver');
+const { toPublicAccountsData } = require('../../services/account-visibility');
+const { parseLogLimit, mergeLogLists } = require('../../services/log-query');
+const { clearAccountRuntimeState } = require('../../services/account-runtime-state');
+const { getPreflightStatsSnapshot, recordAutoRefreshSuccess } = require('../../services/preflight-stats');
 const { updateRuntimeConfig, getRuntimeConfig, getDefaultSystemConfig, getDevicePresets, getTimeZoneOptions } = require('../../config/config');
 
 const {
@@ -25,7 +29,14 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
     app.get('/api/accounts', (req: Request, res: Response) => {
         try {
             const data = ctx.provider.getAccounts();
-            res.json({ ok: true, data });
+            // 只把「能不能免扫码恢复」的判定结果发给浏览器，不下发长效凭证明文。
+            // 两个口径都要发：wxPreflightSupported = 能滚 token（wxid + refreshtoken），
+            // wxCanRecover = 掉线后能免扫码换 Code（再加上只有 loginBuffer 的情况），
+            // 后者与 wx-keepalive 的 canRecoverAccount 完全同一个函数。
+            // 同时附带自动续期账本快照（仅时间戳与次数），供卡片显示无人值守结果。
+            const { hasWxCredential } = require('../../services/wx-credential');
+            const { canRecoverAccount } = require('../../services/wx-keepalive');
+            res.json({ ok: true, data: toPublicAccountsData(data, hasWxCredential, getPreflightStatsSnapshot(), canRecoverAccount) });
         } catch (e: any) {
             handleApiError(res, e);
         }
@@ -99,31 +110,142 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
                 }
             }
 
+            /**
+             * 是否属于「重新登录」。
+             *
+             * 以前只能靠备注名碰巧匹配到已有账号来识别（isRemarkRelogin），
+             * 那条分支会无条件 restartAccount，所以停止中的账号重扫后也会被拉起来。
+             * 现在前端编辑态重扫/填新 Code 会显式带上账号 id（为了把新凭据写回原账号、
+             * 不再产生重复账号），带 id 就不再走备注匹配，于是掉进
+             * `wasRunning && !onlyRemarkChanged` 分支 —— 账号本来是停止状态时
+             * wasRunning 为 false，结果既不重启也不启动，用户看到的就是
+             * 「重新扫码/填完新 Code 后不会直接登录」。
+             *
+             * 因此这里把「带 id 且携带新登录凭据」也认定为重新登录。
+             */
+            const hasLoginCredential = !!(payload.code || payload.refreshtoken || payload.loginBuffer);
+            const isRelogin = isRemarkRelogin
+                || (isUpdate && !onlyRemarkChanged && hasLoginCredential);
+
             const data = addOrUpdateAccount(payload);
             if (ctx.provider.addAccountLog) {
                 const accountId = isUpdate ? String(payload.id) : String((data.accounts.at(-1) || {}).id || '');
                 const accountName = payload.name || '';
                 ctx.provider.addAccountLog(
                     isUpdate ? 'update' : 'add',
-                    isRemarkRelogin
+                    isRelogin
                         ? `通过备注重新登录账号: ${accountName || accountId}`
                         : isUpdate ? `更新账号: ${accountName || accountId}` : `添加账号: ${accountName || accountId}`,
                     accountId,
                     accountName
                 );
             }
-            // 如果是新增，自动启动
+            // 新增账号直接启动；重新登录无论此前是否在跑都要用新凭据上线。
             if (!isUpdate) {
                 const newAcc = data.accounts.at(-1);
-                if (newAcc) ctx.provider.startAccount(newAcc.id);
-            } else if (isRemarkRelogin) {
-                // Adding with an existing remark is a relogin operation, including for stopped accounts.
-                ctx.provider.restartAccount(payload.id);
+                if (newAcc) Promise.resolve(ctx.provider.startAccount(newAcc.id)).catch(() => {});
+            } else if (isRelogin) {
+                // 重新扫码 / 填写新 Code 也是一次「凭证换新成功」，同样刷新卡片上那行
+                // 「上次自动续期」的时间与今日成功次数（用户明确要求把它算进去）。
+                // 只记微信：这行只在微信账号卡片上展示；QQ 没有长效凭证，也没有这行。
+                const saved = (data.accounts || []).find((acc: any) => String(acc.id) === String(payload.id));
+                if (String((saved && saved.platform) || payload.platform || '') === 'wx') {
+                    try { recordAutoRefreshSuccess(payload.id); }
+                    catch { /* 账本只用于展示，写失败不影响重新登录 */ }
+                }
+                // 在跑：重建 worker 让新凭据立即生效；已停止：直接启动（启动前会先换码）。
+                if (wasRunning) ctx.provider.restartAccount(payload.id);
+                else Promise.resolve(ctx.provider.startAccount(payload.id)).catch(() => {});
             } else if (wasRunning && !onlyRemarkChanged) {
                 // 如果是更新，且之前在运行，且不是仅修改备注，则重启
                 ctx.provider.restartAccount(payload.id);
             }
             res.json({ ok: true, data });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    });
+
+    // API: 续期微信授权（批量）。返回每个账号的结果，前端据此提示成功/失败数量。
+    // 与启动前换码一致：优先用长效 loginBuffer 直接换 Code，只有失效时才滚动
+    // refreshtoken，避免每次点按钮都消耗一次性滚动凭证导致失败。
+    async function refreshWxCredentials(req: Request, res: Response): Promise<any> {
+        try {
+            const { hasRenewableCredential, ensureFreshGameCode } = require('../../services/wx-credential');
+            const accounts = (ctx.provider.getAccounts().accounts || []);
+            const wxAccounts = accounts.filter((account: any) => String(account.platform || '') === 'wx');
+            const targetAccounts = wxAccounts.filter((account: any) => hasRenewableCredential(account));
+            if (targetAccounts.length === 0) {
+                return res.json({
+                    ok: false,
+                    error: wxAccounts.length === 0 ? '当前没有微信账号' : '没有可续期的微信账号，请重新扫码登录',
+                    data: { total: 0, success: 0, failed: 0, skipped: wxAccounts.length },
+                });
+            }
+
+            const results: any[] = [];
+            for (const account of targetAccounts) {
+                const result = await ensureFreshGameCode(account.id);
+                // 手动续期成功同样算作「最近一次续期成功」：用户点了按钮、凭证确实换新了，
+                // 卡片上那行时间就该跳到此刻，否则会一直停在几天前或一条旧的失败记录上。
+                // 只记成功 —— 手动点一下失败不该把整行染红（失败仍由后端自动续期负责记录）。
+                if (result.ok) {
+                    try { recordAutoRefreshSuccess(account.id); }
+                    catch { /* 账本只用于展示，写失败不影响续期结果 */ }
+                }
+                results.push({
+                    accountId: String(account.id),
+                    name: result.accountName,
+                    ok: result.ok,
+                    error: result.ok ? '' : (result.error || '续期失败'),
+                });
+            }
+
+            const success = results.filter(item => item.ok).length;
+            const failed = results.length - success;
+            if (ctx.provider.addAccountLog) {
+                const detail = results.map(item => `${item.name}${item.ok ? '✓' : '✗'}`).join('、');
+                ctx.provider.addAccountLog(
+                    failed === 0 ? 'refresh_wx_credentials' : 'refresh_wx_credentials_failed',
+                    `续期微信授权：成功 ${success} 个，失败 ${failed} 个（${detail}）`,
+                    '',
+                    '',
+                );
+            }
+            res.json({
+                ok: failed === 0,
+                ...(failed > 0 ? { error: `${failed} 个账号续期失败` } : {}),
+                data: {
+                    total: results.length,
+                    success,
+                    failed,
+                    skipped: wxAccounts.length - targetAccounts.length,
+                    results,
+                },
+            });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    }
+
+    app.post('/api/accounts/refresh-wx-credentials', refreshWxCredentials);
+    app.post('/api/accounts/refresh-wx-codes', refreshWxCredentials);
+
+    app.post('/api/accounts/:id/refresh-wx-credential', async (req: Request, res: Response) => {
+        try {
+            const { ensureFreshGameCode } = require('../../services/wx-credential');
+            const accountId = resolveAccId(ctx, req.params.id) || String(req.params.id || '');
+            const result = await ensureFreshGameCode(accountId);
+            // 与批量续期保持一致：成功也刷新「上次自动续期」那行的时间。
+            if (result.ok) {
+                try { recordAutoRefreshSuccess(accountId); }
+                catch { /* 账本只用于展示，写失败不影响续期结果 */ }
+            }
+            res.status(result.ok ? 200 : 400).json({
+                ok: result.ok,
+                ...(result.ok ? {} : { error: result.error || '续期失败' }),
+                data: result,
+            });
         } catch (e: any) {
             handleApiError(res, e);
         }
@@ -137,6 +259,9 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
             const target = findAccountByRef(before.accounts || [], req.params.id);
             ctx.provider.stopAccount(resolvedId);
             const data = deleteAccount(resolvedId);
+            // 账号已删除，状态账本里的记录也要一起摘掉：否则同 id 的账号重新
+            // 加回来时会先继承上一次的「已掉线 / 停止中」，面板闪一下错误状态。
+            clearAccountRuntimeState(resolvedId);
             if (ctx.provider.addAccountLog) {
                 ctx.provider.addAccountLog('delete', `删除账号: ${(target && target.name) || req.params.id}`, resolvedId, target ? target.name : '');
             }
@@ -149,7 +274,7 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
     // API: 账号日志
     app.get('/api/account-logs', (req: Request, res: Response) => {
         try {
-            const limit = Number.parseInt(req.query.limit as string) || 100;
+            const limit = parseLogLimit(req.query.limit);
             let list: any[] = ctx.provider.getAccountLogs ? ctx.provider.getAccountLogs(limit) : [];
             if (!Array.isArray(list)) list = [];
 
@@ -167,9 +292,9 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
         // 如果没有指定账号ID，获取所有账号的日志
         if (!id) {
             const accountIds = getAccountIds(ctx);
-            const allLogs: any[] = [];
+            const perAccountLogs: any[][] = [];
             const options = {
-                limit: Number.parseInt(req.query.limit as string) || 100,
+                limit: parseLogLimit(req.query.limit),
                 tag: req.query.tag || '',
                 module: req.query.module || '',
                 event: req.query.event || '',
@@ -182,20 +307,19 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
             for (const accId of accountIds) {
                 const logs = ctx.provider.getLogs(accId, options);
                 if (Array.isArray(logs)) {
-                    allLogs.push(...logs);
+                    perAccountLogs.push(logs);
                 }
             }
 
-            // 按时间排序并限制数量
-            allLogs.sort((a: any, b: any) => (b.time || 0) - (a.time || 0));
-            const limitedLogs = allLogs.slice(0, options.limit);
+            // 按时间升序合并，再取最新的 limit 条（与单账号分支 slice(-limit) 的朝向一致）。
+            const limitedLogs = mergeLogLists(perAccountLogs, options.limit);
 
             return res.json({ ok: true, data: limitedLogs });
         }
 
         // 指定了账号ID且通过权限检查，返回该账号的日志
         const options = {
-            limit: Number.parseInt(req.query.limit as string) || 100,
+            limit: parseLogLimit(req.query.limit),
             tag: req.query.tag || '',
             module: req.query.module || '',
             event: req.query.event || '',
@@ -373,16 +497,23 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
             const bagSeedMultiLandReservationEnabled = id && (typeof store.getBagSeedMultiLandReservationEnabled === 'function') ? store.getBagSeedMultiLandReservationEnabled(id) : false;
             const bagSeedLandTypes = id && (typeof store.getBagSeedLandTypes === 'function') ? store.getBagSeedLandTypes(id) : {};
             const bagSeedFallbackStrategy = id && (typeof store.getBagSeedFallbackStrategy === 'function') ? store.getBagSeedFallbackStrategy(id) : 'level';
+            const prioritize2x2Crops = id && (typeof store.getPrioritize2x2Crops === 'function') ? store.getPrioritize2x2Crops(id) : false;
             const autoAcceptFriendMinLevel = id && (typeof store.getAutoAcceptFriendMinLevel === 'function') ? store.getAutoAcceptFriendMinLevel(id) : 0;
             const autoAcceptRequireOwnLevel = id && (typeof store.getAutoAcceptRequireOwnLevel === 'function') ? store.getAutoAcceptRequireOwnLevel(id) : false;
             const autoAcceptHarvestStealEnabled = id && (typeof store.getAutoAcceptHarvestStealEnabled === 'function') ? store.getAutoAcceptHarvestStealEnabled(id) : true;
             const autoAcceptHarvestStealHarvest = id && (typeof store.getAutoAcceptHarvestStealHarvest === 'function') ? store.getAutoAcceptHarvestStealHarvest(id) : 8;
             const autoAcceptHarvestStealSteal = id && (typeof store.getAutoAcceptHarvestStealSteal === 'function') ? store.getAutoAcceptHarvestStealSteal(id) : 1;
+            // 邮箱时刻与黄金虫策略也必须随 GET 下发：只靠保存接口回传的话，
+            // 刷新页面后输入框会退回默认值，看起来像「保存没生效」。
+            const accountConfig = id ? store.getConfigSnapshot(id) : null;
+            const emailClaimHour = accountConfig ? accountConfig.emailClaimHour : 10;
+            const goldenBugKeepCount = accountConfig ? accountConfig.goldenBugKeepCount : 0;
+            const goldenBugRoundLimit = accountConfig ? accountConfig.goldenBugRoundLimit : 24;
             const ui = store.getUI();
             const offlineReminder = store.getOfflineReminder
                 ? store.getOfflineReminder()
                 : { channel: 'webhook', endpoint: '', token: '', secret: '', title: '账号下线提醒', msg: '账号下线', offlineDeleteSec: 0 };
-            res.json({ ok: true, data: { intervals, strategy, preferredSeed, friendQuietHours, automation, stealDelaySeconds, plantOrderRandom, plantDelaySeconds, fertilizerBuyOrganicCount, fertilizerBuyOrganicThresholdHours, fertilizerBuyNormalCount, fertilizerBuyNormalThresholdHours, fertilizerBuyCheckIntervalMinutes, bagSeedPriority, bagSeedMultiLandReservationEnabled, bagSeedLandTypes, bagSeedFallbackStrategy, autoAcceptFriendMinLevel, autoAcceptRequireOwnLevel, autoAcceptHarvestStealEnabled, autoAcceptHarvestStealHarvest, autoAcceptHarvestStealSteal, ui, offlineReminder } });
+            res.json({ ok: true, data: { intervals, strategy, preferredSeed, friendQuietHours, automation, stealDelaySeconds, plantOrderRandom, plantDelaySeconds, fertilizerBuyOrganicCount, fertilizerBuyOrganicThresholdHours, fertilizerBuyNormalCount, fertilizerBuyNormalThresholdHours, fertilizerBuyCheckIntervalMinutes, bagSeedPriority, bagSeedMultiLandReservationEnabled, bagSeedLandTypes, bagSeedFallbackStrategy, prioritize2x2Crops, autoAcceptFriendMinLevel, autoAcceptRequireOwnLevel, autoAcceptHarvestStealEnabled, autoAcceptHarvestStealHarvest, autoAcceptHarvestStealSteal, ui, offlineReminder, emailClaimHour, goldenBugKeepCount, goldenBugRoundLimit } });
         } catch (e: any) {
             handleApiError(res, e);
         }
@@ -458,9 +589,12 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
 
     app.post('/api/settings/system-config', (req: Request, res: Response) => {
         try {
-            const { serverUrl, clientVersion, wxClientVersion, platform, os, timeZone, deviceInfo } = req.body || {};
-            const saved = store.setSystemConfig({ serverUrl, clientVersion, wxClientVersion, platform, os, timeZone, deviceInfo });
+            const { serverUrl, clientVersion, wxClientVersion, platform, os, timeZone, deviceInfo, autoCodeRefresh, autoStartAccounts } = req.body || {};
+            const saved = store.setSystemConfig({ serverUrl, clientVersion, wxClientVersion, platform, os, timeZone, deviceInfo, autoCodeRefresh, autoStartAccounts });
             updateRuntimeConfig(saved);
+            if (autoCodeRefresh !== undefined && ctx.provider.applyAccountKeepAliveConfig) {
+                ctx.provider.applyAccountKeepAliveConfig();
+            }
             if (ctx.provider && typeof ctx.provider.broadcastConfig === 'function') {
                 ctx.provider.broadcastConfig('');
             }

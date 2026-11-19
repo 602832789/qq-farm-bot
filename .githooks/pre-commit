@@ -1,0 +1,53 @@
+#!/bin/sh
+# 提交前递增版本号，并把版本文件一起 add 进「本次」提交。
+# 效果：更新内容与版本号落在同一条提交里，不再额外产生 chore(version) 提交。
+# 启用方式：pnpm hooks:install  （git config core.hooksPath .githooks）
+#
+# 为什么必须是 pre-commit（实测结论）：
+#   git 在 prepare-commit-msg / commit-msg 阶段已经冻结了本次要提交的内容，
+#   此时 git add 只会进暂存区、不会进这次提交；只有 pre-commit 阶段还能改写提交内容。
+#   代价是此刻提交说明尚未生成，摘要改用 CHANGELOG 最新一条未打版本的详细记录标题。
+
+set -u
+
+# 递归保护
+if [ -n "${FARM_VERSION_BUMP_RUNNING:-}" ]; then
+  exit 0
+fi
+
+# 合并 / 变基 / amend 场景不递增，避免版本号乱跳
+case "${GIT_REFLOG_ACTION:-}" in
+  *amend*) exit 0 ;;
+esac
+[ -f "$(git rev-parse --git-path MERGE_HEAD)" ] && exit 0
+[ -d "$(git rev-parse --git-path rebase-merge)" ] && exit 0
+[ -d "$(git rev-parse --git-path rebase-apply)" ] && exit 0
+
+# 版本文件已在暂存区（提交前手动跑过 version:bump）时不重复递增
+if git diff --cached --name-only | grep -qx 'version.json'; then
+  exit 0
+fi
+
+# 空提交不递增
+if git diff --cached --quiet; then
+  exit 0
+fi
+
+# 暂存内容与 HEAD 完全一致（例如只改提交说明的 amend）不递增
+if git rev-parse --verify -q HEAD >/dev/null 2>&1; then
+  if git diff --cached --quiet HEAD -- 2>/dev/null; then
+    exit 0
+  fi
+fi
+
+[ -f scripts/version.mjs ] || exit 0
+
+# 标记位：告诉随后的 commit-msg 钩子「本次提交刚递增过版本，可以改写标题」。
+marker="$(git rev-parse --git-path FARM_VERSION_PENDING)"
+
+if FARM_VERSION_BUMP_RUNNING=1 node scripts/version.mjs bump --auto-stage; then
+  touch "$marker"
+else
+  echo "[version] 版本号自动递增失败，可手动执行 pnpm version:bump 后重试提交" >&2
+fi
+exit 0

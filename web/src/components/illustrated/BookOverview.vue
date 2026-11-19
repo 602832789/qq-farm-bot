@@ -109,9 +109,12 @@ const width = computed(() => `${Math.max(0, Math.min(100, props.percent ?? 0))}%
 }
 
 .book-overview__heading {
+  /* 以「已收藏 x / y」的行高作为整行高度基准：标题与计数共用同一高度并垂直居中，
+     字号保持各自原值不变，视觉上一样高，而不是把标题缩成计数那么大。 */
+  --book-heading-line: 20px;
   display: flex;
   min-width: 0;
-  align-items: baseline;
+  align-items: center;
   flex-wrap: wrap;
   gap: 4px 12px;
 }
@@ -124,7 +127,7 @@ const width = computed(() => `${Math.max(0, Math.min(100, props.percent ?? 0))}%
   color: var(--ui-ink);
   font-size: 15px;
   font-weight: var(--fw-650);
-  line-height: 1.3;
+  line-height: var(--book-heading-line);
 }
 
 .book-overview__heading h3 > span {
@@ -135,6 +138,7 @@ const width = computed(() => `${Math.max(0, Math.min(100, props.percent ?? 0))}%
 .book-overview__caption {
   color: var(--ui-muted);
   font-size: 12px;
+  line-height: var(--book-heading-line);
   font-variant-numeric: tabular-nums;
 }
 

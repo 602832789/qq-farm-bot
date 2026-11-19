@@ -1,0 +1,1291 @@
+{
+  "major": 3,
+  "minor": 30,
+  "patch": 0,
+  "build": 198,
+  "version": "3.30.0",
+  "updatedAt": "2026-11-19T10:21:08.242Z",
+  "lastCommit": "—",
+  "history": [
+    {
+      "version": "3.30.0",
+      "build": 198,
+      "date": "2026-11-19",
+      "summary": "重新接入旧版界面与后端，恢复账号自动续期、今日统计与 2x2 催熟",
+      "commit": "—",
+      "type": "minor"
+    },
+    {
+      "version": "3.29.1",
+      "build": 197,
+      "date": "2026-11-19",
+      "summary": "侧边栏改为场景化导航，牧场拆成 7 个独立子页",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.29.0",
+      "build": 196,
+      "date": "2026-11-19",
+      "summary": "以 liyangpengs 最新版为基底接入牧场新玩法与木革活动，保留本地全部闸门",
+      "commit": "—",
+      "type": "minor"
+    },
+    {
+      "version": "3.28.1",
+      "build": 195,
+      "date": "2026-11-17",
+      "summary": "牧场顶部资产条改用牧场自身数据，不再借用农场资产",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.28.0",
+      "build": 193,
+      "date": "2026-11-17",
+      "summary": "牧场栏舍新增场景视图：动物形象、状态倒计时与就地操作",
+      "commit": "—",
+      "type": "minor"
+    },
+    {
+      "version": "3.27.1",
+      "build": 192,
+      "date": "2026-11-17",
+      "summary": "牧场日志改用「牧场」标签，设置页隐藏已结束活动，牧场页补资产条",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.27.0",
+      "build": 191,
+      "date": "2026-11-17",
+      "summary": "牧场页补全 10 个分区面板，菜单改名「我的牧场」并接入场景切换",
+      "commit": "—",
+      "type": "minor"
+    },
+    {
+      "version": "3.26.2",
+      "build": 190,
+      "date": "2026-11-17",
+      "summary": "修复 Docker 构建卡在 frozen-lockfile：锁文件恢复成本地依赖集",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.26.1",
+      "build": 189,
+      "date": "2026-11-17",
+      "summary": "修正牧场入口图标为图标集里真实存在的名字",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.26.0",
+      "build": 188,
+      "date": "2026-11-17",
+      "summary": "同步上游牧场大版本：接入牧场后端与游戏数据，前端保留本地版本并新增牧场页",
+      "commit": "—",
+      "type": "minor"
+    },
+    {
+      "version": "3.25.18",
+      "build": 187,
+      "date": "2026-11-16",
+      "summary": "部署脚本拦住「私密仓库 + 公共加速代理」，并禁止 pull 停在用户名提示",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.25.17",
+      "build": 186,
+      "date": "2026-11-16",
+      "summary": "适配私密仓库：README 改用 SSH，部署脚本认得出认证失败并给出两条认证出路",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.25.16",
+      "build": 185,
+      "date": "2026-11-16",
+      "summary": "去除账号管理页 Code 自动监听，并让手动续期与重新登录计入「上次自动续期」",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.25.15",
+      "build": 183,
+      "date": "2026-11-14",
+      "summary": "调整账号卡片「上次自动续期」：整行跟随最近一次结果，成功绿失败红且只显示一个计数",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.25.13",
+      "build": 182,
+      "date": "2026-11-14",
+      "summary": "修复自动出售全军覆没：背包回包的 Long 对象被输入守卫判成 0，并让汇总日志不再谎报成功",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.25.12",
+      "build": 181,
+      "date": "2026-11-14",
+      "summary": "补齐前后端接口契约对账闸门，115 个前端路径与 134 个调用全部对齐",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.25.11",
+      "build": 180,
+      "date": "2026-11-14",
+      "summary": "修复删号后旧账号缓存被新号继承，并让当日统计走统一数据目录",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.25.10",
+      "build": 179,
+      "date": "2026-11-14",
+      "summary": "真实启动整个项目做全量路由扫描，修客户端错误被当成 500、测试写脏真实日志",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.25.9",
+      "build": 178,
+      "date": "2026-11-14",
+      "summary": "测试不再往真实数据目录扔临时文件",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.25.8",
+      "build": 177,
+      "date": "2026-11-14",
+      "summary": "修复 Windows 上原子写偶发 EPERM 导致配置与当日状态丢失的问题",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.25.7",
+      "build": 176,
+      "date": "2026-11-14",
+      "summary": "修复单个 HTTP 请求可打死主进程的问题，并补上真实冒烟与前端逻辑测试",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.25.6",
+      "build": 175,
+      "date": "2026-11-14",
+      "summary": "补齐剩余 5 个零测试模块的 67 条测试，并修掉两处同类边界问题",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.25.5",
+      "build": 173,
+      "date": "2026-11-14",
+      "summary": "为 8 个零测试的高风险模块补 123 条测试，并修复好友 GID 归一化放行 Infinity",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.25.3",
+      "build": 172,
+      "date": "2026-11-14",
+      "summary": "修复请求参数以 Infinity 绕过校验，并把外部输入面收成清单闸门",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.25.2",
+      "build": 171,
+      "date": "2026-11-13",
+      "summary": "参数与边界复查：间隔上限缺失、定时器延时溢出、Infinity 放行与管理端口校验",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.25.1",
+      "build": 170,
+      "date": "2026-11-13",
+      "summary": "重构切号竞态：27 处手写序号计数器全部收口到统一请求守卫",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.25.0",
+      "build": 169,
+      "date": "2026-11-13",
+      "summary": "新增防复发门禁：把「未处理 Promise」这类反复出现的问题变成写的时候就报错",
+      "commit": "—",
+      "type": "minor"
+    },
+    {
+      "version": "3.23.8",
+      "build": 168,
+      "date": "2026-11-13",
+      "summary": "全仓完整性复查（第四轮，含前四轮回归）：修复进程致命拒绝、启动失败卡死与切号串数据",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.23.7",
+      "build": 167,
+      "date": "2026-11-13",
+      "summary": "修复账号运行状态从不更新：补齐后端状态机，登录中 / 等待重登 / 停止中终于可见",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.23.6",
+      "build": 166,
+      "date": "2026-11-13",
+      "summary": "全仓完整性复查：修复「全部账号」日志排序失效、停机不清活动主循环与巡检周期被反复重置",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.23.5",
+      "build": 165,
+      "date": "2026-11-13",
+      "summary": "全仓完整性复查：修复统计跨日错位、好友帮忙自锁与 2×2 预留组误释放",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.23.3",
+      "build": 163,
+      "date": "2026-11-13",
+      "summary": "全仓完整性复查：修复凭证吊销闸门失效、续期窗口被推迟与续期异常打断主进程",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.23.2",
+      "build": 162,
+      "date": "2026-11-13",
+      "summary": "Docker Hub 直连超时时，NapCat 镜像改用加速站或本地标签",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.23.1",
+      "build": 161,
+      "date": "2026-11-13",
+      "summary": "QQ 取码链路收口：优先 getOpenAuth，NapCat 基础镜像补固定版本与离线导入路径",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.23.0",
+      "build": 160,
+      "date": "2026-11-13",
+      "summary": "移植 YYB-Go-Enhanced 完整保活方案：会话复用、错误分级与只滚令牌续期",
+      "commit": "—",
+      "type": "minor"
+    },
+    {
+      "version": "3.22.11",
+      "build": 159,
+      "date": "2026-11-12",
+      "summary": "掉线后无法自愈：补上 QQ 重登与登录失败兜底",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.22.10",
+      "build": 158,
+      "date": "2026-11-12",
+      "summary": "全仓完整性复查：修复统计基线、登录初始化与若干判定缺陷",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.22.9",
+      "build": 157,
+      "date": "2026-11-12",
+      "summary": "成熟唤醒与活动/好友成熟计划的时间基准修正",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.22.8",
+      "build": 156,
+      "date": "2026-11-12",
+      "summary": "自家农场成熟驱动唤醒与农场调度健壮性补强",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.22.7",
+      "build": 155,
+      "date": "2026-11-12",
+      "summary": "全仓完整性检查：修复六处影响统计与农场自动化的缺陷",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.22.6",
+      "build": 153,
+      "date": "2026-11-12",
+      "summary": "修正调度器注释与清理帮忙间隔的无效配置读取",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.22.5",
+      "build": 152,
+      "date": "2026-11-12",
+      "summary": "回滚 README 的 Docker 部署命令补全，恢复精简安装说明",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.22.3",
+      "build": 151,
+      "date": "2026-11-12",
+      "summary": "补全 README 的 Docker 部署命令集",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.22.2",
+      "build": 150,
+      "date": "2026-11-12",
+      "summary": "精简 README 的 Docker 部署章节，只保留正常安装说明",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.22.1",
+      "build": 139,
+      "date": "2026-11-12",
+      "summary": "金豆今日数值改由后端同源统计，移除浏览器本地基线",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.22.0",
+      "build": 138,
+      "date": "2026-11-12",
+      "summary": "新增今日统计的金豆与点券今日数值卡片",
+      "commit": "—",
+      "type": "minor"
+    },
+    {
+      "version": "3.21.0",
+      "build": 137,
+      "date": "2026-11-11",
+      "summary": "新增一键更新 / 一键清理 / 一键重构三条固定流水线",
+      "commit": "—",
+      "type": "minor"
+    },
+    {
+      "version": "3.20.2",
+      "build": 136,
+      "date": "2026-11-11",
+      "summary": "README 的「Docker 部署」只留通用步骤，删掉某台机器的实测数据",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.20.1",
+      "build": 135,
+      "date": "2026-11-11",
+      "summary": "修掉 `--scan-volume` 下「让你再跑一遍自己」的自相矛盾提示",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.20.0",
+      "build": 133,
+      "date": "2026-11-11",
+      "summary": "新增 `--scan-volume`：把「Docker 之外那 27G」自动摊开，查出来是 fnOS 的 `@appmeta` / `@sysappmeta`",
+      "commit": "—",
+      "type": "minor"
+    },
+    {
+      "version": "3.19.1",
+      "build": 132,
+      "date": "2026-11-11",
+      "summary": "磁盘对账汇总补上 `-x`：15G 虚报其实是 9.3G，另有 5.7G 是 overlay 视图重复算的",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.19.0",
+      "build": 131,
+      "date": "2026-11-11",
+      "summary": "NAS 空间诊断新增磁盘对账与健康检查明细，探针不再依赖 wget",
+      "commit": "—",
+      "type": "minor"
+    },
+    {
+      "version": "3.18.0",
+      "build": 130,
+      "date": "2026-11-11",
+      "summary": "`--report` 改为全量诊断并新增 `--prune-orphans`，纠正「构建缓存占大头」的误判",
+      "commit": "—",
+      "type": "minor"
+    },
+    {
+      "version": "3.17.9",
+      "build": 129,
+      "date": "2026-11-11",
+      "summary": "修复 NAS 反复构建后空间清不干净：`builder prune` 补上 `-a`，日志加体积上限",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.17.8",
+      "build": 128,
+      "date": "2026-11-11",
+      "summary": "提交标题改为「版本号 · 第 N 次更新 · 更新内容」，原始说明下沉为正文",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.17.7",
+      "build": 127,
+      "date": "2026-11-11",
+      "summary": "修正钩子文件可执行位，Linux/macOS 上版本递增才会真正执行",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.17.6",
+      "build": 126,
+      "date": "2026-11-11",
+      "summary": "版本号与更新内容合并为同一条提交，不再单独产生 chore(version) 记录",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.17.5",
+      "build": 125,
+      "date": "2026-11-11",
+      "summary": "chore(deploy): NAS 部署脚本构建缓存回收窗口由 24 小时收紧到 1 分钟",
+      "commit": "ce55f8b1",
+      "type": "patch"
+    },
+    {
+      "version": "3.17.3",
+      "build": 123,
+      "date": "2026-11-11",
+      "summary": "fix(version): 修正 CHANGELOG 标题版本号误判，补上 hook 回归测试",
+      "commit": "f22b21b8",
+      "type": "patch"
+    },
+    {
+      "version": "3.17.2",
+      "build": 122,
+      "date": "2026-11-11",
+      "summary": "fix(core): 复核运行完整性，补修 v3.17.1 分项开关实时性回归",
+      "commit": "c4a1640f",
+      "type": "patch"
+    },
+    {
+      "version": "3.17.1",
+      "build": 121,
+      "date": "2026-11-11",
+      "summary": "fix(core): 收口 visit-strategy 二次开关判断，options 成为单次好友访问唯一决策来源",
+      "commit": "1a1be415",
+      "type": "patch"
+    },
+    {
+      "version": "3.17.0",
+      "build": 120,
+      "date": "2026-11-11",
+      "summary": "feat(web): 落地上游 PR #125 稀有度徽章，宠物卡片显示四档稀有度",
+      "commit": "9106971f",
+      "type": "minor"
+    },
+    {
+      "version": "3.16.2",
+      "build": 119,
+      "date": "2026-11-11",
+      "summary": "fix(core/web): 复核前两次上游同步，补修 3 处漏网缺陷并逐条对账 24 项",
+      "commit": "497c226e",
+      "type": "patch"
+    },
+    {
+      "version": "3.16.1",
+      "build": 118,
+      "date": "2026-11-11",
+      "summary": "fix(core/web): 全仓完整性体检，修复 14 处逻辑缺陷并补齐回归测试",
+      "commit": "450266f0",
+      "type": "patch"
+    },
+    {
+      "version": "3.16.0",
+      "build": 117,
+      "date": "2026-11-10",
+      "summary": "feat(web): 同步上游 PR #125 评估并等价落地宠物页可用性改进",
+      "commit": "b0a1f456",
+      "type": "minor"
+    },
+    {
+      "version": "3.15.6",
+      "build": 116,
+      "date": "2026-11-10",
+      "summary": "chore(web): 补齐 tests 与样式检查范围，格式化后 web 全仓 lint 清零",
+      "commit": "a264fe0f",
+      "type": "patch"
+    },
+    {
+      "version": "3.15.5",
+      "build": 115,
+      "date": "2026-11-10",
+      "summary": "fix(core): 种植轮闸门缓存失效判断修正，清理死代码并清空 core lint",
+      "commit": "39b871f0",
+      "type": "patch"
+    },
+    {
+      "version": "3.15.3",
+      "build": 113,
+      "date": "2026-11-10",
+      "summary": "fix(web/core): 邮箱时刻输入非法不再拖垮整份设置保存，并给两份 hour-of-day 加一致性测试",
+      "commit": "1374aa1a",
+      "type": "patch"
+    },
+    {
+      "version": "3.15.2",
+      "build": 112,
+      "date": "2026-11-10",
+      "summary": "fix(core): 好友 tick 不再套自动化锁，修复与内部 detached 调用互相等死的死锁",
+      "commit": "0914db06",
+      "type": "patch"
+    },
+    {
+      "version": "3.15.1",
+      "build": 111,
+      "date": "2026-11-10",
+      "summary": "fix(web): QQ 账号卡片底部横线与微信卡片对齐，手机端显示今日成功次数",
+      "commit": "3b4cd7fb",
+      "type": "patch"
+    },
+    {
+      "version": "3.15.0",
+      "build": 110,
+      "date": "2026-11-10",
+      "summary": "feat(core/web): 同步上游 20261109 更新（PR #122-#124），采纳邮件定时检查、种植延迟生效与图片懒加载",
+      "commit": "158473a2",
+      "type": "minor"
+    },
+    {
+      "version": "3.13.0",
+      "build": 109,
+      "date": "2026-11-10",
+      "summary": "feat(core): 网关诊断日志改为中文文案，压力/超时/心跳/让路不再输出英文键值",
+      "commit": "8363558f",
+      "type": "minor"
+    },
+    {
+      "version": "3.12.0",
+      "build": 108,
+      "date": "2026-11-10",
+      "summary": "feat(web/core): 账号卡片显示上次自动续期时间与今日失败次数",
+      "commit": "d60b9537",
+      "type": "minor"
+    },
+    {
+      "version": "3.11.2",
+      "build": 107,
+      "date": "2026-11-10",
+      "summary": "docs(deploy): NAS 反复部署的空间维护脚本与清理说明",
+      "commit": "f0ebb42d",
+      "type": "patch"
+    },
+    {
+      "version": "3.11.1",
+      "build": 106,
+      "date": "2026-11-10",
+      "summary": "style(web): PC 端账号登录与重连卡片开关移到说明文字下方",
+      "commit": "b5910d3e",
+      "type": "patch"
+    },
+    {
+      "version": "3.11.0",
+      "build": 105,
+      "date": "2026-11-10",
+      "summary": "feat(web/core): 账号管理页新增免扫码续期标记，账号列表不再下发凭证明文",
+      "commit": "edff9d1c",
+      "type": "minor"
+    },
+    {
+      "version": "3.10.6",
+      "build": 103,
+      "date": "2026-11-10",
+      "summary": "fix(docker): 基础镜像默认走全限定地址，无需改动环境配置即可构建",
+      "commit": "50269f7d",
+      "type": "patch"
+    },
+    {
+      "version": "3.10.5",
+      "build": 102,
+      "date": "2026-11-10",
+      "summary": "fix(docker): 去掉外部 frontend 指令，修复国内镜像站构建 401",
+      "commit": "780c34c",
+      "type": "patch"
+    },
+    {
+      "version": "3.10.3",
+      "build": 101,
+      "date": "2026-11-10",
+      "summary": "fix(core): 2×2 预留时间策略完整落地，消除部分空出时的重复请求",
+      "commit": "7a8366e",
+      "type": "patch"
+    },
+    {
+      "version": "3.10.2",
+      "build": 100,
+      "date": "2026-11-10",
+      "summary": "fix(web/core): 去除定时重登 + 账号保活卡片改名合并 + 修复种植日志合并",
+      "commit": "b0fe642",
+      "type": "patch"
+    },
+    {
+      "version": "3.10.1",
+      "build": 99,
+      "date": "2026-11-10",
+      "summary": "fix(core): 日熔断额度只统计失败，成功续期不占额度",
+      "commit": "ee43f58",
+      "type": "patch"
+    },
+    {
+      "version": "3.10.0",
+      "build": 98,
+      "date": "2026-11-10",
+      "summary": "fix(core): 参考老版本新增后端自主到期前预防性续期与失败熔断",
+      "commit": "a52e05b",
+      "type": "minor"
+    },
+    {
+      "version": "3.9.6",
+      "build": 97,
+      "date": "2026-11-10",
+      "summary": "revert: 回滚「去除账号管理内 Code 自动监听」，恢复完整链路",
+      "commit": "2a1ffa0",
+      "type": "patch"
+    },
+    {
+      "version": "3.9.5",
+      "build": 96,
+      "date": "2026-11-10",
+      "summary": "refactor(web/core): 去除账号管理内 Code 自动监听",
+      "commit": "aaaaee5",
+      "type": "patch"
+    },
+    {
+      "version": "3.9.3",
+      "build": 95,
+      "date": "2026-11-09",
+      "summary": "style(web): 手机端头像放大到与三行文字等高，PC 端不变",
+      "commit": "880b4c6",
+      "type": "patch"
+    },
+    {
+      "version": "3.9.2",
+      "build": 93,
+      "date": "2026-11-09",
+      "summary": "style(web): 首页头像改为圆形 + 全站头像风格统一",
+      "commit": "843a62a",
+      "type": "patch"
+    },
+    {
+      "version": "3.9.1",
+      "build": 92,
+      "date": "2026-11-09",
+      "summary": "fix(test): 修正版本总览重渲染后的一次性迁移说明断言",
+      "commit": "6f04aad",
+      "type": "patch"
+    },
+    {
+      "version": "3.9.0",
+      "build": 91,
+      "date": "2026-11-09",
+      "summary": "feat(web): 移植老版本个人页（角色生涯）并把入口改为首页头像",
+      "commit": "4e0321c",
+      "type": "minor"
+    },
+    {
+      "version": "3.8.5",
+      "build": 90,
+      "date": "2026-11-09",
+      "summary": "版本号与更新次数自动跳过数字 4",
+      "commit": "f1c9397",
+      "type": "patch"
+    },
+    {
+      "version": "3.8.3",
+      "build": 89,
+      "date": "2026-11-09",
+      "summary": "修复「游戏商城」页签被弹回神秘商人 + 默认页签作用域收窄",
+      "commit": "c6105dc",
+      "type": "patch"
+    },
+    {
+      "version": "3.8.2",
+      "build": 88,
+      "date": "2026-11-09",
+      "summary": "修复容器部署时首页显示「第 0 次更新」",
+      "commit": "e2b965a",
+      "type": "patch"
+    },
+    {
+      "version": "3.8.1",
+      "build": 87,
+      "date": "2026-11-09",
+      "summary": "快成熟判定默认值改回 300 秒 + 阈值命中率模拟结论",
+      "commit": "ae83736",
+      "type": "patch"
+    },
+    {
+      "version": "3.8.0",
+      "build": 86,
+      "date": "2026-11-09",
+      "summary": "新增版本号功能 + 快成熟判定默认值改为 60 秒",
+      "commit": "—",
+      "type": "minor"
+    },
+    {
+      "version": "3.7.2",
+      "build": 85,
+      "date": "2026-11-09",
+      "summary": "首页诊断移除 + 快成熟回滚 + 神秘商人来访横幅 + 日志刷屏治理 + 奶茶支撑时间修正",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.7.1",
+      "build": 83,
+      "date": "2026-11-08",
+      "summary": "今日统计去掉单位「次」 + 账号管理 Code 过期自动监听与自动补码",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.7.0",
+      "build": 82,
+      "date": "2026-11-08",
+      "summary": "快成熟判定随机化 + 图鉴每日自动领奖/补种与背包过滤 + 今日金币支持负数",
+      "commit": "—",
+      "type": "minor"
+    },
+    {
+      "version": "3.6.1",
+      "build": 81,
+      "date": "2026-11-07",
+      "summary": "运行日志筛选手机端显示完整 + 神秘商人页签移到第 4 + 催熟时间核查",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.6.0",
+      "build": 80,
+      "date": "2026-11-07",
+      "summary": "新增面板内消息（局内通知）：顶栏铃铛 + 本地持久化",
+      "commit": "—",
+      "type": "minor"
+    },
+    {
+      "version": "3.5.15",
+      "build": 79,
+      "date": "2026-11-07",
+      "summary": "补齐神秘商人「到货提醒 / 购买通知」开关与保存后立即巡查",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.5.13",
+      "build": 78,
+      "date": "2026-11-07",
+      "summary": "节令日历手机端可下滑 + 神秘商人购买历史回归 + 自动化开关验证",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.5.12",
+      "build": 77,
+      "date": "2026-11-06",
+      "summary": "功能模块「土地与施肥」2x2催熟开关间距",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.5.11",
+      "build": 76,
+      "date": "2026-11-06",
+      "summary": "同步上游 muyuewang/qq-farm-bot-404（ed75089..3b3608c，PR #119–#121）并保留本地改动",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.5.10",
+      "build": 75,
+      "date": "2026-11-06",
+      "summary": "图鉴标题与收藏计数等高 + 奶茶两行左对齐",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.5.9",
+      "build": 73,
+      "date": "2026-11-06",
+      "summary": "奶茶页返回按钮文案简化为「活动中心」",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.5.8",
+      "build": 72,
+      "date": "2026-11-06",
+      "summary": "首页已运行手机端换行 + 去除奶茶侧栏「活动中心」/「快乐不独享」日期",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.5.7",
+      "build": 71,
+      "date": "2026-11-06",
+      "summary": "土地等级二级弹窗缩小，与作物气泡同尺寸同风格",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.5.6",
+      "build": 70,
+      "date": "2026-11-06",
+      "summary": "奶茶头部返回按钮合并 + 恢复「剩余时间」靠右对齐",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.5.5",
+      "build": 69,
+      "date": "2026-11-06",
+      "summary": "首页状态行再退一格 + 回滚「剩余时间」靠右对齐",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.5.3",
+      "build": 68,
+      "date": "2026-11-06",
+      "summary": "手机端排版再调整：首页恢复原方案 + 领取收益 PC/手机同排",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.5.2",
+      "build": 67,
+      "date": "2026-11-06",
+      "summary": "手机端固定排版：首页已运行状态行 + 奶茶活动三处对齐",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.5.1",
+      "build": 66,
+      "date": "2026-11-06",
+      "summary": "土地气泡收益跟随变异叠加 + 奶茶活动 4 个新开关",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.5.0",
+      "build": 65,
+      "date": "2026-11-06",
+      "summary": "首页「已运行」不再跳位 + 重新登录后自动上线",
+      "commit": "—",
+      "type": "minor"
+    },
+    {
+      "version": "3.3.18",
+      "build": 63,
+      "date": "2026-11-06",
+      "summary": "微信授权续期稳定性 + 土地详情恢复老版作物气泡",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.3.17",
+      "build": 62,
+      "date": "2026-11-06",
+      "summary": "任意页面切换账号后保持原页面与原滚动位置",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.3.16",
+      "build": 61,
+      "date": "2026-11-06",
+      "summary": "修复背包种子页仍每 10 秒自动刷新",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.3.15",
+      "build": 60,
+      "date": "2026-11-05",
+      "summary": "同步上游 20261104 更新（PR #117-#118 至 ed75089）",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.3.13",
+      "build": 59,
+      "date": "2026-11-05",
+      "summary": "今日统计卡片样式统一 + 增量逻辑分离 + 农场页整体刷新治理",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.3.12",
+      "build": 58,
+      "date": "2026-11-05",
+      "summary": "今日统计加金币/经验增量 + 背包排序 + 农场自动刷新开关 + 移动端导航调整",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.3.11",
+      "build": 57,
+      "date": "2026-11-05",
+      "summary": "切换账号后保持在所有活动页面",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.3.10",
+      "build": 56,
+      "date": "2026-11-05",
+      "summary": "切换账号后保持在奶茶热销中页面",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.3.9",
+      "build": 55,
+      "date": "2026-11-05",
+      "summary": "活动中心默认进入奶茶热销中",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.3.8",
+      "build": 53,
+      "date": "2026-11-05",
+      "summary": "营业记录数据链路对齐老版（补回 normalizeWireMaps）",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.3.7",
+      "build": 52,
+      "date": "2026-11-05",
+      "summary": "再次恢复 milk_tea_work_interaction_type / milk_tea_hire_policy 接线",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.3.6",
+      "build": 51,
+      "date": "2026-11-05",
+      "summary": "再次撤销 milk_tea_work_interaction_type / milk_tea_hire_policy 接线",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.3.5",
+      "build": 50,
+      "date": "2026-11-05",
+      "summary": "恢复 milk_tea_work_interaction_type / milk_tea_hire_policy 两项接线",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.3.3",
+      "build": 39,
+      "date": "2026-11-05",
+      "summary": "页面闪烁治理 + 策略预览秒开 + 背包默认页签",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.3.2",
+      "build": 38,
+      "date": "2026-11-05",
+      "summary": "营业记录图标补全 + 图鉴搜索框位置调整",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.3.1",
+      "build": 37,
+      "date": "2026-11-05",
+      "summary": "四页控件显示效果统一（对齐全站 BaseButton 规范）",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.3.0",
+      "build": 36,
+      "date": "2026-11-05",
+      "summary": "15 项功能开关失效修复（老版方案移植）",
+      "commit": "—",
+      "type": "minor"
+    },
+    {
+      "version": "3.2.12",
+      "build": 35,
+      "date": "2026-11-05",
+      "summary": "回滚 3 项开关接线（milk_tea_work_interaction_type / milk_tea_seed_policy / milk_tea_hire_policy）",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.2.11",
+      "build": 33,
+      "date": "2026-11-05",
+      "summary": "2×2 催熟功能修复与背包多格种子角标",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.2.10",
+      "build": 32,
+      "date": "2026-11-05",
+      "summary": "服务启动自动登录与登录 Code 续期修复",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.2.9",
+      "build": 31,
+      "date": "2026-11-05",
+      "summary": "回滚硬预算期的省请求改动 + 修复奶茶手动兑换",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.2.8",
+      "build": 30,
+      "date": "2026-11-05",
+      "summary": "网关流量机制重构：前台操作不再被限额",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.2.7",
+      "build": 29,
+      "date": "2026-11-05",
+      "summary": "手机端账号入口与操作按钮统一",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.2.6",
+      "build": 28,
+      "date": "2026-10-15",
+      "summary": "奶茶热销中活动与经营自动化",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.2.5",
+      "build": 27,
+      "date": "2026-09-24",
+      "summary": "秋祈良愿与快乐不独享活动",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.2.3",
+      "build": 26,
+      "date": "2026-09-10",
+      "summary": "萌宠成长日记与变异效果补全",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.2.2",
+      "build": 25,
+      "date": "2026-09-08",
+      "summary": "NapCat QQ 扫码登录与 Docker 部署",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.2.1",
+      "build": 23,
+      "date": "2026-09-08",
+      "summary": "NapCat QQ 扫码登录与 Docker 部署",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.2.0",
+      "build": 22,
+      "date": "2026-09-01",
+      "summary": "公益小红花活动支持",
+      "commit": "—",
+      "type": "minor"
+    },
+    {
+      "version": "3.1.1",
+      "build": 21,
+      "date": "2026-09-01",
+      "summary": "好友成熟调度与访问治理",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.1.0",
+      "build": 20,
+      "date": "2026-09-01",
+      "summary": "公益小红花活动支持",
+      "commit": "—",
+      "type": "minor"
+    },
+    {
+      "version": "3.0.18",
+      "build": 19,
+      "date": "2026-09-01",
+      "summary": "好友成熟调度与访问治理",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.0.17",
+      "build": 18,
+      "date": "2026-08-26",
+      "summary": "雨落成诗活动适配",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.0.16",
+      "build": 17,
+      "date": "2026-08-26",
+      "summary": "限时活动下线与开关防回启",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.0.15",
+      "build": 16,
+      "date": "2026-08-25",
+      "summary": "低配服务器资源治理与线程调度优化",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.0.13",
+      "build": 15,
+      "date": "2026-08-21",
+      "summary": "背包种子排序与选种策略精简",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.0.12",
+      "build": 13,
+      "date": "2026-08-20",
+      "summary": "活动礼包与钻石余额",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.0.11",
+      "build": 12,
+      "date": "2026-08-19",
+      "summary": "内置微信扫码、版本同步与运行自愈",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.0.10",
+      "build": 11,
+      "date": "2026-08-18",
+      "summary": "鹊桥寄情活动",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.0.9",
+      "build": 10,
+      "date": "2026-08-17",
+      "summary": "未来活动分析",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.0.8",
+      "build": 9,
+      "date": "2026-08-14",
+      "summary": "土地变异效果",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.0.7",
+      "build": 8,
+      "date": "2026-08-13",
+      "summary": "青酿换万金活动",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.0.6",
+      "build": 7,
+      "date": "2026-08-07",
+      "summary": "手机抓包登录",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.0.5",
+      "build": 6,
+      "date": "2026-08-03",
+      "summary": "土地展示重做",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.0.3",
+      "build": 5,
+      "date": "2026-08-03",
+      "summary": "生涯统计与体验优化",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.0.2",
+      "build": 3,
+      "date": "2026-08-03",
+      "summary": "心许千灯星垂野活动",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.0.1",
+      "build": 2,
+      "date": "2026-08-03",
+      "summary": "TSDK/WASM 协议更新",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.0.0",
+      "build": 1,
+      "date": "2026-08-03",
+      "summary": "2×2 作物种植",
+      "commit": "—",
+      "type": "baseline"
+    }
+  ]
+}

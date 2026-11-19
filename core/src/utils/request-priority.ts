@@ -240,6 +240,21 @@ function describeRequestClassMarker(request: DispatchCandidate | null | undefine
     return REQUEST_CLASS_MARKER[classOf(request)];
 }
 
+/** 中文班次名，给运行日志面板用；标记符号那套只留在抓包对照场景。 */
+const REQUEST_CLASS_LABEL_ZH: Readonly<Record<RequestClass, string>> = {
+    critical: '心跳/ACE',
+    foreground: '前台',
+    farm: '自己农场',
+    friend: '好友农场',
+    background: '后台补数据',
+};
+
+function describeRequestClassLabel(request: DispatchCandidate | null | undefined): string {
+    if (request && request.criticalLane === 'heartbeat') return '心跳';
+    if (request && request.criticalLane === 'ace') return 'ACE 上报';
+    return REQUEST_CLASS_LABEL_ZH[classOf(request)];
+}
+
 module.exports = {
     REQUEST_CLASS_ORDER,
     CRITICAL_LANES,
@@ -258,4 +273,5 @@ module.exports = {
     countQueuedByClass,
     isClassQueueFull,
     describeRequestClassMarker,
+    describeRequestClassLabel,
 };

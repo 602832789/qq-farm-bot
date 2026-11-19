@@ -1,24 +1,33 @@
 <script setup lang="ts">
-import type { FertilizerType } from '@/stores/farm'
+import type { FertilizerType, RipenAllPreview } from '@/stores/farm'
 import type { FriendInteractionItemDto, FriendInteractionResultDto } from '@/stores/friend'
+import type { RequestTicket } from '@/utils/request-guard'
 import { useIntervalFn, useResizeObserver } from '@vueuse/core'
 import { NButton } from 'naive-ui/es/button'
+import { NInputNumber } from 'naive-ui/es/input-number'
 import { NPopover } from 'naive-ui/es/popover'
+import { NSwitch } from 'naive-ui/es/switch'
 import { storeToRefs } from 'pinia'
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import CareerHarvestSteal from '@/components/CareerHarvestSteal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import LandCard from '@/components/FarmLandCard.vue'
+import FarmScene from '@/components/FarmScene.vue'
+import LandCropBubble from '@/components/LandCropBubble.vue'
 import LandDetailModal from '@/components/LandDetailModal.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
+import { useFarmAutoRefresh, useFarmAutoRefreshInterval } from '@/composables/useFarmAutoRefresh'
 import { useAccountStore } from '@/stores/account'
 import { useFarmStore } from '@/stores/farm'
 import { useSettingStore } from '@/stores/setting'
 import { useStatusStore } from '@/stores/status'
 import { useToastStore } from '@/stores/toast'
 import { interactionItemTargetReason } from '@/utils/interaction-item-rules'
+import { createRequestGuard } from '@/utils/request-guard'
+import { fertilizerHours, runRipenAll } from '@/utils/ripen-all'
+import { canRipenLand, ripenLand } from '@/utils/ripen-land'
 
 const farmStore = useFarmStore()
 const accountStore = useAccountStore()
@@ -47,8 +56,153 @@ const { settings } = storeToRefs(settingStore)
 const { status } = storeToRefs(statusStore)
 const detailLandId = ref<number | null>(null)
 const detailLand = computed(() => lands.value.find(land => land.id === detailLandId.value) || null)
-watch(currentAccountId, () => {
+/** 老版就地气泡：点作物只浮出气泡，土地等级/升级条件仍由 LandDetailModal 提供。 */
+const detailBubbleOpen = ref(false)
+const bubbleAnchor = shallowRef<HTMLElement | null>(null)
+const modalLand = computed(() => detailBubbleOpen.value ? null : detailLand.value)
+/** 弹窗内催熟/铲除进行中标记，避免重复提交。 */
+const detailActionPending = ref(false)
+
+function resolveLandAnchor(id: unknown) {
+  const key = String(id ?? '')
+  return key ? document.querySelector<HTMLElement>(`[data-land-id="${key}"]`) : null
+}
+
+/** 点击地块/作物：就地浮出老版气泡，不再弹居中大弹窗。 */
+function openLandBubble(land: any) {
+  if (!land)
+    return
+  const id = Number(land.id) || null
+  // 再次点击同一块地时收起气泡（老版选中态口径）。
+  if (detailBubbleOpen.value && detailLandId.value === id) {
+    closeLandDetail()
+    return
+  }
+  detailLandId.value = id
+  detailBubbleOpen.value = true
+  bubbleAnchor.value = resolveLandAnchor(land.id)
+}
+
+function closeLandDetail() {
   detailLandId.value = null
+  detailBubbleOpen.value = false
+  bubbleAnchor.value = null
+}
+
+/** 气泡里的入口：切回完整土地详情弹窗（等级/升级条件）。 */
+function openLandDetailsFromBubble() {
+  detailBubbleOpen.value = false
+  bubbleAnchor.value = null
+}
+
+/** 弹窗内催熟（老版 ripenLand 方案）：先普通肥一次，再连续施有机肥至成熟或无法继续。 */
+const detailActionGuard = createRequestGuard()
+
+async function handleDetailFertilize() {
+  const target = detailLand.value
+  const accountId = currentAccountId.value
+  if (!target || !accountId || detailActionPending.value)
+    return
+  if (!canRipenLand(lands.value.find(item => item.id === target.id)))
+    return
+  const ticket = detailActionGuard.next()
+  const cancelled = () => detailActionGuard.isStale(ticket)
+  detailActionPending.value = true
+  try {
+    const result = await ripenLand({
+      getLand: () => lands.value.find(item => item.id === target.id),
+      cancelled,
+      fertilize: type => farmStore.fertilizeLand(accountId, Number(target.id), type),
+    })
+    if (cancelled())
+      return
+    const count = `普通 ${result.normalCount} 次，有机 ${result.organicCount} 次`
+    if (!result.matured) {
+      const reasons: Record<string, string> = {
+        'unavailable': farmStore.fertilizeError || '当前无法继续施肥',
+        'no-progress': '作物状态未继续推进，请刷新后重试',
+        'empty': '有机化肥已用尽',
+        'unconfirmed': '未返回最新土地状态，请刷新后重试',
+        'changed': '作物状态已变化，请刷新后重试',
+        'limit': '已达到本次施肥次数上限，请刷新后确认',
+      }
+      toast.warning(`已停止催熟（${count}）：${reasons[result.stopped] || '当前无法继续施肥'}`)
+      return
+    }
+    toast.success(`第 ${target.id} 块土地催熟完成（${count}）`)
+  }
+  catch (cause: any) {
+    if (!cancelled())
+      toast.error(String(cause?.response?.data?.error || cause?.message || '催熟操作失败'))
+  }
+  finally {
+    if (!cancelled())
+      detailActionPending.value = false
+  }
+}
+
+/** 弹窗内铲除作物。 */
+async function handleDetailRemove() {
+  const target = detailLand.value
+  if (!target || !currentAccountId.value || detailActionPending.value)
+    return
+  const ticket = detailActionGuard.next()
+  const cancelled = () => detailActionGuard.isStale(ticket)
+  detailActionPending.value = true
+  try {
+    await farmStore.removePlant(currentAccountId.value, Number(target.id))
+    if (!cancelled())
+      toast.success(`土地 #${target.id} 作物已铲除`)
+  }
+  catch (cause: any) {
+    if (!cancelled())
+      toast.error(cause?.message || '铲除失败，请稍后重试')
+  }
+  finally {
+    if (!cancelled())
+      detailActionPending.value = false
+  }
+}
+
+// ---- 土地展示方案：标准 / 紧凑 / 场景（按账号记住上次选择）----
+type LandView = 'default' | 'compact' | 'scene'
+
+const LAND_VIEW_KEY = 'qq-farm-bot:farm-view'
+const LEGACY_LAND_VIEW_KEY = 'qq-farm-bot-404:farm'
+const landView = ref<LandView>('default')
+const landViewOptions: Array<{ value: LandView, label: string, icon: string, title: string }> = [
+  { value: 'default', label: '标准', icon: 'i-carbon-grid', title: '标准视图：常规卡片，信息最全' },
+  { value: 'compact', label: '紧凑', icon: 'i-carbon-zoom-out', title: '紧凑视图：缩小卡片，一屏放下更多土地' },
+  { value: 'scene', label: '场景', icon: 'i-carbon-image', title: '场景视图：等距农场画面，点击地块看详情' },
+]
+
+function readLandView(accountId: string): LandView {
+  try {
+    const own = localStorage.getItem(`${LAND_VIEW_KEY}:${accountId}`)
+    if (own === 'default' || own === 'compact' || own === 'scene')
+      return own
+    // 旧版把视图偏好和刷新设置存在同一个 JSON 里，这里做一次兼容读取。
+    const legacy = JSON.parse(localStorage.getItem(`${LEGACY_LAND_VIEW_KEY}:${accountId}`) || '{}')
+    return legacy.view === 'compact' || legacy.view === 'scene' ? legacy.view : 'default'
+  }
+  catch {
+    return 'default'
+  }
+}
+
+watch(currentAccountId, (accountId) => {
+  landView.value = accountId ? readLandView(String(accountId)) : 'default'
+}, { immediate: true })
+
+watch(landView, (view) => {
+  if (!currentAccountId.value)
+    return
+  try {
+    localStorage.setItem(`${LAND_VIEW_KEY}:${String(currentAccountId.value)}`, view)
+  }
+  catch {
+    // 偏好存不下不影响看农场
+  }
 })
 
 const currentAccountConnected = computed(() => {
@@ -62,17 +216,25 @@ const currentAccountRunning = computed(() => (
 ))
 
 const operating = ref(false)
-const fertilizerConfirmVisible = ref(false)
-const bulkFertilizerType = ref<FertilizerType>('normal')
-const bulkFertilizerOptions = [{ label: '普通化肥', value: 'normal' }, { label: '有机化肥', value: 'organic' }]
-const bulkFertilizerCount = computed(() => lands.value.filter(isFertilizeCandidate).length)
-let fertilizerUiSequence = 0
+// ---- 催熟全部（老版方案）：预览普通/有机化肥消耗 → 确认 → 逐批执行 ----
+const ripenAllPreviewLoading = ref(false)
+const ripenAllRunning = ref(false)
+const ripenAllProgress = ref('')
+const pendingRipenAll = ref<{ preview: RipenAllPreview, accountId: string, ticket: RequestTicket } | null>(null)
+const ripenGuard = createRequestGuard()
 watch(currentAccountId, () => {
-  fertilizerUiSequence++
-  fertilizerConfirmVisible.value = false
+  ripenGuard.invalidate()
+  pendingRipenAll.value = null
 })
+
+watch(currentAccountId, () => {
+  closeLandDetail()
+})
+
 const farmingLandId = ref<number | null>(null)
 const manualRefreshing = ref(false)
+// ---- 土地自动刷新（默认关闭）：开关与秒数与背包/任务共享，按账号存 localStorage ----
+const { autoRefreshEnabled, autoRefreshSeconds } = useFarmAutoRefresh()
 const confirmVisible = ref(false)
 const confirmConfig = ref({
   title: '',
@@ -89,6 +251,63 @@ const interactionConfirmMessage = ref('')
 const selecting = ref(!!route.query.interactionItem)
 const selectedIds = ref<string[]>([])
 const batchPending = ref(false)
+/** 施肥请求序号：用于丢弃过期响应（同一按钮连点时只认最后一次）。 */
+const fertilizerUiGuard = createRequestGuard()
+
+/** 催熟全部预览：读取可催熟地块数与普通/有机化肥预计消耗。 */
+async function requestRipenAll() {
+  const accountId = currentAccountId.value
+  if (!accountId || !currentAccountRunning.value || operating.value || fertilizePending.value || batchPending.value || ripenAllRunning.value || ripenAllPreviewLoading.value)
+    return
+  const ticket = ripenGuard.next()
+  ripenAllPreviewLoading.value = true
+  try {
+    const preview = await farmStore.previewRipenAll(accountId)
+    if (!ripenGuard.isStale(ticket))
+      pendingRipenAll.value = { preview, accountId, ticket }
+  }
+  catch (cause: any) {
+    if (!ripenGuard.isStale(ticket))
+      toast.error(String(cause?.response?.data?.error || cause?.message || '催熟预览失败'))
+  }
+  finally {
+    ripenAllPreviewLoading.value = false
+  }
+}
+
+/** 确认后逐批催熟：普通肥+有机肥组合，任一步异常即停止。 */
+async function executeRipenAll() {
+  const pending = pendingRipenAll.value
+  if (!pending || ripenAllRunning.value)
+    return
+  pendingRipenAll.value = null
+  const { preview, accountId, ticket } = pending
+  const cancelled = () => ripenGuard.isStale(ticket)
+  ripenAllRunning.value = true
+  ripenAllProgress.value = `催熟中 0/${preview.targetCount}`
+  try {
+    const result = await runRipenAll({
+      preview,
+      cancelled,
+      step: (token, cursor) => farmStore.ripenAllStep(accountId, token, cursor),
+      onProgress: (result) => { ripenAllProgress.value = `催熟中 ${result.completed}/${result.total}` },
+    })
+    if (result)
+      toast.success(`已催熟 ${result.completed} 块作物，普通肥 ${fertilizerHours(result.used.normal)} 小时，有机肥 ${fertilizerHours(result.used.organic)} 小时`)
+  }
+  catch (cause: any) {
+    if (!cancelled())
+      toast.warning(`${ripenAllProgress.value}，已停止：${String(cause?.response?.data?.error || cause?.message || '催熟失败')}`)
+  }
+  finally {
+    ripenAllRunning.value = false
+    ripenAllProgress.value = ''
+    if (!cancelled()) {
+      await farmStore.fetchLands(accountId)
+      void statusStore.fetchStatus(accountId)
+    }
+  }
+}
 type BatchAction = FertilizerType | 'farming' | 'item'
 const batchAction = ref<BatchAction>(route.query.interactionItem ? 'item' : 'normal')
 
@@ -366,15 +585,24 @@ useResizeObserver(gridEl, ([entry]) => {
 const GRID_GAP = 12
 const CARD_MIN = 128
 const CARD_MAX = 230
+const COMPACT_CARD_MIN = 96
+const COMPACT_CARD_MAX = 168
 const gridColumns = computed(() => {
   const width = gridWidth.value
   const count = (lands.value || []).length
   if (!width || !count)
     return 2
+  // 紧凑视图每格更窄，同宽下能多排一列。
+  const compact = landView.value === 'compact'
+  const cardMin = compact ? COMPACT_CARD_MIN : CARD_MIN
+  const cardMax = compact ? COMPACT_CARD_MAX : CARD_MAX
   const fits = (cols: number) => (width - GRID_GAP * (cols - 1)) / cols
-  const maxCols = Math.max(1, Math.floor((width + GRID_GAP) / (CARD_MIN + GRID_GAP)))
+  const maxCols = Math.max(1, Math.floor((width + GRID_GAP) / (cardMin + GRID_GAP)))
+  // 紧凑视图的目的就是一屏放更多：直接铺满可用列数，不强行凑整除。
+  if (compact)
+    return Math.min(maxCols, count)
   for (let cols = Math.min(maxCols, count); cols >= 2; cols--) {
-    if (count % cols === 0 && fits(cols) <= CARD_MAX)
+    if (count % cols === 0 && fits(cols) <= cardMax)
       return cols
   }
   return maxCols
@@ -404,9 +632,9 @@ async function fertilizeSelected(fertilizerType: FertilizerType) {
   if (!currentAccountId.value || fertilizePending.value || batchPending.value || !targets.length)
     return
   const typeName = fertilizerType === 'organic' ? '有机化肥' : '普通化肥'
-  const sequence = ++fertilizerUiSequence
+  const ticket = fertilizerUiGuard.next()
   const result = await farmStore.fertilizeAll(currentAccountId.value, fertilizerType, targets.map(land => Number(land.id)))
-  if (sequence !== fertilizerUiSequence)
+  if (fertilizerUiGuard.isStale(ticket))
     return
   if (!result) {
     toast.error(fertilizeError.value || `${typeName}使用失败，请刷新土地确认最新状态`)
@@ -419,32 +647,6 @@ async function fertilizeSelected(fertilizerType: FertilizerType) {
   const skipped = result.skippedCount ? `，${result.skippedCount} 株未施肥` : ''
   const remaining = formatFertilizerRemaining(Number(result.fertilizerRemainingSec || 0))
   toast.success(`已为 ${result.successCount} 株作物施${typeName}${skipped}${remaining ? `，${remaining}` : ''}`)
-}
-
-async function handleFertilizeAll() {
-  if (!currentAccountId.value || !currentAccountRunning.value || fertilizePending.value || operating.value)
-    return
-  if (!bulkFertilizerCount.value) {
-    fertilizerConfirmVisible.value = false
-    toast.info('当前没有可施肥的作物')
-    return
-  }
-  const sequence = ++fertilizerUiSequence
-  const result = await farmStore.fertilizeAll(currentAccountId.value, bulkFertilizerType.value)
-  if (sequence !== fertilizerUiSequence)
-    return
-  fertilizerConfirmVisible.value = false
-  if (!result) {
-    toast.error(fertilizeError.value || '一键施肥失败，请刷新土地确认最新状态')
-    return
-  }
-  if (!result.successCount) {
-    toast.info('当前没有可施肥的作物')
-    return
-  }
-  const skipped = result.skippedCount ? `，${result.skippedCount} 株未施肥` : ''
-  const remaining = formatFertilizerRemaining(Number(result.fertilizerRemainingSec || 0))
-  toast.success(`已为 ${result.successCount} 株作物施肥${skipped}${remaining ? `，${remaining}` : ''}`)
 }
 
 /** 逐块务农，前一块结束再处理下一块；任一失败不影响其余地块。 */
@@ -597,17 +799,16 @@ const { pause, resume } = useIntervalFn(() => {
   }
 }, 1000)
 
-const { pause: pauseRefresh, resume: resumeRefresh } = useIntervalFn(refreshFarmData, 60000)
+// 组件卸载时 useIntervalFn 会随作用域自动暂停，无需手动 pauseRefresh
+useFarmAutoRefreshInterval(refreshFarmData)
 
 onMounted(() => {
   resume()
-  resumeRefresh()
 })
 
 onUnmounted(() => {
   window.cancelAnimationFrame(gridResizeFrame)
   pause()
-  pauseRefresh()
 })
 </script>
 
@@ -615,11 +816,24 @@ onUnmounted(() => {
   <div class="personal-panel">
     <div class="personal-panel__card cartoon-card farm-card rounded-2xl bg-white shadow-lg dark:bg-gray-800 !p-0">
       <!-- Header with Title and Actions -->
-      <div class="farm-head panel-sticky flex shrink-0 flex-col gap-3 border-b border-gray-100 p-4 lg:flex-row lg:items-center lg:justify-between dark:border-gray-700 sm:p-5" :class="{ 'is-selecting': selecting }">
+      <div class="farm-head panel-sticky flex shrink-0 flex-col flex-wrap gap-3 border-b border-gray-100 p-4 lg:flex-row lg:items-center lg:justify-between dark:border-gray-700 sm:p-5" :class="{ 'is-selecting': selecting }">
         <div class="farm-heading flex items-center justify-between gap-3">
           <h3 class="flex items-center gap-2 text-lg font-bold">
             <span class="i-carbon-sprout text-green-600" /> 土地详情
           </h3>
+          <div class="land-view-switch" role="group" aria-label="土地展示方案">
+            <button
+              v-for="option in landViewOptions"
+              :key="option.value"
+              type="button"
+              :title="option.title"
+              :aria-label="option.title"
+              :aria-pressed="landView === option.value"
+              @click="landView = option.value"
+            >
+              <span :class="option.icon" aria-hidden="true" /><span>{{ option.label }}</span>
+            </button>
+          </div>
           <div class="farm-mobile-actions">
             <NButton size="small" :type="selecting ? 'default' : 'primary'" :secondary="!selecting" :disabled="selectionBusy || !currentAccountRunning || !loaded || !!error" @click="selecting ? exitSelecting() : enterSelecting()">
               {{ selecting ? '退出选择' : '批量操作' }}
@@ -643,8 +857,8 @@ onUnmounted(() => {
                   <CareerHarvestSteal :career="career" compact />
                 </div>
                 <div class="grid grid-cols-2 gap-2 border-t border-gray-100 pt-3 dark:border-gray-700">
-                  <NButton size="small" :disabled="operating || fertilizePending || farmingLandId !== null || !currentAccountRunning || !loaded || !!error || !lands.some(isFertilizeCandidate)" @click="fertilizerConfirmVisible = true">
-                    一键施肥
+                  <NButton size="small" :loading="ripenAllPreviewLoading || ripenAllRunning" :disabled="operating || fertilizePending || farmingLandId !== null || batchPending || !currentAccountRunning || !loaded || !!error" :title="ripenAllRunning ? ripenAllProgress : '催熟全部作物，先预览化肥消耗'" @click="requestRipenAll">
+                    催熟
                   </NButton>
                   <NButton v-for="op in operations" :key="op.type" size="small" :disabled="operating || fertilizePending || farmingLandId !== null || !currentAccountRunning" @click="handleOperate(op.type)">
                     {{ op.label }}
@@ -674,11 +888,13 @@ onUnmounted(() => {
           </NButton>
           <NButton
             v-if="!selecting"
-            :disabled="operating || fertilizePending || farmingLandId !== null || !currentAccountRunning || !loaded || !!error || !lands.some(isFertilizeCandidate)"
-            @click="fertilizerConfirmVisible = true"
+            :loading="ripenAllPreviewLoading || ripenAllRunning"
+            :disabled="operating || fertilizePending || farmingLandId !== null || batchPending || !currentAccountRunning || !loaded || !!error"
+            :title="ripenAllRunning ? ripenAllProgress : '催熟全部作物，先预览化肥消耗'"
+            @click="requestRipenAll"
           >
-            <span class="i-carbon-soil-moisture" />
-            一键施肥
+            <span class="i-carbon-chemistry" />
+            催熟
           </NButton>
           <NButton
             v-for="op in (selecting ? [] : operations)"
@@ -691,6 +907,32 @@ onUnmounted(() => {
             {{ op.label }}
           </NButton>
         </div>
+        <!-- 自动刷新独立整行：手机上不再和标题/按钮挤在一起，避免显示不全 -->
+        <div class="farm-auto-refresh" title="自动刷新农场数据：开启后按设定的秒数周期刷新土地、背包、任务；默认关闭">
+          <span class="farm-auto-refresh__label">
+            <span class="i-carbon-renew" aria-hidden="true" />自动刷新
+          </span>
+          <NSwitch v-model:value="autoRefreshEnabled" size="small" :disabled="!currentAccountId" aria-label="自动刷新开关" />
+          <NInputNumber
+            v-if="autoRefreshEnabled"
+            v-model:value="autoRefreshSeconds"
+            size="small"
+            class="!w-24"
+            :min="10"
+            :max="600"
+            :step="10"
+            :show-button="false"
+            :disabled="!currentAccountId"
+            aria-label="自动刷新秒数"
+          >
+            <template #suffix>
+              <span class="text-xs text-gray-400">秒</span>
+            </template>
+          </NInputNumber>
+        </div>
+        <p v-if="ripenAllRunning" class="ripen-progress" role="status">
+          {{ ripenAllProgress }}
+        </p>
       </div>
 
       <!-- Summary：左侧是当前土地状态，右侧是生涯数据；颜色只留给图标 -->
@@ -803,17 +1045,29 @@ onUnmounted(() => {
                 好友放置了 {{ cleanableFarmSocialEventNames }}，可一键务农，或选择土地后务农清理。
               </span>
             </div>
-            <div ref="gridEl" class="farm-grid" :class="{ 'is-selecting': selecting }" :style="{ gridTemplateColumns: `repeat(${gridColumns}, minmax(0, 1fr))` }">
+            <FarmScene
+              v-if="landView === 'scene'"
+              :lands="lands"
+              @open="selecting ? toggleLand($event) : openLandBubble($event)"
+            />
+            <div
+              v-else
+              ref="gridEl"
+              class="farm-grid"
+              :class="{ 'is-selecting': selecting, 'farm-grid--compact': landView === 'compact' }"
+              :style="{ gridTemplateColumns: `repeat(${gridColumns}, minmax(0, 1fr))` }"
+            >
               <LandCard
                 v-for="land in lands"
                 :key="land.id"
                 :land="land"
+                :compact="landView === 'compact'"
                 openable
                 :selectable="selecting"
                 :selected="isLandSelected(land)"
                 :selection-disabled="!canSelectLand(land)"
                 :selection-label="selectReason(land)"
-                @open="detailLandId = $event.id"
+                @open="openLandBubble($event)"
                 @select="toggleLand(land)"
               />
             </div>
@@ -822,21 +1076,58 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <LandDetailModal :land="detailLand" :player="status?.status" :connected="currentAccountConnected" @close="detailLandId = null" />
+    <LandDetailModal
+      :land="modalLand"
+      :player="status?.status"
+      :connected="currentAccountConnected"
+      @close="closeLandDetail"
+    />
+
+    <LandCropBubble
+      :land="detailBubbleOpen ? detailLand : null"
+      :anchor="bubbleAnchor"
+      :pending="detailActionPending"
+      @close="closeLandDetail"
+      @fertilize="handleDetailFertilize"
+      @remove="handleDetailRemove"
+      @details="openLandDetailsFromBubble"
+    />
 
     <ConfirmModal
-      :show="fertilizerConfirmVisible"
-      title="一键施肥"
-      message="将为所有生长中的作物施用一次所选化肥，确认施肥吗？"
-      confirm-text="确认施肥"
-      :loading="fertilizePending"
-      @confirm="handleFertilizeAll"
-      @cancel="fertilizerConfirmVisible = false"
+      :show="pendingRipenAll !== null"
+      title="催熟全部 · 消耗预览"
+      :is-alert="!pendingRipenAll?.preview.sufficient || !pendingRipenAll?.preview.targetCount"
+      :confirm-text="pendingRipenAll?.preview.sufficient && pendingRipenAll?.preview.targetCount ? '确认催熟' : '关闭'"
+      @confirm="pendingRipenAll?.preview.sufficient && pendingRipenAll?.preview.targetCount ? executeRipenAll() : pendingRipenAll = null"
+      @cancel="pendingRipenAll = null"
+      @close="pendingRipenAll = null"
     >
-      <BaseSelect v-model="bulkFertilizerType" label="化肥类型" :options="bulkFertilizerOptions" :disabled="fertilizePending" />
-      <p class="mt-3 text-sm text-gray-500">
-        可施肥 {{ bulkFertilizerCount }} 株作物
-      </p>
+      <template v-if="pendingRipenAll">
+        <p class="mb-3">
+          本次可催熟 {{ pendingRipenAll.preview.targetCount }} 块作物（普通肥一次，再连续施有机肥至成熟）
+        </p>
+        <div class="ripen-preview-grid">
+          <span>化肥</span><span>预计消耗</span><span>当前剩余</span>
+          <template v-for="kind in (['normal', 'organic'] as const)" :key="kind">
+            <span class="inline-flex items-center gap-1">
+              <img :src="`/game-config/resource-icons/fertilizer-${kind}.png`" alt="" class="h-5 w-5 object-contain">
+              {{ kind === 'normal' ? '普通' : '有机' }}
+            </span>
+            <strong>{{ fertilizerHours(pendingRipenAll.preview.cost[kind]) }} 小时</strong>
+            <span :class="{ 'text-red-500': pendingRipenAll.preview.inventory[kind] < pendingRipenAll.preview.cost[kind] }">
+              {{ fertilizerHours(pendingRipenAll.preview.inventory[kind]) }} 小时
+            </span>
+          </template>
+        </div>
+        <p v-if="!pendingRipenAll.preview.sufficient" class="mt-3 text-red-500">
+          化肥不足，无法催熟全部
+        </p>
+        <div v-if="pendingRipenAll.preview.skipped.length" class="mt-3 max-h-32 overflow-y-auto text-left text-xs">
+          <p v-for="item in pendingRipenAll.preview.skipped" :key="item.landId">
+            #{{ item.landId }} 已跳过：{{ item.reason }}
+          </p>
+        </div>
+      </template>
     </ConfirmModal>
     <ConfirmModal
       :show="confirmVisible"
@@ -861,6 +1152,62 @@ onUnmounted(() => {
 .farm-grid {
   display: grid;
   gap: 12px;
+}
+
+/* 土地展示方案切换：标准 / 紧凑 / 场景 */
+.land-view-switch {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  background: var(--ui-surface-soft);
+}
+
+.land-view-switch button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--ui-muted);
+  background: transparent;
+  font-size: 12px;
+  font-weight: var(--fw-600);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
+}
+
+.land-view-switch button:hover {
+  color: var(--ui-ink);
+}
+
+.land-view-switch button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ui-primary) 60%, transparent);
+  outline-offset: 1px;
+}
+
+.land-view-switch button[aria-pressed='true'] {
+  color: #fff;
+  background: var(--theme-primary);
+  box-shadow: 0 1px 2px rgba(45, 66, 52, 0.18);
+}
+
+@media (max-width: 639px) {
+  .land-view-switch button {
+    padding: 0 7px;
+  }
+
+  .land-view-switch button > span:last-child {
+    display: none;
+  }
 }
 
 .farm-grid.is-selecting {
@@ -1109,10 +1456,42 @@ onUnmounted(() => {
   }
 }
 
+.ripen-progress {
+  margin: 6px 0 0;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.ripen-preview-grid {
+  display: grid;
+  grid-template-columns: auto 1fr 1fr;
+  gap: 6px 12px;
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+}
+
 .farm-actions {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+}
+
+/* 自动刷新控件独占一行：始终完整可见，不与标题/按钮争宽度 */
+.farm-auto-refresh {
+  display: flex;
+  flex: 1 0 100%;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.farm-auto-refresh__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ui-muted);
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .farm-mobile-actions {

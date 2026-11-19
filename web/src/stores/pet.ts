@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import api, { getApiErrorMessage } from '@/api'
+import { createRequestGuard } from '@/utils/request-guard'
 
 export interface PetInfo {
   id: number
@@ -68,6 +69,13 @@ export interface PetProtectLog {
   dogName: string
 }
 
+/** 宠物资本模式：按作物成熟时间自动派出守护宠物，收获后自动召回。 */
+export interface CapitalMode {
+  enabled: boolean
+  dogId: number
+  leadSeconds: number
+}
+
 export const usePetStore = defineStore('pet', () => {
   const snapshot = ref<PetSnapshot | null>(null)
   const loading = ref(false)
@@ -76,20 +84,21 @@ export const usePetStore = defineStore('pet', () => {
   const protectLogs = ref<PetProtectLog[]>([])
   const protectLogsTotal = ref(0)
   const protectLogsLoading = ref(false)
+  const capitalMode = ref<CapitalMode>({ enabled: false, dogId: 0, leadSeconds: 10 })
   const claimingGifts = ref(false)
   const giftError = ref('')
   const error = ref('')
   const accountId = ref('')
-  let requestSequence = 0
-  let giftRequestSequence = 0
+  const petGuard = createRequestGuard()
+  const giftGuard = createRequestGuard()
 
   const dogs = computed(() => snapshot.value?.dogs || [])
   const foods = computed(() => snapshot.value?.foods || [])
   const activeDog = computed(() => dogs.value.find(dog => dog.active) || null)
 
   function clear() {
-    requestSequence++
-    giftRequestSequence++
+    petGuard.invalidate()
+    giftGuard.invalidate()
     snapshot.value = null
     loading.value = false
     usingFood.value = false
@@ -97,6 +106,7 @@ export const usePetStore = defineStore('pet', () => {
     protectLogs.value = []
     protectLogsTotal.value = 0
     protectLogsLoading.value = false
+    capitalMode.value = { enabled: false, dogId: 0, leadSeconds: 10 }
     claimingGifts.value = false
     giftError.value = ''
     error.value = ''
@@ -133,12 +143,45 @@ export const usePetStore = defineStore('pet', () => {
     }
   }
 
+  async function fetchCapitalMode(requestedAccountId: string) {
+    const id = String(requestedAccountId || '').trim()
+    if (!id)
+      return false
+    try {
+      const res = await api.get('/api/dog/capital-mode', {
+        headers: { 'x-account-id': id },
+        skipErrorToast: true,
+      } as any)
+      if (res.data?.ok && accountId.value === id)
+        capitalMode.value = res.data.data as CapitalMode
+      return !!res.data?.ok
+    }
+    catch {
+      return false
+    }
+  }
+
+  async function saveCapitalMode(requestedAccountId: string, config: CapitalMode) {
+    const id = String(requestedAccountId || '').trim()
+    if (!id)
+      throw new Error('缺少账号')
+    const res = await api.post('/api/dog/capital-mode', config, {
+      headers: { 'x-account-id': id },
+      skipErrorToast: true,
+    } as any)
+    if (!res.data?.ok)
+      throw new Error(getApiErrorMessage(res.data, '保存失败'))
+    if (accountId.value === id && res.data?.data?.capitalMode)
+      capitalMode.value = res.data.data.capitalMode as CapitalMode
+    return res.data.data
+  }
+
   async function fetchPetInfo(requestedAccountId: string) {
     const id = String(requestedAccountId || '').trim()
     if (!id)
       return false
 
-    const sequence = ++requestSequence
+    const ticket = petGuard.next()
     accountId.value = id
     loading.value = true
     giftError.value = ''
@@ -148,7 +191,7 @@ export const usePetStore = defineStore('pet', () => {
         headers: { 'x-account-id': id },
         skipErrorToast: true,
       } as any)
-      if (sequence !== requestSequence || accountId.value !== id)
+      if (petGuard.isStale(ticket) || accountId.value !== id)
         return false
       if (!res.data?.ok) {
         error.value = getApiErrorMessage(res.data, '无法读取宠物信息')
@@ -158,13 +201,13 @@ export const usePetStore = defineStore('pet', () => {
       return true
     }
     catch (cause: any) {
-      if (sequence !== requestSequence || accountId.value !== id)
+      if (petGuard.isStale(ticket) || accountId.value !== id)
         return false
       error.value = getApiErrorMessage(cause, '无法读取宠物信息')
       return false
     }
     finally {
-      if (sequence === requestSequence && accountId.value === id)
+      if (!petGuard.isStale(ticket) && accountId.value === id)
         loading.value = false
     }
   }
@@ -174,7 +217,7 @@ export const usePetStore = defineStore('pet', () => {
     if (!id || claimingGifts.value)
       return null
 
-    const sequence = ++giftRequestSequence
+    const ticket = giftGuard.next()
     claimingGifts.value = true
     giftError.value = ''
     try {
@@ -183,13 +226,13 @@ export const usePetStore = defineStore('pet', () => {
         skipErrorToast: true,
       } as any)
       if (!res.data?.ok || res.data?.data?.error) {
-        if (sequence === giftRequestSequence && accountId.value === id)
+        if (!giftGuard.isStale(ticket) && accountId.value === id)
           giftError.value = getApiErrorMessage(res.data?.data?.error ? res.data.data : res.data, '拾取礼包失败')
         return null
       }
 
       const data = res.data.data || {}
-      if (sequence !== giftRequestSequence || accountId.value !== id)
+      if (giftGuard.isStale(ticket) || accountId.value !== id)
         return null
       if (snapshot.value) {
         snapshot.value = {
@@ -200,12 +243,12 @@ export const usePetStore = defineStore('pet', () => {
       return data
     }
     catch (cause: any) {
-      if (sequence === giftRequestSequence && accountId.value === id)
+      if (!giftGuard.isStale(ticket) && accountId.value === id)
         giftError.value = getApiErrorMessage(cause, '拾取礼包失败')
       return null
     }
     finally {
-      if (sequence === giftRequestSequence)
+      if (!giftGuard.isStale(ticket))
         claimingGifts.value = false
     }
   }
@@ -325,12 +368,15 @@ export const usePetStore = defineStore('pet', () => {
     protectLogs,
     protectLogsTotal,
     protectLogsLoading,
+    capitalMode,
     claimingGifts,
     giftError,
     error,
     accountId,
     fetchPetInfo,
     fetchProtectLogs,
+    fetchCapitalMode,
+    saveCapitalMode,
     claimDogSkillGifts,
     useDogFood,
     activateDog,
