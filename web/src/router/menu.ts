@@ -40,15 +40,6 @@ export const menuRoutes: MenuItem[] = [
     component: () => import('@/views/Personal.vue'),
   },
   {
-    path: 'ranch',
-    name: 'ranch',
-    group: 'estate',
-    navLabel: '我的牧场',
-    label: '牧场',
-    icon: 'i-carbon-tree',
-    component: () => import('@/views/Ranch.vue'),
-  },
-  {
     path: 'friends',
     name: 'friends',
     group: 'estate',

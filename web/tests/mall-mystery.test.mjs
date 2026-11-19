@@ -16,8 +16,9 @@ test('侧栏「农场商城」入口默认打开神秘商人，直接打开商�
   assert.match(menu, /defaultTab: 'mystery'/)
   assert.match(menu, /export function menuLink\(/)
   assert.match(menu, /query: \{ tab: item\.defaultTab \}/)
-  assert.match(sidebar, /:to="menuLink\(item\)"/)
-  assert.match(layout, /:to="menuLink\(item\)"/)
+  // 侧栏与手机底部导航都通过 menuLink 生成链接，默认页签才会带进 query。
+  assert.match(sidebar, /to: menuLink\(item\)/)
+  assert.match(layout, /to: menuLink\(item\)/)
   assert.match(sidebar, /isMenuActive\(item, route\.path\)/, '菜单高亮仍用纯路径比对')
   assert.match(routerIndex, /tab: 'mystery'/, '旧 /mystery-shop 入口仍指向神秘商人')
   assert.match(mall, /const DEFAULT_TAB: MallTab = 'mall'/)

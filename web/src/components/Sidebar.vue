@@ -1,25 +1,28 @@
 <script setup lang="ts">
+import type { GameScene } from '@/stores/scene'
 import { useDateFormat, useIntervalFn, useMediaQuery, useNow } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import api from '@/api'
-
-import { isMenuActive, menuGroups, menuLink, visibleMenuRoutes } from '@/router/menu'
+import ThemeSwitcher from '@/components/ThemeSwitcher.vue'
+import { isMenuActive, menuLink, visibleMenuRoutes } from '@/router/menu'
+import { isRanchMenuActive, ranchMenu } from '@/router/ranch-menu'
 import { useAccountStore } from '@/stores/account'
 import { useAppStore } from '@/stores/app'
+import { SCENE_BRAND, useSceneStore } from '@/stores/scene'
 import { useStatusStore } from '@/stores/status'
 
 const accountStore = useAccountStore()
 const statusStore = useStatusStore()
 const appStore = useAppStore()
+const sceneStore = useSceneStore()
 const route = useRoute()
+const router = useRouter()
 const { currentAccount } = storeToRefs(accountStore)
 const { status, realtimeConnected } = storeToRefs(statusStore)
 const { sidebarOpen } = storeToRefs(appStore)
-
-const brandTitle = 'QQ农场智能助手'
-const brandTagline = '智慧农场 · 让生长有数'
+const { scene } = storeToRefs(sceneStore)
 
 const systemConnected = ref(true)
 const serverUptimeBase = ref(0)
@@ -119,12 +122,52 @@ const connectionStatus = computed(() => {
   }
 })
 
+/** 侧栏导航项：农场用 menuRoutes 的一份投影，牧场用 ranchMenu，两者结构对齐后共用同一份渲染。 */
+interface NavItem {
+  key: string
+  to: ReturnType<typeof menuLink> | string
+  label: string
+  icon: string
+  active: boolean
+}
+
+const farmItems = computed<NavItem[]>(() => visibleMenuRoutes().map(item => ({
+  key: item.name,
+  to: menuLink(item),
+  label: item.navLabel || item.label,
+  icon: item.icon,
+  active: isMenuActive(item, route.path),
+})))
+
+const ranchItems = computed<NavItem[]>(() => ranchMenu.map(item => ({
+  key: item.name,
+  to: item.path,
+  label: item.label,
+  icon: item.icon,
+  active: isRanchMenuActive(item, route.path),
+})))
+
+const navItems = computed(() => (scene.value === 'ranch' ? ranchItems.value : farmItems.value))
+const brand = computed(() => SCENE_BRAND[scene.value])
+
+const SCENE_OPTIONS: Array<{ key: GameScene, label: string, icon: string }> = [
+  { key: 'farm', label: '农场', icon: 'i-carbon-sprout' },
+  { key: 'ranch', label: '牧场', icon: 'i-carbon-wheat' },
+]
+
+/**
+ * 场景切换 = 换整套侧栏 + 跳到该场景的首页。
+ * 只改 scene 不跳转会出现「侧栏已经是牧场菜单、页面还停在农场」的错位。
+ */
+function switchScene(option: GameScene) {
+  if (scene.value === option)
+    return
+  sceneStore.select(option)
+  void router.push(option === 'ranch' ? '/ranch' : '/')
+}
+
 const desktop = useMediaQuery('(min-width: 1024px)')
 const sidebarElement = ref<HTMLElement | null>(null)
-const navGroups = computed(() => menuGroups.map(group => ({
-  ...group,
-  items: visibleMenuRoutes().filter(item => item.group === group.key),
-})).filter(group => group.items.length))
 
 function onDrawerKeydown(event: KeyboardEvent) {
   if (desktop.value || !sidebarOpen.value || event.key !== 'Tab')
@@ -178,40 +221,71 @@ watch(
     @keydown.esc="appStore.closeSidebar"
   >
     <div class="farm-brand">
+      <div class="farm-brand-logo">
+        <img src="/icon.png" alt="" aria-hidden="true">
+      </div>
       <div class="min-w-0 flex-1">
         <div class="farm-brand-title">
-          {{ brandTitle }}
+          {{ brand.title }}
         </div>
         <div class="farm-brand-caption">
-          {{ brandTagline }}
+          {{ brand.subtitle }}
         </div>
       </div>
+      <button
+        type="button"
+        class="farm-brand-close lg:hidden"
+        aria-label="关闭导航"
+        @click="appStore.closeSidebar"
+      >
+        <span class="i-carbon-close" aria-hidden="true" />
+      </button>
+    </div>
+
+    <div class="farm-brand-divider" aria-hidden="true" />
+
+    <!-- 场景开关：农场 / 牧场各有一套侧栏与页面，这里切的是整个应用的浏览场景。 -->
+    <div class="farm-scene-switch" role="group" aria-label="农牧场切换">
+      <button
+        v-for="option in SCENE_OPTIONS"
+        :key="option.key"
+        type="button"
+        class="farm-scene-option"
+        :class="{ 'is-active': scene === option.key }"
+        :aria-pressed="scene === option.key"
+        @click="switchScene(option.key)"
+      >
+        <span :class="option.icon" aria-hidden="true" />
+        <span>{{ option.label }}</span>
+      </button>
     </div>
 
     <nav class="farm-navigation" aria-label="主导航">
-      <section v-for="group in navGroups" :key="group.key" :aria-labelledby="`nav-${group.key}`">
-        <h2 :id="`nav-${group.key}`" class="farm-nav-label">
-          {{ group.label }}
-        </h2>
-        <RouterLink
-          v-for="item in group.items" :key="item.name" :to="menuLink(item)"
-          class="farm-nav-item" :class="{ 'is-active': isMenuActive(item, route.path) }"
-          :aria-current="isMenuActive(item, route.path) ? 'page' : undefined"
-          @click="appStore.closeSidebar"
-        >
-          <span :class="item.icon" class="farm-nav-icon" aria-hidden="true" />
-          <span class="min-w-0 flex-1 truncate">{{ item.navLabel || item.label }}</span>
-        </RouterLink>
-      </section>
+      <RouterLink
+        v-for="item in navItems"
+        :key="item.key"
+        :to="item.to"
+        class="farm-nav-item"
+        :class="{ 'is-active': item.active }"
+        :aria-current="item.active ? 'page' : undefined"
+        @click="appStore.closeSidebar"
+      >
+        <span :class="item.icon" class="farm-nav-icon" aria-hidden="true" />
+        <span class="min-w-0 flex-1 truncate">{{ item.label }}</span>
+      </RouterLink>
     </nav>
 
     <div class="farm-sidebar-footer">
       <div class="flex items-center justify-between gap-2 text-xs">
-        <span class="flex items-center gap-2"><span class="h-2 w-2 rounded-full" :class="connectionStatus.color" />{{ connectionStatus.text }}</span>
+        <span class="flex items-center gap-2">
+          <span class="h-2 w-2 rounded-full" :class="[connectionStatus.color, { 'animate-pulse': connectionStatus.pulse }]" />
+          {{ connectionStatus.text }}
+        </span>
         <span class="text-xs text-[var(--muted-text)] tabular-nums">{{ uptime }}</span>
       </div>
       <div class="mt-3 flex items-center justify-between gap-1">
         <span class="text-[11px] text-[var(--muted-text)] tabular-nums">{{ formattedTime }}</span>
+        <ThemeSwitcher />
       </div>
       <div class="mt-2 flex items-center justify-between text-[11px] text-[var(--muted-text)]">
         <span>{{ versionLabel }}</span>
@@ -230,7 +304,7 @@ watch(
   flex-direction: column;
   width: min(300px, 88vw);
   height: 100dvh;
-  padding: 22px 16px 16px;
+  padding: 18px 14px 14px;
   border-right: 1px solid var(--surface-border);
   background: var(--farm-sidebar);
   transform: translateX(-100%);
@@ -244,72 +318,160 @@ watch(
   align-items: center;
   gap: 10px;
   min-width: 0;
-  margin: 4px 4px 12px;
-  padding: 7px 8px 18px;
-  border-bottom: 1px solid var(--surface-border);
+  padding: 2px 4px 10px;
+}
+.farm-brand-logo {
+  width: 42px;
+  height: 42px;
+  flex: none;
+  overflow: hidden;
+  border-radius: 999px;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 12%);
+  border: 1px solid var(--surface-border);
+}
+.farm-brand-logo img {
+  width: 100%;
+  height: 100%;
+  transform: scale(1.25);
+  object-fit: cover;
 }
 .farm-brand-title {
-  color: var(--theme-primary);
-  font-size: 19px;
+  color: var(--theme-text);
+  font-size: 15px;
   font-weight: 750;
   letter-spacing: 0;
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
 .farm-brand-caption {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 7px;
-  margin-top: 7px;
+  margin-top: 2px;
   color: var(--muted-text);
-  font-size: 12px;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   letter-spacing: 0;
+}
+.farm-brand-close {
+  display: inline-grid;
+  width: 40px;
+  height: 40px;
+  flex: none;
+  place-items: center;
+  border-radius: 10px;
+  color: var(--muted-text);
+  font-size: 20px;
+}
+.farm-brand-close:hover {
+  background: var(--surface-2);
+}
+.farm-brand-divider {
+  height: 1px;
+  flex: none;
+  margin: 0 4px 8px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--theme-primary) 45%, transparent), transparent);
+}
+.farm-scene-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  margin: 0 4px 10px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.farm-scene-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  border-radius: 9px;
+  color: var(--muted-text);
+  font-size: 13px;
+  font-weight: 650;
+  transition:
+    background 150ms,
+    color 150ms;
+}
+.farm-scene-option:hover {
+  color: var(--theme-text);
+}
+.farm-scene-option.is-active {
+  background: var(--theme-gradient);
+  color: #fff;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--theme-primary) 24%, transparent);
 }
 .farm-navigation {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-}
-.farm-nav-label {
-  padding: 16px 14px 9px;
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0;
-  color: var(--muted-text);
+  padding: 2px 2px 4px;
 }
 .farm-nav-item {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   min-height: 46px;
-  margin-bottom: 4px;
-  padding: 10px 14px;
-  border-radius: 8px;
-  color: var(--muted-text);
+  margin-bottom: 2px;
+  padding: 5px 8px;
+  border-radius: 12px;
+  color: var(--theme-text);
   font-size: 14px;
+  opacity: 0.82;
+  transition:
+    background 150ms,
+    color 150ms,
+    opacity 150ms;
+}
+.farm-nav-item:hover {
+  background: var(--surface-2);
+  opacity: 1;
+}
+.farm-nav-icon {
+  display: inline-grid;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  place-items: center;
+  border-radius: 10px;
+  color: color-mix(in srgb, var(--theme-text) 58%, transparent);
+  font-size: 21px;
   transition:
     background 150ms,
     color 150ms;
 }
-.farm-nav-item:hover {
-  background: var(--surface-2);
+.farm-nav-item:hover .farm-nav-icon {
+  background: color-mix(in srgb, var(--theme-text) 7%, transparent);
   color: var(--theme-text);
 }
 .farm-nav-item.is-active {
-  background: color-mix(in srgb, var(--theme-primary) 12%, var(--surface-1));
+  background: color-mix(in srgb, var(--theme-primary) 9%, transparent);
   color: var(--theme-primary);
   font-weight: 650;
+  opacity: 1;
 }
-.farm-nav-icon {
-  flex-shrink: 0;
-  font-size: 20px;
+.farm-nav-item.is-active .farm-nav-icon {
+  background: var(--theme-gradient);
+  color: #fff;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--theme-primary) 28%, transparent);
+}
+.farm-nav-item.is-active::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: -4px;
+  width: 3px;
+  height: 56%;
+  transform: translateY(-50%);
+  border-radius: 0 4px 4px 0;
+  background: var(--theme-gradient);
 }
 .farm-sidebar-footer {
   position: relative;
-  margin-top: 14px;
-  padding: 14px 10px 0;
+  flex: none;
+  margin-top: 10px;
+  padding: 12px 8px 0;
   border-top: 1px solid var(--surface-border);
 }
 @media (min-width: 1024px) {
@@ -317,7 +479,7 @@ watch(
     position: relative;
     z-index: 35;
     flex-shrink: 0;
-    width: 232px;
+    width: 236px;
     height: 100%;
     transform: none;
   }

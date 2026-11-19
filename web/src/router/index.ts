@@ -43,12 +43,23 @@ const router = createRouter({
     {
       path: '/',
       component: () => import('@/layouts/DefaultLayout.vue'),
-      children: menuRoutes.map(route => ({
-        path: route.path,
-        name: route.name,
-        component: route.component,
-        meta: route.meta,
-      })),
+      children: [
+        ...menuRoutes.map(route => ({
+          path: route.path,
+          name: route.name,
+          component: route.component,
+          meta: route.meta,
+        })),
+        // 牧场是独立场景，侧栏整块换成 ranch-menu；旧地址保留重定向，避免书签失效。
+        { path: 'ranch/buildings', redirect: '/ranch/personal' },
+        { path: 'ranch/warehouse', redirect: '/ranch/personal?view=warehouse' },
+        { path: 'ranch/orders', redirect: '/ranch/personal?view=tasks' },
+        {
+          path: 'ranch/:section(overview|personal|friends|activity|shop|illustrated|analytics)?',
+          name: 'ranch',
+          component: () => import('@/views/Ranch.vue'),
+        },
+      ],
     },
     {
       path: '/mystery-shop',

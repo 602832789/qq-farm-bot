@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 29,
-  "patch": 0,
-  "build": 196,
-  "version": "3.29.0",
-  "updatedAt": "2026-11-19T07:25:00.180Z",
+  "patch": 1,
+  "build": 197,
+  "version": "3.29.1",
+  "updatedAt": "2026-11-19T08:03:29.661Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.29.1",
+      "build": 197,
+      "date": "2026-11-19",
+      "summary": "侧边栏改为场景化导航，牧场拆成 7 个独立子页",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.29.0",
       "build": 196,

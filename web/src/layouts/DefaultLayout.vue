@@ -4,11 +4,10 @@ import { storeToRefs } from 'pinia'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Sidebar from '@/components/Sidebar.vue'
-import ThemeSwitcher from '@/components/ThemeSwitcher.vue'
 import TopAccountMenu from '@/components/TopAccountMenu.vue'
-import SceneSwitch from '@/components/ui/SceneSwitch.vue'
 import { useAccountSwitchScrollPreserve } from '@/composables/useAccountSwitchScroll'
 import { isMenuActive, matchMenu, menuGroups, menuLink, visibleMenuRoutes } from '@/router/menu'
+import { isRanchMenuActive, matchRanchMenu, ranchMenu } from '@/router/ranch-menu'
 import { useAppStore } from '@/stores/app'
 import { useSceneStore } from '@/stores/scene'
 import { useToastStore } from '@/stores/toast'
@@ -26,13 +25,43 @@ const desktop = useMediaQuery('(min-width: 1024px)')
 const loggingOut = ref(false)
 let drawerTrigger: HTMLElement | null = null
 
-const currentMenu = computed(() => matchMenu(route.path))
-const currentGroup = computed(() => menuGroups.find(group => group.key === currentMenu.value?.group)?.label || '我的庄园')
-const mobileItems = computed(() => visibleMenuRoutes().filter(item => item.mobileLabel))
-const moreActive = computed(() => !mobileItems.value.some(item => isMenuActive(item, route.path)))
-// 路由是场景的真值来源：直接点菜单进「我的牧场」也要把开关切过去，
-// 否则会出现「页面已经在牧场、顶栏还写着去牧场」的矛盾状态。
+const currentMenu = computed(() => (sceneStore.scene === 'ranch' ? matchRanchMenu(route.path) : matchMenu(route.path)))
+const currentGroup = computed(() => {
+  if (sceneStore.scene === 'ranch')
+    return '我的牧场'
+  const item = currentMenu.value
+  const group = item && 'group' in item ? item.group : undefined
+  return menuGroups.find(entry => entry.key === group)?.label || '我的庄园'
+})
+const currentLabel = computed(() => {
+  const item = currentMenu.value
+  if (!item)
+    return '农场'
+  return ('navLabel' in item && item.navLabel) || item.label
+})
+/** 手机底部导航同样跟着场景换：牧场只出牧场入口，不把农场页面混进来。 */
+const mobileItems = computed(() => (sceneStore.scene === 'ranch'
+  ? ranchMenu.filter(item => item.mobileLabel).map(item => ({
+      key: item.name,
+      to: item.path,
+      label: item.mobileLabel || item.label,
+      icon: item.icon,
+      active: isRanchMenuActive(item, route.path),
+    }))
+  : visibleMenuRoutes().filter(item => item.mobileLabel).map(item => ({
+      key: item.name,
+      to: menuLink(item),
+      label: item.mobileLabel || item.label,
+      icon: item.icon,
+      active: isMenuActive(item, route.path),
+    }))))
+const moreActive = computed(() => !mobileItems.value.some(item => item.active))
+// 路由是场景的真值来源：直接点菜单进「牧场」也要把开关切过去，
+// 否则会出现「页面已经在牧场、侧栏还写着农场」的矛盾状态。
+// 设置页两个场景共用，停在设置页时保持进来时的场景，不强行切回农场。
 watch(() => route.path, (path) => {
+  if (path === '/settings')
+    return
   sceneStore.setScene(path.startsWith('/ranch') ? 'ranch' : 'farm')
 }, { immediate: true })
 // 活动详情自带标题栏并要求撑满内容区，这时把滚动交给活动自己的外壳。
@@ -78,12 +107,10 @@ async function logout() {
           </button>
           <div class="farm-breadcrumb">
             <span class="hidden sm:inline">{{ currentGroup }}</span><span class="hidden opacity-40 sm:inline" aria-hidden="true">/</span>
-            <strong>{{ currentMenu?.navLabel || currentMenu?.label || '农场' }}</strong>
+            <strong>{{ currentLabel }}</strong>
           </div>
         </div>
         <div class="farm-topbar-actions">
-          <SceneSwitch />
-          <ThemeSwitcher />
           <TopAccountMenu />
           <button class="farm-icon-button" type="button" title="退出验证" aria-label="退出验证" :disabled="loggingOut" @click="logout">
             <span :class="loggingOut ? 'i-svg-spinners-ring-resize' : 'i-carbon-logout'" aria-hidden="true" />
@@ -96,8 +123,8 @@ async function logout() {
         </RouterView>
       </main>
       <nav class="farm-mobile-nav" aria-label="快捷导航">
-        <RouterLink v-for="item in mobileItems" :key="item.name" :to="menuLink(item)" :class="{ 'is-active': isMenuActive(item, route.path) }" :aria-current="isMenuActive(item, route.path) ? 'page' : undefined">
-          <span :class="item.icon" aria-hidden="true" /><span>{{ item.mobileLabel }}</span>
+        <RouterLink v-for="item in mobileItems" :key="item.key" :to="item.to" :class="{ 'is-active': item.active }" :aria-current="item.active ? 'page' : undefined">
+          <span :class="item.icon" aria-hidden="true" /><span>{{ item.label }}</span>
         </RouterLink>
         <button type="button" :class="{ 'is-active': moreActive }" :aria-expanded="sidebarOpen" aria-controls="farm-sidebar" @click="appStore.openSidebar">
           <span class="i-carbon-overflow-menu-horizontal" aria-hidden="true" /><span>更多</span>
