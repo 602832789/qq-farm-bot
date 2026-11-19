@@ -54,8 +54,8 @@ test('设置面板随主开关禁用附加开关，推荐全自动也不默认�
   assert.match(milkTeaPanel, /互相独立，也不受购种开关影响/)
 })
 
-test('新开关落在「功能模块 → 日常与活动 → 奶茶活动」分类下', () => {
-  assert.match(featureSettings, /activity: \{ title: '日常与活动'/)
+test('新开关落在「功能模块 → 活动 → 奶茶活动」分类下', () => {
+  assert.match(featureSettings, /events: \{ title: '活动'/)
   assert.match(featureSettings, /<MilkTeaActivityPanel/)
   assert.match(featureSettings, /MILK_TEA_AUTOMATION_OPTIONS/)
   assert.match(milkTeaPanel, /aria-label="奶茶活动自动化"/)

@@ -27,46 +27,60 @@ function atRule(source, query) {
   assert.fail(`规则 ${query} 未闭合`)
 }
 
-const phone = atRule(dashboard, '@media (max-width: 639px)')
-const wide = atRule(dashboard, '@container runtime-log (min-width: 640px)')
+// 运行日志面板按 liyang 版重做：标题 + 四列筛选 + 紧凑日志行。
+const panel = dashboard.slice(
+  dashboard.indexOf('<div class="flex flex-1 flex-col farm-card rounded-2xl bg-white p-5 shadow-md md:overflow-hidden dark:bg-gray-800">'),
+  dashboard.indexOf('<!-- Right Column Stack -->'),
+)
 
-test('运行日志筛选：两个下拉各自有可定位的栅格容器', () => {
-  const toolbar = dashboard.match(/<div class="dashboard-log-toolbar">([\s\S]*?)<\/div>\s*<div class="dashboard-log-summary">/)?.[1] || ''
-  assert.ok(toolbar, '筛选栏模板块未找到')
-  assert.match(toolbar, /<div class="dashboard-log-module">[\s\S]*?v-model="filter\.module"[\s\S]*?<\/div>/)
-  assert.match(toolbar, /<div class="dashboard-log-event">[\s\S]*?v-model="filter\.event"[\s\S]*?<\/div>/)
-  assert.match(toolbar, /class="dashboard-log-reset"[\s\S]*?title="重置筛选"/)
+test('运行日志：三个下拉 + 关键词 + 搜索/清空按钮齐全', () => {
+  assert.ok(panel, '日志面板模板块未找到')
+  assert.match(panel, /class="log-filters"/)
+  assert.match(panel, /v-model="filter\.module"[\s\S]{0,80}:options="modules"/)
+  assert.match(panel, /v-model="filter\.event"[\s\S]{0,80}:options="events"/)
+  assert.match(panel, /v-model="filter\.level"[\s\S]{0,80}:options="logLevels"/)
+  assert.match(panel, /v-model="filter\.keyword"/)
+  assert.match(panel, /title="搜索日志"/)
+  assert.match(panel, /title="清空日志"/)
   // 筛选事件下拉仍绑定完整事件列表，「所有事件」是首项。
   assert.match(dashboard, /const events = \[\s*\{ label: '所有事件', value: '' \}/)
-  assert.match(toolbar, /:options="events"/)
 })
 
-test('手机端「所有事件」与「所有模块」同列同宽，不再被 32px 重置按钮列挤压', () => {
-  const toolbar = rule(phone, '.dashboard-log-toolbar')
-  assert.match(toolbar, /grid-template-columns:\s*minmax\(0, 1fr\) 32px/, '手机端只留「内容 + 重置按钮」两列')
-  assert.doesNotMatch(toolbar, /minmax\(0, 1fr\) minmax\(0, 1fr\) 32px/, '旧三列排布已撤销')
-
-  const search = rule(phone, '.dashboard-log-search')
-  assert.match(search, /grid-row:\s*1/, '搜索框在第一行')
-  assert.match(search, /grid-column:\s*1 \/ -1/, '搜索框保持整行宽度')
-
-  const moduleRule = rule(phone, '.dashboard-log-module')
-  assert.match(moduleRule, /grid-row:\s*2/)
-  assert.match(moduleRule, /grid-column:\s*1/)
-
-  const eventRule = rule(phone, '.dashboard-log-event')
-  assert.match(eventRule, /grid-row:\s*3/, '事件下拉独立一行')
-  assert.match(eventRule, /grid-column:\s*1/, '事件下拉与模块下拉同列同宽')
-  assert.doesNotMatch(eventRule, /grid-column:\s*1 \/ -1/, '不再独占整行，长度与「所有模块」一致')
-
-  const reset = rule(phone, '.dashboard-log-reset')
-  assert.match(reset, /grid-row:\s*2/, '重置按钮与模块筛选同行，不额外占一行')
-  assert.match(reset, /grid-column:\s*2/)
-  assert.match(reset, /justify-self:\s*end/)
+test('运行日志：行结构为 时间 / 标签 / 正文，重复次数带 ×N 徽标', () => {
+  assert.match(panel, /class="log-list/)
+  assert.match(panel, /v-for="log in displayLogs"/)
+  assert.match(panel, /class="log-row__time"/)
+  assert.match(panel, /class="log-row__tag"/)
+  assert.match(panel, /class="log-row__body"/)
+  assert.match(panel, /class="log-row__repeat"/)
+  assert.match(panel, /:class="`log-row--\$\{log\.level === 'info' \? 'success' : log\.level\}`"/)
 })
 
-test('PC 端筛选栏仍是原来一行四列的排布', () => {
-  assert.match(rule(wide, '.dashboard-log-toolbar'), /grid-template-columns:\s*minmax\(160px, 1fr\) 120px 140px 32px/)
-  assert.match(rule(wide, '.dashboard-log-search'), /grid-column:\s*auto/)
-  assert.doesNotMatch(wide, /dashboard-log-event/, '宽屏不套用手机端的换行规则')
+test('运行日志：筛选区窄屏两列、宽屏四列 + 按钮列', () => {
+  const filters = rule(dashboard, '.log-filters')
+  assert.match(filters, /grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/, '窄屏两列')
+
+  const wide = atRule(dashboard, '@media (min-width: 640px)')
+  assert.match(wide, /grid-template-columns:\s*repeat\(4, minmax\(0, 8\.5rem\)\) auto/, '宽屏四列筛选 + 按钮')
+  assert.match(wide, /\.log-filters__buttons[\s\S]*?grid-column:\s*auto/)
+
+  const buttons = rule(dashboard, '.log-filters__buttons')
+  assert.match(buttons, /grid-column:\s*1 \/ -1/, '窄屏按钮独占一行')
+})
+
+test('运行日志：日志行窄屏折成两列，正文整行铺满', () => {
+  const row = rule(dashboard, '.log-row')
+  assert.match(row, /grid-template-columns:\s*auto auto minmax\(0, 1fr\)/)
+
+  const phone = atRule(dashboard, '@media (max-width: 640px)')
+  assert.match(phone, /\.log-row[\s\S]*?grid-template-columns:\s*auto minmax\(0, 1fr\)/)
+  assert.match(phone, /\.log-row__body[\s\S]*?grid-column:\s*1 \/ -1/)
+})
+
+test('运行日志：级别筛选接入 displayLogs，且有独立的选项表', () => {
+  assert.match(dashboard, /const logLevels = \[/)
+  for (const value of ['所有级别', '常规', '警告', '错误'])
+    assert.ok(dashboard.includes(`label: '${value}'`), `缺少级别选项 ${value}`)
+  assert.match(dashboard, /const displayLogs = computed\(\(\) => visibleLogs\.value\.filter\(log => !filter\.level \|\| log\.level === filter\.level\)\)/)
+  assert.match(dashboard, /filter\.module \|\| filter\.event \|\| filter\.keyword \|\| filter\.level/)
 })

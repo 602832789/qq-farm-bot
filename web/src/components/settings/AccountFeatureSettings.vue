@@ -12,15 +12,26 @@ import HourInput from '@/components/ui/HourInput.vue'
 import { MILK_TEA_ACTIVITY_WINDOW, MILK_TEA_AUTOMATION_OPTIONS, SHARE_REWARD_ACTIVITY_WINDOW } from '@/constants/activity-windows'
 import { FERTILIZER_TIME_UNITS, fertilizerTimeSeconds, fertilizerTimeValue } from '@/utils/fertilizer-time'
 import {
-  isRanchSwitchDefaultOn,
-  RANCH_AUTOMATION_GROUPS,
   RANCH_AUTOMATION_LIMITS,
   RANCH_AUTOMATION_SWITCHES,
   RANCH_BAG_FALLBACK_OPTIONS,
   RANCH_STRATEGY_OPTIONS,
 } from '@/utils/ranch'
 
-type ModuleKey = 'planting' | 'fertilizer' | 'friends' | 'steal' | 'merchant' | 'activity' | 'pet' | 'ranch'
+type ModuleKey =
+  | 'planting'
+  | 'fertilizer'
+  | 'friends'
+  | 'steal'
+  | 'merchant'
+  | 'daily'
+  | 'ranch_husbandry'
+  | 'ranch_feed'
+  | 'ranch_friends'
+  | 'ranch_steal'
+  | 'ranch_merchant'
+  | 'ranch_daily'
+  | 'events'
 
 const props = defineProps<{
   currentAccountName: string | null
@@ -61,21 +72,48 @@ const moduleInfo: Record<ModuleKey, { title: string, description: string, icon: 
   friends: { title: '好友', description: '帮助、捣乱和好友申请', icon: 'i-carbon-user-multiple', image: '/game-config/module_icons/friends-friendship.png', tone: 'sky' },
   steal: { title: '偷菜', description: '巡查频率和操作延迟', icon: 'i-carbon-crop-health', image: '/game-config/module_icons/steal.png', tone: 'lime' },
   merchant: { title: '神秘商人', description: '商品购买和货币范围', icon: 'i-carbon-store', image: '/game-config/module_icons/merchant.png', tone: 'orange' },
-  activity: { title: '日常与活动', description: '日常任务、活动奖励和活动道具', icon: 'i-carbon-events', image: '/game-config/module_icons/activity-task.png', tone: 'violet' },
-  pet: { title: '宠物', description: '自动喂狗粮，保持上场宠物看护时长', icon: 'i-fas-paw', image: '', tone: 'rose' },
-  ranch: { title: '牧场', description: '牧场养殖、收获与好友互动', icon: 'i-carbon-crop-growth', image: '', tone: 'teal' },
+  daily: { title: '日常', description: '农场任务、邮件奖励、宠物喂食与图鉴', icon: 'i-carbon-task', image: '/game-config/module_icons/activity-task.png', tone: 'violet' },
+  ranch_husbandry: { title: '养殖与收获', description: '入栏、催产、收获、清理与出售', icon: 'i-carbon-sprout', image: '/game-config/module_icons/planting.png', tone: 'emerald' },
+  ranch_feed: { title: '饲料与设施', description: '牧草、罐头桶与设施升级', icon: 'i-carbon-wheat', image: '/game-config/module_icons/fertilizer.png', tone: 'amber' },
+  ranch_friends: { title: '牧场好友', description: '照料、清理好友栏舍与放蚊子', icon: 'i-carbon-user-multiple', image: '/game-config/module_icons/friends-friendship.png', tone: 'sky' },
+  ranch_steal: { title: '牧场偷取', description: '进入好友牧场偷取货架产物', icon: 'i-carbon-run', image: '/game-config/module_icons/steal.png', tone: 'lime' },
+  ranch_merchant: { title: '兑换集市', description: '用便便、松果兑换有机化肥', icon: 'i-carbon-store', image: '/game-config/module_icons/merchant.png', tone: 'orange' },
+  ranch_daily: { title: '日常', description: '牧场任务、订单、每日福利与奖励', icon: 'i-carbon-task-complete', image: '/game-config/module_icons/activity-task.png', tone: 'teal' },
+  events: { title: '活动', description: '节令小札、快乐不独享与奶茶热销中', icon: 'i-carbon-events', image: '/game-config/module_icons/activity-task.png', tone: 'violet' },
+}
+
+/**
+ * 牧场六个模块各自负责的开关。
+ * 与 `core/src/config/ranch-automation.ts` 的 key 一一对应，分组只影响展示与批量开关。
+ */
+const RANCH_MODULE_SWITCHES: Record<string, string[]> = {
+  ranch_husbandry: ['ranch_harvest', 'ranch_produce', 'ranch_buy', 'ranch_sell', 'ranch_clean'],
+  ranch_feed: ['ranch_grass', 'ranch_grass_buy', 'ranch_fill_cans', 'ranch_feed_normal', 'ranch_feed_organic', 'ranch_upgrade'],
+  ranch_friends: ['ranch_stroke', 'ranch_friend_clean', 'ranch_friend_mosquito'],
+  ranch_steal: ['ranch_friend_steal'],
+  ranch_merchant: ['ranch_market_organic', 'ranch_market_organic_poop', 'ranch_market_organic_pinecone'],
+  ranch_daily: ['ranch_task', 'ranch_share', 'ranch_illustrated', 'ranch_daily_benefit'],
 }
 
 const activeInfo = computed(() => activeModule.value ? moduleInfo[activeModule.value] : null)
+
+/** 配置弹窗里当前牧场模块要显示的开关（按 RANCH_MODULE_SWITCHES 的顺序）。 */
+const activeRanchSwitches = computed(() => {
+  const key = activeModule.value
+  if (!key || !(key in RANCH_MODULE_SWITCHES)) return []
+  return RANCH_MODULE_SWITCHES[key]!
+    .map(switchKey => RANCH_AUTOMATION_SWITCHES.find(item => item.key === switchKey))
+    .filter((item): item is (typeof RANCH_AUTOMATION_SWITCHES)[number] => !!item)
+})
 
 /**
  * 功能模块分三大类（参考 BUGDey 版的排序与分类）：
  * 农场 → 牧场 → 活动。分类只影响展示顺序，开关与弹窗逻辑保持原样。
  */
 const MODULE_GROUPS: Array<{ key: string, label: string, icon: string, description: string, modules: ModuleKey[] }> = [
-  { key: 'farm', label: '农场', icon: 'i-carbon-sprout', description: '种植、土地、好友互动、神秘商人与宠物', modules: ['planting', 'fertilizer', 'friends', 'steal', 'merchant', 'pet'] },
-  { key: 'ranch', label: '牧场', icon: 'i-fas-paw', description: '牧场养殖、收获与好友互动', modules: ['ranch'] },
-  { key: 'activity', label: '活动', icon: 'i-carbon-events', description: '日常任务、节令活动与限时道具', modules: ['activity'] },
+  { key: 'farm', label: '农场', icon: 'i-carbon-sprout', description: '种植、土地、好友互动、神秘商人与日常', modules: ['planting', 'fertilizer', 'friends', 'steal', 'merchant', 'daily'] },
+  { key: 'ranch', label: '牧场', icon: 'i-fas-paw', description: '养殖、饲料、好友、偷取、集市与日常', modules: ['ranch_husbandry', 'ranch_feed', 'ranch_friends', 'ranch_steal', 'ranch_merchant', 'ranch_daily'] },
+  { key: 'events', label: '活动', icon: 'i-carbon-events', description: '节令与限时活动的自动任务和奖励', modules: ['events'] },
 ]
 
 const moduleGroups = computed(() => MODULE_GROUPS.map(group => ({
@@ -116,7 +154,7 @@ function intervalTag(min: number, max: number) {
 }
 
 function moduleStateLabel(key: ModuleKey) {
-  if (key === 'activity')
+  if (key === 'events' || key === 'daily')
     return moduleEnabled(key) ? '已配置' : '未开启'
   return moduleEnabled(key) ? '已开启' : '已关闭'
 }
@@ -175,30 +213,34 @@ function summaryTags(key: ModuleKey) {
       notify.join('、') || '未开启提醒',
     ]
   }
-  if (key === 'ranch') {
-    const enabledCount = RANCH_AUTOMATION_SWITCHES.filter(item => automation.value.automation[item.key]).length
+  if (key in RANCH_MODULE_SWITCHES) {
+    const switches = RANCH_MODULE_SWITCHES[key]!
+    const enabledCount = switches.filter(item => automation.value.automation[item]).length
     const strategyLabel = RANCH_STRATEGY_OPTIONS.find(option => option.value === automation.value.automation.ranch_strategy)?.label || '未设置策略'
-    return [
-      strategyLabel,
-      `巡查 ${automation.value.automation.ranch_check_minutes || RANCH_AUTOMATION_LIMITS.checkMinutes.min} 分钟`,
-      enabledCount ? `已开 ${enabledCount} 项` : '全部动作关闭',
-    ]
+    const base = [`已开 ${enabledCount}/${switches.length} 项`]
+    if (key === 'ranch_husbandry' || key === 'ranch_feed')
+      base.unshift(strategyLabel)
+    if (key !== 'ranch_merchant')
+      base.push(`巡查 ${automation.value.automation.ranch_check_minutes || RANCH_AUTOMATION_LIMITS.checkMinutes.min} 分钟`)
+    return base
   }
-  if (key === 'pet') {
+  if (key === 'daily') {
     return [
+      automation.value.automation.task ? '自动完成农场任务' : '不做农场任务',
+      `邮件 ${automation.value.automation.emailClaimHour ?? 10} 时`,
       automation.value.automation.pet_feed_dog_food ? '自动喂狗粮' : '不喂狗粮',
-      automation.value.automation.pet_feed_dog_food_auto_buy ? '狗粮不足自动购礼包' : '不足不购买',
-      '每小时检查 · 上线立即检查',
+      automation.value.automation.illustrated_auto_claim_rewards ? '图鉴自动领奖' : '图鉴不领奖',
     ]
   }
-  return [
-    automation.value.automation.task ? '自动完成日常任务' : '不做日常',
-    automation.value.automation.task_after_farm && '种植收获后巡查任务',
-    (automation.value.automation.star_solar_claim || automation.value.automation.star_solar_quiz_claim) && '节令小札',
-    showMilkTeaActivity.value && milkTeaSettings.value.some(setting => milkTeaOptionEffective(setting) && automation.value.automation[setting.key]) && '奶茶热销中',
-    shareRewardActivityEnabled.value && '快乐不独享',
-    activityEnabledCount.value === 0 && !automation.value.automation.task && '未开启活动',
-  ].filter(Boolean)
+  if (key === 'events') {
+    return [
+      (automation.value.automation.star_solar_claim || automation.value.automation.star_solar_quiz_claim) && '节令小札',
+      showMilkTeaActivity.value && milkTeaSettings.value.some(setting => milkTeaOptionEffective(setting) && automation.value.automation[setting.key]) && '奶茶热销中',
+      shareRewardActivityEnabled.value && '快乐不独享',
+      activityEnabledCount.value === 0 && '未开启活动',
+    ].filter(Boolean)
+  }
+  return []
 }
 
 function moduleEnabled(key: ModuleKey) {
@@ -212,11 +254,11 @@ function moduleEnabled(key: ModuleKey) {
     return automation.value.automation.friend && automation.value.automation.friend_steal
   if (key === 'merchant')
     return automation.value.automation.mystery_shop_auto_buy || automation.value.automation.mystery_shop_arrival_notify
-  if (key === 'pet')
-    return automation.value.automation.pet_feed_dog_food
-  if (key === 'ranch')
-    return RANCH_AUTOMATION_SWITCHES.some(item => !!automation.value.automation[item.key])
-  return activityEnabledCount.value > 0 || automation.value.automation.task || automation.value.automation.task_after_farm
+  if (key === 'daily')
+    return !!automation.value.automation.task || !!automation.value.automation.pet_feed_dog_food
+  if (key in RANCH_MODULE_SWITCHES)
+    return RANCH_MODULE_SWITCHES[key]!.some(item => !!automation.value.automation[item])
+  return activityEnabledCount.value > 0
 }
 
 function setModuleEnabled(key: ModuleKey, enabled: boolean) {
@@ -247,22 +289,24 @@ function setModuleEnabled(key: ModuleKey, enabled: boolean) {
       automation.value.automation.mystery_shop_purchase_notify = false
     }
   }
-  else if (key === 'pet') {
-    automation.value.automation.pet_feed_dog_food = enabled
-  }
-  else if (key === 'ranch') {
-    for (const item of RANCH_AUTOMATION_SWITCHES)
-      automation.value.automation[item.key] = enabled ? isRanchSwitchDefaultOn(item.key) : false
-  }
-  else {
+  else if (key === 'daily') {
     automation.value.automation.task = enabled
     if (!enabled) {
       automation.value.automation.task_after_farm = false
-      automation.value.automation.mall_coupon_gift_buy = false
-      activityKeys.value.forEach((activityKey) => {
-        automation.value.automation[activityKey] = false
-      })
+      automation.value.automation.pet_feed_dog_food = false
+      automation.value.automation.pet_feed_dog_food_auto_buy = false
     }
+  }
+  else if (key in RANCH_MODULE_SWITCHES) {
+    for (const switchKey of RANCH_MODULE_SWITCHES[key]!)
+      automation.value.automation[switchKey] = enabled
+  }
+  else {
+    activityKeys.value.forEach((activityKey) => {
+      automation.value.automation[activityKey] = enabled
+    })
+    if (!enabled)
+      automation.value.automation.mall_coupon_gift_buy = false
   }
   emit('save', key, true)
 }
@@ -610,10 +654,39 @@ function cancel() {
               </section>
             </div>
 
-            <div v-else-if="activeModule === 'pet'" class="space-y-4">
+            <!-- 农场日常：农场任务、邮件奖励、宠物喂食、图鉴 -->
+            <div v-else-if="activeModule === 'daily'" class="space-y-4">
               <section class="border border-gray-100 rounded-lg bg-gray-50/70 p-4 space-y-3 dark:border-gray-700 dark:bg-gray-900/25">
                 <div class="text-sm text-gray-700 font-medium dark:text-gray-300">
-                  自动喂狗粮
+                  日常任务
+                </div>
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <BaseSwitch v-model="automation.automation.task" label="自动完成日常任务" />
+                  <BaseSwitch v-model="automation.automation.task_after_farm" label="种植收获后巡查任务" />
+                </div>
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                  每轮自动种植收获结束后巡查一次日常任务，任务奖励领取遵循日常任务开关。
+                </p>
+              </section>
+
+              <section class="border border-gray-100 rounded-lg bg-gray-50/70 p-4 space-y-3 dark:border-gray-700 dark:bg-gray-900/25">
+                <div class="text-sm text-gray-700 font-medium dark:text-gray-300">
+                  每日邮箱奖励
+                </div>
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                  每天到设定时刻检查一次邮箱并领取可领邮件；当天检查完（含无奖励、失败）就不再重复请求，次日同一时刻再来。
+                </p>
+                <HourInput
+                  v-model="automation.emailClaimHour"
+                  class="w-full sm:max-w-xs"
+                  label="自动邮箱领取（时）"
+                  help="默认 10 时，0 时为午夜；加减到边界会循环。"
+                />
+              </section>
+
+              <section class="border border-gray-100 rounded-lg bg-gray-50/70 p-4 space-y-3 dark:border-gray-700 dark:bg-gray-900/25">
+                <div class="text-sm text-gray-700 font-medium dark:text-gray-300">
+                  宠物喂食
                 </div>
                 <div class="grid gap-3 sm:grid-cols-2">
                   <BaseSwitch v-model="automation.automation.pet_feed_dog_food" label="自动喂狗粮" />
@@ -623,10 +696,30 @@ function cancel() {
                   保持上场宠物的看护时长：不足一周时自动用背包狗粮补满；狗粮不足时自动从商城购买狗粮礼包（每次检查最多买 2 个）。每小时检查并喂食一次，上线时立即检查一次。
                 </p>
               </section>
+
+              <section class="border border-gray-100 rounded-lg p-4 space-y-3 dark:border-gray-700">
+                <div>
+                  <div class="text-sm text-gray-700 font-medium dark:text-gray-300">
+                    收藏图鉴
+                  </div>
+                  <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    每天检查一次：自动领取可领的作物 / 超变图鉴奖励，并自动购买「未点亮 + 可下单 + 背包里没有」的种子（每种 1 个）。开关由关变开后保存会立即检查一次，自动购买会实际消耗金币。
+                  </div>
+                </div>
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <BaseSwitch v-model="automation.automation.illustrated_auto_claim_rewards" label="自动领取图鉴奖励" />
+                  <BaseSwitch v-model="automation.automation.illustrated_auto_buy_missing_seeds" label="自动购买未点亮种子" />
+                  <BaseSwitch v-model="automation.automation.illustrated_buy_skip_bag" label="一键购买跳过背包已有" />
+                </div>
+              </section>
             </div>
 
-            <div v-else-if="activeModule === 'ranch'" class="space-y-4">
-              <section class="border border-gray-100 rounded-lg bg-gray-50/70 p-4 space-y-3 dark:border-gray-700 dark:bg-gray-900/25">
+            <!-- 牧场：按 养殖与收获 / 饲料与设施 / 牧场好友 / 牧场偷取 / 兑换集市 / 日常 六个模块分别配置 -->
+            <div v-else-if="activeModule && activeModule.startsWith('ranch_')" class="space-y-4">
+              <section
+                v-if="activeModule === 'ranch_husbandry' || activeModule === 'ranch_feed'"
+                class="border border-gray-100 rounded-lg bg-gray-50/70 p-4 space-y-3 dark:border-gray-700 dark:bg-gray-900/25"
+              >
                 <div class="text-sm text-gray-700 font-medium dark:text-gray-300">
                   巡查与养殖策略
                 </div>
@@ -646,20 +739,16 @@ function cancel() {
                 </p>
               </section>
 
-              <section
-                v-for="group in RANCH_AUTOMATION_GROUPS"
-                :key="group.key"
-                class="border border-gray-100 rounded-lg bg-gray-50/70 p-4 space-y-3 dark:border-gray-700 dark:bg-gray-900/25"
-              >
+              <section class="border border-gray-100 rounded-lg bg-gray-50/70 p-4 space-y-3 dark:border-gray-700 dark:bg-gray-900/25">
                 <div class="text-sm text-gray-700 font-medium dark:text-gray-300">
-                  {{ group.title }}
+                  {{ activeInfo?.title }}开关
                 </div>
-                <p class="text-xs text-gray-500 dark:text-gray-400">
-                  {{ group.detail }}
+                <p v-if="activeModule === 'ranch_daily'" class="text-xs text-gray-500 dark:text-gray-400">
+                  牧场任务、订单、每日福利与奖励：任务奖励与分享礼包按巡查间隔复查，每日福利与图鉴奖励每天各检查一次。
                 </p>
                 <div class="grid gap-3 sm:grid-cols-2">
                   <BaseSwitch
-                    v-for="item in RANCH_AUTOMATION_SWITCHES.filter(option => option.group === group.key)"
+                    v-for="item in activeRanchSwitches"
                     :key="item.key"
                     v-model="automation.automation[item.key]"
                     :label="item.label"
@@ -668,35 +757,8 @@ function cancel() {
               </section>
             </div>
 
-            <div v-else-if="activeModule === 'activity'" class="space-y-4">
-              <section class="border border-gray-100 rounded-lg bg-gray-50/70 p-4 space-y-3 dark:border-gray-700 dark:bg-gray-900/25">
-                <div class="text-sm text-gray-700 font-medium dark:text-gray-300">
-                  每日邮箱奖励
-                </div>
-                <p class="text-xs text-gray-500 dark:text-gray-400">
-                  每天到设定时刻检查一次邮箱并领取可领邮件；当天检查完（含无奖励、失败）就不再重复请求，次日同一时刻再来。
-                </p>
-                <HourInput
-                  v-model="automation.emailClaimHour"
-                  class="w-full sm:max-w-xs"
-                  label="自动邮箱领取（时）"
-                  help="默认 10 时，0 时为午夜；加减到边界会循环。"
-                />
-              </section>
-
-              <section class="border border-gray-100 rounded-lg bg-gray-50/70 p-4 space-y-3 dark:border-gray-700 dark:bg-gray-900/25">
-                <div class="text-sm text-gray-700 font-medium dark:text-gray-300">
-                  日常任务
-                </div>
-                <div class="grid gap-3 sm:grid-cols-2">
-                  <BaseSwitch v-model="automation.automation.task" label="自动完成日常任务" />
-                  <BaseSwitch v-model="automation.automation.task_after_farm" label="种植收获后巡查任务" />
-                </div>
-                <p class="text-xs text-gray-500 dark:text-gray-400">
-                  每轮自动种植收获结束后巡查一次日常任务，任务奖励领取遵循日常任务开关。
-                </p>
-              </section>
-
+            <!-- 活动：只放活动开关 -->
+            <div v-else-if="activeModule === 'events'" class="space-y-4">
               <section class="border border-gray-100 rounded-lg p-4 space-y-3 dark:border-gray-700">
                 <h3 class="text-sm font-medium">
                   节令小札
@@ -720,22 +782,6 @@ function cancel() {
                   <BaseSwitch v-model="automation.automation.share_reward_share" label="自动分享" />
                   <BaseSwitch v-model="automation.automation.share_reward_daily" label="自动领取每日快乐值" />
                   <BaseSwitch v-model="automation.automation.share_reward_milestones" label="自动领取档位奖励" />
-                </div>
-              </section>
-
-              <section class="border border-gray-100 rounded-lg p-4 space-y-3 dark:border-gray-700">
-                <div>
-                  <div class="text-sm text-gray-700 font-medium dark:text-gray-300">
-                    收藏图鉴
-                  </div>
-                  <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    每天检查一次：自动领取可领的作物 / 超变图鉴奖励，并自动购买「未点亮 + 可下单 + 背包里没有」的种子（每种 1 个）。开关由关变开后保存会立即检查一次，自动购买会实际消耗金币。
-                  </div>
-                </div>
-                <div class="grid gap-3 sm:grid-cols-2">
-                  <BaseSwitch v-model="automation.automation.illustrated_auto_claim_rewards" label="自动领取图鉴奖励" />
-                  <BaseSwitch v-model="automation.automation.illustrated_auto_buy_missing_seeds" label="自动购买未点亮种子" />
-                  <BaseSwitch v-model="automation.automation.illustrated_buy_skip_bag" label="一键购买跳过背包已有" />
                 </div>
               </section>
 

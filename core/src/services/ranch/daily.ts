@@ -172,27 +172,44 @@ function markTasksChanged(): void {
 }
 
 /**
- * 牧场概览的三条倒计时：任务 / 分享 / 福利。
+ * 牧场概览的三条倒计时：牧场 / 帮助 / 偷取。
  *
- * 这三项都是「到了下一次检查时间才会再跑」的每日例程，天然适合做倒计时；
- * 真正执行与否仍由 automation 开关决定，这里只把开关状态一并带出去，
- * 前端据此显示「未开启 / 已完成 / 倒计时」。
+ * - 牧场：整轮牧场例程的下次检查时间（含养殖、饲料、集市等）
+ * - 帮助：好友照料 / 清理次数用尽后的配额重置时间，未用尽就是下一轮巡查
+ * - 偷取：偷取按好友产物成熟时间唤醒，没有独立计时，取下一轮巡查时间
+ * 三个值都只是「下次大概什么时候动」，真正执行仍由 automation 开关决定。
  */
 function getRoutineChecks(): any {
     const auto = getAutomation() || {};
-    tasks = today(tasks);
-    share = today(share);
-    benefit = today(benefit);
-    const row = (state: RoutineState, enabled: boolean) => ({
+    let routine: any = null;
+    try {
+        routine = require('./automation').getRoutineState();
+    }
+    catch {
+        routine = null;
+    }
+    const routineAt = Number(routine?.nextCheckAt) > 0 && Number.isFinite(Number(routine.nextCheckAt))
+        ? Number(routine.nextCheckAt)
+        : 0;
+    let strokeReset = 0;
+    try {
+        if (auto.ranch_stroke)
+            strokeReset = Number(require('./friends').getInteractionQuotaResetAt('stroke')) || 0;
+    }
+    catch {
+        strokeReset = 0;
+    }
+    const now = Date.now();
+    const row = (enabled: boolean, nextAt: number) => ({
         enabled,
-        done: !!state.doneToday && state.result !== 'error',
-        nextAt: Number(state.nextCheckAt) > 0 ? Number(state.nextCheckAt) : 0,
-        lastAt: Number(state.lastAt) || 0,
+        done: !enabled,
+        nextAt: nextAt > now ? nextAt : (enabled ? routineAt : 0),
+        lastAt: 0,
     });
     return {
-        task: row(tasks, auto.ranch_task !== false),
-        share: row(share, auto.ranch_share !== false),
-        benefit: row(benefit, auto.ranch_daily_benefit !== false),
+        farm: row(true, routineAt),
+        help: row(auto.ranch_stroke !== false || auto.ranch_friend_clean !== false, strokeReset),
+        steal: row(auto.ranch_friend_steal !== false, routineAt),
     };
 }
 

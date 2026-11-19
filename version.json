@@ -1,12 +1,20 @@
 {
   "major": 3,
-  "minor": 32,
+  "minor": 33,
   "patch": 0,
-  "build": 201,
-  "version": "3.32.0",
-  "updatedAt": "2026-11-19T16:55:33.928Z",
-  "lastCommit": "4ff832e6",
+  "build": 202,
+  "version": "3.33.0",
+  "updatedAt": "2026-11-19T23:18:00.859Z",
+  "lastCommit": "2919f34c",
   "history": [
+    {
+      "version": "3.33.0",
+      "build": 202,
+      "date": "2026-11-20",
+      "summary": "活动页与日志面板换 liyang 版，牧场倒计时改牧场/帮助/偷取，设置页按牧场六组分类",
+      "commit": "2919f34c",
+      "type": "minor"
+    },
     {
       "version": "3.32.0",
       "build": 201,

@@ -46,7 +46,7 @@ export const ranchActionIcons: Record<string, string> = {
   claimDailyShare: 'i-carbon-share',
   steal: 'i-carbon-run',
   stroke: 'i-carbon-favorite',
-  release: 'i-carbon-walk',
+  release: 'i-carbon-arrow-right',
   putMosquito: 'i-carbon-pest',
   cleanFriend: 'i-carbon-user-multiple',
 }

@@ -49,16 +49,27 @@ const filter = reactive({
   module: '',
   event: '',
   keyword: '',
+  level: '',
 })
 
+const logLevels = [
+  { label: '所有级别', value: '' },
+  { label: '常规', value: 'info' },
+  { label: '警告', value: 'warn' },
+  { label: '错误', value: 'error' },
+]
+
 const hasActiveLogFilter = computed(() =>
-  !!(filter.module || filter.event || filter.keyword),
+  !!(filter.module || filter.event || filter.keyword || filter.level),
 )
 
 const filteredLogs = computed(() => allLogs.value.filter(log => matchesRuntimeLog(log, filter)))
 
 // 老版本日志面板：同类日志 2 分钟窗口内合并为一条（×N + 时间区间）。
 const visibleLogs = computed(() => compactRuntimeLogs(filteredLogs.value))
+
+/** 日志行展示：先按模块/事件/关键词过滤并合并重复，再按级别筛一层。 */
+const displayLogs = computed(() => visibleLogs.value.filter(log => !filter.level || log.level === filter.level))
 
 const logSummary = computed(() => {
   const counts = { info: 0, warn: 0, error: 0 }
@@ -414,7 +425,7 @@ function formatLogTime(timeStr: string, ts?: number) {
     const pad = (v: number) => String(v).padStart(2, '0')
     return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
   }
-  // 2024/5/20 12:34:56 -> 12:34:56
+  // 2024/5/20 12-34-56 -> 12-34-56
   if (!timeStr)
     return ''
   const parts = timeStr.split(' ')
@@ -892,111 +903,72 @@ useIntervalFn(updateCountdowns, 1000)
     <div class="flex flex-1 flex-col items-stretch gap-6 md:flex-row">
       <!-- Logs (Left Column) -->
       <div class="flex flex-1 flex-col gap-6 md:w-3/4">
-        <!-- Logs（老版本运行日志面板移植） -->
-        <section class="dashboard-logs farm-card" aria-label="运行日志">
-          <header class="dashboard-log-header">
-            <div class="dashboard-log-heading">
-              <span class="i-carbon-terminal" aria-hidden="true" />
-              <h3>运行日志</h3>
-              <span class="dashboard-log-sync">{{ syncLabel }}</span>
-            </div>
-            <div class="dashboard-log-tools">
-              <BaseButton
-                variant="ghost"
-                size="sm"
-                title="刷新日志"
-                aria-label="刷新日志"
-                :loading="refreshingLogs"
-                @click="refreshRuntimeLogs"
-              >
-                <span class="i-carbon-renew" aria-hidden="true" />
-              </BaseButton>
-              <BaseButton
-                variant="ghost"
-                size="sm"
-                title="清空当前账号运行日志"
-                aria-label="清空当前账号运行日志"
-                :loading="clearingLogs"
-                @click="clearLogs"
-              >
-                <span class="i-carbon-trash-can" aria-hidden="true" />
-              </BaseButton>
-            </div>
-          </header>
-          <div class="dashboard-log-toolbar">
-            <BaseInput
-              v-model="filter.keyword"
-              placeholder="搜索日志内容"
-              aria-label="搜索日志内容"
-              class="dashboard-log-search"
-              clearable
-              @keyup.enter="onLogSearchTrigger"
-              @clear="onLogSearchTrigger"
-            />
+        <!-- 运行日志（liyang 版布局：标题 + 四列筛选 + 紧凑日志行） -->
+        <div class="flex flex-1 flex-col farm-card rounded-2xl bg-white p-5 shadow-md md:overflow-hidden dark:bg-gray-800">
+          <div class="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <h3 class="flex shrink-0 items-center gap-2 whitespace-nowrap text-lg font-bold">
+              <span class="i-carbon-document" /> <span>运行日志</span>
+              <span class="dashboard-sync" :class="{ 'is-online': checksReady }"><span class="dashboard-sync-dot" />{{ syncLabel }}</span>
+            </h3>
 
-            <div class="dashboard-log-module">
-              <BaseSelect
-                v-model="filter.module"
-                :options="modules"
-                placeholder="筛选模块"
-                @change="onLogFilterChange"
+            <div class="log-filters">
+              <BaseSelect v-model="filter.module" :options="modules" @change="onLogFilterChange" />
+              <BaseSelect v-model="filter.event" :options="events" @change="onLogFilterChange" />
+              <BaseSelect v-model="filter.level" :options="logLevels" @change="onLogFilterChange" />
+              <BaseInput
+                v-model="filter.keyword"
+                placeholder="关键词"
+                clearable
+                @keyup.enter="onLogSearchTrigger"
+                @clear="onLogSearchTrigger"
               />
-            </div>
 
-            <div class="dashboard-log-event">
-              <BaseSelect
-                v-model="filter.event"
-                :options="events"
-                placeholder="筛选事件"
-                @change="onLogFilterChange"
-              />
-            </div>
+              <div class="log-filters__buttons">
+                <BaseButton
+                  variant="primary"
+                  class="log-filters__icon"
+                  title="搜索日志"
+                  aria-label="搜索日志"
+                  @click="onLogSearchTrigger"
+                >
+                  <span class="i-carbon-search" />
+                </BaseButton>
 
-            <BaseButton
-              v-if="hasActiveLogFilter"
-              class="dashboard-log-reset"
-              variant="ghost"
-              size="sm"
-              title="重置筛选"
-              aria-label="重置筛选"
-              @click="Object.assign(filter, { module: '', event: '', keyword: '' }); onLogFilterChange()"
-            >
-              <span class="i-carbon-filter-remove" aria-hidden="true" />
-            </BaseButton>
-          </div>
-          <div class="dashboard-log-summary">
-            <span>匹配记录 <strong>{{ logSummary.info + logSummary.warn + logSummary.error }}</strong></span>
-            <div class="dashboard-log-levels">
-              <span class="dashboard-log-level--info"><i />常规 <b>{{ logSummary.info }}</b></span>
-              <span class="dashboard-log-level--warn"><i />警告 <b>{{ logSummary.warn }}</b></span>
-              <span class="dashboard-log-level--error"><i />错误 <b>{{ logSummary.error }}</b></span>
+                <BaseButton
+                  variant="secondary"
+                  class="log-filters__icon"
+                  title="清空日志"
+                  aria-label="清空日志"
+                  :loading="clearingLogs"
+                  @click="clearLogs"
+                >
+                  <template #icon>
+                    <span class="i-carbon-trash-can" />
+                  </template>
+                </BaseButton>
+              </div>
             </div>
           </div>
-          <div class="dashboard-log-columns" aria-hidden="true">
-            <span>时间</span><span>模块与事件</span><span>运行记录</span>
-          </div>
-          <div ref="logContainer" class="dashboard-log-scroll" tabindex="0" aria-label="运行日志列表" @scroll="onLogScroll">
-            <div v-if="!currentAccountId || !visibleLogs.length" class="dashboard-log-empty">
-              <span class="i-carbon-document-blank" aria-hidden="true" />
-              <p>{{ !currentAccountId ? '尚未选择账号' : hasActiveLogFilter ? '没有符合条件的日志' : '暂无日志' }}</p>
+
+          <div ref="logContainer" class="log-list max-h-[50vh] min-h-0 flex-1 overflow-y-auto" @scroll="onLogScroll">
+            <div v-if="!displayLogs.length" class="py-8 text-center text-gray-400">
+              {{ !currentAccountId ? '尚未选择账号' : hasActiveLogFilter ? '没有符合条件的日志' : '暂无日志' }}
             </div>
             <div
-              v-for="log in visibleLogs"
+              v-for="log in displayLogs"
               :key="log.id"
-              class="dashboard-log-row"
-              :data-level="log.level"
-              :class="getLogRowClass(log)"
+              class="log-row"
+              :class="`log-row--${log.level === 'info' ? 'success' : log.level}`"
             >
-              <span class="dashboard-log-time">{{ formatLogTimeRange(log) }}</span>
-              <div class="dashboard-log-meta">
-                <span class="dashboard-log-tag" :class="getLogTagClass(log.tag)">{{ log.tag }}</span>
-                <span v-if="log.event && log.source !== 'account'" class="dashboard-log-event">{{ getEventLabel(log.event) }}</span>
-              </div>
-              <p class="dashboard-log-message" :class="getLogMsgClass(log.tag)">
-                <span v-if="log.level === 'error' || log.level === 'warn'" class="dashboard-log-severity" :title="log.level === 'error' ? '错误' : '警告'" :aria-label="log.level === 'error' ? '错误' : '警告'"><span :class="log.level === 'error' ? 'i-carbon-error-filled' : 'i-carbon-warning-filled'" aria-hidden="true" /></span>
-                {{ log.msg }}
-                <span v-if="(log.repeatCount || 1) > 1" class="dashboard-log-repeat" :title="`连续重复 ${log.repeatCount} 次`">×{{ log.repeatCount }}</span>
-              </p>
+              <span class="log-row__time">{{ formatLogTimeRange(log) }}</span>
+              <span class="log-row__tag">{{ log.tag }}</span>
+              <span class="log-row__body">
+                <span v-if="log.event && log.source !== 'account'" class="log-row__event">{{ getEventLabel(log.event) }}</span>
+                <span class="log-row__msg">{{ log.msg }}</span>
+                <span v-if="(log.repeatCount || 1) > 1" class="log-row__repeat" :title="`连续重复 ${log.repeatCount} 次`">
+                  ×{{ log.repeatCount }}
+                </span>
+              </span>
             </div>
 
             <button
@@ -1009,13 +981,7 @@ useIntervalFn(updateCountdowns, 1000)
               {{ pendingLogCount }} 条新日志
             </button>
           </div>
-          <footer class="dashboard-log-footer">
-            <span class="dashboard-log-follow" :class="{ 'is-following': autoScroll }"><i />{{ autoScroll ? '跟随最新记录' : '正在查看历史记录' }}</span>
-            <button type="button" :disabled="!currentAccountId || !visibleLogs.length" title="跳到最新日志" @click="scrollToBottom">
-              <span class="i-carbon-arrow-down" aria-hidden="true" />最新记录
-            </button>
-          </footer>
-        </section>
+        </div>
       </div>
 
       <!-- Right Column Stack -->
@@ -2074,6 +2040,142 @@ useIntervalFn(updateCountdowns, 1000)
 
   .dashboard-log-footer {
     padding: 8px 12px;
+  }
+}
+
+/* ── 运行日志（liyang 版样式）──────────────────────────────────────── */
+.log-filters {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.log-filters__buttons {
+  display: flex;
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.log-filters__icon {
+  width: 38px;
+  min-width: 38px;
+  height: 38px;
+  padding: 0 !important;
+}
+
+@media (min-width: 640px) {
+  .log-filters {
+    grid-template-columns: repeat(4, minmax(0, 8.5rem)) auto;
+    align-items: center;
+  }
+
+  .log-filters__buttons {
+    grid-column: auto;
+  }
+}
+
+.log-list {
+  padding: 6px;
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-surface-soft);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.log-row {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 8px 5px 10px;
+  border-left: 3px solid transparent;
+  border-radius: 6px;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 28px;
+}
+
+.log-row + .log-row {
+  margin-top: 2px;
+}
+
+.log-row__time {
+  color: var(--ui-subtle);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.log-row__tag {
+  min-width: 2.5em;
+  color: var(--ui-muted);
+  font-size: 12px;
+  font-weight: var(--fw-600);
+  white-space: nowrap;
+}
+
+.log-row__body {
+  min-width: 0;
+  color: var(--ui-ink);
+  overflow-wrap: anywhere;
+}
+
+.log-row__event {
+  margin-right: 6px;
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+
+.log-row__event::after {
+  margin-left: 6px;
+  color: var(--ui-subtle);
+  content: '·';
+}
+
+.log-row__repeat {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--ui-surface-strong);
+  color: var(--ui-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.log-row--success {
+  border-left-color: var(--ui-primary);
+}
+
+.log-row--warn {
+  border-left-color: var(--ui-warning);
+  background: color-mix(in srgb, var(--ui-warning-soft) 70%, transparent);
+}
+
+.log-row--warn .log-row__tag {
+  color: var(--ui-warning);
+}
+
+.log-row--error {
+  border-left-color: var(--ui-danger);
+  background: color-mix(in srgb, var(--ui-danger-soft) 80%, transparent);
+}
+
+.log-row--error .log-row__tag,
+.log-row--error .log-row__msg {
+  color: var(--ui-danger);
+}
+
+@media (max-width: 640px) {
+  .log-row {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 2px 8px;
+  }
+
+  .log-row__body {
+    grid-column: 1 / -1;
   }
 }
 </style>

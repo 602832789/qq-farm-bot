@@ -10,6 +10,7 @@ import EmptyState from '@/components/ui/EmptyState.vue'
 import { getPlatformLabel, useAccountStore } from '@/stores/account'
 import { useRanchStore } from '@/stores/ranch'
 import { useStatusStore } from '@/stores/status'
+import { formatCouponAmount, formatGoldAmount, formatGoldBeanAmount } from '@/utils/number-format'
 import { ranchActionIcons, ranchActionLabels, ranchTodayOperations } from '@/utils/ranch-display'
 
 const accountStore = useAccountStore()
@@ -51,7 +52,20 @@ const expHint = computed(() => {
 })
 
 const currency = (id: number) => state.value?.currencies?.find((c: any) => Number(c.id) === id)
-const assetTiles = computed(() => [1007, 1002, 1005, 1008].map(id => currency(id)).filter(Boolean))
+// 金券 / 点券 / 金豆豆 / 松果：单位与农场首页的金额口径保持一致（万、亿自动缩写）。
+const ASSET_FORMATTERS: Record<number, (value: unknown) => string> = {
+  1007: formatGoldAmount,
+  1002: formatCouponAmount,
+  1005: formatGoldBeanAmount,
+  1008: formatGoldAmount,
+}
+const assetTiles = computed(() => [1007, 1002, 1005, 1008]
+  .map(id => currency(id))
+  .filter(Boolean)
+  .map((item: any) => ({
+    ...item,
+    display: (ASSET_FORMATTERS[Number(item.id)] || formatCount)(item.count),
+  })))
 const stockTiles = computed(() => {
   const buckets = BUCKETS.map(bucket => ({
     key: bucket.id,
@@ -75,10 +89,11 @@ const now = ref(Date.now())
 const ticker = window.setInterval(() => { now.value = Date.now() }, 1000)
 onBeforeUnmount(() => window.clearInterval(ticker))
 
+// 与桌面副本一致：牧场 / 帮助 / 偷取
 const RANCH_CHECKS = [
-  { key: 'task', label: '任务', icon: 'i-carbon-task', color: '#22c55e' },
-  { key: 'share', label: '分享', icon: 'i-carbon-share', color: '#3b82f6' },
-  { key: 'benefit', label: '福利', icon: 'i-carbon-gift', color: '#f97316' },
+  { key: 'farm', label: '牧场', icon: 'i-fas-paw', color: '#22c55e' },
+  { key: 'help', label: '帮助', icon: 'i-carbon-user-multiple', color: '#3b82f6' },
+  { key: 'steal', label: '偷取', icon: 'i-carbon-run', color: '#f97316' },
 ]
 
 function formatCountdown(seconds: number) {
@@ -175,7 +190,7 @@ const operationEntries = computed(() => Object.entries(todayOperations.value).fi
           <div class="ov-tiles">
             <div v-for="item in assetTiles" :key="item.id" class="ov-tile">
               <span class="ov-tile__label"><img class="ov-tile__img" :src="item.image" alt="">{{ item.name }}</span>
-              <strong class="ov-tile__value" :title="formatCount(item.count)">{{ formatCount(item.count) }}</strong>
+              <strong class="ov-tile__value" :title="item.display">{{ item.display }}</strong>
             </div>
           </div>
         </section>

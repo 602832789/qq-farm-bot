@@ -3,7 +3,7 @@ import type { ActivityTab } from '@/components/activity/BottomNav.vue'
 import type { ActivityDirectoryItemDto, ActivityGameplayKey } from '@/stores/activity-center'
 import { useNotification } from 'naive-ui/es/notification'
 import { storeToRefs } from 'pinia'
-import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { resolveActivityGameplay } from '@/components/activity/gameplays'
 import ShareRewardActivity from '@/components/activity/ShareRewardActivity.vue'
@@ -23,7 +23,7 @@ import StellarActivityPage from './activity-center/StellarActivityPage.vue'
 import WeatherActivityPage from './activity-center/WeatherActivityPage.vue'
 import SolarCalendarPage from './SolarCalendar.vue'
 
-const MilkTeaPage = defineAsyncComponent(() => import('@/components/activity/MilkTeaActivityPanel.vue'))
+import MilkTeaPage from './activity-center/MilkTeaPage.vue'
 
 type CenterActivity = ActivityGameplayKey | 'solar'
 

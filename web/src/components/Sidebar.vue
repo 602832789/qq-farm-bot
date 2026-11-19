@@ -5,7 +5,6 @@ import { storeToRefs } from 'pinia'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/api'
-import ThemePalette from '@/components/ThemePalette.vue'
 import ThemeSwitcher from '@/components/ThemeSwitcher.vue'
 import { isMenuActive, menuLink, visibleMenuRoutes } from '@/router/menu'
 import { isRanchMenuActive, ranchMenu } from '@/router/ranch-menu'
@@ -286,10 +285,7 @@ watch(
       </div>
       <div class="mt-3 flex items-center justify-between gap-1">
         <span class="text-[11px] text-[var(--muted-text)] tabular-nums">{{ formattedTime }}</span>
-        <div class="flex items-center gap-0.5">
-          <ThemePalette />
-          <ThemeSwitcher />
-        </div>
+        <ThemeSwitcher />
       </div>
       <div class="mt-2 flex items-center justify-between text-[11px] text-[var(--muted-text)]">
         <span>{{ versionLabel }}</span>
@@ -415,10 +411,10 @@ watch(
   position: relative;
   display: flex;
   align-items: center;
-  gap: 12px;
-  min-height: 44px;
+  gap: 10px;
+  min-height: 40px;
   margin-bottom: 2px;
-  padding: 6px 8px;
+  padding: 4px 8px;
   border-radius: 12px;
   color: var(--theme-text);
   font-size: 14px;
@@ -433,13 +429,13 @@ watch(
 }
 .farm-nav-icon {
   display: inline-grid;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   flex: none;
   place-items: center;
-  border-radius: 9px;
+  border-radius: 8px;
   color: color-mix(in srgb, var(--theme-text) 62%, transparent);
-  font-size: 22px;
+  font-size: 19px;
   transition:
     background 150ms ease,
     color 150ms ease;

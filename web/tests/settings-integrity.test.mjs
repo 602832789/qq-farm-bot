@@ -17,23 +17,30 @@ const configTypes = read('../../core/src/types/config.ts')
 // 回归：PR #122 手工合并时给 activity 加了一个只放「每日邮箱奖励」的 v-else-if，
 // 把原本靠末尾 v-else 渲染的「日常任务 / 节令小札 / 快乐不独享 / 收藏图鉴 / 奶茶」
 // 整块挤成永远不可达的死代码。
-test('「日常与活动」配置面板必须同时包含邮箱时刻和全部活动开关', () => {
-  assert.equal((featureSettings.match(/v-else-if="activeModule === 'activity'"/g) || []).length, 1)
+test('日常与活动拆成两个面板：日常放邮箱/任务/宠物/图鉴，活动只放活动开关', () => {
+  assert.equal((featureSettings.match(/v-else-if="activeModule === 'daily'"/g) || []).length, 1)
+  assert.equal((featureSettings.match(/v-else-if="activeModule === 'events'"/g) || []).length, 1)
   assert.doesNotMatch(featureSettings, /<div v-else class="space-y-4">/, '末尾兜底分支不能变成不可达死代码')
-  const start = featureSettings.indexOf(`<div v-else-if="activeModule === 'activity'"`)
-  const branch = featureSettings.slice(start)
+
+  const dailyStart = featureSettings.indexOf(`<div v-else-if="activeModule === 'daily'"`)
+  const eventsStart = featureSettings.indexOf(`<div v-else-if="activeModule === 'events'"`)
+  const daily = featureSettings.slice(dailyStart, eventsStart)
+  const events = featureSettings.slice(eventsStart)
+
   for (const marker of [
     '每日邮箱奖励',
     'automation.emailClaimHour',
     'automation.automation.task',
     'automation.automation.task_after_farm',
-    'star_solar_claim',
-    'share_reward_share',
+    'pet_feed_dog_food',
     'illustrated_auto_claim_rewards',
-    'MilkTeaActivityPanel',
-  ]) {
-    assert.ok(branch.includes(marker), `activity 分支缺少 ${marker}`)
-  }
+  ])
+    assert.ok(daily.includes(marker), `daily 分支缺少 ${marker}`)
+
+  for (const marker of ['star_solar_claim', 'share_reward_share', 'MilkTeaActivityPanel'])
+    assert.ok(events.includes(marker), `events 分支缺少 ${marker}`)
+  for (const marker of ['emailClaimHour', 'pet_feed_dog_food', 'illustrated_auto_claim_rewards'])
+    assert.ok(!events.includes(marker), `活动面板里不应再有 ${marker}`)
 })
 
 // 回归：黄金虫「保留数量 / 单轮上限」两个输入框此前只在 UI 上存在，

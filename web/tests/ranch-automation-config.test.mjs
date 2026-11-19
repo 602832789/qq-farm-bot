@@ -57,12 +57,13 @@ test('牧场开关清单与后端、前端两份默认值逐 key、逐值一致'
   assert.deepEqual(webSwitches.map(item => item.key).sort(), [...backendSwitchKeys].sort())
 })
 
-test('卡片总开关只恢复后端默认里本就为 true 的动作', () => {
+test('牧场按分组拆卡：每张卡只动自己那批开关', () => {
   const defaultOn = Object.keys(backendDefaults).filter(key => backendDefaults[key] === true)
   assert.deepEqual(defaultOn.sort(), ['ranch_share', 'ranch_task'])
-  // 设置页据此判定：关闭时清空全部动作，开启时只恢复默认开启的两项。
-  assert.match(settingsSource, /isRanchSwitchDefaultOn\(item\.key\)/)
-  assert.match(settingsSource, /for \(const item of RANCH_AUTOMATION_SWITCHES\)/)
+  // 分组卡：开启只影响本组开关，关闭同样只清本组，不会波及其它模块。
+  assert.match(settingsSource, /const RANCH_MODULE_SWITCHES: Record<string, string\[\]>/)
+  assert.match(settingsSource, /for \(const switchKey of RANCH_MODULE_SWITCHES\[key\]!\)/)
+  assert.match(settingsSource, /automation\.value\.automation\[switchKey\] = enabled/)
 })
 
 test('分组覆盖全部开关且不重复，好友组与后端 FRIEND_CONTROLS 同一批开关', () => {
@@ -107,6 +108,11 @@ test('窝与棚的指定动物按后端 kind 判定', () => {
 
 test('设置页与开关清单来自同一份常量，避免新增开关漏挂卡片', () => {
   assert.match(settingsSource, /RANCH_AUTOMATION_SWITCHES/)
-  assert.match(settingsSource, /RANCH_AUTOMATION_GROUPS/)
-  assert.match(settingsSource, /activeModule === 'ranch'/)
+  assert.match(settingsSource, /RANCH_MODULE_SWITCHES/)
+  assert.match(settingsSource, /activeModule\.startsWith\('ranch_'\)/)
+  // 六个分组必须把全部开关都挂上，缺一个就说明新开关没进任何卡片。
+  const groups = settingsSource.match(/const RANCH_MODULE_SWITCHES[\s\S]*?\n\}/)?.[0] || ''
+  const covered = [...groups.matchAll(/'(ranch_[a-z_]+)'/g)].map(match => match[1])
+  const missing = webSwitches.map(item => item.key).filter(key => !covered.includes(key))
+  assert.deepEqual(missing, [], `这些开关没有挂进任何牧场卡片：${missing.join(', ')}`)
 })

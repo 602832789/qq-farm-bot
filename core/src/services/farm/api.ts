@@ -247,7 +247,9 @@ async function fertilize(landIds: number[], fertilizerId: number = NORMAL_FERTIL
     let successCount: number = 0;
     const fertilizerType: 'normal' | 'organic' = Number(fertilizerId) === 1012 ? 'organic' : 'normal';
     let refillAttempted: boolean = false;
+    let stop = false;
     for (const landId of landIds) {
+        if (stop) break;
         for (let attempt = 0; attempt < 2; attempt++) {
             try {
                 const body = types.FertilizeRequest.encode(types.FertilizeRequest.create({
@@ -266,6 +268,7 @@ async function fertilize(landIds: number[], fertilizerId: number = NORMAL_FERTIL
                     if (refilled) continue;
                 }
                 if (isSkippableFertilizeLandError(error)) {
+                    // 这块地当前不能施（阶段不符 / 已用过化肥）：跳过，继续下一块。
                     log('施肥', `第 ${landId} 块地当前不能施肥，已跳过`, {
                         module: 'farm',
                         event: '施肥',
@@ -273,8 +276,10 @@ async function fertilize(landIds: number[], fertilizerId: number = NORMAL_FERTIL
                         landId,
                         code,
                     });
-                } else if (propagateErrors) {
-                    throw error;
+                } else {
+                    if (propagateErrors) throw error;
+                    // 其它错误（含补货失败）按原逻辑整轮停手，不换下一块继续推进。
+                    stop = true;
                 }
                 break;
             }
