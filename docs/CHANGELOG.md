@@ -15,6 +15,7 @@
 
 | 版本 | 更新序号 | 日期 | 更新内容 | 提交 |
 | --- | --- | --- | --- | --- |
+| v3.29.0 | #196 | 2026-11-19 | 以 liyangpengs 最新版为基底接入牧场新玩法与木革活动，保留本地全部闸门 | — |
 | v3.28.1 | #195 | 2026-11-17 | 牧场顶部资产条改用牧场自身数据，不再借用农场资产 | — |
 | v3.28.0 | #193 | 2026-11-17 | 牧场栏舍新增场景视图：动物形象、状态倒计时与就地操作 | — |
 | v3.27.1 | #192 | 2026-11-17 | 牧场日志改用「牧场」标签，设置页隐藏已结束活动，牧场页补资产条 | — |
@@ -199,6 +200,15 @@ flowchart TB
 ```
 
 ## 详细记录
+
+### 2026-11-19 · v3.29.0（#196） · 以 liyangpengs 最新版为基底接入牧场新玩法与木革活动，保留本地全部闸门
+
+- **基底策略**：以 liyangpengs `95911d3`（2026-11-19）为后端基底，前端保持本地这套（我的牧场页 / 场景视图 / 牧场资产条 / 场景开关）。换基底前已打标签 `backup-before-liyang-base-20261119-144024`，可随时回退到 v3.28.1。
+- **后端采纳**：liyang 的 ranch 服务全套（actions / automation / book / daily / friends / model / state / transport），新增 `friend-roster`（按场景同步好友名单）、`daily-benefit`（每日福利）、`ranch-animals` 配置；muge 活动服务 + proto + 活动数据；`ranch_market_organic`（松果兑换有机化肥）、`ranch_grass_threshold_percent`、窝/棚幼崽优先级等新配置项；化肥催熟策略 `ripening.ts`。
+- **本地加固保留**：`RANCH_AUTOMATION_DEFAULTS` 采用 liyang 的字段结构但保留本地口径——只有 `ranch_task` / `ranch_share` 默认开启，新增动作默认关闭，避免一升级就自动大量购买 / 互动；`commerce-routes` 的 `readId` 输入守卫、日志 `ranch` 标签、请求守卫、全部测试闸门均未回退。
+- **适配层**：本地 `gid-manager` 补 `fetchFriendsByGids` / `fetchAllFriendsForScene` / `QQ_FRIEND_LIST_BATCH_SIZE` 三个导出供新好友名单使用；muge 走完整链路（worker case → provider → 路由 → 活动注册表 → 前端页面），前端新增 `MugePage` 与 `muge` store，活动目录能识别并展示 muge 入口。
+- **未采纳**：liyang 的插件系统与多用户卡密体系（与本地单用户架构冲突），`rate-limiter` / `security` / `randomdrop` 三个未接入文件已移除，避免死代码。
+- **验证**：`pnpm verify` 全绿（core 956 / web 326 + lint + typecheck），`pnpm build` 通过，`pnpm test:smoke` 真实启动 0 失败。
 
 ### 2026-11-17 · v3.28.1（#195） · 牧场顶部资产条改用牧场自身数据，不再借用农场资产
 

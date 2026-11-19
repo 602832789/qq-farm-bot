@@ -15,7 +15,7 @@ const {
 const { getInteractRecords } = require('../interact');
 
 // ============ 内部常量与状态 ============
-const QQ_FRIEND_LIST_BATCH_SIZE: number = 35;
+export const QQ_FRIEND_LIST_BATCH_SIZE: number = 35;
 const DEFAULT_QQ_VISITOR_GID_SYNC_INTERVAL_MS: number = 10 * 60 * 1000;
 const MIN_QQ_VISITOR_GID_SYNC_RETRY_MS: number = 30 * 1000;
 const MAX_QQ_VISITOR_GID_SYNC_RETRY_MS: number = 2 * 60 * 1000;
@@ -246,6 +246,32 @@ export function removeKnownFriendGid(friendGid: any, friendName?: string, reason
         reason: String(reason || ''),
     });
     return true;
+}
+
+/**
+ * 按场景读取指定 GID 的好友名单（从 liyang 版移植，适配本地请求封装）。
+ * sceneId=1 农场 / 2 牧场；牧场好友同步必须带 global_scene_id，否则拿到的是农场名单。
+ */
+export async function fetchFriendsByGids(gids: number[], sceneId: 1 | 2, priority: 'low' | 'normal' = 'normal'): Promise<any[]> {
+    if (!types.GetGameFriendsRequest || !types.GetAllFriendsReply)
+        throw new Error('GetGameFriends 接口类型未加载');
+    if (gids.length === 0)
+        return [];
+    const body: Uint8Array = types.GetGameFriendsRequest.encode(types.GetGameFriendsRequest.create({
+        gids: gids.map((gid: number) => toLong(gid)),
+        global_scene_id: sceneId,
+    })).finish();
+    const { body: replyBody } = await sendMsgAsync('gamepb.friendpb.FriendService', 'GetGameFriends', body, { priority });
+    return extractReplyFriends(types.GetAllFriendsReply.decode(replyBody));
+}
+
+/** 按场景拉取全量好友回包（用于牧场侧按 big_farm_status 过滤）。 */
+export async function fetchAllFriendsForScene(sceneId: 1 | 2, priority: 'low' | 'normal' = 'normal'): Promise<any> {
+    if (!types.GetAllFriendsRequest || !types.GetAllFriendsReply)
+        throw new Error('GetAll 接口类型未加载');
+    const body: Uint8Array = types.GetAllFriendsRequest.encode(types.GetAllFriendsRequest.create({ global_scene_id: sceneId })).finish();
+    const { body: replyBody } = await sendMsgAsync('gamepb.friendpb.FriendService', 'GetAll', body, { priority });
+    return types.GetAllFriendsReply.decode(replyBody);
 }
 
 export async function fetchQqFriendsByKnownGids(priority: 'low' | 'normal' = 'normal'): Promise<any[]> {

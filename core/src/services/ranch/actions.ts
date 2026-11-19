@@ -1,8 +1,8 @@
 export {};
 
 const { rpc, inScene } = require('./transport');
-const { loadRaw, snapshot, balance, taskList, catalog, market, canCatalog, resourceBalance } = require('./state');
-const { animalMap, cubMap, canMap, facilityMap, itemMap, error, positiveId, positiveCount, quantity, itemDto, sumItems, signature } = require('./model');
+const { loadRaw, snapshot, balance, taskList, catalog, market, canCatalog, resourceBalance, salePrices } = require('./state');
+const { animalMap, cubMap, canMap, facilityMap, itemMap, taskMap, error, positiveId, positiveCount, quantity, itemDto, sumItems, signature } = require('./model');
 const reservations = require('./operation-state');
 const { getServerTimeSec } = require('../../utils/utils');
 
@@ -31,6 +31,12 @@ function animalRefs(animals: any[]): any[] {
     return animals.map(animal => ({ ranch_inst_id: quantity(animal.ranch_inst_id), animal_inst_id: animal.animal_inst_id }));
 }
 
+function isClientReportedTask(task: any): boolean {
+    if (!task?.unlocked || task.claimed) return false;
+    if (BigInt(task.total) <= 0n || BigInt(task.progress) >= BigInt(task.total)) return false;
+    return taskMap.get(Number(task.id))?.condition === '客户端上报进度';
+}
+
 async function planAction(action: string, input: any, raw: any): Promise<any> {
     if (!ACTIONS.includes(action)) throw error('INVALID_ARGUMENT', '不支持的牧场操作');
     const plan: any = { action, label: LABELS[action], route: action, payload: {}, costItems: [], marker: null, expectedRewards: [], count: 1 };
@@ -51,6 +57,7 @@ async function planAction(action: string, input: any, raw: any): Promise<any> {
         plan.payload = { goods_id: goodsId, num: count, price: good.price.count, auto_add: input.autoPlace === true };
         plan.costItems = [itemDto({ id: good.price.id, count: BigInt(good.price.count) * BigInt(count) })];
         plan.expectedRewards = [itemDto({ id: good.reward.id, count: BigInt(good.reward.count) * BigInt(count) })];
+        plan.label = `购买${plan.expectedRewards[0].name} ×${plan.expectedRewards[0].count}`;
         plan.marker = shop.shopId;
     } else if (action === 'buyCan') {
         const current = await canCatalog(raw, Number(input.slotType ?? 6));
@@ -73,6 +80,7 @@ async function planAction(action: string, input: any, raw: any): Promise<any> {
         if (count > ranch.capacity - ranch.animal_count) throw error('RANCH_FULL', '窝或棚的空位不足');
         plan.payload = { items: Array.from({ length: count }, () => ({ ranch_inst_id: ranchId, animal_id: animal.id, giant_cub_item_id: animal.giantCubItemId })) };
         plan.costItems = [itemDto({ id: itemId, count })];
+        plan.label = `放养${plan.costItems[0].name} ×${count}`;
         plan.marker = { ranchId, animalId: animal.id, capacity: ranch.capacity, occupied: ranch.animal_count };
         plan.count = count;
     } else if (action === 'addGrass') {
@@ -142,15 +150,26 @@ async function planAction(action: string, input: any, raw: any): Promise<any> {
         plan.resultKeys = plan.marker;
         plan.count = plan.marker.length;
     } else if (action === 'sell') {
-        const requested = input.all === true ? raw.bag.physical_items.filter((item: any) => [106, 107].includes(itemMap.get(Number(item.id))?.type) && !item.is_locked && item.show?.sells.length && !item.show.sell_cond.length).map((item: any) => ({ uid: quantity(item.uid), count: quantity(item.count) })) : [{ uid: positiveId(input.uid, '物品批次'), count: positiveCount(input.count) }];
-        plan.payload.items = requested.map((entry: any) => {
-            const item = raw.bag.physical_items.find((row: any) => quantity(row.uid) === entry.uid);
-            if (!item || item.is_locked || ![106, 107].includes(itemMap.get(Number(item.id))?.type) || !item.show?.sells.length || item.show.sell_cond.length || BigInt(quantity(item.count)) < BigInt(entry.count)) throw error('RANCH_ITEM_UNAVAILABLE', '产物库存、锁定或出售条件已变化');
-            plan.expectedRewards.push(...item.show.sells.map((price: any) => itemDto({ id: price.id, count: BigInt(quantity(price.count)) * BigInt(entry.count) })));
-            return { id: quantity(item.id), uid: entry.uid, count: entry.count };
+        let requested: Array<{ item: any; count: string | number; prices: any[] }>;
+        if (input.all === true) {
+            requested = raw.bag.physical_items.filter((item: any) => [106, 107].includes(itemMap.get(Number(item.id))?.type))
+                .map((item: any) => ({ item, count: quantity(item.count), prices: salePrices(item) }))
+                .filter((entry: any) => entry.prices.length);
+        } else {
+            const uid = positiveId(input.uid, '物品批次');
+            const count = positiveCount(input.count);
+            const item = raw.bag.physical_items.find((row: any) => quantity(row.uid) === uid);
+            const prices = item && salePrices(item);
+            if (!prices?.length || BigInt(quantity(item.count)) < BigInt(count)) throw error('RANCH_ITEM_UNAVAILABLE', '物品库存、锁定或出售条件已变化');
+            requested = [{ item, count, prices }];
+        }
+        plan.payload.items = requested.map(({ item, count, prices }) => {
+            plan.expectedRewards.push(...prices.map((price: any) => itemDto({ id: price.id, count: BigInt(quantity(price.count)) * BigInt(count) })));
+            return { id: quantity(item.id), uid: quantity(item.uid), count };
         });
         plan.costItems = plan.payload.items.map(itemDto);
         plan.count = requested.length;
+        if (input.all !== true) plan.label = `出售${plan.costItems[0].name} ×${plan.costItems[0].count}`;
     } else if (action === 'upgrade' || action === 'completeUpgrade') {
         const id = positiveId(input.facilityId, '牧场设施');
         const facility = raw.cells.facilities.find((row: any) => quantity(row.instance_id) === id && [6, 7, 8].includes(row.module_type));
@@ -187,13 +206,15 @@ async function planAction(action: string, input: any, raw: any): Promise<any> {
     } else if (action === 'reportEntry') {
         if (input.entry !== 'friends') throw error('INVALID_ARGUMENT', '该任务入口尚未验证');
         const tasks = taskList(await rpc('tasks', { global_scene_id: 2 }));
-        const task = tasks.find((entry: any) => entry.id === '300008');
-        plan.count = task?.unlocked && !task.claimed && BigInt(task.progress) < BigInt(task.total) ? 1 : 0;
-        plan.payload = { task_id: '300008', progress: task?.total || '1' };
+        plan.reportTasks = tasks.filter((task: any) => isClientReportedTask(task))
+            .map((task: any) => ({ id: task.id, progress: task.total }));
+        plan.payload = plan.reportTasks.map((task: any) => ({ task_id: task.id, progress: task.progress }));
         plan.route = 'reportTask';
-        plan.marker = 'friends';
+        plan.marker = plan.reportTasks.map((task: any) => task.id);
+        plan.count = plan.reportTasks.length;
     } else if (action === 'claimIllustrated') {
         plan.bookClaim = await require('./book').prepareBookClaim(input.kind);
+        plan.label = plan.bookClaim.kind === 'normal' ? '领取牧场普通图鉴奖励' : '领取牧场巨大图鉴奖励';
         plan.marker = { kind: plan.bookClaim.kind, ids: plan.bookClaim.ids, rewards: plan.bookClaim.rewards };
         plan.expectedRewards = plan.bookClaim.rewards;
         plan.count = plan.bookClaim.count;
@@ -204,6 +225,10 @@ async function planAction(action: string, input: any, raw: any): Promise<any> {
         plan.expectedRewards = state.claimed ? [] : state.rewards;
     } else if (action === 'exchange') {
         const current = await market(raw);
+        if (input.marketRotation && (current.periodDay !== input.marketRotation.periodDay
+            || current.roundIndex !== input.marketRotation.roundIndex || getServerTimeSec() >= input.marketRotation.endsAt)) {
+            throw error('RANCH_OFFER_CHANGED', '集市场次已变化或已结束');
+        }
         const id = positiveId(input.goodsId, '兑换商品');
         const count = positiveCount(input.count);
         const good = current.goods.find((entry: any) => entry.id === id);
@@ -229,7 +254,7 @@ async function prepareAction(action: string, input: any = {}): Promise<any> {
     if (action === 'steal') return require('./friends').prepareSteal(input);
     if (['stroke', 'putMosquito', 'cleanFriend'].includes(action)) return require('./friends').prepareInteraction(action, input);
     return inScene(async (cells: any) => {
-        const plan = await planAction(action, input, await loadRaw(cells));
+        const plan = await planAction(action, input, action === 'claimIllustrated' ? null : await loadRaw(cells));
         return { action, label: plan.label, costs: plan.costs, costItems: plan.costItems, rewards: plan.expectedRewards, count: plan.count,
             expected: { signature: plan.signature }, skipped: plan.count === 0, message: plan.message };
     });
@@ -243,6 +268,7 @@ async function operate(action: string, input: any = {}): Promise<any> {
     if (['stroke', 'putMosquito', 'cleanFriend'].includes(action)) return require('./friends').interact(action, input);
     if (action === 'acknowledge') return inScene(async () => {
         reservations.forCurrentAccount().acknowledge(String(input.id));
+        require('./automation').resetSchedule();
         return { status: 'confirmed', refreshRequired: true, costs: [], rewards: [] };
     });
     if (action === 'steal') return require('./friends').steal(input);
@@ -260,6 +286,11 @@ async function operate(action: string, input: any = {}): Promise<any> {
             } else if (action === 'claimIllustrated') {
                 rewards = await require('./book').claimBook(plan.bookClaim);
                 reply = {};
+            } else if (action === 'reportEntry') {
+                for (const entry of plan.reportTasks) {
+                    reply = await rpc('reportTask', { task_id: entry.id, progress: entry.progress }, true);
+                    if (!taskList(reply).find((task: any) => task.id === entry.id)?.canClaim) unknown(action, '引导任务未完成');
+                }
             } else if (action === 'claimTasks') {
                 const allOrdinary = plan.marker.every((task: any) => task.multiple === 1);
                 if (plan.tasks.length > 1 && allOrdinary) {
@@ -305,8 +336,6 @@ async function operate(action: string, input: any = {}): Promise<any> {
                     if (quantity(reply.upgrade?.inst_id) !== plan.payload.inst_id || reply.upgrade.target_level !== plan.next.level || reply.upgrade.target_facility_id !== plan.next.facility_id) unknown(action, '建筑升级目标不匹配');
                 } else if (action === 'completeUpgrade') {
                     if (quantity(reply.facility?.instance_id) !== plan.payload.inst_id || reply.facility.level !== plan.next.level || reply.facility.facility_id !== plan.next.facility_id) unknown(action, '建筑等级不匹配');
-                } else if (action === 'reportEntry') {
-                    if (!taskList(reply).find((task: any) => task.id === '300008')?.canClaim) unknown(action, '引导任务未完成');
                 } else if (action === 'release') {
                     const target = plan.payload.targets[0];
                     const result = reply.op_results[0];
@@ -356,10 +385,11 @@ async function operate(action: string, input: any = {}): Promise<any> {
                 if (action === 'useCan' && BigInt(balance(after.bag, plan.bucketId).total) - BigInt(balance(before.bag, plan.bucketId).total) !== plan.expectedSeconds) unknown(action, '罐头桶增加时长不匹配');
             }
             const completed = reply.op_results?.length ?? plan.count;
-            const notice = action === 'release' ? `${plan.label}完成${rewards.length ? `，获得 ${sumItems(rewards).map((item: any) => `${item.name} ×${item.count}`).join('、')}` : ''}`
+            const notice = action === 'release' || action === 'sell' && input.all !== true ? `${plan.label}完成${rewards.length ? `，获得 ${sumItems(rewards).map((item: any) => `${item.name} ×${item.count}`).join('、')}` : ''}`
                 : plan.resultKeys && completed < plan.count ? `已完成 ${completed} / ${plan.count} 项，其余状态已变化，请刷新核对` : undefined;
             return { status: reply.alreadyClaimed ? 'skipped' : 'confirmed', snapshot: after ? snapshot(after) : null, refreshRequired: !after, costs: actualCosts, notice,
-                rewards: sumItems(rewards), completed: reply.op_results?.length ?? plan.count };
+                rewards: sumItems(rewards), completed,
+                harvestedAnimals: action === 'harvest' ? reply.op_results.filter((entry: any) => entry.kind === 1).length : 0 };
         });
     }));
 }

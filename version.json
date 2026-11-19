@@ -1,12 +1,20 @@
 {
   "major": 3,
-  "minor": 28,
-  "patch": 1,
-  "build": 195,
-  "version": "3.28.1",
-  "updatedAt": "2026-11-16T20:47:16.306Z",
+  "minor": 29,
+  "patch": 0,
+  "build": 196,
+  "version": "3.29.0",
+  "updatedAt": "2026-11-19T07:25:00.180Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.29.0",
+      "build": 196,
+      "date": "2026-11-19",
+      "summary": "以 liyangpengs 最新版为基底接入牧场新玩法与木革活动，保留本地全部闸门",
+      "commit": "—",
+      "type": "minor"
+    },
     {
       "version": "3.28.1",
       "build": 195,

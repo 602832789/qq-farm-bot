@@ -1572,6 +1572,12 @@ async function handleApiCall(msg: any): Promise<void> {
                 case 'getAutumnActivity':
                     result = await require('../services/autumn-activities').getAutumnActivity(args[0]);
                     break;
+                case 'getMugeActivity':
+                    result = await require('../services/muge-activity').getMugeActivity();
+                    break;
+                case 'operateMugeActivity':
+                    result = await require('../services/muge-activity').operateMugeActivity(args[0], args[1]);
+                    break;
                 case 'getMilkTeaActivity':
                     result = await require('../services/milk-tea').getMilkTeaActivity(args[0], args[1]);
                     break;

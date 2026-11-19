@@ -15,6 +15,7 @@ import { useFriendStore } from '@/stores/friend'
 import ActivityDirectoryPage from './activity-center/ActivityDirectoryPage.vue'
 import AutumnActivityPage from './activity-center/AutumnActivityPage.vue'
 import CharityActivityPage from './activity-center/CharityActivityPage.vue'
+import MugePage from './activity-center/MugePage.vue'
 import PetDiaryPage from './activity-center/PetDiaryPage.vue'
 import QingMeiActivityPage from './activity-center/QingMeiActivityPage.vue'
 import QixiActivityPage from './activity-center/QixiActivityPage.vue'
@@ -61,7 +62,7 @@ async function openActivity(activity: ActivityDirectoryItemDto) {
 /** 打开活动或切换账号后，为需要按账号拉取详情的活动重载数据；
  *  milk/wish/happy/pet/solar 页面自带账号监听，自行刷新。 */
 async function loadActivitySideData(key: CenterActivity) {
-  if (['pet', 'wish', 'happy', 'milk', 'solar'].includes(key))
+  if (['pet', 'wish', 'happy', 'milk', 'muge', 'solar'].includes(key))
     return
   const detailsLoaded = await activityStore.loadDetails(accountId(), key as ActivityGameplayKey)
   if (key === 'qixi' && currentAccountId.value) {
@@ -155,6 +156,7 @@ onUnmounted(() => {
     @open="openActivity"
     @open-solar="openSolarCalendar"
   />
+  <MugePage v-else-if="selectedActivity === 'muge'" @back="goBack" />
   <SolarCalendarPage v-else-if="selectedActivity === 'solar'" @back="goBack" />
   <MilkTeaPage v-else-if="selectedActivity === 'milk'" @back="goBack" />
   <ShareRewardActivity v-else-if="selectedActivity === 'happy'" :activity-id="selectedInstanceId" @back="goBack" />

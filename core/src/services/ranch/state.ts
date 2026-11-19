@@ -1,11 +1,20 @@
+import { getRanchFriendList } from './friend-roster';
+
 export {};
 
 const { rpc, inScene, isUnlocked } = require('./transport');
-const { animalMap, mutationMap, cubMap, canMap, facilityMap, itemMap, taskMap, itemDto, quantity, levelInfo, error } = require('./model');
+const { animalMap, mutationMap, cubMap, canMap, facilityMap, itemMap, taskMap, itemDto, pendingOperationView, quantity, levelInfo, error } = require('./model');
 const { getServerTimeSec } = require('../../utils/utils');
+const { types } = require('../../utils/proto');
 
 function bagItems(bag: any): any[] {
     return [...bag.physical_items, ...bag.virtual_items];
+}
+
+function salePrices(item: any): any[] {
+    if (item.is_locked || !item.show || item.show.sell_cond.length || BigInt(quantity(item.count)) <= 0n) return [];
+    const prices = item.show.sells;
+    return prices.every((price: any) => BigInt(quantity(price.id)) > 0n && BigInt(quantity(price.count)) > 0n) ? prices : [];
 }
 
 function balance(bag: any, id: number): any {
@@ -98,8 +107,9 @@ function inventory(raw: any): any[] {
         return {
             ...itemDto(item), uid: quantity(item.uid), locked: item.is_locked, tabId: Number(item.tab_id) || Number(metadata?.show_tab_ids) || 0,
             type: metadata?.type || 0, sellPrices: item.show?.sells?.map(itemDto) || [],
-            canSell: !item.is_locked && !!item.show?.sells?.length && !item.show.sell_cond.length && [106, 107].includes(metadata?.type),
+            canSell: salePrices(item).length > 0,
             can: canMap.get(Number(item.id)) || null, animalId: animal?.id || null, giantCub: !!animal?.giantCubItemId,
+            husbandryType: animal?.husbandry_type ?? null,
             product: item.item_detail?.ranch_product ? {
                 weightX10: item.item_detail.ranch_product.weight_x10, tier: item.item_detail.ranch_product.tier,
                 priceRate: quantity(item.item_detail.ranch_product.price_rate),
@@ -144,6 +154,12 @@ async function catalog(raw: any, shopId: number): Promise<any> {
             animal: [...animalMap.values()].find(row => row.cub_item_id === Number(good.item_id)) || null,
         };
     }) };
+}
+
+async function readMarketRotation(): Promise<any> {
+    const reply = await rpc('shopProfiles', { global_scene_id: 2 });
+    const profile = reply.shop_profiles.find((shop: any) => Number(shop.shop_id) === 7);
+    return profile?.rotation_state.length ? types.RanchRotationShopState.decode(profile.rotation_state) : null;
 }
 
 async function market(raw: any): Promise<any> {
@@ -194,7 +210,7 @@ async function getState(view = 'animals', shopId?: number, hostGid?: string): Pr
     return inScene(async (cells: any) => {
         const raw = await loadRaw(cells);
         const state = snapshot(raw);
-        state.pendingOperations = require('./operation-state').forCurrentAccount().pending();
+        state.pendingOperations = require('./operation-state').forCurrentAccount().pending().map(pendingOperationView);
         if (view === 'bag') state.bag = inventory(raw);
         if (view === 'shop') state.shop = await catalog(raw, Number(shopId ?? 5));
         if (view === 'market') state.market = await market(raw);
@@ -203,6 +219,7 @@ async function getState(view = 'animals', shopId?: number, hostGid?: string): Pr
             state.tasks = taskList(await rpc('tasks', { global_scene_id: 2 }));
             // 每日首次分享状态随任务和活动页面返回。
             state.dailyShare = require('./daily-share').getState();
+            state.dailyBenefit = await require('./daily-benefit').read();
         }
         if (view === 'illustrated') state.book = await require('./book').getBook();
         if (view === 'activities') {
@@ -213,7 +230,7 @@ async function getState(view = 'animals', shopId?: number, hostGid?: string): Pr
         }
         if (view === 'friends') {
             if (hostGid !== undefined) state.friendRanch = await require('./friends').getFriend(hostGid);
-            else state.friends = (await require('../friend').getFriendsList()).map((friend: any) => ({ gid: String(friend.gid), name: friend.name, avatarUrl: friend.avatarUrl }));
+            else state.friends = (await getRanchFriendList()).map(friend => ({ ...friend, gid: String(friend.gid) }));
         }
         return state;
     });
@@ -231,4 +248,4 @@ async function resourceBalances(keys: string[]): Promise<any[]> {
     });
 }
 
-module.exports = { getState, loadRaw, snapshot, balance, bagItems, inventory, taskList, catalog, market, canCatalog, resourceBalance, isRanchResource, resourceBalances, animalDto };
+module.exports = { getState, loadRaw, snapshot, balance, bagItems, inventory, salePrices, taskList, catalog, market, readMarketRotation, canCatalog, resourceBalance, isRanchResource, resourceBalances, animalDto };

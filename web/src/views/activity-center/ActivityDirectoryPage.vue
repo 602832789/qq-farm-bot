@@ -196,6 +196,8 @@ function activityIconSrc(activity: ActivityDirectoryItemDto) {
   // 萌宠日记目录里没有可用的角色图（只有照片墙与兑换物），交给图标兜底。
   if (activity.gameplayKey === 'milk')
     return '/activity-assets/milk-tea/logo.png'
+  if (activity.gameplayKey === 'muge')
+    return '/activity-assets/muge/icon.png'
   if (activity.gameplayKey === 'wish' || activity.gameplayKey === 'happy')
     return `/activity-assets/autumn/${activity.gameplayKey}.png`
   return ''

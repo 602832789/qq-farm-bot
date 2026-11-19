@@ -997,8 +997,10 @@ export const RANCH_AUTOMATION_SWITCHES: ReadonlyArray<{ key: string, label: stri
   { key: 'ranch_buy', label: '自动购买幼崽', desc: '按养殖策略在牧场商店补栏', group: 'own' },
   { key: 'ranch_upgrade', label: '自动升级设施', desc: '满足等级与材料时升级窝、棚与牧草机', group: 'own' },
   { key: 'ranch_sell', label: '自动出售产物', desc: '出售背包里可出售的产物', group: 'own' },
+  { key: 'ranch_market_organic', label: '集市兑换有机化肥', desc: '按优先级用松果等资源兑换有机化肥', group: 'own' },
   { key: 'ranch_grass', label: '自动补充牧草', desc: '牧草机容量不满时用背包牧草补满', group: 'own' },
   { key: 'ranch_grass_buy', label: '自动购买牧草', desc: '背包牧草不足时先在商店购买，需同时开启补充牧草', group: 'own' },
+  // 牧草补充阈值是数值参数，不放进布尔开关清单；由设置页单独渲染。
   { key: 'ranch_fill_cans', label: '自动补充罐头桶', desc: '使用背包罐头为罐头桶增加时长', group: 'own' },
   { key: 'ranch_feed_normal', label: '自动普通罐头加速', desc: '用普通罐头桶加速非限制动物', group: 'own' },
   { key: 'ranch_feed_organic', label: '自动有机罐头加速', desc: '用有机罐头桶加速，含限制罐头动物', group: 'own' },
@@ -1009,6 +1011,8 @@ export const RANCH_AUTOMATION_SWITCHES: ReadonlyArray<{ key: string, label: stri
   { key: 'ranch_friend_mosquito', label: '自动放蚊子', desc: '向好友栏舍投放蚊子', group: 'friend' },
   { key: 'ranch_task', label: '自动领取牧场任务', desc: '领取已完成的牧场任务奖励', group: 'reward' },
   { key: 'ranch_share', label: '自动领取每日分享', desc: '上报分享并领取每日首次分享礼包', group: 'reward' },
+  { key: 'ranch_illustrated', label: '自动领取图鉴奖励', desc: '领取普通与巨大图鉴的可领奖励', group: 'reward' },
+  { key: 'ranch_daily_benefit', label: '自动领取每日福利', desc: '领取牧场每日福利礼包', group: 'reward' },
 ]
 
 /** 与 core/src/config/ranch-automation.ts 的 RANCH_AUTOMATION_DEFAULTS 逐 key、逐值对应，改动需同步。 */
@@ -1018,8 +1022,10 @@ export const RANCH_AUTOMATION_DEFAULTS = {
   ranch_buy: false,
   ranch_upgrade: false,
   ranch_sell: false,
+  ranch_market_organic: false,
   ranch_grass: false,
   ranch_grass_buy: false,
+  ranch_grass_threshold_percent: 20,
   ranch_fill_cans: false,
   ranch_feed_normal: false,
   ranch_feed_organic: false,
@@ -1029,12 +1035,16 @@ export const RANCH_AUTOMATION_DEFAULTS = {
   ranch_friend_clean: false,
   ranch_friend_mosquito: false,
   ranch_task: true,
+  ranch_illustrated: false,
   ranch_share: true,
+  ranch_daily_benefit: false,
   ranch_check_minutes: 5,
   ranch_strategy: 'level',
   ranch_bag_fallback: 'level',
   ranch_coop_animal: 0,
   ranch_shed_animal: 0,
+  ranch_coop_cub_priority: [],
+  ranch_shed_cub_priority: [],
 }
 
 /**
@@ -1042,7 +1052,7 @@ export const RANCH_AUTOMATION_DEFAULTS = {
  * 开启时只恢复到服务端默认里本就为 true 的动作，避免一次打开全部自动购买与好友互动。
  */
 export function isRanchSwitchDefaultOn(key: string) {
-  const defaults = RANCH_AUTOMATION_DEFAULTS as Record<string, boolean | number | string>
+  const defaults = RANCH_AUTOMATION_DEFAULTS as Record<string, boolean | number | string | number[]>
   return RANCH_AUTOMATION_SWITCHES.some(item => item.key === key) && defaults[key] === true
 }
 
