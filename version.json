@@ -1,12 +1,28 @@
 {
   "major": 3,
-  "minor": 30,
-  "patch": 0,
-  "build": 198,
-  "version": "3.30.0",
-  "updatedAt": "2026-11-19T10:21:08.242Z",
+  "minor": 31,
+  "patch": 1,
+  "build": 200,
+  "version": "3.31.1",
+  "updatedAt": "2026-11-19T11:06:33.702Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.31.1",
+      "build": 200,
+      "date": "2026-11-19",
+      "summary": "常规更新",
+      "commit": "—",
+      "type": "patch"
+    },
+    {
+      "version": "3.31.0",
+      "build": 199,
+      "date": "2026-11-19",
+      "summary": "牧场页接入 liyang 版页面，自动化设置改用 BUGDey 的卡片布局",
+      "commit": "—",
+      "type": "minor"
+    },
     {
       "version": "3.30.0",
       "build": 198,

@@ -35,6 +35,8 @@ interface DailyGiftsResponse {
   timeZone?: string
   growth: DailyGift
   gifts: DailyGift[]
+  /** 牧场侧的每日礼包（任务 / 分享 / 每日福利），后端未下发时缺省。 */
+  ranch?: any
 }
 
 export const useStatusStore = defineStore('status', () => {

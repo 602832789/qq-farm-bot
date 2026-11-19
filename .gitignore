@@ -60,3 +60,6 @@ __pycache__/
 
 # WorkBuddy 本地会话数据（工作日志等），只留在本机，不进代码仓库
 .workbuddy/
+
+# 构建备份目录（vite build 前 mv dist 产生）
+web/dist.old.*/

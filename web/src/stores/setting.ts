@@ -21,6 +21,8 @@ export interface MilkTeaHirePolicy {
 }
 
 export interface AutomationConfig {
+  /** 牧场等后续新增的开关按 key 直接读写，字段随后端配置扩展。 */
+  [key: string]: any
   farm?: boolean
   farm_harvest_tiangong?: boolean
   farm_push?: boolean

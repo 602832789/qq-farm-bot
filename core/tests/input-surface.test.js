@@ -97,6 +97,7 @@ const INPUT_SURFACE = [
     ['commerce-routes.ts', 'expectedPrice', 'body', 'object', 'route'],
     ['commerce-routes.ts', 'goodsId', 'body', 'int', 'service', ['src/services/commerce.ts', 'positiveInteger(goodsIdInput']],
     ['commerce-routes.ts', 'hostGid', 'query', 'text', 'route'],
+    ['commerce-routes.ts', 'fruitIds', 'body', 'int-list', 'service', ['src/services/illustrated.ts', 'filter((id: number) => id > 0)']],
     ['commerce-routes.ts', 'key', 'params', 'text', 'route'],
     ['commerce-routes.ts', 'kind', 'body', 'text', 'route'],
     ['commerce-routes.ts', 'npcId', 'body', 'int', 'service', ['src/services/commerce.ts', 'positiveInteger(npcIdInput']],

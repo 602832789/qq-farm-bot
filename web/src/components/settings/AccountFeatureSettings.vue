@@ -305,31 +305,28 @@ function cancel() {
       请先选择账号
     </div>
     <template v-else>
-      <div class="settings-overview-heading">
-        <div>
-          <h2 class="settings-overview-title">
-            账号设置总览
-          </h2>
-          <p>{{ currentAccountName ? `当前账号：${currentAccountName}` : '请先在账号管理中选择账号' }}</p>
-        </div>
-        <span class="settings-overview-count">{{ Object.keys(moduleInfo).filter(key => moduleEnabled(key as ModuleKey)).length }} / {{ Object.keys(moduleInfo).length }} 项开启</span>
+      <div class="flex flex-wrap items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+        <span class="text-gray-700 font-medium dark:text-gray-300">农场自动配置</span>
+        <span class="h-1 w-1 rounded-full bg-gray-300 dark:bg-gray-600" />
+        <span>{{ currentAccountName ? `正在配置：${currentAccountName}` : '请先在账号管理中选择账号' }}</span>
+        <span class="ml-auto text-xs">已开启 {{ Object.keys(moduleInfo).filter(key => moduleEnabled(key as ModuleKey)).length }} / {{ Object.keys(moduleInfo).length }} 项</span>
       </div>
 
-      <div class="settings-module-grid">
+      <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <article
           v-for="(info, key) in moduleInfo"
           :key="key"
-          class="settings-module-card"
+          class="group min-h-[184px] flex flex-col border border-gray-200 rounded-lg bg-white p-4 transition dark:border-gray-700 hover:border-[var(--theme-primary)] dark:bg-gray-800 hover:shadow-sm"
         >
-          <div class="settings-module-heading">
-            <div class="min-w-0 flex items-start gap-2.5">
-              <img v-if="info.image" :src="info.image" alt="" class="settings-module-icon">
-              <span v-else class="settings-module-icon" :class="info.icon" /><div class="min-w-0">
-                <h4>
-                  <button type="button" class="settings-module-title" @click="openModule(key as ModuleKey)">
-                    {{ info.title }}
-                  </button>
-                </h4><p class="settings-module-description">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0 flex items-center gap-3">
+              <img v-if="info.image" :src="info.image" alt="" class="h-10 w-10 shrink-0 rounded-lg bg-gray-100 object-contain p-1.5 dark:bg-gray-700">
+              <span v-else class="inline-grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-gray-100 text-xl dark:bg-gray-700" :class="info.icon" />
+              <div>
+                <h4 class="text-gray-900 font-semibold dark:text-gray-100">
+                  {{ info.title }}
+                </h4>
+                <p class="mt-0.5 text-xs text-gray-500">
                   {{ info.description }}
                 </p>
               </div>
@@ -342,22 +339,23 @@ function cancel() {
             />
           </div>
 
-          <ul class="settings-module-summary" aria-label="当前策略">
-            <li
+          <div class="mt-4 min-h-[56px] flex flex-wrap content-start gap-2">
+            <span
               v-for="tag in summaryTags(key as ModuleKey)"
               :key="tag"
+              class="max-w-full truncate rounded-md bg-gray-50 px-2.5 py-1 text-xs text-gray-600 dark:bg-gray-900/40 dark:text-gray-300"
             >
               {{ tag }}
-            </li>
-          </ul>
+            </span>
+          </div>
 
-          <div class="settings-module-footer">
-            <span class="settings-module-state" :class="{ 'is-enabled': moduleEnabled(key as ModuleKey) }">
+          <div class="mt-auto flex items-center justify-between pt-4">
+            <span class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
               <span class="h-2 w-2 rounded-full" :class="moduleEnabled(key as ModuleKey) ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'" />
               {{ moduleStateLabel(key as ModuleKey) }}
             </span>
-            <BaseButton variant="primary" size="sm" @click="openModule(key as ModuleKey)">
-              配置 <span class="i-carbon-arrow-up-right ml-1" aria-hidden="true" />
+            <BaseButton variant="secondary" size="sm" @click="openModule(key as ModuleKey)">
+              配置
             </BaseButton>
           </div>
         </article>
@@ -734,153 +732,6 @@ function cancel() {
 </template>
 
 <style scoped>
-.settings-overview-heading {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px 16px;
-  padding: 0 0 12px;
-  border-bottom: 1px solid var(--surface-border-strong);
-  color: var(--muted-text);
-  font-size: 12px;
-}
-.settings-overview-heading p {
-  margin-top: 3px;
-  overflow-wrap: anywhere;
-}
-.settings-overview-title {
-  color: var(--theme-text);
-  font-size: 16px;
-  font-weight: 650;
-}
-/* 概览计数是个数字摘要，必须一眼能读：原来直接用品红/主题绿字贴在页面背景上，
-   在浅色渐变与背景图区域几乎糊在一起。这里改成实底徽标：不透底、加描边、正文色。 */
-.settings-overview-count {
-  display: inline-flex;
-  align-items: center;
-  flex: none;
-  padding: 4px 12px;
-  border: 1px solid color-mix(in srgb, var(--ui-primary) 45%, var(--ui-border));
-  border-radius: 999px;
-  background: var(--ui-primary-soft);
-  box-shadow: var(--ui-shadow-sm);
-  color: var(--ui-primary);
-  font-size: 12px;
-  font-weight: var(--fw-500);
-  letter-spacing: 0.02em;
-  line-height: 1.4;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  font-synthesis: none;
-}
-.settings-module-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-.settings-module-card {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  padding: 14px;
-  border: 1px solid var(--surface-border);
-  border-radius: 8px;
-  background: var(--surface-1);
-  transition: border-color 150ms;
-}
-.settings-module-card:hover {
-  border-color: #a9c294;
-}
-.settings-module-heading {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: 10px;
-}
-.settings-module-icon {
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  width: 32px;
-  height: 32px;
-  padding: 3px;
-  object-fit: contain;
-  font-size: 22px;
-}
-.settings-module-description {
-  margin-top: 3px;
-  color: var(--muted-text);
-  font-size: 12px;
-  line-height: 1.6;
-  overflow-wrap: anywhere;
-}
-.settings-module-title {
-  text-align: left;
-  color: var(--theme-text);
-  font-size: 14px;
-  font-weight: 650;
-}
-.settings-module-title:hover {
-  color: var(--theme-primary);
-}
-.settings-module-card :deep(.base-switch) {
-  flex-shrink: 0;
-}
-.settings-module-summary {
-  display: flex;
-  flex-wrap: wrap;
-  align-content: flex-start;
-  gap: 4px 12px;
-  margin: 10px 0;
-  padding: 0;
-  list-style: none;
-  line-height: 1.7;
-}
-.settings-module-summary li {
-  max-width: 100%;
-  color: var(--muted-text);
-  font-size: 12px;
-  overflow-wrap: anywhere;
-}
-.settings-module-summary li:first-child {
-  width: 100%;
-  color: var(--theme-text);
-  font-weight: 550;
-}
-.settings-module-summary li:nth-child(n + 3)::before {
-  content: '';
-  display: inline-block;
-  width: 3px;
-  height: 3px;
-  margin-right: 7px;
-  border-radius: 50%;
-  background: var(--surface-border-strong);
-  vertical-align: middle;
-}
-.settings-module-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: auto;
-  padding-top: 8px;
-  border-top: 1px solid var(--surface-border);
-}
-.settings-module-state {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--muted-text);
-  font-size: 12px;
-}
-.settings-module-state.is-enabled {
-  color: var(--theme-primary);
-}
-.settings-module-card button:focus-visible {
-  outline: 2px solid var(--theme-primary);
-  outline-offset: 3px;
-}
 .settings-tools-heading {
   display: flex;
   align-items: center;
@@ -902,26 +753,9 @@ function cancel() {
   gap: 14px;
   align-items: start;
 }
-@media (min-width: 1280px) {
-  .settings-module-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
 @media (max-width: 1023px) {
   .settings-tools-grid {
     grid-template-columns: minmax(0, 1fr);
-  }
-}
-@media (max-width: 639px) {
-  .settings-module-grid {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 10px;
-  }
-  .settings-module-card {
-    padding: 12px;
-  }
-  .settings-module-summary {
-    margin-top: 8px;
   }
 }
 </style>

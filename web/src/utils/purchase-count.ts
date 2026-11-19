@@ -5,7 +5,7 @@
  */
 export interface PurchaseCost {
   id?: number | string
-  count?: number
+  count?: number | string
   balance?: number | null
 }
 

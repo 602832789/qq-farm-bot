@@ -1447,6 +1447,9 @@ async function handleApiCall(msg: any): Promise<void> {
                     result = getPlantRankings(args[0]); // sortBy
                     break;
                 }
+                case 'clearIllustratedNew':
+                    result = await require('../services/illustrated').clearIllustratedNew(args[0]);
+                    break;
                 case 'getDailyGiftOverview':
                     result = await getDailyGiftOverview(args[0] === true);
                     break;
@@ -1668,7 +1671,7 @@ async function getDailyGiftOverview(propagateErrors: boolean = false): Promise<a
             currentTask: growthTask.currentTask || null,
             tasks: Array.isArray(growthTask.tasks) ? growthTask.tasks : [],
         },
-        ranch: require('../services/ranch/daily').getOverview(!!auto.ranch_task, !!auto.ranch_share),
+        ranch: require('../services/ranch/daily').getOverview(!!auto.ranch_task, !!auto.ranch_share, !!auto.ranch_daily_benefit),
         gifts: [
             {
                 key: 'task_claim',
