@@ -7,7 +7,6 @@ import type {
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api, { getApiErrorMessage, normalizeApiErrorMessage } from '@/api'
-import { createRequestGuard } from '@/utils/request-guard'
 
 export type FertilizerType = 'normal' | 'organic'
 
@@ -42,32 +41,6 @@ export interface FertilizeAllResult {
   updatedLands: Land[]
 }
 
-/** 催熟全部预览（老版口径）：普通肥+有机肥按生长阶段秒数计消耗。 */
-export interface RipenAllPreview {
-  token: string
-  expiresAt: number
-  targetCount: number
-  actionCount: number
-  applicationCount: number
-  cost: Record<FertilizerType, number>
-  inventory: Record<FertilizerType, number>
-  sufficient: boolean
-  skipped: { landId: number, reason: string }[]
-}
-
-export interface RipenAllStepResult {
-  success: boolean
-  landIds: number[]
-  updatedLands: Land[]
-  fertilizerType: FertilizerType
-  stopped: string
-  cursor: number
-  done: boolean
-  completed: number
-  total: number
-  used: Record<FertilizerType, number>
-}
-
 function userFacingFertilizeError(raw: unknown, fallback = '施肥失败') {
   return getApiErrorMessage(raw, fallback)
 }
@@ -93,22 +66,9 @@ export const useFarmStore = defineStore('farm', () => {
   const interactionUsedLandIds = ref<Record<string, string[]>>({})
   const fertilizePending = ref(false)
   const fertilizeError = ref('')
-  /**
-   * 操作后的「补刷」必须先确认账号没被切走。
-   * 原来 POST 成功后无条件 `await fetchLands(accountId)` 用的是操作发起时的旧入参；
-   * 这次补刷是一笔全新请求，会拿到最新序号、绕过 resetLandState 的守卫，
-   * 把 A 的土地写进已切到 B 的面板，还会重建 60s TTL 的 landOverlay。
-   */
-  function accountWasSwitched(accountId: string): boolean {
-    if (typeof localStorage === 'undefined')
-      return false
-    const current = String(localStorage.getItem('current_account_id') || '').trim()
-    return !!current && current !== accountId
-  }
-
-  const landGuard = createRequestGuard()
-  const fertilizeGuard = createRequestGuard()
-  const interactionItemsGuard = createRequestGuard()
+  let landRequestSequence = 0
+  let fertilizeRequestSequence = 0
+  let interactionItemsRequestSequence = 0
   let landOverlay: { lands: any[], effects: FriendInteractionEffectDto[], updatedAt: number } | null = null
 
   function normalizeLandId(value: unknown) {
@@ -187,7 +147,7 @@ export const useFarmStore = defineStore('farm', () => {
   async function fetchLands(accountId: string) {
     if (!accountId)
       return false
-    const ticket = landGuard.next()
+    const sequence = ++landRequestSequence
     loading.value = true
     loaded.value = false
     error.value = ''
@@ -196,7 +156,7 @@ export const useFarmStore = defineStore('farm', () => {
         headers: { 'x-account-id': accountId },
         skipErrorToast: true,
       } as any)
-      if (landGuard.isStale(ticket))
+      if (sequence !== landRequestSequence)
         return false
       if (data && data.ok) {
         lands.value = applyLandOverlay(data.data.lands || [])
@@ -211,7 +171,7 @@ export const useFarmStore = defineStore('farm', () => {
       return false
     }
     catch (cause: any) {
-      if (landGuard.isStale(ticket))
+      if (sequence !== landRequestSequence)
         return false
       career.value = null
       socialEvents.value = []
@@ -219,7 +179,7 @@ export const useFarmStore = defineStore('farm', () => {
       return false
     }
     finally {
-      if (!landGuard.isStale(ticket)) {
+      if (sequence === landRequestSequence) {
         loaded.value = true
         loading.value = false
       }
@@ -227,8 +187,8 @@ export const useFarmStore = defineStore('farm', () => {
   }
 
   function resetLandState() {
-    landGuard.invalidate()
-    fertilizeGuard.invalidate()
+    landRequestSequence++
+    fertilizeRequestSequence++
     lands.value = []
     summary.value = {}
     socialEvents.value = []
@@ -251,7 +211,7 @@ export const useFarmStore = defineStore('farm', () => {
   }
 
   function resetInteractionState() {
-    interactionItemsGuard.invalidate()
+    interactionItemsRequestSequence++
     interactionItems.value = []
     interactionItemsLoading.value = false
     interactionItemsError.value = ''
@@ -265,7 +225,7 @@ export const useFarmStore = defineStore('farm', () => {
     const requestedAccountId = String(accountId || '').trim()
     if (!requestedAccountId)
       return false
-    const ticket = interactionItemsGuard.next()
+    const sequence = ++interactionItemsRequestSequence
     if (interactionItemsAccountId.value !== requestedAccountId) {
       interactionItems.value = []
       interactionItemsAccountId.value = requestedAccountId
@@ -277,7 +237,7 @@ export const useFarmStore = defineStore('farm', () => {
         headers: { 'x-account-id': requestedAccountId },
         skipErrorToast: true,
       } as any)
-      if (interactionItemsGuard.isStale(ticket))
+      if (sequence !== interactionItemsRequestSequence)
         return false
       if (!res.data?.ok) {
         interactionItems.value = []
@@ -288,14 +248,14 @@ export const useFarmStore = defineStore('farm', () => {
       return true
     }
     catch (cause: any) {
-      if (interactionItemsGuard.isStale(ticket))
+      if (sequence !== interactionItemsRequestSequence)
         return false
       interactionItems.value = []
       interactionItemsError.value = getApiErrorMessage(cause, '无法读取可用的互动道具')
       return false
     }
     finally {
-      if (!interactionItemsGuard.isStale(ticket))
+      if (sequence === interactionItemsRequestSequence)
         interactionItemsLoading.value = false
     }
   }
@@ -362,7 +322,7 @@ export const useFarmStore = defineStore('farm', () => {
     if (!accountId || !landId || fertilizePending.value)
       return false
     fertilizePending.value = true
-    const ticket = fertilizeGuard.next()
+    const sequence = ++fertilizeRequestSequence
     fertilizeError.value = ''
     try {
       const res = await api.post('/api/farm/fertilize', {
@@ -372,7 +332,7 @@ export const useFarmStore = defineStore('farm', () => {
         headers: { 'x-account-id': accountId },
         skipErrorToast: true,
       } as any)
-      if (fertilizeGuard.isStale(ticket))
+      if (sequence !== fertilizeRequestSequence)
         return false
       if (!res.data?.ok) {
         fertilizeError.value = userFacingFertilizeError(res.data)
@@ -386,13 +346,13 @@ export const useFarmStore = defineStore('farm', () => {
       return result
     }
     catch (cause: any) {
-      if (fertilizeGuard.isStale(ticket))
+      if (sequence !== fertilizeRequestSequence)
         return false
       fertilizeError.value = userFacingFertilizeError(cause)
       return false
     }
     finally {
-      if (!fertilizeGuard.isStale(ticket))
+      if (sequence === fertilizeRequestSequence)
         fertilizePending.value = false
     }
   }
@@ -400,7 +360,7 @@ export const useFarmStore = defineStore('farm', () => {
   async function fertilizeAll(accountId: string, fertilizerType: FertilizerType, landIds?: number[]) {
     if (!accountId || fertilizePending.value)
       return false
-    const ticket = fertilizeGuard.next()
+    const sequence = ++fertilizeRequestSequence
     fertilizePending.value = true
     fertilizeError.value = ''
     try {
@@ -408,7 +368,7 @@ export const useFarmStore = defineStore('farm', () => {
         headers: { 'x-account-id': accountId },
         skipErrorToast: true,
       } as any)
-      if (fertilizeGuard.isStale(ticket))
+      if (sequence !== fertilizeRequestSequence)
         return false
       if (!res.data?.ok) {
         fertilizeError.value = userFacingFertilizeError(res.data)
@@ -419,47 +379,14 @@ export const useFarmStore = defineStore('farm', () => {
       return result
     }
     catch (cause: any) {
-      if (fertilizeGuard.isStale(ticket))
+      if (sequence !== fertilizeRequestSequence)
         return false
       fertilizeError.value = userFacingFertilizeError(cause)
       return false
     }
     finally {
-      if (!fertilizeGuard.isStale(ticket))
+      if (sequence === fertilizeRequestSequence)
         fertilizePending.value = false
-    }
-  }
-
-  /** 催熟全部预览：读取可催熟地块数与普通/有机化肥预计消耗。 */
-  async function previewRipenAll(accountId: string): Promise<RipenAllPreview> {
-    const res = await api.post('/api/farm/ripen-all/preview', {}, {
-      headers: { 'x-account-id': accountId },
-      skipErrorToast: true,
-    } as any)
-    if (!res.data?.ok)
-      throw new Error(getApiErrorMessage(res.data, '催熟预览读取失败'))
-    return res.data.data
-  }
-
-  /** 催熟全部执行一步：服务端按预览计划批量施肥，返回最新土地状态。 */
-  async function ripenAllStep(accountId: string, token: string, cursor: number): Promise<RipenAllStepResult> {
-    if (!accountId || fertilizePending.value)
-      throw new Error('施肥操作正在执行')
-    fertilizePending.value = true
-    try {
-      const res = await api.post('/api/farm/ripen-all/step', { token, cursor }, {
-        headers: { 'x-account-id': accountId },
-        skipErrorToast: true,
-      } as any)
-      if (!res.data?.ok || !res.data.data?.success || !Array.isArray(res.data.data.updatedLands))
-        throw new Error(getApiErrorMessage(res.data, '催熟已停止'))
-      const result = res.data.data as RipenAllStepResult
-      if (result.updatedLands.length)
-        recordLandUpdates(result.updatedLands)
-      return result
-    }
-    finally {
-      fertilizePending.value = false
     }
   }
 
@@ -472,31 +399,12 @@ export const useFarmStore = defineStore('farm', () => {
     if (!res.data?.ok) {
       throw new Error(getApiErrorMessage(res.data, '农场操作失败'))
     }
-    if (!accountWasSwitched(accountId)) {
-      landOverlay = null
-      await fetchLands(accountId)
-    }
+    landOverlay = null
+    await fetchLands(accountId)
     const result = res.data?.data || { hadWork: false, actions: [] }
     if (result && typeof result.message === 'string')
       result.message = normalizeApiErrorMessage(result.message)
     return result
-  }
-
-  /** 铲除单块土地上的作物（老版地块气泡「铲除」）：成功后刷新土地列表。 */
-  async function removePlant(accountId: string, landId: number) {
-    if (!accountId || !landId)
-      return false
-    const res = await api.post('/api/land/remove', { landId }, {
-      headers: { 'x-account-id': accountId },
-      skipErrorToast: true,
-    } as any)
-    if (!res.data?.ok)
-      throw new Error(getApiErrorMessage(res.data, '铲除作物失败'))
-    if (!accountWasSwitched(accountId)) {
-      landOverlay = null
-      await fetchLands(accountId)
-    }
-    return res.data.data ?? true
   }
 
   return {
@@ -525,8 +433,5 @@ export const useFarmStore = defineStore('farm', () => {
     resetInteractionState,
     fertilizeLand,
     fertilizeAll,
-    removePlant,
-    previewRipenAll,
-    ripenAllStep,
   }
 })

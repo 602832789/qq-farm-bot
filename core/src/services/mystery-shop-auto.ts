@@ -25,8 +25,7 @@ const MYSTERY_SHOP_AUTOMATION_KEYS = [
     'mystery_shop_purchase_notify',
 ] as const;
 
-/** 对齐老版 mystery-shop.js：神秘商店每 10 分钟巡查一次（刷新/购买共用节奏）。 */
-const AUTO_BUY_CHECK_INTERVAL_MS = 10 * 60 * 1000;
+const AUTO_BUY_CHECK_INTERVAL_MS = 2 * 60 * 60 * 1000;
 
 interface MysteryShopAutoState {
     lastArrivalKey: string;
@@ -44,14 +43,6 @@ interface MysteryShopDecision {
 interface MysteryShopPushFlags {
     arrival: boolean;
     purchase: boolean;
-}
-
-/** 面板内消息（局内通知）：与外部推送渠道解耦，不受提醒开关和渠道配置影响。 */
-interface MysteryShopEvent {
-    dedupeKey: string;
-    type: 'mystery_arrival' | 'mystery_purchase';
-    title: string;
-    content: string;
 }
 
 const defaultState: MysteryShopAutoState = {
@@ -94,9 +85,7 @@ function mysteryShopVisitKey(shop: any): string {
 
 function decideMysteryShopTick(shop: any, automation: any = {}, state: MysteryShopAutoState = defaultState): MysteryShopDecision {
     const npc = shop?.npc;
-    // 用 `!(x > 0)` 而非 `x <= 0`：字段缺失时 Number(undefined) === NaN，而 `NaN <= 0`
-    // 为 false 会被当成有效商品继续下单。`!(NaN > 0)` 才能正确拦下缺字段/0/负数。
-    if (!shop?.active || !npc?.id || !(Number(npc?.reward?.count) > 0)) {
+    if (!shop?.active || !npc?.id || Number(npc?.reward?.count) <= 0) {
         return { notifyArrival: false, shouldBuy: false, skipReason: 'inactive' };
     }
 
@@ -188,7 +177,7 @@ async function checkMysteryShopTick(options: {
     getShop?: () => Promise<any>;
     buy?: (npcId: number) => Promise<any>;
     state?: MysteryShopAutoState;
-} = {}): Promise<{ skipped?: boolean; reason?: string; bought?: boolean; push?: { title: string; content: string } | null; event?: MysteryShopEvent | null }> {
+} = {}): Promise<{ skipped?: boolean; reason?: string; bought?: boolean; push?: { title: string; content: string } | null }> {
     const automation = (options.getAutomation || getAutomation)() || {};
     const state = options.state || defaultState;
     if (!isMysteryShopWatchEnabled(automation)) {
@@ -197,7 +186,7 @@ async function checkMysteryShopTick(options: {
 
     const commerce = require('./commerce');
     const getShop = options.getShop || commerce.getMysteryShop;
-    const buy = options.buy || ((npcId: number) => commerce.purchaseMysteryOffer(npcId, 'auto'));
+    const buy = options.buy || ((npcId: number) => commerce.purchaseMysteryOffer(npcId));
 
     let shop: any;
     try {
@@ -246,22 +235,12 @@ async function checkMysteryShopTick(options: {
         }
     }
 
-    // 面板内消息始终记一条：到货或自动购买成功，由存储层按 dedupeKey 去重，
-    // 不依赖提醒开关，也不需要配置 Bark / 钉钉 / Webhook 等外部渠道。
-    const eventMessage = buildMysteryShopPush(shop, { arrival: !bought, purchase: bought });
-    const event: MysteryShopEvent | null = eventMessage && decision.visitKey ? {
-        dedupeKey: `${bought ? 'purchase' : 'arrival'}:${decision.visitKey}`,
-        type: bought ? 'mystery_purchase' : 'mystery_arrival',
-        title: eventMessage.title,
-        content: eventMessage.content,
-    } : null;
-
     const flags = resolveMysteryShopPushFlags(decision, bought, automation, state);
     if (!flags.arrival && !flags.purchase) {
-        return { bought, event };
+        return { bought };
     }
     commitMysteryShopNotify(state, String(decision.visitKey), flags);
-    return { bought, push: buildMysteryShopPush(shop, flags), event };
+    return { bought, push: buildMysteryShopPush(shop, flags) };
 }
 
 module.exports = {

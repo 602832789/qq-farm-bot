@@ -1,4 +1,4 @@
-import type { AccountConfig, AutomationConfig, BagSeedFallbackStrategy, CapitalModeConfig, FertilizerLandType, IntervalConfig, PlantingStrategy, QuietHoursConfig } from '../../types/config';
+import type { AccountConfig, AutomationConfig, BagSeedFallbackStrategy, FertilizerLandType, IntervalConfig, PlantingStrategy, QuietHoursConfig } from '../../types/config';
 export {};
 
 const sharedState = require('./shared-state');
@@ -10,6 +10,7 @@ const {
     globalConfig,
     normalizeAccountConfig,
     cloneAccountConfig,
+    normalizeFertilizerMode,
     normalizeFertilizerLandTypes,
     normalizeKnownFriendGids,
     normalizeKnownFriendGidSyncCooldownSec,
@@ -23,27 +24,11 @@ const {
     normalizeAutoAcceptFriendMinLevel,
     normalizeAutoAcceptHarvestStealHarvest,
     normalizeAutoAcceptHarvestStealSteal,
-    normalizeCapitalMode,
     ALLOWED_PLANTING_STRATEGIES,
 } = sharedState;
 
-// 活动自动化里需要按数值/数组/对象保存的字段，其余开关一律布尔。
-const AUTOMATION_NUMBER_KEYS = new Set([
-    'wish_sign_choice',
-    'milk_tea_interaction_type',
-    'milk_tea_work_interaction_type',
-    'milk_tea_hire_duration',
-    'milk_tea_hire_talent',
-    'milk_tea_hire_primary_talent',
-    'milk_tea_hire_backup_talent',
-]);
-
-const AUTOMATION_OBJECT_KEYS = new Set([
-    'milk_tea_seed_policy',
-    'milk_tea_hire_policy',
-]);
-
-function cloneBagSeedLandTypes(input: Record<string, FertilizerLandType[]> | undefined): Record<string, FertilizerLandType[]> {    const cloned: Record<string, FertilizerLandType[]> = {};
+function cloneBagSeedLandTypes(input: Record<string, FertilizerLandType[]> | undefined): Record<string, FertilizerLandType[]> {
+    const cloned: Record<string, FertilizerLandType[]> = {};
     for (const [seedId, types] of Object.entries(input || {})) {
         cloned[seedId] = [...(types || [])];
     }
@@ -111,7 +96,6 @@ function getConfigSnapshot(accountId?: unknown): AccountConfig & { ui: typeof gl
         automation: { ...cfg.automation },
         plantingStrategy: cfg.plantingStrategy,
         preferredSeedId: cfg.preferredSeedId,
-        capitalMode: { ...cfg.capitalMode },
         intervals: { ...cfg.intervals },
         friendQuietHours: { ...cfg.friendQuietHours },
         knownFriendGids: [...(cfg.knownFriendGids || [])],
@@ -128,13 +112,10 @@ function getConfigSnapshot(accountId?: unknown): AccountConfig & { ui: typeof gl
         fertilizerBuyNormalThresholdHours: Math.max(0, Math.min(990, Number(cfg.fertilizerBuyNormalThresholdHours) || 0)),
         fertilizerBuyCheckIntervalMinutes: Math.max(1, Math.min(1440, Number(cfg.fertilizerBuyCheckIntervalMinutes) || 30)),
         emailClaimHour: normalizeEmailClaimHour(cfg.emailClaimHour, sharedState.DEFAULT_ACCOUNT_CONFIG.emailClaimHour),
-        goldenBugKeepCount: Math.max(0, Math.min(10000, Math.floor(Number(cfg.goldenBugKeepCount) || 0))),
-        goldenBugRoundLimit: Math.max(1, Math.min(100, Math.floor(Number(cfg.goldenBugRoundLimit) || sharedState.DEFAULT_ACCOUNT_CONFIG.goldenBugRoundLimit))),
         bagSeedPriority: [...(cfg.bagSeedPriority || [])],
         bagSeedMultiLandReservationEnabled: !!cfg.bagSeedMultiLandReservationEnabled,
         bagSeedLandTypes: cloneBagSeedLandTypes(cfg.bagSeedLandTypes),
         bagSeedFallbackStrategy: cfg.bagSeedFallbackStrategy,
-        prioritize2x2Crops: !!cfg.prioritize2x2Crops,
         autoAcceptFriendMinLevel: cfg.autoAcceptFriendMinLevel,
         autoAcceptRequireOwnLevel: !!cfg.autoAcceptRequireOwnLevel,
         autoAcceptHarvestStealEnabled: !!cfg.autoAcceptHarvestStealEnabled,
@@ -163,25 +144,13 @@ function applyConfigSnapshot(snapshot: Record<string, any> | undefined, options:
         for (const [k, v] of Object.entries(cfg.automation)) {
             if ((next.automation as any)[k] === undefined) continue;
             if (k === 'fertilizer') {
-                const allowed = ['both', 'normal', 'organic', 'smart', 'none'];
-                (next.automation as any)[k] = allowed.includes(v as string) ? v : (next.automation as any)[k];
+                next.automation.fertilizer = normalizeFertilizerMode(v, next.automation.fertilizer);
             } else if (k === 'fertilizer_land_types') {
                 (next.automation as any)[k] = normalizeFertilizerLandTypes(v, next.automation.fertilizer_land_types);
             } else if (k.startsWith('ranch_')) {
                 (next.automation as any)[k] = normalizeRanchSetting(k, v);
             } else if (k === 'fertilizer_smart_seconds') {
                 (next.automation as any)[k] = Math.max(30, Math.min(3600, Number(v) || 300));
-            } else if (AUTOMATION_NUMBER_KEYS.has(k)) {
-                const n = Number(v);
-                if (Number.isFinite(n)) (next.automation as any)[k] = Math.max(0, Math.floor(n));
-            } else if (k === 'qixi_friend_priority') {
-                (next.automation as any)[k] = Array.isArray(v)
-                    ? v.map(item => Number(item)).filter(n => Number.isFinite(n) && n > 0).slice(0, 50)
-                    : next.automation.qixi_friend_priority;
-            } else if (AUTOMATION_OBJECT_KEYS.has(k)) {
-                (next.automation as any)[k] = (v && typeof v === 'object' && !Array.isArray(v))
-                    ? { ...v }
-                    : (next.automation as any)[k];
             } else {
                 (next.automation as any)[k] = !!v;
             }
@@ -196,18 +165,10 @@ function applyConfigSnapshot(snapshot: Record<string, any> | undefined, options:
         next.preferredSeedId = Math.max(0, Number.parseInt(cfg.preferredSeedId, 10) || 0);
     }
 
-    if (cfg.capitalMode && typeof cfg.capitalMode === 'object') {
-        next.capitalMode = normalizeCapitalMode(cfg.capitalMode, next.capitalMode);
-    }
-
     if (cfg.intervals && typeof cfg.intervals === 'object') {
         for (const [type, sec] of Object.entries(cfg.intervals)) {
             if ((next.intervals as any)[type] === undefined) continue;
-            const parsedSec = Number.parseInt(sec as string, 10);
-            (next.intervals as any)[type] = Math.max(
-                1,
-                Math.min(sharedState.INTERVAL_MAX_SEC, parsedSec || (next.intervals as any)[type] || 1),
-            );
+            (next.intervals as any)[type] = Math.max(1, Number.parseInt(sec as string, 10) || (next.intervals as any)[type] || 1);
         }
         next.intervals = normalizeIntervals(next.intervals);
     }
@@ -286,14 +247,6 @@ function applyConfigSnapshot(snapshot: Record<string, any> | undefined, options:
         next.emailClaimHour = normalizeEmailClaimHour(cfg.emailClaimHour, next.emailClaimHour);
     }
 
-    if (cfg.goldenBugKeepCount !== undefined && cfg.goldenBugKeepCount !== null) {
-        next.goldenBugKeepCount = Math.max(0, Math.min(10000, Math.floor(Number(cfg.goldenBugKeepCount) || 0)));
-    }
-
-    if (cfg.goldenBugRoundLimit !== undefined && cfg.goldenBugRoundLimit !== null) {
-        next.goldenBugRoundLimit = Math.max(1, Math.min(100, Math.floor(Number(cfg.goldenBugRoundLimit) || next.goldenBugRoundLimit)));
-    }
-
     if (cfg.bagSeedPriority !== undefined && cfg.bagSeedPriority !== null) {
         next.bagSeedPriority = normalizeBagSeedPriority(cfg.bagSeedPriority);
     }
@@ -308,10 +261,6 @@ function applyConfigSnapshot(snapshot: Record<string, any> | undefined, options:
 
     if (cfg.bagSeedFallbackStrategy !== undefined && cfg.bagSeedFallbackStrategy !== null) {
         next.bagSeedFallbackStrategy = normalizeBagSeedFallbackStrategy(cfg.bagSeedFallbackStrategy, next.bagSeedFallbackStrategy);
-    }
-
-    if (cfg.prioritize2x2Crops !== undefined && cfg.prioritize2x2Crops !== null) {
-        next.prioritize2x2Crops = !!cfg.prioritize2x2Crops;
     }
 
     if (cfg.autoAcceptFriendMinLevel !== undefined && cfg.autoAcceptFriendMinLevel !== null) {
@@ -362,18 +311,6 @@ function getPreferredSeed(accountId?: unknown): number {
     return getAccountConfigSnapshot(accountId).preferredSeedId;
 }
 
-function getCapitalMode(accountId?: unknown): CapitalModeConfig {
-    return normalizeCapitalMode(getAccountConfigSnapshot(accountId).capitalMode);
-}
-
-function setCapitalMode(accountId: unknown, config: unknown): CapitalModeConfig {
-    const current = getAccountConfigSnapshot(accountId);
-    const next = normalizeAccountConfig(current, sharedState.accountFallbackConfig);
-    next.capitalMode = normalizeCapitalMode(config, next.capitalMode);
-    setAccountConfigSnapshot(accountId, next, true);
-    return { ...next.capitalMode };
-}
-
 function getPlantingStrategy(accountId?: unknown): PlantingStrategy {
     return getAccountConfigSnapshot(accountId).plantingStrategy;
 }
@@ -392,10 +329,6 @@ function getBagSeedLandTypes(accountId?: unknown): Record<string, FertilizerLand
 
 function getBagSeedFallbackStrategy(accountId?: unknown): BagSeedFallbackStrategy {
     return normalizeBagSeedFallbackStrategy(getAccountConfigSnapshot(accountId).bagSeedFallbackStrategy);
-}
-
-function getPrioritize2x2Crops(accountId?: unknown): boolean {
-    return !!getAccountConfigSnapshot(accountId).prioritize2x2Crops;
 }
 
 function getIntervals(accountId?: unknown): IntervalConfig {
@@ -565,14 +498,11 @@ module.exports = {
     setAutomation,
     isAutomationOn,
     getPreferredSeed,
-    getCapitalMode,
-    setCapitalMode,
     getPlantingStrategy,
     getBagSeedPriority,
     getBagSeedMultiLandReservationEnabled,
     getBagSeedLandTypes,
     getBagSeedFallbackStrategy,
-    getPrioritize2x2Crops,
     getIntervals,
     getFriendQuietHours,
     getKnownFriendGids,

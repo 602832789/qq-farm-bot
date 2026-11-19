@@ -13,8 +13,6 @@ const props = defineProps<{
   to?: string
   href?: string
   type?: 'button' | 'submit' | 'reset'
-  /** 原生 title：禁用按钮可用它说明原因（宠物页喂食按钮用得到）。 */
-  title?: string
 }>()
 
 const emit = defineEmits<{
@@ -64,7 +62,6 @@ function handleRouterClick(event: MouseEvent, navigate: (event?: MouseEvent) => 
     :loading="loading"
     :disabled="disabled"
     :block="block"
-    :title="title"
     :secondary="variant === 'secondary'"
     :quaternary="variant === 'ghost'"
     :ghost="variant === 'outline'"
@@ -86,7 +83,6 @@ function handleRouterClick(event: MouseEvent, navigate: (event?: MouseEvent) => 
       :loading="loading"
       :disabled="disabled"
       :block="block"
-      :title="title"
       :secondary="variant === 'secondary'"
       :quaternary="variant === 'ghost'"
       :ghost="variant === 'outline'"

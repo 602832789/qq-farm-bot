@@ -1,6 +1,3 @@
-// 数据目录指向临时区：否则测试会通过真实 logger 往 core/data/logs 里追加日志。
-require('./helpers/isolate-data');
-
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
@@ -189,16 +186,4 @@ test('checkMysteryShopTick buys once and returns a merged push', async () => {
     assert.equal(bought, 2);
     assert.equal(second.bought, true);
     assert.equal(second.push, undefined);
-});
-
-test('reward.count 缺失（NaN）视为无效商品，不误判为可买', () => {
-    const auto = automation({ mystery_shop_auto_buy: true });
-    const missing = decideMysteryShopTick({
-        active: true,
-        activeTime: 1_700_000_000_000,
-        npc: { id: 7, reward: { id: 20001, name: '艾草种子' }, price: { id: GOLD_ITEM_ID, count: 48000, balance: 100000 } },
-    }, auto);
-    assert.equal(missing.skipReason, 'inactive');
-    assert.equal(missing.shouldBuy, false);
-    assert.equal(missing.notifyArrival, false);
 });

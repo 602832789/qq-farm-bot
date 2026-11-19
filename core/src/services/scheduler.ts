@@ -24,17 +24,10 @@ interface NamespaceStore {
 
 const schedulerRegistry = new Map<string, NamespaceStore>();
 
-/**
- * setTimeout / setInterval 的延时上限（32 位有符号整数）。
- * 超过这个值 Node 会打 TimeoutOverflowWarning 并把延时**改成 1ms**——原本「等一天」
- * 的任务立刻变成 1ms 空转热循环，所以这里必须截断，宁可早醒也不能空转。
- */
-const MAX_TIMER_DELAY_MS = 2_147_483_647;
-
 function toDelayMs(value: any, fallbackMs = 0): number {
     const n = Number(value);
-    if (!Number.isFinite(n)) return Math.min(MAX_TIMER_DELAY_MS, Math.max(0, Math.floor(Number(fallbackMs) || 0)));
-    return Math.min(MAX_TIMER_DELAY_MS, Math.max(0, Math.floor(n)));
+    if (!Number.isFinite(n)) return Math.max(0, fallbackMs | 0);
+    return Math.max(0, Math.floor(n));
 }
 
 function ensureNamespaceStore(namespace: string): NamespaceStore {
@@ -172,8 +165,7 @@ function createScheduler(namespace = 'default'): Scheduler {
             preventOverlap: true,
             handle: null,
         };
-        let handle: ReturnType<typeof setTimeout> | null = null;
-        const runOnce = async (): Promise<void> => {
+        const handle = setTimeout(async () => {
             const current = timers.get(key);
             if (!current || current.handle !== handle) return;
             current.running = true;
@@ -194,17 +186,6 @@ function createScheduler(namespace = 'default'): Scheduler {
                     timers.delete(key);
                 }
             }
-        };
-        // 定时器不接管返回值：显式兜住拒绝，否则 Node 20 会把未处理的 Promise 拒绝当致命错误。
-        handle = setTimeout(() => {
-            runOnce().catch((e: any) => {
-                schedulerLogger.error(`[${name}] timeout 任务异常退出: ${key}`, {
-                    module: 'scheduler',
-                    scope: name,
-                    task: key,
-                    error: e && e.message ? e.message : String(e),
-                });
-            });
         }, delay);
         entry.handle = handle;
         timers.set(key, entry);
@@ -250,9 +231,7 @@ function createScheduler(namespace = 'default'): Scheduler {
                 });
             } finally {
                 const updated = timers.get(key);
-                // 代际校验：任务被 clear 后重新注册（如保存配置重建定时器）时，
-                // 仍在执行的旧 runner 不得改写新 entry 的 running / nextRunAt。
-                if (updated === entry) {
+                if (updated) {
                     updated.running = false;
                     updated.nextRunAt = Date.now() + delay;
                 }
@@ -263,16 +242,7 @@ function createScheduler(namespace = 'default'): Scheduler {
             Promise.resolve().then(runner).catch(() => null);
         }
 
-        const handle: ReturnType<typeof setInterval> = setInterval(() => {
-            runner().catch((e: any) => {
-                schedulerLogger.error(`[${name}] interval 任务异常退出: ${key}`, {
-                    module: 'scheduler',
-                    scope: name,
-                    task: key,
-                    error: e && e.message ? e.message : String(e),
-                });
-            });
-        }, delay);
+        const handle = setInterval(runner, delay);
         entry.handle = handle;
         timers.set(key, entry);
         return handle;
@@ -305,5 +275,4 @@ function createScheduler(namespace = 'default'): Scheduler {
 module.exports = {
     createScheduler,
     getSchedulerRegistrySnapshot,
-    MAX_TIMER_DELAY_MS,
 };

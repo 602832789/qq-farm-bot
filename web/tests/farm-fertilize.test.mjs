@@ -2,9 +2,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 // This repository runs its tests with Node's built-in runner.
-
+// eslint-disable-next-line test/no-import-node-test
 import test from 'node:test'
-import { requestGuardModule } from './helpers/ts-modules.mjs'
 
 const require = createRequire(import.meta.url)
 const { createPinia, disposePinia, setActivePinia } = require('pinia')
@@ -19,7 +18,6 @@ function harness(t, name, api) {
   const account = reactive({ currentAccountId: 'a' })
   const imports = {
     '@/api': { __esModule: true, default: api, getApiErrorMessage: value => value?.error || value?.message || '请求失败' },
-    '@/utils/request-guard': requestGuardModule,
     '@/stores/account': { useAccountStore: () => account },
     '@vueuse/core': { useStorage: (_key, initial) => ref(initial) },
   }
@@ -27,7 +25,7 @@ function harness(t, name, api) {
   const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } })
   const module = { exports: {} }
   // Execute the real transpiled store with test I/O, without adding a browser or bundler dependency.
-
+  // eslint-disable-next-line no-new-func
   new Function('require', 'module', 'exports', outputText)(id => imports[id] || require(id), module, module.exports)
   const useStore = module.exports[`use${name[0].toUpperCase()}${name.slice(1)}Store`]
   return { store: useStore(pinia), account }

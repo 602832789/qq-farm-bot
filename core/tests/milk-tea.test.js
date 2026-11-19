@@ -28,7 +28,7 @@ function harness() {
     mock('utils/network', { sendMsgAsync: async (_service, method, body) => {
         if (method === 'GetGroup') {
             if (failRefresh && writes) throw new Error('offline');
-            return { body: encode(types.MilkTeaGetGroupReply, { group: { head: { activity_id: '2026110100' }, children: [milk, { head: { activity_id: '2026110102', begin_time: 1792029600, end_time: 1794844799 }, shop: { goods: [goods] } }, { head: { activity_id: '2026110103' }, growth_fund: fund }] } }) };
+            return { body: encode(types.MilkTeaGetGroupReply, { group: { head: { activity_id: '2026110100' }, children: [milk, { head: { activity_id: '2026110102' }, shop: { goods: [goods] } }, { head: { activity_id: '2026110103' }, growth_fund: fund }] } }) };
         }
         const req = types.MilkTeaOperateRequest.toObject(types.MilkTeaOperateRequest.decode(body), { longs: String });
         const cmd = Number(req.operate_type);
@@ -81,20 +81,16 @@ test('craft consumes complete UID stacks and rejects locked, changed or duplicat
     assert.deepEqual(result.result.crafted_cups, { 2: 20 });
     assert.deepEqual(h.calls[0].milk_tea_craft, { fruit_uids: ['900'] });
 });
-test('shop retains finite limits and price conditions, and stays buyable while settling', async () => {
+test('shop retains finite limits and enforces level, price and settlement conditions', async () => {
     const h = harness();
     assert.equal((await h.service.getMilkTeaActivity('exchange')).goods[0].remaining, 106);
     h.goods.cond_hints = [{ cond_type: 'level', current: 1, target: 3, satisfied: false }];
     await assert.rejects(h.service.operateMilkTeaActivity('exchange', { goodsId: 301, count: 1, expectedCosts: h.goods.cost }), /条件/);
     h.goods.cond_hints = [];
     await assert.rejects(h.service.operateMilkTeaActivity('exchange', { goodsId: 301, count: 1, expectedCosts: [{ id: 1001, count: 1 }] }), /费用已变化/);
-    assert.equal(h.calls.length, 0);
-    // 兑换商店跟随自己的活动窗口，结算期只停雇佣/加速等经营动作，不再屏蔽种子兑换。
     h.setTime(1794672000);
-    assert.equal((await h.service.getMilkTeaActivity('exchange')).settling, true);
-    assert.equal((await h.service.getMilkTeaActivity('exchange')).goods[0].available, true);
-    await h.service.operateMilkTeaActivity('exchange', { goodsId: 301, count: 1, expectedCosts: h.goods.cost });
-    assert.equal(h.calls.length, 1);
+    await assert.rejects(h.service.operateMilkTeaActivity('exchange', { goodsId: 301, count: 1, expectedCosts: h.goods.cost }), /条件/);
+    assert.equal(h.calls.length, 0);
 });
 test('fund unlock is serialized and claims require paid unlock without duplicate charges', async () => {
     const h = harness();
@@ -113,14 +109,6 @@ test('hire partial failures are not reported as success and signed work links st
     assert.deepEqual(h.calls[0].milk_tea_hire.hires[0], { slot_index: 0, duration_id: 1, target_gid: '101' });
     const state = await h.service.getMilkTeaActivity('work');
     assert.equal(JSON.stringify(state).includes('private-'), false);
-});
-
-test('missing shop slots are normalized to an empty array (upstream PR #120)', async () => {
-    const h = harness();
-    delete h.shop.slots;
-    const state = await h.service.getMilkTeaActivity();
-    assert.ok(Array.isArray(state.shop.slots), 'shop.slots 必须始终是可遍历的数组');
-    assert.deepEqual(state.shop.slots, []);
 });
 
 test('hire automatically chooses a freshly vacant unlocked slot and rejects a full shop', async () => {

@@ -1,6 +1,3 @@
-// 数据目录指向临时区：否则测试会通过真实 logger 往 core/data/logs 里追加日志。
-require('./helpers/isolate-data');
-
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -17,7 +14,7 @@ test('QQ and WeChat versions can be configured independently', () => {
     try {
         CONFIG.clientVersion = '';
         CONFIG.wxClientVersion = '';
-        assert.equal(DEFAULT_WX_CLIENT_VERSION, '1.17.0.3_20261117');
+        assert.equal(DEFAULT_WX_CLIENT_VERSION, '1.15.1.4_20261001');
         for (const platform of ['qq', 'wx', 'wechat']) {
             CONFIG.platform = platform;
             assert.equal(getClientVersion(), DEFAULT_CLIENT_VERSION);
@@ -223,8 +220,6 @@ test('session summaries retain heartbeat outcomes and isolate a late completion 
         'node:perf_hooks': { performance: { now: () => now } },
         '../services/scheduler': { createScheduler: () => ({
             setIntervalTask: (key, _ms, fn) => tasks.set(key, fn),
-            // 心跳首次漏拍会安排一次快速补发，这里同样登记到任务表（测试不自动触发）。
-            setTimeoutTask: (key, _ms, fn) => tasks.set(key, fn),
             clear: key => tasks.delete(key), clearAll: () => tasks.clear(),
         }) },
         '../services/ace': { stopAceRuntime() {}, getAceDiagnostics: () => ({ replies: 7 }) },

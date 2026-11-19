@@ -4,7 +4,8 @@
 
 const { CONFIG } = require('../../config/config');
 const crypto = require('node:crypto');
-const { getUserState, networkEvents } = require('../../utils/network');
+const { getUserState, getGatewayLoad, networkEvents } = require('../../utils/network');
+const { isGatewayHealthyForBusiness, isGatewayYieldError } = require('../../utils/low-priority-gate');
 const { toNum, getSystemDateKey, log, logWarn, randomDelay, sleep } = require('../../utils/utils');
 const { getDataFile } = require('../../config/runtime-paths');
 const { createScheduler } = require('../scheduler');
@@ -46,7 +47,6 @@ const {
 } = require('./visit-strategy');
 const { buildFriendVisitPlan } = require('./visit-plan');
 const { getFriendDogState, flushFriendPetCacheNow } = require('./pet-cache');
-const { observeFriendSummary, claimDueFriends, getNextStealDelayMs, dropFriendMaturityPlans } = require('./maturity-plan');
 
 // 延迟引用 pet-sync，它反向依赖本模块的 isFriendCheckRunning
 function petSyncRef(): any {
@@ -57,7 +57,7 @@ function petSyncRef(): any {
 let isCheckingFriends: boolean = false;
 let friendLoopRunning: boolean = false;
 let externalSchedulerMode: boolean = false;
-let friendLoopGeneration: number = 0;
+let friendLoopGeneration = 0;
 let lastResetDate: string = '';  // 上次重置日期 (YYYY-MM-DD)
 const friendScheduler: any = createScheduler('friend');
 
@@ -203,12 +203,7 @@ export function canGetExpByCandidates(opIds: number[] = []): boolean {
  */
 export function canGetExp(opId: number): boolean {
     const limit: any = operationLimits.get(opId);
-    // 没有限制数据时必须放行，不能判死：operationLimits 只由「偷菜 / 捣乱 / 务农」
-    // 的回包写入，而这些请求本身又被这个闸门挡着。只开「帮忙」时（很常见的配置）
-    // 永远不会有数据进来，判定为 false 就成了自锁——帮忙永远不执行，
-    // 而且 buildFriendVisitPlan 用的是另一个标志 canGetHelpExp，仍会安排拜访，
-    // 结果每轮对每位好友进一次农场、什么都不做。与同文件 canOperate 的口径保持一致。
-    if (!limit) return true;
+    if (!limit) return false;  // 没有限制信息，保守起见不帮助（等待限制数据）
     if (limit.dayExpTimesLimit <= 0) return true;  // 没有经验上限
     return limit.dayExpTimes < limit.dayExpTimesLimit;
 }
@@ -314,30 +309,14 @@ export async function checkFriends(options: CheckFriendsOptions = {}): Promise<b
     checkDailyReset();
     const generation = friendLoopGeneration;
     const roundDate = getSystemDateKey();
-    // 分项开关的实时生效挪到调度层：visitFriend 不再二次读 isAutomationOn。
-    // 开头的 effectiveXxx 只是「这一轮要不要安排这件事」的快照；运行中把某一项
-    // 单独关掉（比如只关偷菜、帮忙还开着），这一项必须立刻停，不能等下一轮。
-    // hasLiveFriendOp 是三分项 OR，只兜得住「三项全关」，所以每位好友还要按分项复查。
-    // 定向模式按定义忽略全局开关，保持放行（由调用点的守卫负责）。
-    const isLiveFriendOp = (kind: 'help' | 'steal' | 'bad'): boolean => {
-        if (kind === 'help') return effectiveHelpEnabled && (onlyHelp || !!isAutomationOn('friend_help'));
-        if (kind === 'steal') return effectiveStealEnabled && (onlySteal || !!isAutomationOn('friend_steal'));
-        return effectiveBadEnabled && (onlyBad || !!isAutomationOn('friend_bad'));
-    };
-    const hasLiveFriendOp = (): boolean => onlyHelp || onlySteal || onlyBad
-        || isAutomationOn('friend_help') || isAutomationOn('friend_steal') || isAutomationOn('friend_bad');
-    // 停过循环、账号离线、开关关掉或跨日，这一轮的后续动作就不再做了。
     const canContinue = (): boolean => generation === friendLoopGeneration
-        && !!getUserState().gid && isAutomationOn('friend') && hasLiveFriendOp()
-        && !inFriendQuietHours() && getSystemDateKey() === roundDate;
+        && !!getUserState().gid && isAutomationOn('friend') && !inFriendQuietHours()
+        && getSystemDateKey() === roundDate && isGatewayHealthyForBusiness(getGatewayLoad());
 
-    // 偷菜间隔在两次访问之间逐秒切片等待，等待期间不持有自动化锁。
     async function waitStealGap(target: any): Promise<void> {
-        // 每一秒都重新判断一次：中途关掉偷菜、拉黑或账号下线就不用再等了。
-        const stillWaiting = (): boolean => canContinue() && isLiveFriendOp('steal')
-            && !getFriendBlacklist(accountId).includes(target.gid);
         let remainingMs = getStealDelaySeconds(accountId) * 1000;
-        while (remainingMs > 0 && stillWaiting()) {
+        while (remainingMs > 0 && canContinue() && isAutomationOn('friend_steal')
+            && !getFriendBlacklist(accountId).includes(target.gid)) {
             const sliceMs = Math.min(remainingMs, 1000);
             await sleep(sliceMs);
             remainingMs -= sliceMs;
@@ -358,13 +337,6 @@ export async function checkFriends(options: CheckFriendsOptions = {}): Promise<b
         }
 
         const blacklist: Set<number> = new Set(getFriendBlacklist(accountId));
-
-        // 成熟计划观测：摘要里的 ripe_time_sec 是偷菜动态唤醒的排程依据（老版本逻辑移植）。
-        for (const friend of friends) {
-            const gid: number = toNum(friend && friend.gid);
-            if (!gid || gid === state.gid || blacklist.has(gid)) continue;
-            observeFriendSummary(friend);
-        }
 
         // 经验满不帮时，本轮只帮当天缓存已确认是护主犬的好友；缓存没结论的交给每日宠物同步补齐。
         const stopWhenExpLimit: boolean = !!isAutomationOn('friend_help_exp_limit') && !ignoreExpLimit;
@@ -414,22 +386,15 @@ export async function checkFriends(options: CheckFriendsOptions = {}): Promise<b
         let attemptedStealVisit = false;
 
         for (const target of plan.visits) {
-            // 每进一个好友前复核一次：这轮可能已经被停掉、跨日或账号离线。
             if (!canContinue()) return false;
             if (getFriendBlacklist(accountId).includes(target.gid)) continue;
-            const liveSteal = isLiveFriendOp('steal');
-            const liveHelp = isLiveFriendOp('help');
-            const liveBad = isLiveFriendOp('bad');
-            // 运行中关掉某一分项：这个目标要做的事若全被关掉就不进农场，
-            // 否则只做仍开着的部分，不能靠开头快照把已关闭的操作带进去。
-            if (!(target.wantSteal && liveSteal) && !(target.wantHelp && liveHelp) && !(target.wantBad && liveBad)) continue;
-            if (attemptedStealVisit && target.wantSteal && liveSteal) {
-                // 首位可偷好友立即访问，后续才等配置的偷菜间隔；等待期间不持锁。
+            if (attemptedStealVisit && target.wantSteal && isAutomationOn('friend_steal')) {
+                // 首位可偷好友立即访问，后续等待不持有自动化锁。
                 await waitStealGap(target);
             }
             if (!canContinue()) return false;
             if (getFriendBlacklist(accountId).includes(target.gid)) continue;
-            if (target.wantBad && liveBad) {
+            if (target.wantBad) {
                 // 纯捣乱的好友都排在队尾，额度一用完这一轮就可以收工
                 if (isBadOperationLimitReached() || getRemainingBadOperationTimes() <= 0) {
                     log('好友', '放虫放草次数已用完，停止执行', { module: 'friend', event: '放虫放草次数用完' });
@@ -444,15 +409,11 @@ export async function checkFriends(options: CheckFriendsOptions = {}): Promise<b
             }
 
             try {
-                // 单次访问用独立入队：等待间隔时不会把整条自动化锁占住，
-                // 农场巡查和心跳才不会被拖住。
                 await runExclusiveAutomationTask('friend_visit', async () => {
                     if (!canContinue() || getFriendBlacklist(accountId).includes(target.gid)) return;
-                    // 入队到真正执行之间可能又过了一段时间，这里按分项再实时读一次；
-                    // 定向模式由 isLiveFriendOp 内部的 onlyXxx 豁免全局开关。
-                    const allowSteal = target.wantSteal && isLiveFriendOp('steal');
-                    const allowHelp = target.wantHelp && isLiveFriendOp('help');
-                    const allowBad = target.wantBad && isLiveFriendOp('bad');
+                    const allowSteal = target.wantSteal && isAutomationOn('friend_steal');
+                    const allowHelp = target.wantHelp && isAutomationOn('friend_help');
+                    const allowBad = target.wantBad && isAutomationOn('friend_bad');
                     if (!allowSteal && !allowHelp && !allowBad) return;
                     if (allowSteal) attemptedStealVisit = true;
                     await visitFriend(target, totalActions, state.gid, state.accountId, {
@@ -463,18 +424,18 @@ export async function checkFriends(options: CheckFriendsOptions = {}): Promise<b
                     });
                 }, { detached: true });
             } catch (e: any) {
+                if (isGatewayYieldError(e) || String(e.message).includes('stage=pending')) throw e;
                 log('好友', `巡查好友失败: ${target.name}, 错误: ${e.message}`, {
                     module: 'friend', event: '好友巡查失败', friendName: target.name, error: e.message,
                 });
             }
 
-            // 捣乱访问之间放慢一些，普通访问快速让位。
+            // 普通访问快速让位，捣乱仍保留较慢间隔。
             if (target.wantBad) await randomDelay(2000, 3500);
             else await randomDelay(200, 350);
         }
 
         if (!canContinue()) return false;
-
         if (midRoundExpSkipped > 0) {
             log('好友', `本轮帮助经验在中途达到上限，跳过剩余 ${midRoundExpSkipped} 位非护主犬好友`, {
                 module: 'friend', event: '好友巡查跳过', reason: 'exp_limit', count: midRoundExpSkipped,
@@ -491,9 +452,6 @@ export async function checkFriends(options: CheckFriendsOptions = {}): Promise<b
                 // ignore
             }
         }
-
-        // 到期成熟计划归位：避免一次没偷成的旧到期点把动态唤醒长期钉在最小值。
-        claimDueFriends();
 
         // 生成总结日志
         const summary: string[] = [];
@@ -518,93 +476,6 @@ export async function checkFriends(options: CheckFriendsOptions = {}): Promise<b
     }
 }
 
-// ============ 偷菜排程（老版本 runScheduledStealCheck 移植）============
-
-const STEAL_CALIBRATION_INTERVAL_MS = 15 * 60 * 1000;
-let lastStealCalibrationAt = 0;
-
-function isStealCalibrationDue(now: number = Date.now()): boolean {
-    return now - lastStealCalibrationAt >= STEAL_CALIBRATION_INTERVAL_MS;
-}
-
-/**
- * 成熟驱动的偷菜巡查：只进「到期好友 + 摘要显示已可偷的好友」的农场，
- * 每 15 分钟校准一轮好友列表摘要。返回下次偷菜唤醒延迟（毫秒），
- * 由 worker 的独立偷菜 Tick 消费——作物成熟的瞬间醒来去偷，与老版本节奏一致。
- */
-export async function runScheduledStealCheck(): Promise<number> {
-    const state: any = getUserState();
-    if (!isAutomationOn('friend') || !isAutomationOn('friend_steal')) return getNextStealDelayMs();
-    // 帮忙/放虫巡查正占着互斥标志：本轮让开没问题，但不能写死 60 秒——
-    // 那会把 runScheduledStealCheck 算出的作物成熟时刻整个跳过。按成熟计划重新唤醒。
-    if (isCheckingFriends) return getNextStealDelayMs();
-    if (!state.gid || inFriendQuietHours()) return 60 * 1000;
-
-    isCheckingFriends = true;
-    const accountId: string = process.env.FARM_ACCOUNT_ID || '';
-    try {
-        const blacklist: Set<number> = new Set(getFriendBlacklist(accountId));
-        // 成熟计划是「访问好友时」写进来的，拉黑动作不会回头清它。
-        // 不按黑名单丢掉的话，claimDueFriends 每 5 分钟把到期点重新捞出并进农场偷菜，
-        // getNextStealDelayMs 也会按这个成熟点频繁唤醒；其它巡查路径全都查黑名单，这里不能例外。
-        dropFriendMaturityPlans(blacklist);
-        const targets = new Map<number, { gid: number; name: string }>();
-        // 到期成熟计划：matureAt ≤ now 的好友立即去偷（claim 会把到期点推后 5 分钟重查）。
-        for (const due of claimDueFriends({ limit: 12 })) {
-            targets.set(due.gid, { gid: due.gid, name: due.name || `GID:${due.gid}` });
-        }
-
-        if (isStealCalibrationDue()) {
-            const friendsReply: any = await getAllFriends();
-            cacheFriendsListFromReply(friendsReply);
-            const friends: any[] = extractReplyFriends(friendsReply);
-            for (const friend of friends) {
-                const gid: number = toNum(friend && friend.gid);
-                if (!gid || gid === state.gid || blacklist.has(gid)) continue;
-                observeFriendSummary(friend);
-                if (toNum(friend && friend.plant && friend.plant.steal_plant_num) > 0 && !targets.has(gid)) {
-                    targets.set(gid, { gid, name: String(friend.remark || friend.name || `GID:${gid}`) });
-                }
-            }
-            lastStealCalibrationAt = Date.now();
-        }
-
-        const visitTargets = [...targets.values()].slice(0, 12);
-        const totalActions: any = { steal: 0, farming: 0, putBug: 0, putWeed: 0 };
-        for (const target of visitTargets) {
-            // 这里传的是硬编码 allowSteal:true，且 visitFriend 已不再二次读分项开关；
-            // 运行中关掉偷菜必须在循环内实时复查，否则剩余好友仍会被带进农场。
-            if (!isAutomationOn('friend') || !isAutomationOn('friend_steal')) break;
-            try {
-                await visitFriend(
-                    { gid: target.gid, name: target.name },
-                    totalActions,
-                    state.gid,
-                    state.accountId,
-                    { allowSteal: true, allowHelp: false, allowBad: false },
-                );
-            } catch (e: any) {
-                logWarn('好友', `定时偷菜检查失败: ${target.name}: ${e.message}`);
-            }
-            await randomDelay(800, 1600);
-        }
-
-        if (totalActions.steal > 0) {
-            try {
-                await sellAllFruits();
-            } catch {
-                // ignore
-            }
-            log('好友', `偷菜巡查完成 → 偷${totalActions.steal}`, {
-                module: 'friend', event: '偷菜巡查', result: 'ok', stolen: totalActions.steal,
-            });
-        }
-    } finally {
-        isCheckingFriends = false;
-    }
-    return getNextStealDelayMs();
-}
-
 // ============ 循环控制 ============
 
 /**
@@ -613,7 +484,6 @@ export async function runScheduledStealCheck(): Promise<number> {
 async function friendCheckLoop(): Promise<void> {
     if (externalSchedulerMode) return;
     if (!friendLoopRunning) return;
-    // checkFriends 内部已按单次访问入队，外面再包一层会把偷菜间隔也算进锁的占用。
     await checkFriends();
     if (!friendLoopRunning) return;
     friendScheduler.setTimeoutTask('friend_check_loop', Math.max(0, CONFIG.friendCheckInterval), () => friendCheckLoop());

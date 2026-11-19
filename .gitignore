@@ -10,6 +10,9 @@ core/client.js
 # Runtime data (contains user credentials and logs)
 core/data/
 
+# Debug/test scripts
+core/scripts/
+
 # Local captures, Spine source/renderer, and browser review artifacts
 /output/
 /.playwright-cli/
@@ -54,9 +57,3 @@ cleanup.bat
 # Local protocol captures and generated runtime analysis
 protocol-captures/
 /docs/performance-analysis/
-
-# Python caches
-__pycache__/
-
-# WorkBuddy 本地会话数据（工作日志等），只留在本机，不进代码仓库
-.workbuddy/

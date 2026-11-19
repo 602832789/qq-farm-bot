@@ -107,10 +107,11 @@ function createRuntimeState(options: RuntimeStateOptions) {
         const src = (data && typeof data === 'object') ? data : {};
         const ops = (src.operations && typeof src.operations === 'object') ? { ...src.operations } : {};
         for (const k of operationKeys) {
-            // 只挡 NaN 不够：负数与 Infinity 会原样下发给浏览器（Infinity 经 JSON.stringify
-            // 变成 null，前端再加就会出现 NaN），卡片显示直接错乱。
-            const n = Number(ops[k]);
-            ops[k] = Number.isFinite(n) && n >= 0 ? n : 0;
+            if (ops[k] === undefined || ops[k] === null || Number.isNaN(Number(ops[k]))) {
+                ops[k] = 0;
+            } else {
+                ops[k] = Number(ops[k]);
+            }
         }
         return {
             ...src,
@@ -157,10 +158,6 @@ function createRuntimeState(options: RuntimeStateOptions) {
             sessionExpGained: 0,
             sessionGoldGained: 0,
             sessionCouponGained: 0,
-            sessionGoldBeanGained: 0,
-            runExpGained: 0,
-            runGoldGained: 0,
-            runCouponGained: 0,
             lastExpGain: 0,
             lastGoldGain: 0,
             limits: {},

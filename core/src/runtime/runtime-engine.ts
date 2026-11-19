@@ -3,16 +3,14 @@ const { fork } = require('node:child_process');
 const path = require('node:path');
 const { Worker } = require('node:worker_threads');
 const store = require('../models/store');
-const { updateRuntimeConfig } = require('../config/config');
+const { updateRuntimeConfig, getRuntimeConfig, getDefaultSystemConfig } = require('../config/config');
 const { sendPushooMessage } = require('../services/push');
 const { createDataProvider } = require('./data-provider');
 const { createReloginReminderService } = require('./relogin-reminder');
 const { createRuntimeState } = require('./runtime-state');
 const { createWorkerManager } = require('./worker-manager');
-const { startWxKeepAlive, stopWxKeepAlive, applyWxKeepAliveConfig, notifyAccountOffline, cancelPendingRelogin } = require('../services/wx-keepalive');
-const { recordAutoRefreshSuccess, recordAutoRefreshFailure } = require('../services/preflight-stats');
 
-const OPERATION_KEYS = ['harvest', 'water', 'weed', 'bug', 'farming', 'fertilize', 'plant', 'steal', 'helpWater', 'helpWeed', 'helpBug', 'goldenBugClear', 'goldenBugPut', 'taskClaim', 'sell', 'upgrade', 'levelUp', 'tongQiGift'];
+const OPERATION_KEYS = ['harvest', 'farming', 'fertilize', 'plant', 'steal', 'helpFarming', 'taskClaim', 'sell', 'upgrade'];
 
 interface RuntimeEngineOptions {
     processRef?: any;
@@ -68,9 +66,6 @@ function createRuntimeEngine(options: RuntimeEngineOptions = {}) {
         sendConfiguredPush,
     } = reloginReminder;
 
-    // 保活回调要在 workerManager 之后才能拿到 restartWorker，这里用一层间接引用避免循环依赖。
-    const wxKeepAliveBridge: { notify?: (accountId: string, accountName: string, reason: string) => void } = {};
-
     const { startWorker, stopWorker, restartWorker, callWorkerApi } = createWorkerManager({
         fork,
         WorkerThread: Worker,
@@ -97,28 +92,7 @@ function createRuntimeEngine(options: RuntimeEngineOptions = {}) {
             runtimeEvents.emit('worker_log', { entry, accountId, accountName });
             if (onLog) onLog(entry, accountId, accountName);
         },
-        onAccountOffline: (accountId: string, accountName: string, reason: string) => {
-            if (typeof wxKeepAliveBridge.notify === 'function') wxKeepAliveBridge.notify(accountId, accountName, reason);
-        },
     });
-
-    wxKeepAliveBridge.notify = (accountId: string, _accountName: string, reason: string) => {
-        notifyAccountOffline(accountId, reason);
-    };
-
-    function startAccountKeepAlive(): void {
-        startWxKeepAlive({
-            restartWorker: (account: any) => restartWorker(account),
-            isAccountRunning: (accountId: string) => !!workers[String(accountId)],
-            log,
-            addAccountLog,
-            // 自动续期账本：只记到期前预防 / 掉线重登，供账号卡片展示无人值守结果。
-            recordPreflightResult: (accountId: string, ok: boolean, at: number) => {
-                if (ok) recordAutoRefreshSuccess(accountId, at);
-                else recordAutoRefreshFailure(accountId, at);
-            },
-        });
-    }
     const dataProvider = createDataProvider({
         workers,
         globalLogs: GLOBAL_LOGS,
@@ -137,8 +111,6 @@ function createRuntimeEngine(options: RuntimeEngineOptions = {}) {
         startWorker,
         stopWorker,
         restartWorker,
-        // 手动停止 / 启动 / 重启要先撤掉「等待重登」，否则定时器到点会把账号拉回来。
-        cancelPendingRelogin,
     });
 
     runtimeEvents.on('log', (entry: any) => {
@@ -171,36 +143,13 @@ function createRuntimeEngine(options: RuntimeEngineOptions = {}) {
         }
     }
 
-    /**
-     * 服务启动后自动登录已保存的账号。
-     * 必须走 dataProvider.startAccount：微信账号会在启动前用长效凭证续期换 Code，
-     * 直接 startWorker 会拿 accounts.json 里已被消费的一次性旧 Code 建立连接而被网关拒绝。
-     */
-    async function startAllAccounts(): Promise<void> {
+    function startAllAccounts(): void {
         const accounts = (store.getAccounts().accounts || []);
-        if (!accounts.length) {
+        if (accounts.length > 0) {
+            log('系统', `发现 ${accounts.length} 个账号，正在启动...`);
+            accounts.forEach((acc: any) => startWorker(acc));
+        } else {
             log('系统', '未发现账号，请访问管理面板添加账号');
-            return;
-        }
-        log('系统', `发现 ${accounts.length} 个账号，正在自动登录...`);
-        for (let i = 0; i < accounts.length; i += 1) {
-            const acc: any = accounts[i];
-            const id = String(acc.id || '');
-            const name = String(acc.name || acc.nick || id);
-            try {
-                await dataProvider.startAccount(id);
-                addAccountLog('auto_login', `账号 ${name} 已随服务启动自动登录`, id, name);
-            }
-            catch (error: any) {
-                log('错误', `账号 ${name} 自动登录失败: ${(error && error.message) || String(error)}`, {
-                    accountId: id,
-                    accountName: name,
-                });
-            }
-            // 多账号错峰启动，避免同时建连打满网关与登录限流。
-            if (i < accounts.length - 1) {
-                await new Promise(resolve => setTimeout(resolve, 1500));
-            }
         }
     }
 
@@ -219,10 +168,8 @@ function createRuntimeEngine(options: RuntimeEngineOptions = {}) {
         }
 
         if (shouldAutoStartAccounts) {
-            await startAllAccounts();
+            startAllAccounts();
         }
-
-        startAccountKeepAlive();
     }
 
     function stopAllAccounts(): void {
@@ -247,9 +194,6 @@ function createRuntimeEngine(options: RuntimeEngineOptions = {}) {
         callWorkerApi,
         log,
         addAccountLog,
-        startAccountKeepAlive,
-        stopAccountKeepAlive: stopWxKeepAlive,
-        applyAccountKeepAliveConfig: applyWxKeepAliveConfig,
     };
 }
 

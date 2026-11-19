@@ -32,14 +32,8 @@ async function claimSkillGifts(): Promise<any> {
     return types.ClaimSkillGiftsReply.decode(replyBody);
 }
 
-function safeCount(value: any): number {
-    // `Math.max(0, Infinity)` 仍是 Infinity：这个值会下发给面板，JSON 里会变成 null。
-    const parsed = toNum(value);
-    return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 0;
-}
-
 function getPendingGiftCount(reply: any): number {
-    return safeCount(reply?.pending_gift_count ?? reply?.pendingGiftCount);
+    return Math.max(0, toNum(reply?.pending_gift_count ?? reply?.pendingGiftCount));
 }
 
 function getFarmingSkillGiftCount(reply: any): number {
@@ -47,7 +41,7 @@ function getFarmingSkillGiftCount(reply: any): number {
     return results.reduce((total: number, result: any) => {
         const reward: any = result?.reward;
         return toNum(reward?.id) === DOG_SKILL_GIFT_ITEM_ID
-            ? total + safeCount(reward?.count)
+            ? total + Math.max(0, toNum(reward?.count))
             : total;
     }, 0);
 }
@@ -68,8 +62,8 @@ async function checkAndClaimDogSkillGifts(pendingCountHint?: any, propagateError
             const reply: any = await claimSkillGifts();
             const item: any = reply?.item || null;
             const itemId: number = toNum(item?.id);
-            const itemCount: number = safeCount(item?.count);
-            const claimedCount: number = safeCount(reply?.claimed_count ?? reply?.claimedCount) || itemCount;
+            const itemCount: number = Math.max(0, toNum(item?.count));
+            const claimedCount: number = Math.max(0, toNum(reply?.claimed_count ?? reply?.claimedCount)) || itemCount;
             const itemInfo: any = itemId > 0 ? getItemById(itemId) : null;
             const itemName: string = String(itemInfo?.name || (itemId > 0 ? `物品#${itemId}` : '宠物礼包'));
 

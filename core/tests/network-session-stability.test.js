@@ -1,6 +1,3 @@
-// 数据目录指向临时区：否则测试会通过真实 logger 往 core/data/logs 里追加日志。
-require('./helpers/isolate-data');
-
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -37,7 +34,7 @@ function harness() {
         '../services/ace': { startAceRuntime() {}, stopAceRuntime() {}, getAceDiagnostics: () => ({}) },
         '../services/status': { updateStatusFromLogin() {} },
         './crypto-wasm': { bindUser() {}, getEncryptedInitInfo: () => '', getDiagnostics: () => ({}) },
-        './utils': { toLong: Number, toNum: Number, log() {}, logWarn() {}, syncServerTime() {}, getServerTimeSec: () => 0, formatDateKeyInTimeZone: () => '1970-01-01' },
+        './utils': { toLong: Number, toNum: Number, log() {}, logWarn() {}, syncServerTime() {} },
     };
     const sandbox = {
         require: name => overrides[name] || realRequire(name), module: { exports: {} }, exports: {},

@@ -6,9 +6,7 @@ export {};
 const protobuf = require('protobufjs');
 const { performance } = require('node:perf_hooks');
 const { getPlantNameBySeedId, formatGrowTime, getPlantGrowTime, getAllSeeds, getPlantBySeedId } = require('../../config/gameConfig');
-const { getPreferredSeed, getAutomation, getPlantingStrategy, getBagSeedPriority, getBagSeedMultiLandReservationEnabled, getBagSeedLandTypes, getBagSeedFallbackStrategy, getPrioritize2x2Crops, getPlantDelaySeconds } = require('../../models/store');
-const { PlantPhase } = require('../../config/config');
-const { readIdOr } = require('../../utils/input-guards');
+const { getPreferredSeed, getAutomation, getPlantingStrategy, getBagSeedPriority, getBagSeedMultiLandReservationEnabled, getBagSeedLandTypes, getBagSeedFallbackStrategy, getPlantDelaySeconds } = require('../../models/store');
 const { getUserState, getWsErrorState, sendMsgAsync } = require('../../utils/network');
 const { toNum, getServerTimeSec, log, logWarn, sleep } = require('../../utils/utils');
 const { types } = require('../../utils/proto');
@@ -17,23 +15,13 @@ const { recordOperation } = require('../stats');
 const { getBagSeeds } = require('../warehouse');
 const { getCareerInfoOrNull } = require('../career');
 const { getAllLands, buyGoods, removePlant, fertilizeOne } = require('./api');
+const { isRipeningOnlyMode, runRipeningFertilizer } = require('./ripening');
 const {
     selectFutureLayoutReservation,
     getRegisteredLayout,
     registerLayout,
     clearRegisteredLayout,
-    resetRegisteredLayouts,
-    layoutKey,
 } = require('./layout-reservation');
-const {
-    occupantsOf,
-    createReservationWindow,
-    createFailureCooldown,
-    buildPlantingRoundSignature,
-    createPlantingRoundGate,
-    getLayoutClearMetrics,
-    isQualifiedForWaiting,
-} = require('./reservation-window');
 const {
     ALL_FERTILIZER_LAND_TYPES,
     buildLandDetail,
@@ -43,9 +31,6 @@ const {
     summarizeLandDetails,
     getOrganicFertilizerTargetsFromLands,
     filterLandIdsForNormalFertilizer,
-    getFastMatureLands,
-    getCurrentPhase,
-    pickRipen2x2Lands,
     normalizeFertilizerLandTypes,
     formatFertilizerLandTypes,
     filterLandIdsByTypes,
@@ -79,20 +64,6 @@ function isSlicedPlanting(pacing: PlantingPacing): boolean {
     return !!pacing.defer && (pacing.delaySeconds ?? getPlantDelaySeconds()) > 0;
 }
 
-/**
- * 铲除后合并可用空地：开场已确认的空地是已知事实，服务端确认结果只能补充新释放的
- * 地块，不能反向删减（快照滞后时曾把开场空地整体抹掉，导致整轮一块都不种）。
- * 按地块 id 去重并过滤非法值；防重复下单由 plantSeeds 的服务端占地确认负责。
- */
-function mergeConfirmedEmptyLands(knownEmpty: number[], confirmedEmpty: unknown): number[] {
-    // toNum 只把 Long 转成 number，字符串编号会原样留下；再过一道 Number 归一化，
-    // 否则 '2' 和 2 会被 Set 当成两块地，可能造成重复下单。
-    return [...new Set<number>([
-        ...(Array.isArray(knownEmpty) ? knownEmpty : []),
-        ...(Array.isArray(confirmedEmpty) ? confirmedEmpty : []),
-    ].map((id: any) => Number(toNum(id))).filter((id: number) => Number.isFinite(id) && id > 0))];
-}
-
 interface PlantSeedsResult {
     planted: number;
     plantedLandIds: number[];
@@ -101,79 +72,8 @@ interface PlantSeedsResult {
     uncertain: boolean;
 }
 
-const { createPlantingLogThrottle, suppressedSuffix } = require('./planting-log-throttle');
-
 const NORMAL_FERTILIZER_ID: number = 1011;
 const ORGANIC_FERTILIZER_ID: number = 1012;
-
-interface PlantingDiagnostic {
-    key: string;
-    signature: string;
-    message: string;
-    meta: any;
-}
-
-/**
- * 一轮「背包优先种植」的诊断日志先全部缓存，收尾时合并成一条再决定要不要写面板。
- * 旧实现是三类日志各自节流、各自在 5 分钟窗口到期时重新播报，于是每个窗口开头
- * 又会同时冒出三条「同样状态重复 N 次，已合并」，看起来就像合并根本没生效。
- */
-const plantingRoundThrottle = createPlantingLogThrottle();
-let plantingRound: PlantingDiagnostic[] | null = null;
-
-/**
- * 2×2 预留状态：每个账号在独立 worker 进程里跑，模块级实例天然按账号隔离。
- * - 60 秒资格窗口 + 首次预留 60 秒硬期限（服务器时钟，轮询不续期）
- * - 资格变化/到期释放并记住占用者身份，防同一停滞组合反复圈地
- * - 整轮土地状态签名不变时跳过整个种植分支（不读背包、不发商店/种植请求）
- */
-const reservationWindow = createReservationWindow();
-const reservationCooldown = createFailureCooldown();
-const plantingRoundGate = createPlantingRoundGate();
-
-/** 供回归测试/账号停机时复位全部跨轮状态（含已注册的 2×2 布局）。 */
-function resetPlantingRoundState(): void {
-    reservationWindow.clear();
-    reservationCooldown.clear();
-    plantingRoundGate.clear();
-    plantingRoundThrottle.reset();
-    // registeredLayouts 同为模块级跨轮状态，漏掉它会让新会话沿用上一个账号的布局选择。
-    resetRegisteredLayouts();
-}
-
-function logPlantingThrottled(key: string, signature: string, message: string, meta: any): void {
-    // 在一轮巡查内：只入队，不单独输出。
-    if (plantingRound) {
-        plantingRound.push({ key, signature, message, meta });
-        return;
-    }
-    // 兜底：脱离巡查上下文调用时仍按单条节流处理。
-    const decision = plantingRoundThrottle.check(key, signature);
-    if (!decision.emit) return;
-    log('种植', `${message}${suppressedSuffix(decision.suppressed)}`, meta);
-}
-
-/** 整轮状态签名：任何一条诊断变了都算这一轮有变化。 */
-function flushPlantingRound(): void {
-    const round = plantingRound;
-    plantingRound = null;
-    if (!round || round.length === 0) return;
-    const signature = round.map(item => `${item.key}=${item.signature}`).join('\u0001');
-    const decision = plantingRoundThrottle.checkStateChange('bag_planting_round', signature);
-    // 状态没变化：整轮都不写前端日志面板，也不按时间窗口周期性重复播报。
-    if (!decision.emit) return;
-    // 一轮里可能因多个种子凑不齐布局而产生很多条，正文只带前几条，完整明细放 meta。
-    const shown = round.slice(0, 5).map(item => item.message);
-    const rest = round.length - shown.length;
-    const message = `${shown.join('；')}${rest > 0 ? `；…等共 ${round.length} 条诊断` : ''}`;
-    log('种植', `${message}${suppressedSuffix(decision.suppressed)}`, {
-        module: 'farm',
-        event: '种植种子',
-        result: 'bag_planting_round',
-        strategy: 'bag_priority',
-        diagnostics: round.map(item => ({ ...item.meta, key: item.key })),
-    });
-}
 
 function confirmsPlantedFootprint(
     expectedLandIds: Set<number>,
@@ -195,7 +95,7 @@ function getPlantSizeBySeedId(seedId: number | string): number {
 }
 
 /**
- * 种植 - 游戏中拖动种植间隔很短，这里用50ms。
+ * 相邻种植请求按账号设置间隔；0 秒保留原有 50ms 最小请求间隔。
  * 多格作物必须传入预先选好的布局；回复占地不完整时会补拉全量土地确认。
  */
 async function plantSeeds(seedId: number | string, landIds: number[], options: {
@@ -218,7 +118,6 @@ async function plantSeeds(seedId: number | string, landIds: number[], options: {
             .filter((layout: PlantingLayout) => layout.anchorLandId > 0 && layout.landIds.length > 0)
         : normalizedLandIds.map((id: number) => ({ anchorLandId: id, landIds: [id] }));
     const requestedLayouts = layouts.slice(0, maxPlantCount);
-    // 分次种植时每轮只发一个请求，剩下的交给下一轮，避免长间隔把整轮卡死。
     const selectedLayouts = isSlicedPlanting(pacing) ? requestedLayouts.slice(0, 1) : requestedLayouts;
     const plantedLandIds: number[] = [];
     const occupiedLandIds = new Set<number>();
@@ -228,7 +127,6 @@ async function plantSeeds(seedId: number | string, landIds: number[], options: {
     for (let index = 0; index < selectedLayouts.length; index++) {
         const layout = selectedLayouts[index];
         const landId = layout.anchorLandId;
-        // 到配置间隔才发下一个请求；分次模式下没到点就整轮让出，留给接下来的定时续跑。
         if (pacing.lastPlantAt !== null) {
             const remainingMs = getRemainingPlantDelayMs(pacing);
             if (remainingMs > 0 && isSlicedPlanting(pacing)) {
@@ -297,7 +195,6 @@ async function plantSeeds(seedId: number | string, landIds: number[], options: {
         }
         if (!rpcSucceeded) break;
     }
-    // 还有布局没种完，说明是被间隔让出的，交给下一轮继续。
     if (!uncertain && plantedLandIds.length > 0 && selectedLayouts.length < requestedLayouts.length) {
         pacing.deferred = true;
     }
@@ -359,27 +256,6 @@ function sortBagSeedsForPlanting(bagSeeds: any[], priorityList: any[] | undefine
 }
 
 /**
- * 「优先种植 2×2 作物」：开启后多格作物拥有最高种植优先级。
- * 多格作物整体排在最前，显式指定优先级的种子（优先种子 / 背包优先顺序）次之，单格作物最后。
- */
-function preferMultiSizeSeeds<T extends { seedId?: any }>(seeds: T[], pinnedSeedIds: Array<number | string> = []): T[] {
-    const list = Array.isArray(seeds) ? seeds : [];
-    if (list.length < 2) return [...list];
-    const pinned = new Set<number>(pinnedSeedIds.map(id => toNum(id)).filter(id => id > 0));
-    const head: T[] = [];
-    const multi: T[] = [];
-    const single: T[] = [];
-    for (const seed of list) {
-        const seedId = toNum(seed && seed.seedId);
-        if (pinned.has(seedId)) head.push(seed);
-        else if (getPlantSizeBySeedId(seedId) > 1) multi.push(seed);
-        else single.push(seed);
-    }
-    if (multi.length === 0) return [...head, ...single];
-    return [...multi, ...head, ...single];
-}
-
-/**
  * 该种子允许种植的土地类型；null 表示不限制。
  * 缺配置、空数组、勾满全部类型三者等价于不限制。
  */
@@ -391,54 +267,9 @@ function resolveSeedLandTypes(bagSeedLandTypes: any, seedId: any): string[] | nu
     return types;
 }
 
-/**
- * 一轮巡查的入口：开启诊断日志合并缓冲，finally 保证提前返回或抛错都能收尾。
- * 嵌套调用时沿用外层缓冲，避免把一轮拆成多条。
- */
 async function plantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<number, string>, options: {
     propagateErrors?: boolean;
     allUnlockedLandIds?: number[];
-    lands?: any[];
-    /** 手动触发的一键种植不走整轮闸门，用户重复点击必须真的重试。 */
-    force?: boolean;
-    pacing?: PlantingPacing;
-} = {}): Promise<{
-    remainingLandIds: number[];
-    fallbackAllowed: boolean;
-    plantedLandIds: number[];
-    totalPlanted: number;
-    occupiedCount: number;
-    deferredLandIds: number[];
-}> {
-    // 整轮状态闸门：土地状态完全没变时（典型场景：2×2 只空出一部分、剩余植株还在长），
-    // 直接复用上一轮的「无动作」结论，连背包/商店/种植请求都不发。
-    const gateEnabled = !options.force && Array.isArray(options.lands) && options.lands.length > 0;
-    const roundSignature = gateEnabled
-        ? buildPlantingRoundSignature(landsToPlant, options.allUnlockedLandIds, options.lands)
-        : '';
-    const cached = gateEnabled ? plantingRoundGate.cached(roundSignature) : null;
-    // 有等待组已经越过硬期限时必须放行，让本轮 evaluate 立刻释放空地，不能拖到 30 秒重查。
-    if (cached && !reservationWindow.hasExpiredWindow(getServerTimeSec())) return { ...cached };
-
-    const nested = plantingRound !== null;
-    if (!nested) plantingRound = [];
-    try {
-        const result = await runPlantFromBagSeeds(landsToPlant, landTypeById, options);
-        // 只缓存「本轮没有任何实际种植」的结论；有种植则立即失效，下一轮照常重算。
-        // 必须透传真实结果：闸门内部按 plantedLandIds 判断是否作废缓存，
-        // 手写空数组会让这条保护永远进不去，把「刚种过」也缓存满 30 秒。
-        if (gateEnabled) plantingRoundGate.commit(roundSignature, result);
-        return result;
-    } finally {
-        if (!nested) flushPlantingRound();
-    }
-}
-
-async function runPlantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<number, string>, options: {
-    propagateErrors?: boolean;
-    allUnlockedLandIds?: number[];
-    lands?: any[];
-    force?: boolean;
     pacing?: PlantingPacing;
 } = {}): Promise<{
     remainingLandIds: number[];
@@ -488,8 +319,7 @@ async function runPlantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<numb
     // 不可种的种子服务端会拒绝，这里记录后继续下一优先种子。
     const skippedSeeds: any[] = [];
     const levelLockedSeeds: any[] = [];
-    const prioritize2x2Crops = getPrioritize2x2Crops();
-    const sortedBagSeeds = sortBagSeedsForPlanting(
+    const usableSeeds = sortBagSeedsForPlanting(
         filteredForLevelAndCount.filter((seed: any) => {
             if (seed.count <= 0) {
                 skippedSeeds.push({ seedId: seed.seedId, name: seed.name, reason: 'count_zero', count: seed.count });
@@ -506,7 +336,6 @@ async function runPlantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<numb
         }),
         priorityList,
     );
-    const usableSeeds = prioritize2x2Crops ? preferMultiSizeSeeds(sortedBagSeeds, priorityList) : sortedBagSeeds;
 
     const levelLockedSeedIds = new Set<number>(levelLockedSeeds.map((s: any) => toNum(s && s.seedId)));
     if (levelLockedSeeds.length > 0) {
@@ -527,7 +356,7 @@ async function runPlantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<numb
             const scope = seed.landTypes ? `[仅${formatFertilizerLandTypes(seed.landTypes).join('/')}]` : '';
             return `${index + 1}.${seed.name}(${seed.seedId})x${toNum(seed && seed.count)}${scope}`;
         }).join(' -> ');
-        logPlantingThrottled('bag_priority_order', orderedSeeds, `背包种子执行顺序: ${orderedSeeds}`, {
+        log('种植', `背包种子执行顺序: ${orderedSeeds}`, {
             module: 'farm', event: '种植种子', result: 'bag_priority_order', strategy: 'bag_priority',
             priority: priorityList, seedIds: plantingOrder.map((seed: any) => seed.seedId),
         });
@@ -550,9 +379,6 @@ async function runPlantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<numb
     // 每个种子每轮最多预留一组布局；各种子预留的整组目标布局互不重叠。
     const reservedSeedIds = new Set<number>();
     const claimedLayoutLandIds = new Set<number>();
-    // 老版本规则：等待清空的 2×2 预留区最多一组（已完全空闲的组不占预算），
-    // 避免「优先种植 2×2」把所有空地都囤起来、单格作物完全没地种。
-    let waiting2x2ReservationUsed = false;
 
     for (const seed of plantingOrder) {
         if (remainingLandIds.length === 0 || !fallbackAllowed || pacing.deferred) break;
@@ -565,9 +391,7 @@ async function runPlantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<numb
         const allLayouts: PlantingLayout[] = buildPlantingLayouts(allowedLandIds, plantSize);
         const layouts: PlantingLayout[] = selectNonOverlappingLayouts(allLayouts, toNum(seed.count));
         const scopeLog = seed.landTypes ? ` 限${formatFertilizerLandTypes(seed.landTypes).join('/')}=${allowedLandIds.length}` : '';
-        const layoutMessage = `背包种子 ${seed.name}(${seed.seedId}) size=${plantSize} count=${seed.count} 剩余=${remainingLandIds.length}${scopeLog} allLayouts=${allLayouts.length} selected=${layouts.length}`;
-        const layoutSignature = [plantSize, seed.count, remainingLandIds.length, allowedLandIds.length, allLayouts.length, layouts.length].join('|');
-        logPlantingThrottled(`layout_check:${seed.seedId}`, layoutSignature, layoutMessage, {
+        log('种植', `背包种子 ${seed.name}(${seed.seedId}) size=${plantSize} count=${seed.count} 剩余=${remainingLandIds.length}${scopeLog} allLayouts=${allLayouts.length} selected=${layouts.length}`, {
             module: 'farm', event: '种植种子', result: 'layout_check', strategy: 'bag_priority',
             seedId: seed.seedId, plantSize, count: seed.count, emptyCount: remainingLandIds.length,
             landTypes: seed.landTypes || null, allowedCount: allowedLandIds.length,
@@ -580,100 +404,37 @@ async function runPlantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<numb
             const allEligibleLandIds = seed.landTypes
                 ? filterLandIdsByTypes(allUnlockedLandIds, landTypeById, seed.landTypes)
                 : allUnlockedLandIds;
-            // 「优先种植 2×2」开启时，多格作物凑不齐布局也要预留目标布局中已空出的地，
-            // 等占着位置的单格作物成熟收获后整组清空再种 2×2（老版本 2×2 预留逻辑移植）。
-            const allow2x2WaitReservation = prioritize2x2Crops
-                && plantSize > 1
-                && !explicitPrioritySeedIds.has(toNum(seed.seedId))
-                && !waiting2x2ReservationUsed;
-            const canReserve = (multiLandReservationEnabled || allow2x2WaitReservation)
+            const reservation = multiLandReservationEnabled
                 && !reservedSeedIds.has(toNum(seed.seedId))
                 && plantSize > 1
-                && (explicitPrioritySeedIds.has(toNum(seed.seedId)) || allow2x2WaitReservation);
-
-            // 老版本时间闸门：只用服务端最新土地快照判定「多久能清空」。
-            const nowSec = getServerTimeSec();
-            const snapshotLands: any[] = Array.isArray(options.lands) ? options.lands : [];
-            const landMap = buildLandMap(snapshotLands);
-            const qualifyEmptyIds = new Set<number>(remainingLandIds.map((id: any) => toNum(id)));
-            reservationCooldown.prune();
-
-            const reservation = canReserve
+                && explicitPrioritySeedIds.has(toNum(seed.seedId))
                 ? selectFutureLayoutReservation(allowedLandIds, allEligibleLandIds, plantSize, {
                     registered: getRegisteredLayout(seed.seedId),
                     excludeLandIds: claimedLayoutLandIds,
-                    timeWindow: {
-                        lands: snapshotLands,
-                        emptyLandIds: [...qualifyEmptyIds],
-                        nowSec,
-                        cooldownKeys: reservationCooldown.blockedKeys(),
-                    },
                 })
                 : null;
-
-            // 60 秒硬期限 + 释放标记：不合格/到期/已释放的组合一律不再圈住空地，
-            // 空地留在 remainingLandIds，交给后续种子或第二优先策略立即种植。
-            const occupants = reservation
-                ? occupantsOf(reservation.layout.landIds, landMap, qualifyEmptyIds)
-                : new Map<number, string>();
-            const decision = reservation
-                ? reservationWindow.evaluate(String(reservation.key), occupants, nowSec)
-                : null;
-            if (!decision || !decision.allowed) {
-                if (reservation) {
-                    reservationWindow.release(String(reservation.key), occupants);
-                } else if (canReserve) {
-                    // 清理「确实已经不合格」的等待组。注意不能因为当前这个种子凑不齐布局，
-                    // 就把所有活跃等待组一律释放：activeKeys() 是整个 worker 的全局账本，
-                    // 里面还有别的种子仍在 60 秒有效窗口内的等待组。误释放会把它们打成
-                    // released 态，而 occupants 不变时 evaluate 会一直返回 released，
-                    // 该组到换季前再也无法重新圈地，2×2 目标布局被彻底放弃。
-                    // 逐组用真实占用者重算：整组已空出（可以立刻种）或已超出等待窗口，才释放。
-                    for (const key of reservationWindow.activeKeys()) {
-                        const ids = key.split(',').map(Number);
-                        const groupOccupants = occupantsOf(ids, landMap, qualifyEmptyIds);
-                        const metrics = getLayoutClearMetrics(ids, landMap, qualifyEmptyIds, nowSec);
-                        if (groupOccupants.size === 0 || !isQualifiedForWaiting(metrics, nowSec)) {
-                            reservationWindow.release(key, groupOccupants);
-                        }
-                    }
-                }
-                clearRegisteredLayout(seed.seedId);
-                const skipReason = !reservation
-                    ? `${reason}（等待组不在 60 秒窗口内或已被 2×2 占用）`
-                    : decision!.reason === 'expired'
-                        ? `${reason}（60 秒等待期限已到，释放空地）`
-                        : `${reason}（该组合已释放，暂不重复圈地）`;
-                logPlantingThrottled(`skip_no_layout:${seed.seedId}`, [
-                    reason, remainingLandIds.length, allowedLandIds.length,
-                    reservation ? reservation.key : '', decision ? decision.reason : 'unqualified',
-                ].join('|'), `背包种子 ${seed.name} ${skipReason}，已跳过`, {
+            if (!reservation) clearRegisteredLayout(seed.seedId);
+            if (reservation) {
+                registerLayout(seed.seedId, reservation.layout);
+                reservation.layout.landIds.forEach((id: number) => claimedLayoutLandIds.add(toNum(id)));
+                reservedSeedIds.add(toNum(seed.seedId));
+                reservation.reservedLandIds.forEach((id: number) => deferredLandIds.add(id));
+                const reserved = new Set(reservation.reservedLandIds);
+                remainingLandIds = remainingLandIds.filter(id => !reserved.has(id));
+                log('种植', `背包种子 ${seed.name} ${reason}，已预留空地 ${reservation.reservedLandIds.join(',')}，等待布局 ${reservation.layout.landIds.join(',')}`, {
+                    module: 'farm', event: '种植种子', result: 'reserve_future_layout', strategy: 'bag_priority',
+                    seedId: seed.seedId, plantSize, emptyCount: remainingLandIds.length + reservation.reservedLandIds.length,
+                    landTypes: seed.landTypes || null, allowedCount: allowedLandIds.length,
+                    reservedLandIds: reservation.reservedLandIds,
+                    targetLandIds: reservation.layout.landIds,
+                });
+            } else {
+                log('种植', `背包种子 ${seed.name} ${reason}，已跳过`, {
                     module: 'farm', event: '种植种子', result: 'skip_no_layout', strategy: 'bag_priority',
                     seedId: seed.seedId, plantSize, emptyCount: remainingLandIds.length,
                     landTypes: seed.landTypes || null, allowedCount: allowedLandIds.length,
-                    windowReason: decision ? decision.reason : 'unqualified',
                 });
-                continue;
             }
-
-            registerLayout(seed.seedId, reservation!.layout);
-            reservation!.layout.landIds.forEach((id: number) => claimedLayoutLandIds.add(toNum(id)));
-            reservedSeedIds.add(toNum(seed.seedId));
-            if (allow2x2WaitReservation) waiting2x2ReservationUsed = true;
-            reservation!.reservedLandIds.forEach((id: number) => deferredLandIds.add(id));
-            const reserved = new Set(reservation!.reservedLandIds);
-            remainingLandIds = remainingLandIds.filter(id => !reserved.has(id));
-            const waitSeconds = Math.max(0, Math.round(decision.deadlineSec - nowSec));
-            const reserveMessage = `背包种子 ${seed.name} ${reason}，已预留空地 ${reservation!.reservedLandIds.join(',')}，等待布局 ${reservation!.layout.landIds.join(',')}（剩余期限 ${waitSeconds} 秒）`;
-            const reserveSignature = [reason, reservation!.reservedLandIds.join(','), reservation!.layout.landIds.join(','), remainingLandIds.length].join('|');
-            logPlantingThrottled(`reserve_future_layout:${seed.seedId}`, reserveSignature, reserveMessage, {
-                module: 'farm', event: '种植种子', result: 'reserve_future_layout', strategy: 'bag_priority',
-                seedId: seed.seedId, plantSize, emptyCount: remainingLandIds.length + reservation!.reservedLandIds.length,
-                landTypes: seed.landTypes || null, allowedCount: allowedLandIds.length,
-                reservedLandIds: reservation!.reservedLandIds,
-                targetLandIds: reservation!.layout.landIds,
-                clearAt: reservation!.clearAt, deadlineSec: decision.deadlineSec,
-            });
             continue;
         }
 
@@ -691,16 +452,10 @@ async function runPlantFromBagSeeds(landsToPlant: any[], landTypeById?: Map<numb
         consumed.forEach(id => occupiedIds.add(id));
         remainingLandIds = remainingLandIds.filter(id => !consumed.has(id));
 
-        // 老版本失败冷却：同一布局连续种植失败时，30 秒内不再把它选为等待预留目标。
-        if (result.planted <= 0) {
-            layouts.forEach((layout: PlantingLayout) => reservationCooldown.mark(layoutKey(layout)));
-        }
-
         if (result.planted > 0) {
             totalPlanted += result.planted;
             plantedLandIds.push(...result.plantedLandIds);
             usedSeedLogs.push(`${seed.name}x${result.planted}`);
-            // 分次模式下种到一个就让出，剩下的等下一轮，保证间隔真的生效。
             if (!result.uncertain && remainingLandIds.length > 0 && isSlicedPlanting(pacing)) pacing.deferred = true;
         }
         
@@ -810,32 +565,26 @@ async function findBestSeed(overrideStrategy?: string): Promise<any[]> {
                     rankingBySeedId.set(seedId, index);
                 }
             });
-            const ranked = available.sort((a: any, b: any) => {
+            return available.sort((a: any, b: any) => {
                 const aRank = rankingBySeedId.get(a.seedId) ?? Number.MAX_SAFE_INTEGER;
                 const bRank = rankingBySeedId.get(b.seedId) ?? Number.MAX_SAFE_INTEGER;
                 return (aRank - bRank) || byLevelAndId(a, b);
             });
-            return getPrioritize2x2Crops() ? preferMultiSizeSeeds(ranked) : ranked;
         } catch (e: any) {
             logWarn('商店', `策略 ${strategy} 计算失败: ${e.message}，回退最高等级`);
         }
     }
 
     available.sort(byLevelAndId);
-    const pinnedSeedIds: number[] = [];
     if (strategy === 'preferred') {
         const preferred = getPreferredSeed();
         if (preferred > 0) {
             const index = available.findIndex((candidate: any) => candidate.seedId === preferred);
-            if (index >= 0) {
-                available.unshift(...available.splice(index, 1));
-                pinnedSeedIds.push(preferred);
-            }
+            if (index >= 0) available.unshift(...available.splice(index, 1));
             else logWarn('商店', `优先种子 ${preferred} 当前不可购买，回退自动选择`);
         }
     }
-    if (!getPrioritize2x2Crops()) return available;
-    return preferMultiSizeSeeds(available, pinnedSeedIds);
+    return available;
 }
 
 async function purchaseSeed(goodsIdInput: unknown, countInput: unknown): Promise<any> {
@@ -1002,13 +751,10 @@ async function resolveLandTypeMapForBagSeeds(knownLands: any[]): Promise<Map<num
 async function autoPlantEmptyLands(deadLandIds: number[], emptyLandIds: number[], options: {
     propagateErrors?: boolean;
     knownLands?: any[];
-    /** 手动操作跳过整轮状态闸门。 */
-    force?: boolean;
     pacing?: PlantingPacing;
 } = {}): Promise<any> {
     const pacing: PlantingPacing = options.pacing || { lastPlantAt: null };
     pacing.deferred = false;
-    // 上一块刚种下、间隔还没到就直接让出，避免白读背包和商店。
     if ((deadLandIds.length > 0 || emptyLandIds.length > 0) && isSlicedPlanting(pacing) && getRemainingPlantDelayMs(pacing) > 0) {
         pacing.deferred = true;
         return { plantedLands: [] };
@@ -1027,20 +773,8 @@ async function autoPlantEmptyLands(deadLandIds: number[], emptyLandIds: number[]
             });
             try {
                 const latest = await getAllLands();
-                const confirmedLands = Array.isArray(latest && latest.lands) ? latest.lands : [];
-                if (confirmedLands.length === 0) {
-                    // 「成功但空快照」和抛异常一样不可信：此时若把 landsToPlant 覆盖成空，
-                    // 开场已确认的真实空地会被静默抹掉，整轮一块都不种。
-                    logWarn('铲除', '铲除后土地快照为空，保留开场已确认的空地', {
-                        module: 'farm', event: '铲除植物', result: 'empty_snapshot'
-                    });
-                } else {
-                    latestLands = confirmedLands;
-                    // 只能补充新释放的空地，不能反向删减已知空地：铲除只会让地变空，
-                    // 不会让空地变满；服务端快照滞后时并集才是安全口径。按地块 id 去重，
-                    // 下游 plantSeeds 另有服务端占地确认，不会重复下单。
-                    landsToPlant = mergeConfirmedEmptyLands(landsToPlant, analyzeLands(confirmedLands).empty);
-                }
+                latestLands = Array.isArray(latest && latest.lands) ? latest.lands : [];
+                landsToPlant = analyzeLands(latestLands).empty;
             } catch (e: any) {
                 logWarn('铲除', `铲除后确认土地失败，保留原有空地且不使用枯死地块: ${e.message}`, {
                     module: 'farm', event: '铲除植物', result: 'confirm_error'
@@ -1071,8 +805,6 @@ async function autoPlantEmptyLands(deadLandIds: number[], emptyLandIds: number[]
             bagResult = await plantFromBagSeeds(landsToPlant, landTypeById, {
                 propagateErrors: options.propagateErrors,
                 allUnlockedLandIds,
-                lands: latestLands,
-                force: options.force,
                 pacing,
             });
         } catch (e: any) {
@@ -1181,7 +913,6 @@ async function plantFromShop(landsToPlant: number[], state: any, overrideStrateg
             continue;
         }
 
-        // 分次模式下先只种一个，剩下的连同刚买的余量留给下一轮。
         if (isSlicedPlanting(pacing)) layouts = layouts.slice(0, 1);
 
         const unitItemCount = Math.max(1, toNum(candidate.unitItemCount) || 1);
@@ -1269,7 +1000,6 @@ async function plantFromShop(landsToPlant: number[], state: any, overrideStrateg
                 module: 'farm', event: '种植种子', result: 'plant_uncertain', seedId: actualSeedId
             });
         } else if (pacing.defer) {
-            // 买到的种子没用完，记下余量，下一轮先花背包里的，避免重复购买。
             if (receivedSeedCount > result.planted) pacing.shopSeed = { seedId: actualSeedId, strategy: strategyKey, remaining: receivedSeedCount - result.planted };
             if (isSlicedPlanting(pacing) && result.planted > 0 && remainingLandIds.length > 0) pacing.deferred = true;
         }
@@ -1282,9 +1012,11 @@ async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNo
     const { fertilize, fertilizeOrganicLoop } = require('./api');
     const automation = getAutomation() || {};
     const fertilizerConfig = automation.fertilizer || 'none';
-    // 老版 2x2 催熟：开启后与施肥策略独立 —— 即使策略为「不施肥」，也会对生长中的
-    // 2×2 作物先施一次普通肥、再连续施有机肥直至成熟。
-    const ripenSize2 = automation.fertilizer_2x2_ripen === true;
+    if (isRipeningOnlyMode(fertilizerConfig)) return { normal: 0, organic: 0 };
+    const { skipNormal = false } = options;
+    if (skipNormal && fertilizerConfig === 'smart') {
+        return { normal: 0, organic: await runRipeningFertilizer(automation, undefined, options.propagateErrors) };
+    }
     const reason = String(options.reason || '').trim().toLowerCase() === 'multi_season' ? 'multi_season' : 'normal';
     const reasonLabel = reason === 'multi_season' ? '多季补肥' : '常规施肥';
     const eventName = reason === 'multi_season' ? '多季节施肥' : '常规施肥';
@@ -1303,9 +1035,7 @@ async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNo
         return { normal: 0, organic: 0 };
     }
 
-    const { skipNormal = false } = options;
-
-    if (fertilizerConfig === 'none' && !ripenSize2) {
+    if (fertilizerConfig === 'none') {
         log('施肥', `${reasonLabel}：当前施肥策略为不施肥，跳过`, {
             module: 'farm',
             event: eventName,
@@ -1316,7 +1046,7 @@ async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNo
         return { normal: 0, organic: 0 };
     }
 
-    if (!ripenSize2 && planted.length === 0 && fertilizerConfig !== 'organic' && fertilizerConfig !== 'both' && fertilizerConfig !== 'smart') {
+    if (planted.length === 0 && fertilizerConfig !== 'organic' && fertilizerConfig !== 'both' && fertilizerConfig !== 'smart') {
         log('施肥', `${reasonLabel}：没有可施肥地块，跳过`, {
             module: 'farm',
             event: eventName,
@@ -1326,13 +1056,17 @@ async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNo
         });
         return { normal: 0, organic: 0 };
     }
-    // 每次施肥都重新读地：施肥前后地块状态会变，复用巡田快照会把「刚施过」
-    // 当成「还没施」，多季补肥与 smart 判断都会跟着错。
     let latestLands: any[] = [];
     const landTypeById = new Map<number, string>();
     try {
         const latest = await getAllLands();
         latestLands = Array.isArray(latest && latest.lands) ? latest.lands : [];
+        for (const land of latestLands) {
+            if (!land) continue;
+            const landId = toNum(land.id);
+            if (!landId) continue;
+            landTypeById.set(landId, getLandTypeByLevel(land.level));
+        }
     } catch (e: any) {
         logWarn('施肥', `${reasonLabel}：获取土地信息失败，按已知地块继续 ${e.message}`, {
             module: 'farm',
@@ -1341,12 +1075,6 @@ async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNo
             reason,
         });
         if (options.propagateErrors) throw e;
-    }
-    for (const land of latestLands) {
-        if (!land) continue;
-        const landId = toNum(land.id);
-        if (!landId) continue;
-        landTypeById.set(landId, getLandTypeByLevel(land.level));
     }
 
     const isAllLandTypesSelected: boolean = selectedLandTypes.length === ALL_FERTILIZER_LAND_TYPES.length;
@@ -1364,60 +1092,6 @@ async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNo
     let normalTargets: number[] = planted;
     if (landTypeById.size > 0) {
         normalTargets = filterLandIdsByTypes(planted, landTypeById, selectedLandTypes);
-    }
-
-    // ── 2x2 催熟（老版 farm-fertilizer 移植）──
-    // 识别 2×2 作物主地块（排除从属地块），从常规施肥目标中剔除后单独催熟，
-    // 避免普通肥只落在合种作物的其中一个地块上。
-    let size2NormalCount: number = 0;
-    let size2OrganicCount: number = 0;
-    let size2Targets: number[] = [];
-    let excludedIds = new Set<number>();
-    if (ripenSize2) {
-        const { size2LandIds, excludedIds: ripenExcluded } = pickRipen2x2Lands(latestLands);
-        excludedIds = ripenExcluded;
-        normalTargets = normalTargets.filter((id: number) => !excludedIds.has(id));
-
-        const explicitSet = new Set(planted);
-        const landsMap = buildLandMap(latestLands);
-        size2Targets = filterLandIdsByTypes(size2LandIds
-            .filter((landId: number) => {
-                if (explicitSet.size > 0 && !explicitSet.has(landId)) return false;
-                const land = landsMap.get(landId);
-                const plant = land && land.plant;
-                const phase = plant && getCurrentPhase(plant.phases, false, '', toNum(plant.id));
-                return phase && phase.phase >= PlantPhase.SEED && phase.phase < PlantPhase.MATURE;
-            }), landTypeById, selectedLandTypes);
-
-        if (size2Targets.length > 0) {
-            try {
-                const normalCandidates = size2Targets.filter((id: number) => {
-                    const land = landsMap.get(id);
-                    const plant = land && land.plant;
-                    if (!plant) return true;
-                    return !Object.prototype.hasOwnProperty.call(plant, 'left_inorc_fert_times') || toNum(plant.left_inorc_fert_times) > 0;
-                });
-                size2NormalCount = normalCandidates.length > 0
-                    ? await fertilize(normalCandidates, NORMAL_FERTILIZER_ID, options.propagateErrors)
-                    : 0;
-                // 逐块循环，避免某块地成熟或失败后打断其余 2x2 作物的催熟。
-                for (const landId of size2Targets) {
-                    size2OrganicCount += await fertilizeOrganicLoop([landId], { ripenSize2: true });
-                }
-                const count = size2NormalCount + size2OrganicCount;
-                if (count > 0) {
-                    recordOperation('fertilize', count);
-                    log('施肥', `2x2催熟：普通肥 ${size2NormalCount} 次，有机肥 ${size2OrganicCount} 次`, {
-                        module: 'farm', event: '2x2催熟', result: 'ok', reason, count, landIds: size2Targets, landTypes: selectedLandTypes,
-                    });
-                }
-            } catch (e: any) {
-                logWarn('施肥', `2x2催熟失败: ${e && e.message ? e.message : e}`, {
-                    module: 'farm', event: '2x2催熟', result: 'error', landIds: size2Targets,
-                });
-                if (options.propagateErrors) throw e;
-            }
-        }
     }
     if (latestLands.length > 0 && normalTargets.length > 0) {
         const filtered = filterLandIdsForNormalFertilizer(normalTargets, latestLands);
@@ -1486,8 +1160,6 @@ async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNo
             const plantedSet = new Set(planted);
             organicTargets = organicTargets.filter(id => plantedSet.has(id));
         }
-        // 2×2 作物已由催熟流程单独处理，这里不再重复施有机肥。
-        organicTargets = organicTargets.filter(id => !excludedIds.has(id));
         if (landTypeById.size > 0) {
             organicTargets = filterLandIdsByTypes(organicTargets, landTypeById, selectedLandTypes);
             }
@@ -1507,51 +1179,21 @@ async function runFertilizerByConfig(plantedLands: any[] = [], options: { skipNo
         }
     }
     else if (fertilizerConfig === 'smart') {
-        let organicTargets: number[] = [];
-        // 快成熟判定使用配置的固定秒数（默认 300，巡查周期变长时仍能保证催熟命中、缩短成熟后等待收获的被偷窗口），每轮按同一临界点判断。
-        const smartSeconds = toNum(automation.fertilizer_smart_seconds) || 300;
         try {
-            // smart 要先补普通肥，再按最新状态挑快成熟的地块，必须重新读一次。
-            const latest = await getAllLands();
-            organicTargets = getFastMatureLands(latest && latest.lands, smartSeconds);
+            const snapshot = normalTargets.length === 0 && latestLands.length > 0 ? latestLands : undefined;
+            fertilizedOrganic = await runRipeningFertilizer(automation, snapshot, options.propagateErrors);
         } catch (e: any) {
-            logWarn('施肥', `获取全农场地块失败 ${e.message}`);
+            logWarn('施肥', `临熟催熟失败: ${e.message}`);
             if (options.propagateErrors) throw e;
-        }
-
-        // 2×2 主地块已由上面的催熟流程单独施过有机肥，这里排除，避免重复施肥与重复计数。
-        if (excludedIds.size > 0) {
-            organicTargets = organicTargets.filter((id: number) => !excludedIds.has(id));
-        }
-        if (organicTargets.length > 0) {
-            fertilizedOrganic = await fertilizeOrganicLoop(organicTargets, options.propagateErrors);
-            if (fertilizedOrganic > 0) {
-                log('施肥', `有机化肥循环施肥完成，共施${fertilizedOrganic} 次`, {
-                    module: 'farm',
-                    event: '施肥',
-                    result: 'ok',
-                    type: 'organic',
-                    count: fertilizedOrganic,
-                });
-                recordOperation('fertilize', fertilizedOrganic);
-            }
         }
     }
 
-    // 2×2 催熟结果必须一并带出：scheduler 依赖返回值决定是否立刻收获刚催熟的地块。
-    // normalTargets（1367 行）与 organicTargets（1478 行）都已排除 excludedIds（2×2 主地块），
-    // 因此 fertilizedNormal/Organic 与 size2 计数互斥，相加不会重复计数。
-    return {
-        normal: fertilizedNormal + size2NormalCount,
-        organic: fertilizedOrganic + size2OrganicCount,
-    };
+    return { normal: fertilizedNormal, organic: fertilizedOrganic };
 }
 
 async function fertilizeOwnLand(landIdInput: unknown, fertilizerTypeInput: unknown): Promise<any> {
-    // `toNum` 只做 Long→number 的转换：`Infinity || 0` 仍是 Infinity，`<= 0` 也拦不住，
-    // 于是越界编号会一路编进 int64 字段并静默失效。
-    const landId = readIdOr(landIdInput, 'landId', 0);
-    if (!landId) {
+    const landId = toNum(landIdInput);
+    if (!landId || landId <= 0) {
         throw new Error('地块编号无效');
     }
 
@@ -1570,7 +1212,7 @@ async function fertilizeOwnLand(landIdInput: unknown, fertilizerTypeInput: unkno
         if (error?.name === 'GatewayError'
             || typeof error?.errorMessage === 'string'
             || typeof error?.error_message === 'string'
-            || /^(?:[\w-]+\.)+[\w-]+(?:\s+(?:\S.*?)??)?\bcode=\d+(?:\s|$)/.test(String(error?.message || '').trim())) {
+            || /^(?:[\w-]+\.)+[\w-]+(?:\s+.*?)?\bcode=\d+(?:\s|$)/.test(String(error?.message || '').trim())) {
             throw error;
         }
         const message = String(error?.message || '').trim() || `${typeName}使用失败`;
@@ -1605,7 +1247,6 @@ async function fertilizeOwnLand(landIdInput: unknown, fertilizerTypeInput: unkno
 
 module.exports = {
     getRemainingPlantDelayMs,
-    mergeConfirmedEmptyLands,
     getPlantSizeBySeedId,
     plantSeeds,
     getPlantingStrategyLabel,
@@ -1620,5 +1261,4 @@ module.exports = {
     plantFromShop,
     runFertilizerByConfig,
     fertilizeOwnLand,
-    resetPlantingRoundState,
 };

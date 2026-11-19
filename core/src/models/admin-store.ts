@@ -2,7 +2,6 @@ export {};
 const fs = require('node:fs');
 const { getDataFile, ensureDataDir } = require('../config/runtime-paths');
 const security = require('./auth-security');
-const { writeJsonFileAtomic } = require('../services/json-db');
 
 const ADMIN_FILE: string = getDataFile('admin.json');
 
@@ -25,50 +24,22 @@ function normalizeAdmin(raw: any): AdminRecord | null {
     };
 }
 
-/**
- * 先写盘、成功后才换内存。
- *
- * 原来是 `current.password = hash; saveAdmin()`：写盘抛错时接口返回 500，但模块级
- * admin 的口令已经在内存里变了，且调用方拿不到 ok 结果、不会清旧 token。原子写
- * 还避免半截文件在重启后被当成损坏文件、重建出公开的 admin/admin 默认口令。
- */
-function persistAdmin(next: AdminRecord): void {
-    ensureDataDir();
-    writeJsonFileAtomic(ADMIN_FILE, { admin: next });
-    admin = next;
-}
-
 function saveAdmin(): void {
+    ensureDataDir();
     if (!admin) return;
-    persistAdmin(admin);
+    fs.writeFileSync(ADMIN_FILE, JSON.stringify({ admin }, null, 2), 'utf8');
 }
 
 function loadAdmin(): AdminRecord {
     ensureDataDir();
     if (admin) return admin;
-    let fileMissing = false;
-    let corruptReason = '';
     try {
         if (fs.existsSync(ADMIN_FILE)) {
             const data = JSON.parse(fs.readFileSync(ADMIN_FILE, 'utf8'));
             admin = normalizeAdmin(data?.admin || data);
-            if (!admin) corruptReason = 'JSON 结构里没有有效的 password 字段';
-        } else {
-            fileMissing = true;
         }
-    } catch (e: any) {
-        corruptReason = String((e && e.message) || e);
+    } catch {
         admin = null;
-    }
-    if (!admin && corruptReason) {
-        // 损坏文件不能默默当成「首次安装」，那会把管理员口令重置成公开的 admin/admin。
-        // 留档一份便于人工恢复，并打印醒目告警（默认账号仍带 mustChangePassword）。
-        try {
-            fs.copyFileSync(ADMIN_FILE, `${ADMIN_FILE}.corrupt-${Date.now()}`);
-        } catch {
-            // 只读卷下留档失败不阻止启动
-        }
-        console.error(`[管理员] admin.json 损坏（${corruptReason}），已留档；临时启用默认账号，请立即修改密码`);
     }
     if (!admin) {
         admin = {
@@ -78,7 +49,7 @@ function loadAdmin(): AdminRecord {
             mustChangePassword: true,
         };
         saveAdmin();
-        if (fileMissing) console.log('[管理员] 已创建默认账号 admin，默认密码 admin');
+        console.log('[管理员] 已创建默认账号 admin，默认密码 admin');
     }
     return admin;
 }
@@ -105,7 +76,8 @@ function validateAdmin(username: string, password: string, ip: string = 'unknown
 
     security.clearFailedAttempts();
     if (security.needsRehash(current.password)) {
-        persistAdmin({ ...current, password: security.hashPassword(password) });
+        current.password = security.hashPassword(password);
+        saveAdmin();
     }
     return getAdminInfo();
 }
@@ -115,12 +87,9 @@ function changePassword(oldPassword: string, newPassword: string): { ok: boolean
     if (!security.verifyPassword(oldPassword, current.password)) return { ok: false, error: '当前密码错误' };
     const validation = security.validatePasswordStrength(newPassword);
     if (!validation.valid) return { ok: false, error: validation.errors.join('；') };
-    persistAdmin({
-        username: current.username,
-        password: security.hashPassword(newPassword),
-        createdAt: current.createdAt,
-        mustChangePassword: undefined,
-    });
+    current.password = security.hashPassword(newPassword);
+    delete current.mustChangePassword;
+    saveAdmin();
     return { ok: true, message: '密码修改成功' };
 }
 

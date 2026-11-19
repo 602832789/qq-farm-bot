@@ -16,12 +16,6 @@ interface DevicePreset {
     deviceInfo: DeviceInfo;
 }
 
-interface AutoCodeRefreshConfig {
-    /** 掉线重登：账号掉线后等待一段时间自动续期并重登。 */
-    offlineEnabled: boolean;
-    offlineDelaySeconds: number;
-}
-
 interface SystemConfig {
     serverUrl: string;
     clientVersion: string;
@@ -32,9 +26,6 @@ interface SystemConfig {
     os: string;
     timeZone: string;
     deviceInfo: DeviceInfo;
-    autoCodeRefresh: AutoCodeRefreshConfig;
-    /** 服务启动后自动登录已保存的账号（默认开启）。 */
-    autoStartAccounts?: boolean;
 }
 
 interface RuntimeConfig extends SystemConfig {
@@ -52,12 +43,12 @@ interface RuntimeConfig extends SystemConfig {
 // ============ 设备预设 ============
 
 // clientVersion 由 CONFIG.clientVersion 动态获取，不写死在预设中
-// Verified in the official QQ PlayerLogin and Heartbeat from the 2026-11-16 capture.
-const DEFAULT_CLIENT_VERSION = '1.17.0.3_20261117';
-const DEFAULT_CLIENT_VERSION_UPDATED_AT = 1794795016627;
-// Independently verified from WeChat package 81 and the 2026-11-16 login and heartbeat.
-const DEFAULT_WX_CLIENT_VERSION = '1.17.0.3_20261117';
-const DEFAULT_WX_CLIENT_VERSION_UPDATED_AT = 1794797399676;
+// Verified in the official QQ PlayerLogin and Heartbeat from the 2026-11-17 capture.
+const DEFAULT_CLIENT_VERSION = '1.17.0.4_20261117';
+const DEFAULT_CLIENT_VERSION_UPDATED_AT = 1794888024122;
+// Independently verified from the official WeChat package 82 configuration on 2026-11-17.
+const DEFAULT_WX_CLIENT_VERSION = '1.17.0.4_20261117';
+const DEFAULT_WX_CLIENT_VERSION_UPDATED_AT = 1794891946317;
 const DEFAULT_TIME_ZONE = 'Asia/Shanghai';
 
 function resolveClientVersion(savedVersion: unknown, savedUpdatedAt: unknown, platform = 'qq'): { clientVersion: string; clientVersionUpdatedAt: number } {
@@ -200,23 +191,6 @@ const DEVICE_PRESETS: DevicePreset[] = [
 
 const DEFAULT_DEVICE_INFO: DeviceInfo = { ...DEVICE_PRESETS[0].deviceInfo, clientVersion: DEFAULT_CLIENT_VERSION };
 
-/** 管理面板默认端口，与 admin/controllers 的兜底值保持一致。 */
-const DEFAULT_ADMIN_PORT = 3007;
-
-/**
- * 管理端口归一化。
- * `Number(undefined)` 是 NaN（`NaN || 3007` 能兜住），但 `ADMIN_PORT=70000` 这类
- * 「有限但越界」的值会让 `server.listen()` 抛 ERR_SOCKET_BAD_PORT，直接崩在启动阶段，
- * 而且报错信息里看不出是环境变量写错了。这里统一夹到合法区间并回落默认端口。
- */
-function resolveAdminPort(raw: unknown): number {
-    const value = Number(raw);
-    if (!Number.isFinite(value)) return DEFAULT_ADMIN_PORT;
-    const port = Math.trunc(value);
-    if (port < 1 || port > 65535) return DEFAULT_ADMIN_PORT;
-    return port;
-}
-
 const DEFAULT_SYSTEM_CONFIG: SystemConfig = {
     serverUrl: 'wss://gate-obt.nqf.qq.com/prod/ws',
     clientVersion: DEFAULT_CLIENT_VERSION,
@@ -227,33 +201,9 @@ const DEFAULT_SYSTEM_CONFIG: SystemConfig = {
     os: DEFAULT_DEVICE_INFO.os,
     timeZone: DEFAULT_TIME_ZONE,
     deviceInfo: { ...DEFAULT_DEVICE_INFO },
-    autoCodeRefresh: { offlineEnabled: true, offlineDelaySeconds: 60 },
-    // 服务重启后自动拉起已保存账号，避免每次重启都要手动点启动。
-    autoStartAccounts: true,
 };
 
-/**
- * 账号在线配置归一化：掉线等待 1~86400 秒。
- * 定时重登已下线，旧 store.json 里的 enabled / intervalMinutes 会被直接丢弃，
- * 不会再把已保存过该开关的账号拉回定时重登。
- *
- * 掉线重登默认开启：它只在账号已经掉线后动作，是把账号拉回来的自愈通道，
- * 不是常规运行策略。老配置里没有这个字段时按开启处理，只有明确保存过
- * false（用户在面板上关过）才保持关闭。
- */
-function normalizeAutoCodeRefresh(input: unknown): AutoCodeRefreshConfig {
-    const src: any = (input && typeof input === 'object') ? input : {};
-    const delay = Number(src.offlineDelaySeconds);
-    const hasFlag = src.offlineEnabled !== undefined && src.offlineEnabled !== null;
-    return {
-        offlineEnabled: hasFlag ? src.offlineEnabled === true : true,
-        offlineDelaySeconds: Number.isFinite(delay) ? Math.max(1, Math.min(86400, Math.round(delay))) : 60,
-    };
-}
-
 const CONFIG: RuntimeConfig = {
-    autoCodeRefresh: { ...DEFAULT_SYSTEM_CONFIG.autoCodeRefresh },
-    autoStartAccounts: DEFAULT_SYSTEM_CONFIG.autoStartAccounts,
     serverUrl: DEFAULT_SYSTEM_CONFIG.serverUrl,
     clientVersion: DEFAULT_CLIENT_VERSION,
     clientVersionUpdatedAt: DEFAULT_CLIENT_VERSION_UPDATED_AT,
@@ -264,15 +214,13 @@ const CONFIG: RuntimeConfig = {
     timeZone: DEFAULT_SYSTEM_CONFIG.timeZone,
     deviceInfo: { ...DEFAULT_DEVICE_INFO },
     heartbeatInterval: 25000,
-    // 兜底初值，启动后会被账号配置里的 intervals 覆盖；默认与 DEFAULT_ACCOUNT_CONFIG 一致：
-    // 农场巡查 20-25 秒、好友任务 30-35 秒。
-    farmCheckInterval: 20000,
-    friendCheckInterval: 30000,
-    farmCheckIntervalMin: 20000,
-    farmCheckIntervalMax: 25000,
-    friendCheckIntervalMin: 30000,
-    friendCheckIntervalMax: 35000,
-    adminPort: resolveAdminPort(process.env.ADMIN_PORT),
+    farmCheckInterval: 3000,
+    friendCheckInterval: 12000,
+    farmCheckIntervalMin: 3000,
+    farmCheckIntervalMax: 5000,
+    friendCheckIntervalMin: 12000,
+    friendCheckIntervalMax: 15000,
+    adminPort: Number(process.env.ADMIN_PORT),
     adminPassword: process.env.ADMIN_PASSWORD,
 };
 
@@ -316,12 +264,6 @@ function updateRuntimeConfig(newConfig: Partial<SystemConfig>): void {
     if (newConfig.os && typeof newConfig.os === 'string') {
         CONFIG.os = newConfig.os;
     }
-    if (newConfig.autoCodeRefresh) {
-        CONFIG.autoCodeRefresh = normalizeAutoCodeRefresh(newConfig.autoCodeRefresh);
-    }
-    if (newConfig.autoStartAccounts !== undefined) {
-        CONFIG.autoStartAccounts = newConfig.autoStartAccounts === true;
-    }
     if (newConfig.timeZone !== undefined) {
         CONFIG.timeZone = normalizeTimeZone(newConfig.timeZone);
     }
@@ -344,28 +286,11 @@ function getRuntimeConfig(): SystemConfig {
         os: CONFIG.os,
         timeZone: CONFIG.timeZone,
         deviceInfo: { ...CONFIG.deviceInfo },
-        autoCodeRefresh: { ...CONFIG.autoCodeRefresh },
-        autoStartAccounts: CONFIG.autoStartAccounts,
     };
-}
-
-/**
- * 解析「服务启动自动登录」开关。
- * 优先级：环境变量 FARM_AUTO_START_ACCOUNTS > 已保存的系统配置 > 默认开启。
- * 环境变量便于 Docker/NAS 无面板时强制覆盖（0/false/no/off 关闭）。
- */
-function resolveAutoStartAccounts(saved: boolean | undefined, envValue: string | undefined = process.env.FARM_AUTO_START_ACCOUNTS): boolean {
-    const raw = String(envValue ?? '').trim();
-    if (raw) return !/^(?:0|false|no|off)$/i.test(raw);
-    return saved !== false;
 }
 
 function getDefaultSystemConfig(): SystemConfig {
-    return {
-        ...DEFAULT_SYSTEM_CONFIG,
-        deviceInfo: { ...DEFAULT_DEVICE_INFO },
-        autoCodeRefresh: { ...DEFAULT_SYSTEM_CONFIG.autoCodeRefresh },
-    };
+    return { ...DEFAULT_SYSTEM_CONFIG, deviceInfo: { ...DEFAULT_DEVICE_INFO } };
 }
 
 function getDevicePresets(): DevicePreset[] {
@@ -400,16 +325,11 @@ module.exports = {
     DEFAULT_WX_CLIENT_VERSION,
     DEFAULT_WX_CLIENT_VERSION_UPDATED_AT,
     DEFAULT_TIME_ZONE,
-    DEFAULT_ADMIN_PORT,
-    resolveAdminPort,
     PlantPhase,
     PHASE_NAMES,
     updateRuntimeConfig,
     getRuntimeConfig,
     getDefaultSystemConfig,
-    normalizeAutoCodeRefresh,
-    resolveAutoStartAccounts,
-    DEFAULT_AUTO_CODE_REFRESH: DEFAULT_SYSTEM_CONFIG.autoCodeRefresh,
     getDevicePresets,
     getTimeZoneOptions,
     normalizeTimeZone,

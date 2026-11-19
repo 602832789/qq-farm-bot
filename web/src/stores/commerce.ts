@@ -1,8 +1,6 @@
-import type { RequestTicket } from '@/utils/request-guard'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api, { getApiErrorMessage } from '@/api'
-import { createRequestGuard } from '@/utils/request-guard'
 
 export interface CommerceItemDto {
   id: number
@@ -65,40 +63,21 @@ export interface MysteryShopDto {
   }
 }
 
-/** 老版购买历史字段形状：手动 / 自动购买共用一份记录。 */
-export interface MysteryHistoryRecord {
-  id: string
-  purchasedAt: number
-  source: 'auto' | 'manual'
-  npcId: number
-  itemId: number
-  itemName: string
-  itemImage: string
-  itemCount: number
-  currencyId: number
-  currencyName: string
-  price: number
-  originalPrice: number
-  discount: number
-}
-
 export const useCommerceStore = defineStore('commerce', () => {
   const mall = ref<MallCatalogDto | null>(null)
   const mystery = ref<MysteryShopDto | null>(null)
-  const mysteryHistory = ref<MysteryHistoryRecord[]>([])
   const mallLoading = ref(false)
   const mysteryLoading = ref(false)
   const mysteryPurchasing = ref(false)
   const purchasingGoodsId = ref<number | null>(null)
   const error = ref('')
   const notice = ref('')
-  const requestGuard = createRequestGuard({ accountId: () => localStorage.getItem('current_account_id') || '' })
+  let requestVersion = 0
   let mallAccountId = ''
   let mysteryAccountId = ''
 
-  // 票号 + 当前账号一起校验：切号后旧账号的回包一律作废。
-  function isCurrent(ticket: RequestTicket) {
-    return !requestGuard.isStale(ticket)
+  function isCurrent(version: number, accountId: string) {
+    return version === requestVersion && String(localStorage.getItem('current_account_id') || '') === accountId
   }
 
   function clearMessages() {
@@ -107,10 +86,9 @@ export const useCommerceStore = defineStore('commerce', () => {
   }
 
   function reset() {
-    requestGuard.invalidate()
+    requestVersion++
     mall.value = null
     mystery.value = null
-    mysteryHistory.value = []
     mallAccountId = ''
     mysteryAccountId = ''
     mallLoading.value = false
@@ -154,7 +132,7 @@ export const useCommerceStore = defineStore('commerce', () => {
       reset()
       return
     }
-    const ticket = requestGuard.next(id)
+    const version = ++requestVersion
     if (mallAccountId !== id || mall.value?.slotType !== slotType || !!mall.value?.shopId !== propsShop)
       mall.value = null
     mallAccountId = id
@@ -167,23 +145,23 @@ export const useCommerceStore = defineStore('commerce', () => {
         params: propsShop ? undefined : { slotType, subSlotType: 1 },
         skipErrorToast: true,
       } as any)
-      if (!isCurrent(ticket))
+      if (!isCurrent(version, id))
         return
       if (!response.data?.ok)
         throw new Error(getApiErrorMessage(response.data, '商城加载失败'))
       const catalog = response.data.data as MallCatalogDto
       await mergeDiamondBalance(id, catalog)
-      if (!isCurrent(ticket))
+      if (!isCurrent(version, id))
         return
       mall.value = catalog
     }
     catch (cause: any) {
-      if (!isCurrent(ticket))
+      if (!isCurrent(version, id))
         return
       error.value = getApiErrorMessage(cause, '商城加载失败')
     }
     finally {
-      if (isCurrent(ticket))
+      if (isCurrent(version, id))
         mallLoading.value = false
     }
   }
@@ -194,7 +172,7 @@ export const useCommerceStore = defineStore('commerce', () => {
       return false
     const slotType = mall.value?.slotType || 1
     const propsShop = mall.value?.shopId === 4
-    const ticket = requestGuard.snapshot(id)
+    const version = requestVersion
     purchasingGoodsId.value = goods.id
     clearMessages()
     try {
@@ -217,7 +195,7 @@ export const useCommerceStore = defineStore('commerce', () => {
         await mergeDiamondBalance(id, catalog)
       if (String(localStorage.getItem('current_account_id') || '') !== id)
         return false
-      if (!requestGuard.isStale(ticket))
+      if (version === requestVersion)
         mall.value = catalog
       const rewards = (response.data.data.purchase?.rewards || [])
         .map((item: CommerceItemDto) => `${item.name} x${item.count}`)
@@ -241,7 +219,7 @@ export const useCommerceStore = defineStore('commerce', () => {
       reset()
       return
     }
-    const ticket = requestGuard.next(id)
+    const version = ++requestVersion
     if (mysteryAccountId !== id)
       mystery.value = null
     mysteryAccountId = id
@@ -253,42 +231,20 @@ export const useCommerceStore = defineStore('commerce', () => {
         headers: { 'x-account-id': id },
         skipErrorToast: true,
       } as any)
-      if (!isCurrent(ticket))
+      if (!isCurrent(version, id))
         return
       if (!response.data?.ok)
         throw new Error(getApiErrorMessage(response.data, '神秘商人加载失败'))
       mystery.value = response.data.data
     }
     catch (cause: any) {
-      if (!isCurrent(ticket))
+      if (!isCurrent(version, id))
         return
       error.value = getApiErrorMessage(cause, '神秘商人加载失败')
     }
     finally {
-      if (isCurrent(ticket))
+      if (isCurrent(version, id))
         mysteryLoading.value = false
-    }
-  }
-
-  /** 老版 /api/shop/mystery/history：按账号读取购买历史，读取失败不影响货品展示。 */
-  async function fetchMysteryHistory(accountId: string) {
-    const id = String(accountId || '').trim()
-    if (!id) {
-      mysteryHistory.value = []
-      return
-    }
-    try {
-      const response = await api.get('/api/mystery-shop/history', {
-        headers: { 'x-account-id': id },
-        skipErrorToast: true,
-      } as any)
-      if (!response.data?.ok || String(localStorage.getItem('current_account_id') || '') !== id)
-        return
-      const records = response.data.data
-      mysteryHistory.value = Array.isArray(records) ? records : []
-    }
-    catch {
-      // 记录读取失败不阻塞当前货品展示。
     }
   }
 
@@ -308,7 +264,6 @@ export const useCommerceStore = defineStore('commerce', () => {
       if (String(localStorage.getItem('current_account_id') || '') !== id)
         return false
       mystery.value = response.data.data.shop
-      void fetchMysteryHistory(id)
       const purchase = response.data.data.purchase as { reward?: CommerceItemDto, price?: CommerceItemDto } | undefined
       const reward = purchase?.reward
       const price = purchase?.price
@@ -333,7 +288,6 @@ export const useCommerceStore = defineStore('commerce', () => {
   return {
     mall,
     mystery,
-    mysteryHistory,
     mallLoading,
     mysteryLoading,
     mysteryPurchasing,
@@ -345,7 +299,6 @@ export const useCommerceStore = defineStore('commerce', () => {
     fetchMall,
     purchaseMall,
     fetchMystery,
-    fetchMysteryHistory,
     purchaseMystery,
   }
 })

@@ -1,7 +1,6 @@
 export {};
 const { findAccountByRef, normalizeAccountRef, resolveAccountId: resolveAccountIdByList } = require('../services/account-resolver');
 const { getSchedulerRegistrySnapshot } = require('../services/scheduler');
-const { getAccountRuntimeState, setAccountRuntimeState } = require('../services/account-runtime-state');
 
 interface DataProviderOptions {
     workers: Record<string, any>;
@@ -21,13 +20,6 @@ interface DataProviderOptions {
     startWorker: (account: any) => boolean;
     stopWorker: (accountId: string) => void;
     restartWorker: (account: any) => void;
-    /**
-     * 撤销账号「掉线后等待重登」的定时器，由 runtime-engine 注入
-     * （`wx-keepalive.cancelPendingRelogin`）。用注入而不是在这里 require，
-     * 是为了让 data-provider 不反向依赖保活模块——保活模块顶层会加载凭证服务，
-     * 测试里靠 Module._load 注入假实现，多一条静态依赖就会提前把真模块钉进缓存。
-     */
-    cancelPendingRelogin?: (accountId: string) => void;
 }
 
 function createDataProvider(options: DataProviderOptions) {
@@ -49,7 +41,6 @@ function createDataProvider(options: DataProviderOptions) {
         startWorker,
         stopWorker,
         restartWorker,
-        cancelPendingRelogin,
     } = options;
 
     function getStoredAccountsList(): any[] {
@@ -66,26 +57,6 @@ function createDataProvider(options: DataProviderOptions) {
 
     function findAccountByAnyRef(accountRef: string): any {
         return findAccountByRef(getStoredAccountsList(), accountRef);
-    }
-
-    /** 正在执行「续期后启动」的账号，防止连点/并发请求重复续期滚动 token。 */
-    const pendingStarts = new Set<string>();
-
-    /**
-     * 撤掉账号「掉线后等待重登」的定时器。
-     *
-     * 用户手动「停止」/「启动」/「重启」都是明确的人工意图，必须让自动重登让位：
-     * 等待期内账号没有子进程，`stopWorker` 停不掉这条定时器，到点会把它重新拉起，
-     * 用户看到的就是「点了停止却自己启动了」。
-     */
-    function cancelPendingReloginSafe(accountId: string): void {
-        if (!accountId || typeof cancelPendingRelogin !== 'function') return;
-        try {
-            cancelPendingRelogin(accountId);
-        }
-        catch {
-            // 撤销失败不能影响停止 / 启动流程本身
-        }
     }
 
     return {
@@ -142,7 +113,6 @@ function createDataProvider(options: DataProviderOptions) {
         },
 
         getLands: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getLands', true),
-        getCareerProfile: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getCareerProfile'),
         getIllustratedSnapshot: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getIllustratedSnapshot'),
         getCollectionsSnapshot: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getCollectionsSnapshot'),
         operateCollections: (accountRef: string, action: string, input: any) => callWorkerApi(resolveAccountRefId(accountRef), 'operateCollections', action, input),
@@ -150,6 +120,7 @@ function createDataProvider(options: DataProviderOptions) {
         prepareRanchAction: (accountRef: string, action: string, input: any) => callWorkerApi(resolveAccountRefId(accountRef), 'prepareRanchAction', action, input),
         operateRanch: (accountRef: string, action: string, input: any) => callWorkerApi(resolveAccountRefId(accountRef), 'operateRanch', action, input),
         claimIllustratedRewards: (accountRef: string, type: number) => callWorkerApi(resolveAccountRefId(accountRef), 'claimIllustratedRewards', type),
+        clearIllustratedNew: (accountRef: string, fruitIds: number[]) => callWorkerApi(resolveAccountRefId(accountRef), 'clearIllustratedNew', fruitIds),
         getSolarCalendar: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getSolarCalendar'),
         operateSolarCalendar: (accountRef: string, action: string, input: any) => callWorkerApi(resolveAccountRefId(accountRef), 'operateSolarCalendar', action, input),
         getFriends: (accountRef: string, forceSync = false) => callWorkerApi(resolveAccountRefId(accountRef), 'getFriends', forceSync, true),
@@ -208,6 +179,7 @@ function createDataProvider(options: DataProviderOptions) {
         ),
         getDailyGifts: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getDailyGiftOverview', true),
         getActivityDirectorySnapshot: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getActivityDirectorySnapshot'),
+        getRanchActivityDirectorySnapshot: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getRanchActivityDirectorySnapshot'),
         getActivityCenterSnapshot: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getActivityCenterSnapshot'),
         getCurrentSeasonEvent: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getCurrentSeasonEvent'),
         getCurrentStellarActivity: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getCurrentStellarActivity'),
@@ -267,16 +239,13 @@ function createDataProvider(options: DataProviderOptions) {
         advanceWeatherResearch: (accountRef: string, nodeId: unknown) => (
             callWorkerApi(resolveAccountRefId(accountRef), 'advanceWeatherResearch', nodeId)
         ),
+        getMugeActivity: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getMugeActivity'),
+        operateMugeActivity: (accountRef: string, action: string, input: any) => callWorkerApi(resolveAccountRefId(accountRef), 'operateMugeActivity', action, input),
         getMilkTeaActivity: (accountRef: string, page: string, input: any) => callWorkerApi(resolveAccountRefId(accountRef), 'getMilkTeaActivity', page, input),
         operateMilkTeaActivity: (accountRef: string, action: string, input: any) => callWorkerApi(resolveAccountRefId(accountRef), 'operateMilkTeaActivity', action, input),
-        getMilkTeaLegacy: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getMilkTeaLegacy'),
-        operateMilkTeaLegacy: (accountRef: string, action: string, input: any) => callWorkerApi(resolveAccountRefId(accountRef), 'operateMilkTeaLegacy', action, input),
-        milkTeaRecordsLegacy: (accountRef: string, kind: string, input: any) => callWorkerApi(resolveAccountRefId(accountRef), 'milkTeaRecordsLegacy', kind, input),
         getShareRewardActivity: (accountRef: string, activityId: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getShareRewardActivity', activityId),
         operateShareRewardActivity: (accountRef: string, activityId: string, action: string, input: any) => callWorkerApi(resolveAccountRefId(accountRef), 'operateShareRewardActivity', activityId, action, input),
         getAutumnActivity: (accountRef: string, key: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getAutumnActivity', key),
-        getMugeActivity: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getMugeActivity'),
-        operateMugeActivity: (accountRef: string, action: string, input: any) => callWorkerApi(resolveAccountRefId(accountRef), 'operateMugeActivity', action, input),
         operateAutumnActivity: (accountRef: string, key: string, action: string, input: unknown) => callWorkerApi(resolveAccountRefId(accountRef), 'operateAutumnActivity', key, action, input),
         getPropsShop: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getPropsShop'),
         purchaseProps: (accountRef: string, goodsId: unknown, count: unknown, expectedOffer: unknown) => (
@@ -289,12 +258,6 @@ function createDataProvider(options: DataProviderOptions) {
             callWorkerApi(resolveAccountRefId(accountRef), 'purchaseMallProduct', goodsId, count, slotType, expectedPrice)
         ),
         getMysteryShop: (accountRef: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getMysteryShop'),
-        getMysteryShopHistory: (accountRef: string) => (
-            require('../services/mystery-shop-history').getMysteryShopHistory(resolveAccountRefId(accountRef))
-        ),
-        getPanelNotifications: (accountRef: string) => (
-            require('../services/panel-notification').getPanelNotifications(resolveAccountRefId(accountRef))
-        ),
         purchaseMysteryOffer: (accountRef: string, npcId: unknown) => (
             callWorkerApi(resolveAccountRefId(accountRef), 'purchaseMysteryOffer', npcId)
         ),
@@ -318,15 +281,6 @@ function createDataProvider(options: DataProviderOptions) {
         fertilizeOwnLand: (accountRef: string, landId: unknown, fertilizerType: unknown) => (
             callWorkerApi(resolveAccountRefId(accountRef), 'fertilizeOwnLand', landId, fertilizerType)
         ),
-        removePlant: (accountRef: string, landId: unknown) => (
-            callWorkerApi(resolveAccountRefId(accountRef), 'removePlant', landId)
-        ),
-        previewRipenAll: (accountRef: string) => (
-            callWorkerApi(resolveAccountRefId(accountRef), 'previewRipenAll')
-        ),
-        ripenAllStep: (accountRef: string, token: unknown, cursor: unknown) => (
-            callWorkerApi(resolveAccountRefId(accountRef), 'ripenAllStep', token, cursor)
-        ),
         fertilizeAllOwnLands: (accountRef: string, fertilizerType: unknown, landIds?: unknown) => (
             callWorkerApi(resolveAccountRefId(accountRef), 'fertilizeAllOwnLands', fertilizerType, landIds)
         ),
@@ -334,11 +288,6 @@ function createDataProvider(options: DataProviderOptions) {
         doAnalytics: (accountRef: string, sortBy: string) => callWorkerApi(resolveAccountRefId(accountRef), 'getAnalytics', sortBy),
         buyFertilizer: (accountRef: string, type: string, count: number) => callWorkerApi(resolveAccountRefId(accountRef), 'buyFertilizer', type, count, true),
         checkAndBuyFertilizer: (accountRef: string, options: any) => callWorkerApi(resolveAccountRefId(accountRef), 'checkAndBuyFertilizer', options, true),
-        // 掉线重登配置变更后重新读取一次生效策略（配置本身存在系统设置里）。
-        applyAccountKeepAliveConfig: () => {
-            const { applyWxKeepAliveConfig } = require('../services/wx-keepalive');
-            applyWxKeepAliveConfig();
-        },
         saveSettings: async (accountRef: string, payload: any) => {
             const accountId = resolveAccountRefId(accountRef);
             if (!accountId) {
@@ -356,7 +305,6 @@ function createDataProvider(options: DataProviderOptions) {
             if (!Object.hasOwn(snapshot, 'plantingStrategy')) copyIfPresent('strategy', 'plantingStrategy');
             copyIfPresent('preferredSeedId');
             if (!Object.hasOwn(snapshot, 'preferredSeedId')) copyIfPresent('seedId', 'preferredSeedId');
-            copyIfPresent('capitalMode');
             for (const key of [
                 'automation',
                 'intervals',
@@ -370,13 +318,10 @@ function createDataProvider(options: DataProviderOptions) {
                 'fertilizerBuyNormalThresholdHours',
                 'fertilizerBuyCheckIntervalMinutes',
                 'emailClaimHour',
-                'goldenBugKeepCount',
-                'goldenBugRoundLimit',
                 'bagSeedPriority',
                 'bagSeedMultiLandReservationEnabled',
                 'bagSeedLandTypes',
                 'bagSeedFallbackStrategy',
-                'prioritize2x2Crops',
                 'autoAcceptFriendMinLevel',
                 'autoAcceptRequireOwnLevel',
                 'autoAcceptHarvestStealEnabled',
@@ -470,18 +415,6 @@ function createDataProvider(options: DataProviderOptions) {
             data.accounts.forEach((a: any) => {
                 const worker = workers[a.id];
                 a.running = !!worker;
-                // 账号维度的真实状态：登录中 / 等待重登（带倒计时）/ 运行中 / 已掉线 /
-                // 停止中 / 已停止。账本里没有记录时（本次进程还没碰过这个账号）按
-                // 有无子进程回落到「运行中 / 已停止」，与旧版字段语义保持一致。
-                const runtime = getAccountRuntimeState(a.id);
-                if (runtime) {
-                    a.runtimeState = runtime.state;
-                    a.reloginAt = runtime.state === 'relogin_waiting' ? runtime.reloginAt : 0;
-                }
-                else {
-                    a.runtimeState = a.running ? 'running' : 'stopped';
-                    a.reloginAt = 0;
-                }
                 if (worker && worker.status && worker.status.status && worker.status.status.name) {
                     a.nick = worker.status.status.name;
                 }
@@ -492,64 +425,10 @@ function createDataProvider(options: DataProviderOptions) {
             return data;
         },
 
-        startAccount: async (accountRef: string) => {
+        startAccount: (accountRef: string) => {
             const accountId = resolveAccountRefId(accountRef);
             const acc = findAccountByAnyRef(accountId || accountRef);
             if (!acc) return false;
-            const id = String(acc.id || accountId || '');
-
-            // 已在运行的账号无需续期，保持原行为。
-            if (workers[id]) return true;
-
-            // 用户点了「启动」：自动重登的等待应当立即作废，改走这次人工启动。
-            cancelPendingReloginSafe(id);
-
-            // 游戏 Code 是一次性的，账号停止后旧 Code 大概率已失效，
-            // 直接启动会被服务端拒绝而要求重新扫码。
-            const platform = String(acc.platform || '');
-            const loginBuffer = String(acc.loginBuffer || '').trim();
-            const refreshToken = String(acc.refreshtoken || '').trim();
-            // 微信：只要有长效凭证就先换新鲜 Code。旧实现只认 refreshtoken，
-            // 导致「扫码时未回传 refreshtoken、仅有 loginBuffer」的账号被跳过换码，
-            // 重启后拿旧 Code 直连失败，只能重新扫码 —— 这正是部分账号的表现。
-            const canRefreshWxCode = platform === 'wx' && !!(loginBuffer || refreshToken);
-            // QQ：没有滚动凭证，尽力尝试免扫码重签（需 NapCat 提供对应能力），
-            // 不支持时静默回退已保存的 Code，并留下可诊断的账号日志。
-            const canRefreshQqCode = platform === 'qq';
-
-            if (canRefreshWxCode || canRefreshQqCode) {
-                if (pendingStarts.has(id)) return true;
-                pendingStarts.add(id);
-                try {
-                    if (canRefreshWxCode) {
-                        const { ensureFreshGameCode } = require('../services/wx-credential');
-                        const result = await ensureFreshGameCode(id);
-                        if (result.ok) {
-                            const latest = findAccountByAnyRef(id);
-                            addAccountLog('auto_code_refresh', `账号 ${result.accountName} 启动前已自动续期 Code`, id, result.accountName, { reason: 'manual_start' });
-                            startWorker(latest || acc);
-                            return true;
-                        }
-                        addAccountLog('auto_code_refresh_failed', `账号 ${result.accountName} 启动前续期 Code 失败: ${result.error}，尝试用现有 Code 启动`, id, result.accountName, { reason: 'manual_start' });
-                    } else {
-                        const { tryRefreshQqGameCode } = require('../services/qq-credential');
-                        const result = await tryRefreshQqGameCode(id);
-                        if (result.ok) {
-                            const latest = findAccountByAnyRef(id);
-                            const accountName = String((latest && latest.name) || acc.name || '');
-                            addAccountLog('auto_code_refresh', `账号 ${accountName} 启动前已自动重签 QQ Code`, id, accountName, { reason: 'manual_start' });
-                            startWorker(latest || acc);
-                            return true;
-                        }
-                        addAccountLog('auto_code_refresh_failed', `账号 ${acc.name} 未能自动重签 QQ Code（${result.error || '未知原因'}），将用已保存的 Code 启动；若提示 Code 失效请重新扫码或填写新 Code`, id, String(acc.name || ''), { reason: 'manual_start' });
-                    }
-                } catch (error: any) {
-                    addAccountLog('auto_code_refresh_failed', `账号 ${acc.name} 启动前续期 Code 异常: ${error?.message || error}，尝试用现有 Code 启动`, id, String(acc.name || ''), { reason: 'manual_start' });
-                } finally {
-                    pendingStarts.delete(id);
-                }
-            }
-
             startWorker(acc);
             return true;
         },
@@ -558,17 +437,7 @@ function createDataProvider(options: DataProviderOptions) {
             const accountId = resolveAccountRefId(accountRef);
             const acc = findAccountByAnyRef(accountId || accountRef);
             if (!acc) return false;
-            if (accountId) {
-                // 用户主动停止 = 明确不想再自动拉起。等待重登阶段账号本身没有子进程，
-                // 只靠 stopWorker 停不掉那条定时器，到点会把它重新启动。
-                cancelPendingReloginSafe(accountId);
-                const hadWorker = !!workers[accountId];
-                stopWorker(accountId);
-                if (!hadWorker) {
-                    // 本来就没在跑：不会有进程退出事件来收尾，直接把状态落成「已停止」。
-                    setAccountRuntimeState(accountId, 'stopped');
-                }
-            }
+            if (accountId) stopWorker(accountId);
             return true;
         },
 
@@ -576,9 +445,6 @@ function createDataProvider(options: DataProviderOptions) {
             const accountId = resolveAccountRefId(accountRef);
             const acc = findAccountByAnyRef(accountId || accountRef);
             if (!acc) return false;
-            // 手动重启要走确定的路径，别让一条还没到点的自动重登定时器在背后
-            // 再来一次「换码 + 重启」，把刚起来的连接又打断。
-            cancelPendingReloginSafe(accountId);
             restartWorker(acc);
             return true;
         },

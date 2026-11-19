@@ -13,7 +13,6 @@ const {
     getPlantGrowPhases,
     getItemById,
     getItemImageById,
-    getFruitPrice,
     getMutantEffectsByIds,
     getMutantDisplayPlantId,
 } = require('../../config/gameConfig');
@@ -90,49 +89,6 @@ function getPlantMutantRecords(plant: any, currentPhase: any = null): any[] {
     return records;
 }
 
-// 官方 MutantEffect.actions 形如「类型:倍数」，与收获收益相关的类型只有三种：
-//   2 = 果实数量倍率、3 = 果实售价倍率、4 = 变身（产出替换为 mutant_effect_plant 指向的变体果实）。
-// 5（喜鹊等活动效果）、6（藏品变异）不改收益。多变异叠加时同类倍率相乘。
-const MUTANT_ACTION_COUNT = 2;
-const MUTANT_ACTION_PRICE = 3;
-const MUTANT_ACTION_TRANSFORM = 4;
-
-function parseMutantAction(actions: any): { type: number; value: number } {
-    const [type, value] = String(actions || '').split(':').map((part: string) => Number(part) || 0);
-    return { type: type || 0, value: value || 0 };
-}
-
-/**
- * 汇总当前作物全部变异效果对收获收益的加成，供土地气泡/详情展示「基础值 → 变异后」。
- * 返回的 details 只包含真正改变收益的变异，前端据此标注来源。
- */
-function buildMutantHarvestBonus(mutantEffects: any[]) {
-    let countMultiplier = 1;
-    let priceMultiplier = 1;
-    const details: any[] = [];
-    for (const effect of Array.isArray(mutantEffects) ? mutantEffects : []) {
-        const { type, value } = parseMutantAction(effect?.actions);
-        const name = String(effect?.name || effect?.effect_name || '变异');
-        const id = toNum(effect?.id);
-        if (type === MUTANT_ACTION_COUNT && value > 0) {
-            countMultiplier *= value;
-            details.push({ id, name, kind: 'count', multiplier: value, label: `数量×${value}` });
-        } else if (type === MUTANT_ACTION_PRICE && value > 0) {
-            priceMultiplier *= value;
-            details.push({ id, name, kind: 'price', multiplier: value, label: `售价×${value}` });
-        } else if (type === MUTANT_ACTION_TRANSFORM) {
-            const fruitName = String(effect?.fruitName || effect?.fruit_name || '').trim();
-            details.push({ id, name, kind: 'transform', multiplier: 1, label: fruitName ? `变身·${fruitName}` : '变身' });
-        }
-    }
-    return {
-        countMultiplier,
-        priceMultiplier,
-        transformed: details.some((detail: any) => detail.kind === 'transform'),
-        details,
-    };
-}
-
 function getPlantMutantConfigIds(plant: any, currentPhase: any = null): string[] {
     const values: any[] = Array.isArray(plant?.mutant_config_ids) ? [...plant.mutant_config_ids] : [];
     values.push(...getPlantMutantRecords(plant, currentPhase).map((record: any) => record?.mutant_config_id));
@@ -158,10 +114,6 @@ function getPlantCollectionMutations(plant: any, currentPhase: any): any[] {
 // 抓包确认：黄金虫、足球和乌云由农场主通过自家 Farming 清理，好友帮助务农不能代为清理。
 // 乌云必须以 interaction_uses / interaction_targets 的实时记录为准；field_40={8,1} 只是清理后仍保留的历史。
 const OWNER_CLEANABLE_INTERACTION_ITEM_IDS = new Set(['301101', '301102', '5006']);
-
-// 黄金虫物品 ID（老版 golden-bug-service.js GOLDEN_BUG_ITEM_ID）。自家地块上的黄金虫
-// 由农场主通过 Farming 清理；golden_bug_clear 开关控制是否自动清理。
-const GOLDEN_BUG_ITEM_ID = '301101';
 
 // 5005 青蛙是农场级事件，不绑定某一块土地；清理时通过 FarmingRequest.field 5 发送。
 const OWNER_CLEANABLE_FARM_SOCIAL_EVENT_ITEM_IDS = new Set(['5005']);
@@ -230,15 +182,6 @@ function hasOwnerCleanableInteraction(plant: any): boolean {
     const targets: any[] = Array.isArray(plant?.interaction_targets) ? plant.interaction_targets : [];
     return [...uses, ...targets]
         .some((entry: any) => OWNER_CLEANABLE_INTERACTION_ITEM_IDS.has(normalizePositiveId(entry?.item_id)));
-}
-
-/** 仅黄金虫（301101）是否落在自家地块上、需要农场主通过 Farming 清理。 */
-function hasOwnerCleanableGoldenBug(plant: any): boolean {
-    if (!GOLDEN_BUG_ITEM_ID) return false;
-    const uses: any[] = Array.isArray(plant?.interaction_uses) ? plant.interaction_uses : [];
-    const targets: any[] = Array.isArray(plant?.interaction_targets) ? plant.interaction_targets : [];
-    return [...uses, ...targets]
-        .some((entry: any) => normalizePositiveId(entry?.item_id) === GOLDEN_BUG_ITEM_ID);
 }
 
 function getPlantInteractionEffects(plant: any): any[] {
@@ -373,9 +316,6 @@ function buildLandDetail(land: any, options: { friendMode?: boolean; landsMap?: 
         needInteractionCleanup: false,
         protocolField40: null,
         leftInorcFertTimes: null,
-        harvestExpPerSeason: 0,
-        harvestGoldPerSeason: 0,
-        harvestBonus: null,
     };
     if (!base.unlocked) {
         return {
@@ -423,32 +363,6 @@ function buildLandDetail(land: any, options: { friendMode?: boolean; landsMap?: 
     const plantName = getPlantName(displayPlantId) || getPlantName(plantId) || plant.name || '未知';
     const plantCfg = getPlantById(plantId);
     const seedId = toNum(plantCfg?.seed_id);
-    // 成熟后每季可收获的经验与金币（老版 getSeedHarvestInfo 口径：经验取 plant.exp，
-    // 金币取果实单价 × 果实数量）。变异效果在此基础上叠加：
-    //   actions 2:x = 数量倍率，同时放大经验与金币；
-    //   actions 3:x = 售价倍率，只放大金币；
-    //   多个变异同时存在时同类倍率相乘，形成叠加效果。
-    //   actions 4:0 = 变身果实：产出换成活动/金豆豆计价的特殊果实，不作为金币收益口径，
-    //   仅在 harvestBonus 里标注，避免把金豆豆数量误显示成金币。
-    const harvestBaseExp = toNum(plantCfg?.exp) || 0;
-    const harvestBaseFruitId = toNum(plantCfg?.fruit?.id) || 0;
-    const harvestBaseGold = harvestBaseFruitId > 0
-        ? getFruitPrice(harvestBaseFruitId) * (toNum(plantCfg?.fruit?.count) || 0)
-        : 0;
-    const mutantBonus = buildMutantHarvestBonus(mutantEffects);
-    const harvestExpPerSeason = Math.round(harvestBaseExp * mutantBonus.countMultiplier);
-    const harvestGoldPerSeason = Math.round(
-        harvestBaseGold * mutantBonus.countMultiplier * mutantBonus.priceMultiplier,
-    );
-    // 当前阶段的起止时间（秒），供详情弹窗画阶段进度条；末段（成熟）无结束时间。
-    const phaseBeginSec = toTimeSec(currentPhase.begin_time);
-    const phaseEndSecRaw = Array.isArray(plant.phases)
-        ? plant.phases
-            .map((phase: any) => toTimeSec(phase?.begin_time))
-            .filter((time: number) => time > phaseBeginSec)
-            .sort((left: number, right: number) => left - right)[0]
-        : null;
-    const phaseEndTime = Number.isFinite(phaseEndSecRaw) && phaseEndSecRaw ? phaseEndSecRaw : null;
     const plantSize = Math.max(1, toNum(plantCfg?.size) || toNum(sourceLand?.land_size) || landSize || 1);
     const totalSeason = Math.max(1, toNum(plantCfg?.seasons) || 1);
     const currentSeasonRaw = toNum(plant.season);
@@ -480,22 +394,6 @@ function buildLandDetail(land: any, options: { friendMode?: boolean; landsMap?: 
         seedId,
         seedImage: seedId > 0 ? getSeedImageBySeedId(seedId) : '',
         phaseName: currentPhase.phaseName || PHASE_NAMES[phaseVal] || '',
-        phaseStartTime: phaseBeginSec > 0 ? phaseBeginSec : null,
-        phaseEndTime,
-        harvestExpPerSeason,
-        harvestGoldPerSeason,
-        // 收益构成：基础值 + 变异叠加明细，前端据此展示「基础 → 变异后」。
-        harvestBonus: {
-            baseExp: Math.round(harvestBaseExp),
-            baseGold: Math.round(harvestBaseGold),
-            countMultiplier: mutantBonus.countMultiplier,
-            priceMultiplier: mutantBonus.priceMultiplier,
-            transformed: mutantBonus.transformed,
-            transformedPlantName: mutantBonus.transformed && displayPlantId !== plantId
-                ? (getPlantName(displayPlantId) || '')
-                : '',
-            details: mutantBonus.details,
-        },
         currentSeason,
         totalSeason,
         matureInSec,
@@ -613,7 +511,6 @@ function getOrganicFertilizerTargetsFromLands(lands: any[]): number[] {
         const currentPhase = getCurrentPhase(plant.phases, false, '', toNum(plant.id));
         if (!currentPhase) continue;
         if (currentPhase.phase === PlantPhase.DEAD) continue;
-        if (currentPhase.phase === PlantPhase.MATURE) continue;
 
         targets.push(landId);
     }
@@ -864,7 +761,6 @@ function analyzeLands(lands: any[], debug?: boolean, ownGid?: number): {
     needWeed: number[];
     needBug: number[];
     needInteractionCleanup: number[];
-    goldenBugLandIds: number[];
     growing: number[];
     empty: number[];
     dead: number[];
@@ -878,7 +774,6 @@ function analyzeLands(lands: any[], debug?: boolean, ownGid?: number): {
         needWeed: [] as number[],
         needBug: [] as number[],
         needInteractionCleanup: [] as number[],
-        goldenBugLandIds: [] as number[],
         growing: [] as number[],
         empty: [] as number[],
         dead: [] as number[],
@@ -924,9 +819,6 @@ function analyzeLands(lands: any[], debug?: boolean, ownGid?: number): {
 
         if (hasOwnerCleanableInteraction(plant)) {
             result.needInteractionCleanup.push(id);
-        }
-        if (hasOwnerCleanableGoldenBug(plant)) {
-            result.goldenBugLandIds.push(id);
         }
 
         if (phaseVal === PlantPhase.DEAD) {
@@ -1120,10 +1012,7 @@ function hasRemainingSeasons(plant: any): boolean {
     const totalSeason = Math.max(1, toNum(plantCfg && plantCfg.seasons) || 1);
     const rawSeason = toNum(plant.season);
     const currentSeason = rawSeason > 0 ? rawSeason : 1;
-    // 只有「当前季 < 总季数」才表示还有下一季。原先还额外把「当前季大于 1」当成有剩余季，
-    // 但那只是「不是第一季」，与是否还有下一季无关，会把末季作物误判成仍在生长
-    // （跳过铲除、并对其做无意义的补肥）。
-    return currentSeason < totalSeason;
+    return currentSeason > 1 || currentSeason < totalSeason;
 }
 
 function classifyHarvestedLandsByMap(landIds: number[], landsMap: Map<number, any>): {
@@ -1234,41 +1123,7 @@ async function resolveRemovableHarvestedLands(harvestedLandIds: number[], harves
     };
 }
 
-/**
- * 老版 2×2 催熟的目标识别（纯函数）。
- * - size2LandIds：2×2 作物主地块（未锁、非从属，作物尺寸为 2 或整组占用 4 块地）
- * - excludedIds：所有从属地块 + 2×2 主地块，常规施肥必须跳过这些，
- *   避免普通肥只落在合种作物的其中一个地块上。
- */
-function pickRipen2x2Lands(lands: any[]): { size2LandIds: number[]; excludedIds: Set<number> } {
-    const list: any[] = Array.isArray(lands) ? lands : [];
-    const landsMap = buildLandMap(list);
-    const isSlave = (land: any): boolean => {
-        const masterId = toNum(land && land.master_land_id);
-        return (masterId > 0 && masterId !== toNum(land && land.id)) || isOccupiedSlaveLand(land, landsMap);
-    };
-    const size2LandIds: number[] = [];
-    const excludedIds = new Set<number>();
-    for (const land of list) {
-        if (!land) continue;
-        const landId = toNum(land && land.id);
-        if (!landId) continue;
-        if (isSlave(land)) {
-            excludedIds.add(landId);
-            continue;
-        }
-        if (land.unlocked === false) continue;
-        const { occupiedLandIds } = getDisplayLandContext(land, landsMap);
-        const plantCfg = getPlantById(toNum(land.plant && land.plant.id));
-        const plantSize = Math.max(1, toNum(plantCfg && plantCfg.size) || 1);
-        if (plantSize === 2 || occupiedLandIds.length === 4) size2LandIds.push(landId);
-    }
-    for (const landId of size2LandIds) excludedIds.add(landId);
-    return { size2LandIds, excludedIds };
-}
-
 module.exports = {
-    pickRipen2x2Lands,
     getCurrentPhase,
     getPlantStatusFlags,
     getPlantMutantConfigIds,

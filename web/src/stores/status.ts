@@ -5,7 +5,6 @@ import { io } from 'socket.io-client'
 import { computed, ref } from 'vue'
 import api, { getApiErrorMessage } from '@/api'
 import { useAccountStore } from '@/stores/account'
-import { createRequestGuard } from '@/utils/request-guard'
 
 // Define interfaces for better type checking
 interface DailyGift {
@@ -28,6 +27,7 @@ interface DailyGift {
   result?: string
   lastError?: string
   scheduledHour?: number
+  nextAt?: number
 }
 
 interface DailyGiftsResponse {
@@ -35,6 +35,7 @@ interface DailyGiftsResponse {
   timeZone?: string
   growth: DailyGift
   gifts: DailyGift[]
+  ranch?: { unlocked: boolean, gifts: Array<Partial<DailyGift> & { key: string }> }
 }
 
 export const useStatusStore = defineStore('status', () => {
@@ -44,7 +45,7 @@ export const useStatusStore = defineStore('status', () => {
   const dailyGifts = ref<DailyGiftsResponse | null>(null)
   const dailyGiftsLoading = ref(false)
   const dailyGiftsError = ref('')
-  const dailyGiftsGuard = createRequestGuard()
+  let dailyGiftsSequence = 0
   const diamondBalance = ref(0)
   const loading = ref(false)
   const error = ref('')
@@ -61,12 +62,8 @@ export const useStatusStore = defineStore('status', () => {
   })
 
   let socket: Socket | null = null
-  const statusGuard = createRequestGuard()
-  const diamondGuard = createRequestGuard()
-  const logsGuard = createRequestGuard()
-  // 已订阅的账号房间：同一账号不重复 subscribe，
-  // 服务端每次 subscribe 都会全量重推 status + logs 快照，重复订阅会让前端数据周期性整体重建。
-  let lastSubscribedAccount: string | null = null
+  let statusRequestSequence = 0
+  let diamondRequestSequence = 0
 
   function normalizeStatusPayload(input: any) {
     return (input && typeof input === 'object') ? { ...input } : {}
@@ -89,38 +86,15 @@ export const useStatusStore = defineStore('status', () => {
       logs.value = logs.value.slice(-300)
   }
 
-  /**
-   * 实时推送的账号归属。status 分支早已有守卫，logs 分支原来漏了：
-   * 服务端 logs:snapshot 会带 accountId（未选账号时是 'all'），切号瞬间的旧快照
-   * 会把上一个账号的日志整段灌进新账号视图。
-   */
-  function isRealtimeAccount(body: any): boolean {
-    const incoming = String(body?.accountId || '')
-    if (!incoming)
-      return true
-    const current = currentRealtimeAccountId.value
-    if (incoming === 'all')
-      return !current
-    return !current || incoming === current
-  }
-
   function handleRealtimeStatus(payload: any) {
     const body = (payload && typeof payload === 'object') ? payload : {}
     const accountId = String(body.accountId || '')
     if (currentRealtimeAccountId.value && accountId !== currentRealtimeAccountId.value)
       return
     if (body.status && typeof body.status === 'object') {
-      const next = normalizeStatusPayload(body.status)
-      // worker 每 10s 全量推一次 status；内容没变就不替换对象，
-      // 否则所有页面依赖 status 的整棵组件树都会无谓重渲染，看起来像在不停刷新。
-      if (status.value && JSON.stringify(next) === JSON.stringify(status.value)) {
-        loading.value = false
-        error.value = ''
-        return
-      }
-      statusGuard.invalidate()
+      statusRequestSequence++
       loading.value = false
-      status.value = next
+      status.value = normalizeStatusPayload(body.status)
       error.value = ''
     }
   }
@@ -128,16 +102,11 @@ export const useStatusStore = defineStore('status', () => {
   function handleRealtimeLog(payload: any) {
     if (!realtimeLogsEnabled.value)
       return
-    const body = (payload && typeof payload === 'object') ? payload : {}
-    if (!isRealtimeAccount(body))
-      return
     pushRealtimeLog(payload)
   }
 
   function handleRealtimeLogsSnapshot(payload: any) {
     const body = (payload && typeof payload === 'object') ? payload : {}
-    if (!isRealtimeAccount(body))
-      return
     const list = Array.isArray(body.logs) ? body.logs : []
     logs.value = list.map((item: any) => normalizeLogEntry(item))
   }
@@ -157,18 +126,20 @@ export const useStatusStore = defineStore('status', () => {
 
     socket.on('connect', () => {
       realtimeConnected.value = true
-      lastSubscribedAccount = currentRealtimeAccountId.value || 'all'
-      socket?.emit('subscribe', { accountId: lastSubscribedAccount })
+      if (currentRealtimeAccountId.value) {
+        socket?.emit('subscribe', { accountId: currentRealtimeAccountId.value })
+      }
+      else {
+        socket?.emit('subscribe', { accountId: 'all' })
+      }
     })
 
     socket.on('disconnect', () => {
       realtimeConnected.value = false
-      lastSubscribedAccount = null
     })
 
     socket.on('connect_error', (err) => {
       realtimeConnected.value = false
-      lastSubscribedAccount = null
       console.error('[realtime] 连接失败:', err.message)
     })
 
@@ -183,10 +154,8 @@ export const useStatusStore = defineStore('status', () => {
     const accountChanged = nextAccountId !== currentRealtimeAccountId.value
     currentRealtimeAccountId.value = nextAccountId
     if (accountChanged) {
-      statusGuard.invalidate()
-      logsGuard.invalidate()
+      statusRequestSequence++
       status.value = null
-      logs.value = []
       loading.value = false
       error.value = ''
     }
@@ -203,14 +172,9 @@ export const useStatusStore = defineStore('status', () => {
     }
 
     if (client.connected) {
-      const target = currentRealtimeAccountId.value || 'all'
-      if (lastSubscribedAccount !== target) {
-        lastSubscribedAccount = target
-        client.emit('subscribe', { accountId: target })
-      }
+      client.emit('subscribe', { accountId: currentRealtimeAccountId.value || 'all' })
       return
     }
-    lastSubscribedAccount = null
     client.connect()
   }
 
@@ -225,20 +189,19 @@ export const useStatusStore = defineStore('status', () => {
     socket.off('logs:snapshot', handleRealtimeLogsSnapshot)
     socket.disconnect()
     socket = null
-    lastSubscribedAccount = null
     realtimeConnected.value = false
   }
 
   async function fetchStatus(accountId: string) {
     if (!accountId)
       return
-    const ticket = statusGuard.next()
+    const sequence = ++statusRequestSequence
     loading.value = true
     try {
       const { data } = await api.get('/api/status', {
         headers: { 'x-account-id': accountId },
       })
-      if (statusGuard.isStale(ticket))
+      if (sequence !== statusRequestSequence)
         return
       if (data.ok) {
         status.value = normalizeStatusPayload(data.data)
@@ -249,11 +212,11 @@ export const useStatusStore = defineStore('status', () => {
       }
     }
     catch (e: any) {
-      if (!statusGuard.isStale(ticket))
+      if (sequence === statusRequestSequence)
         error.value = getApiErrorMessage(e, '获取状态失败')
     }
     finally {
-      if (!statusGuard.isStale(ticket))
+      if (sequence === statusRequestSequence)
         loading.value = false
     }
   }
@@ -270,13 +233,8 @@ export const useStatusStore = defineStore('status', () => {
       params.accountId = 'all'
     }
 
-    // Dashboard 每 10s 轮询，切号 watch 也会立刻拉一次；没有序号守卫时
-    // 旧账号晚到的响应会直接覆盖新账号的 logs，实时推送还会继续往里追加。
-    const ticket = logsGuard.next()
     try {
       const { data } = await api.get('/api/logs', { headers, params })
-      if (logsGuard.isStale(ticket))
-        return
       if (data.ok) {
         logs.value = data.data
         error.value = ''
@@ -291,7 +249,7 @@ export const useStatusStore = defineStore('status', () => {
     const id = String(accountId || '').trim()
     if (!id)
       return
-    const ticket = diamondGuard.next()
+    const sequence = ++diamondRequestSequence
     diamondBalance.value = 0
 
     try {
@@ -299,7 +257,7 @@ export const useStatusStore = defineStore('status', () => {
         headers: { 'x-account-id': id },
         skipErrorToast: true,
       } as any)
-      if (data.ok && !diamondGuard.isStale(ticket))
+      if (data.ok && sequence === diamondRequestSequence)
         diamondBalance.value = Math.max(0, Number(data.data?.diamond) || 0)
     }
     catch {
@@ -310,14 +268,14 @@ export const useStatusStore = defineStore('status', () => {
   async function fetchDailyGifts(accountId: string) {
     if (!accountId)
       return
-    const ticket = dailyGiftsGuard.next()
+    const sequence = ++dailyGiftsSequence
     dailyGiftsLoading.value = true
     dailyGiftsError.value = ''
     try {
       const { data } = await api.get('/api/daily-gifts', {
         headers: { 'x-account-id': accountId },
       })
-      if (dailyGiftsGuard.isStale(ticket))
+      if (sequence !== dailyGiftsSequence)
         return
       if (data.ok) {
         dailyGifts.value = data.data
@@ -327,11 +285,11 @@ export const useStatusStore = defineStore('status', () => {
       }
     }
     catch (e) {
-      if (!dailyGiftsGuard.isStale(ticket))
+      if (sequence === dailyGiftsSequence)
         dailyGiftsError.value = getApiErrorMessage(e, '获取每日奖励失败')
     }
     finally {
-      if (!dailyGiftsGuard.isStale(ticket))
+      if (sequence === dailyGiftsSequence)
         dailyGiftsLoading.value = false
     }
   }

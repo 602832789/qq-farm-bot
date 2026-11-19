@@ -241,7 +241,7 @@ async function checkAndClaimIllustratedRewards(): Promise<boolean> {
 
 // ============ 客户端上报类成长任务 ============
 
-const CLIENT_REPORT_COND_TYPES: Set<number> = new Set([15]);
+const CLIENT_REPORT_COND_TYPES: Set<number> = new Set([15, 25]);
 
 function pickClientReportedTasks(tasks: any[]): any[] {
     const picked: any[] = [];
@@ -389,17 +389,8 @@ function onTaskInfoNotify(taskInfo: any, context?: { globalSceneId?: number }): 
         module: 'task', event: '领取任务', result: 'plan', count: claimable.length
     });
     taskScheduler.setTimeoutTask('task_claim_debounce', 1000, () => require('./automation-lock').runExclusiveAutomationTask('task_claim_notify', async () => {
-        // 与 checkAndClaimTasks 共用同一把锁：农场巡查正在逐个领取时，推送触发的
-        // debounce 不能再并发跑一遍同一批任务快照，否则同一任务会被重复 ClaimTaskReward，
-        // recordOperation('taskClaim') 也会重复计数。
-        if (checking) return;
-        checking = true;
-        try {
-            if (hasClaimable) await claimTasksFromList(claimable);
-            await checkAndClaimActives(actives);
-        } finally {
-            checking = false;
-        }
+        if (hasClaimable) await claimTasksFromList(claimable);
+        await checkAndClaimActives(actives);
     }, { detached: true }));
 }
 

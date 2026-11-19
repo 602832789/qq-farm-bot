@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia'
 import { onScopeDispose, ref } from 'vue'
 import api, { getApiErrorMessage } from '@/api'
-import { createRequestGuard } from '@/utils/request-guard'
 
 export interface PetItem { id: string, name: string, image: string, count: string }
 export interface PetCharm { id: number, name: string, description: string, shortDescription: string, useLimit: number, image: string, remaining: number[] }
@@ -60,7 +59,7 @@ export const usePetDiaryStore = defineStore('pet-diary', () => {
   const records = ref<PetRecord[] | null>(null)
   const plunderRecords = ref<PetRecord[] | null>(null)
   const friend = ref<PetFriend | null>(null)
-  const requestGuard = createRequestGuard()
+  let generation = 0
   let noticeTimer: ReturnType<typeof setTimeout> | undefined
 
   function clearNotice() {
@@ -73,7 +72,7 @@ export const usePetDiaryStore = defineStore('pet-diary', () => {
   function selectAccount(id: string) {
     if (accountId.value === id)
       return
-    requestGuard.invalidate()
+    generation++
     accountId.value = id
     activity.value = null
     records.value = null
@@ -96,37 +95,37 @@ export const usePetDiaryStore = defineStore('pet-diary', () => {
     selectAccount(id)
     if (!id || pending.value)
       return
-    const token = requestGuard.snapshot()
+    const version = generation
     pending.value = 'load'
     error.value = ''
     try {
       const result = payload(await api.get('/api/activity-center/pet-diary', options()))
-      if (!requestGuard.isStale(token)) {
+      if (version === generation) {
         activity.value = result
         stale.value = false
       }
     }
     catch (e) {
-      if (!requestGuard.isStale(token)) {
+      if (version === generation) {
         error.value = getApiErrorMessage(e)
         stale.value = true
       }
     }
     finally {
-      if (!requestGuard.isStale(token))
+      if (version === generation)
         pending.value = ''
     }
   }
   async function operate(action: PetAction | 'solar', params: Record<string, unknown> = {}) {
     if (pending.value || stale.value || !accountId.value || !activity.value?.active)
       return
-    const token = requestGuard.snapshot()
+    const version = generation
     pending.value = action
     error.value = ''
     clearNotice()
     try {
       const result = payload(await api.post('/api/activity-center/pet-diary/operate', { action, params }, options()))
-      if (requestGuard.isStale(token))
+      if (version !== generation)
         return
       const rewards = (result.rewards || []) as PetItem[]
       notice.value = `${result.message || '操作成功'}${rewards.length ? ` · ${rewards.map(i => `${i.name} ×${i.count}`).join('、')}` : ''}`
@@ -142,20 +141,20 @@ export const usePetDiaryStore = defineStore('pet-diary', () => {
         friend.value = null
     }
     catch (e) {
-      if (!requestGuard.isStale(token)) {
+      if (version === generation) {
         error.value = `${getApiErrorMessage(e)}。请刷新确认最新状态后再操作。`
         stale.value = true
       }
     }
     finally {
-      if (!requestGuard.isStale(token))
+      if (version === generation)
         pending.value = ''
     }
   }
   async function readExtra(kind: 'interact' | 'plunder' | 'friend', gid = '') {
     if (!accountId.value || pending.value)
       return
-    const token = requestGuard.snapshot()
+    const version = generation
     pending.value = kind
     error.value = ''
     if (kind === 'friend')
@@ -168,7 +167,7 @@ export const usePetDiaryStore = defineStore('pet-diary', () => {
         ...options(),
         params: kind === 'friend' ? { gid } : { kind },
       }))
-      if (requestGuard.isStale(token))
+      if (version !== generation)
         return
       if (kind === 'friend')
         friend.value = result
@@ -177,11 +176,11 @@ export const usePetDiaryStore = defineStore('pet-diary', () => {
       else records.value = result
     }
     catch (e) {
-      if (!requestGuard.isStale(token))
+      if (version === generation)
         error.value = getApiErrorMessage(e)
     }
     finally {
-      if (!requestGuard.isStale(token))
+      if (version === generation)
         pending.value = ''
     }
   }
