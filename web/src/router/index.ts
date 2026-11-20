@@ -91,6 +91,13 @@ const router = createRouter({
           component: () => import('@/views/Ranch.vue'),
         },
         {
+          path: 'ranch/analytics',
+          name: 'ranch-analytics',
+          meta: { gameSpace: 'ranch' },
+          component: () => import('@/views/RanchAnalytics.vue'),
+        },
+        // 自动化策略页不再出现在侧栏，但保留直达入口，设置页仍可跳转。
+        {
           path: 'ranch/strategy',
           name: 'ranch-strategy',
           meta: { gameSpace: 'ranch' },

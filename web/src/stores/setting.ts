@@ -68,6 +68,8 @@ export interface AutomationConfig {
   star_solar_claim?: boolean
   star_solar_quiz_claim?: boolean
   star_record_claim?: boolean
+  // 牧歌初启
+  muge_auto_claim?: boolean
   // 青莓酒馆
   qingmei_seed_claim?: boolean
   qingmei_wine_brew?: boolean

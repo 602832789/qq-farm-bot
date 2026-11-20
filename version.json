@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 33,
-  "patch": 0,
-  "build": 202,
-  "version": "3.33.0",
-  "updatedAt": "2026-11-19T23:18:00.859Z",
-  "lastCommit": "2919f34c",
+  "patch": 1,
+  "build": 203,
+  "version": "3.33.1",
+  "updatedAt": "2026-11-20T01:24:49.828Z",
+  "lastCommit": "—",
   "history": [
+    {
+      "version": "3.33.1",
+      "build": 203,
+      "date": "2026-11-20",
+      "summary": "牧场分析页换桌面副本版、牧歌初启自动化、侧栏图标与设置分类图标优化",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.33.0",
       "build": 202,

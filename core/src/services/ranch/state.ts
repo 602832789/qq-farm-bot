@@ -210,8 +210,61 @@ async function canCatalog(raw: any, slotType = 6): Promise<any> {
     return { slotType, goods };
 }
 
+/**
+ * 牧场分析：纯配置推导，不读游戏状态、不需要牧场已解锁。
+ *
+ * 周期 = 幼崽 + 成长 + 成熟时长；理论收获经验/小时 = harvest_exp × 3600 / 周期。
+ * 不含生产等待、缺草中断、增益与变异，所以只能当「同档位横向比较」用。
+ */
+function analyticsPayload(): any {
+    let rows: any[] = [];
+    try {
+        rows = require('../../gameConfig/ranch/MCAnimalConfig.json') || [];
+    }
+    catch {
+        rows = [];
+    }
+    const animals = rows
+        .filter((raw: any) => raw && raw.enable_flag !== false)
+        .map((raw: any) => {
+            const product = raw.product_item ? { ...itemDto({ id: raw.product_item.id, count: raw.product_item.count }) } : null;
+            const byproduct = raw.byproduct_item ? { ...itemDto({ id: raw.byproduct_item.id, count: raw.byproduct_item.count }) } : null;
+            const infantSec = Number(raw.infant_sec) || 0;
+            const growSec = Number(raw.grow_sec) || 0;
+            const matureSec = Number(raw.mature_sec) || 0;
+            const cycleSeconds = infantSec + growSec + matureSec;
+            return {
+                id: Number(raw.id),
+                name: String(raw.name || `动物 ${raw.id}`),
+                husbandryType: String(raw.husbandry_type || ''),
+                infantSec,
+                growSec,
+                matureSec,
+                cycleSeconds,
+                harvestExp: Number(raw.harvest_exp) || 0,
+                harvestExpPerHour: cycleSeconds > 0 ? Number(((Number(raw.harvest_exp) || 0) * 3600 / cycleSeconds).toFixed(2)) : null,
+                produceCycleSec: Number(raw.product_round_sec) || 0,
+                maxProduceCount: Number(raw.max_produce_count) || 0,
+                grassSecPerItem: Number(raw.grass_sec_per_item) || 0,
+                product,
+                byproduct,
+            };
+        })
+        .sort((a: any, b: any) => a.id - b.id);
+    return {
+        animals,
+        summary: {
+            animalCount: animals.length,
+            coopCount: animals.filter((animal: any) => animal.husbandryType === '窝').length,
+            penCount: animals.filter((animal: any) => animal.husbandryType === '棚').length,
+        },
+        assumptions: '依据官方基础配置：周期为幼崽、成长与成熟时长之和，未计生产等待、饲料中断、增益与变异，不代表实际收益。',
+    };
+}
+
 async function getState(view = 'animals', shopId?: number, hostGid?: string): Promise<any> {
-    if (!['animals', 'facilities', 'bag', 'shop', 'market', 'tasks', 'friends', 'illustrated', 'activities', 'cans'].includes(view)) throw error('INVALID_ARGUMENT', '未知牧场页面');
+    if (!['animals', 'facilities', 'bag', 'shop', 'market', 'tasks', 'friends', 'illustrated', 'activities', 'cans', 'analytics'].includes(view)) throw error('INVALID_ARGUMENT', '未知牧场页面');
+    if (view === 'analytics') return analyticsPayload();
     if (!isUnlocked()) return { unlocked: false, sceneId: 2, reason: '牧场尚未解锁，请先在游戏中完成开启条件' };
     return inScene(async (cells: any) => {
         const raw = await loadRaw(cells);

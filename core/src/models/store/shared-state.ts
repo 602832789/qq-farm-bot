@@ -185,6 +185,8 @@ const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
         milk_tea_work_interaction_type: 1,
         milk_tea_seed_policy: {},
         milk_tea_hire_policy: {},
+        // 牧歌初启：默认不自动领取，与其余活动开关保持一致。
+        muge_auto_claim: false,
     },
     plantingStrategy: 'max_exp',
     preferredSeedId: 0,

@@ -79,7 +79,7 @@ const moduleInfo: Record<ModuleKey, { title: string, description: string, icon: 
   ranch_steal: { title: '牧场偷取', description: '进入好友牧场偷取货架产物', icon: 'i-carbon-run', image: '/game-config/module_icons/steal.png', tone: 'lime' },
   ranch_merchant: { title: '兑换集市', description: '用便便、松果兑换有机化肥', icon: 'i-carbon-store', image: '/game-config/module_icons/merchant.png', tone: 'orange' },
   ranch_daily: { title: '日常', description: '牧场任务、订单、每日福利与奖励', icon: 'i-carbon-task-complete', image: '/game-config/module_icons/activity-task.png', tone: 'teal' },
-  events: { title: '活动', description: '节令小札、快乐不独享与奶茶热销中', icon: 'i-carbon-events', image: '/game-config/module_icons/activity-task.png', tone: 'violet' },
+  events: { title: '活动', description: '节令小札、牧歌初启与快乐不独享', icon: 'i-carbon-events', image: '/game-config/module_icons/activity-task.png', tone: 'violet' },
 }
 
 /**
@@ -129,6 +129,7 @@ function milkTeaOptionEffective(option: { requires?: string }) {
 const activityKeys = computed(() => [
   'star_solar_claim',
   'star_solar_quiz_claim',
+  'muge_auto_claim',
   ...(showMilkTeaActivity.value ? milkTeaSettings.value.filter(milkTeaOptionEffective).map(setting => setting.key) : []),
   'share_reward_share',
   'share_reward_daily',
@@ -235,6 +236,7 @@ function summaryTags(key: ModuleKey) {
   if (key === 'events') {
     return [
       (automation.value.automation.star_solar_claim || automation.value.automation.star_solar_quiz_claim) && '节令小札',
+      automation.value.automation.muge_auto_claim && '牧歌初启',
       showMilkTeaActivity.value && milkTeaSettings.value.some(setting => milkTeaOptionEffective(setting) && automation.value.automation[setting.key]) && '奶茶热销中',
       shareRewardActivityEnabled.value && '快乐不独享',
       activityEnabledCount.value === 0 && '未开启活动',
@@ -372,13 +374,13 @@ function cancel() {
       </div>
 
       <div v-for="group in moduleGroups" :key="group.key" class="space-y-3">
-        <div class="flex flex-wrap items-center gap-2">
-          <span class="inline-grid h-6 w-6 place-items-center rounded-md bg-[var(--ui-primary-soft)] text-sm text-[var(--ui-primary)]" :class="group.icon" />
-          <h4 class="text-sm text-gray-800 font-semibold dark:text-gray-100">
+        <div class="flex flex-wrap items-center gap-3">
+          <span class="inline-grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[var(--theme-gradient)] text-xl text-white shadow-sm" :class="group.icon" aria-hidden="true" />
+          <h4 class="text-base text-gray-900 font-bold dark:text-gray-50">
             {{ group.label }}
           </h4>
-          <span class="text-xs text-gray-400">{{ group.description }}</span>
-          <span class="ml-auto text-xs text-gray-400">{{ group.items.length }} 个模块</span>
+          <span class="text-xs text-gray-500 dark:text-gray-400">{{ group.description }}</span>
+          <span class="ml-auto text-xs text-gray-500 dark:text-gray-400">{{ group.items.length }} 个模块</span>
         </div>
         <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <article
@@ -767,6 +769,18 @@ function cancel() {
                   <BaseSwitch v-model="automation.automation.star_solar_claim" label="自动领取节令小礼" />
                   <BaseSwitch v-model="automation.automation.star_solar_quiz_claim" label="自动领取答题附加奖励" />
                 </div>
+              </section>
+
+              <section class="border border-emerald-100 rounded-lg p-4 space-y-3 dark:border-emerald-900/40">
+                <div>
+                  <div class="text-sm text-gray-700 font-medium dark:text-gray-300">
+                    牧歌初启
+                  </div>
+                  <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    活动开启后自动领取已达成的兴牧庆典档位、牧友同行档位、成长手册任务与人格测试首次分享奖励。
+                  </div>
+                </div>
+                <BaseSwitch v-model="automation.automation.muge_auto_claim" label="自动领取牧歌初启奖励" />
               </section>
 
               <section v-if="!shareRewardEnded" class="border border-orange-100 rounded-lg p-4 space-y-3 dark:border-orange-900/40">

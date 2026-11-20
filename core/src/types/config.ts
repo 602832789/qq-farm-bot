@@ -133,6 +133,8 @@ export interface AutomationConfig extends RanchAutomationConfig {
   milk_tea_work_interaction_type: number;
   milk_tea_seed_policy: Record<string, unknown>;
   milk_tea_hire_policy: Record<string, unknown>;
+  // 牧歌初启：自动领取已达成档位、任务与首次分享奖励。
+  muge_auto_claim: boolean;
 }
 
 export interface IntervalConfig {
