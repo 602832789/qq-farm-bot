@@ -429,13 +429,14 @@ watch(
 }
 .farm-nav-icon {
   display: inline-grid;
-  width: 36px;
-  height: 36px;
+  /* 尺寸跟随文字字号：容器 1.55em ≈ 文字行高，图标 1em 与文字同高，避免图标比文字显大。 */
+  width: 1.55em;
+  height: 1.55em;
   flex: none;
   place-items: center;
-  border-radius: 8px;
+  border-radius: 6px;
   color: color-mix(in srgb, var(--theme-text) 58%, transparent);
-  font-size: 22px;
+  font-size: 1em;
   transition:
     background 150ms ease,
     color 150ms ease;

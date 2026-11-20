@@ -199,7 +199,7 @@ watch(currentAccountId, () => {
       </NTab>
     </NTabs>
 
-    <div class="muge-content">
+    <div class="muge-content custom-scrollbar">
       <p v-if="error" class="muge-error" role="alert">
         <span class="i-carbon-warning-alt" aria-hidden="true" />{{ error }}
       </p>
@@ -413,6 +413,21 @@ watch(currentAccountId, () => {
 </template>
 
 <style scoped>
+/* 内容区自滚动：活动详情态外层 overflow:hidden，滚动条样式在此单独声明（custom-scrollbar 是别处的组件局部样式）。 */
+.muge-content::-webkit-scrollbar {
+  width: 8px;
+}
+.muge-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+.muge-content::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theme-text) 22%, transparent);
+}
+.muge-content::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--theme-text) 34%, transparent);
+}
+
 /* 页面直接铺在内容区（与游戏商城同一结构）：标题行、页签、内容依次排列，宽度跟随全站内容区。 */
 .muge {
   display: flex;
@@ -517,9 +532,15 @@ watch(currentAccountId, () => {
 .muge-content {
   display: flex;
   min-width: 0;
+  flex: 1;
+  min-height: 0;
+  /* 活动详情态下外层 farm-page-content 是 overflow:hidden，页面必须自己滚动。 */
+  overflow-y: auto;
+  overscroll-behavior: contain;
   flex-direction: column;
   gap: 14px;
   padding-top: 16px;
+  padding-bottom: 8px;
 }
 
 .muge-error,

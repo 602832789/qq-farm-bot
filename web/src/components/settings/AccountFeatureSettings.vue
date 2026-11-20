@@ -383,8 +383,9 @@ function cancel() {
 
       <div v-for="group in moduleGroups" :key="group.key" class="space-y-3">
         <div class="flex flex-wrap items-center gap-3">
-          <!-- 渐变底不能走 bg-[var(--theme-gradient)]：UnoCSS 会编译成 background-color，对 gradient 值无效，白图标会落在白底上看不见。 -->
-          <span class="inline-grid h-10 w-10 shrink-0 place-items-center rounded-xl text-xl text-white shadow-sm" :class="group.icon" :style="{ background: 'var(--theme-gradient)' }" aria-hidden="true" />
+          <!-- 渐变底不能走 bg-[var(--theme-gradient)]：UnoCSS 会编译成 background-color，对 gradient 值无效，白图标会落在白底上看不见。
+               尺寸与右侧标题文字齐平（容器 = text-sm 行高 20px，图标 = text-sm 字号）。 -->
+          <span class="inline-grid h-5 w-5 shrink-0 place-items-center rounded-md text-sm text-white" :class="group.icon" :style="{ background: 'var(--theme-gradient)' }" aria-hidden="true" />
           <h4 class="text-base text-gray-900 font-bold dark:text-gray-50">
             {{ group.label }}
           </h4>
