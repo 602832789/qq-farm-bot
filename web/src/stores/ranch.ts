@@ -5,6 +5,18 @@ import { createRequestGuard } from '@/utils/request-guard'
 
 export type RanchView = 'animals' | 'facilities' | 'shop' | 'market' | 'bag' | 'tasks' | 'illustrated' | 'friends' | 'activities' | 'cans'
 export interface RanchItem { id: number, name: string, count: string, image: string }
+export interface RanchOperationResult {
+  status: 'confirmed' | 'skipped'
+  snapshot?: any
+  notice?: string
+  completed?: number
+  bucketRemainingSeconds?: string
+  autoProduced?: number
+  autoProductionNotice?: string
+  refreshRequired?: boolean
+  sceneRestored?: boolean
+}
+
 export interface RanchQuote {
   action: string
   label: string
@@ -99,32 +111,32 @@ export const useRanchStore = defineStore('ranch', () => {
   }
 
   /** quiet：后台上报类操作只确认结果，不弹出完成提示。 */
-  async function execute(accountId: string, action: string, input: Record<string, unknown>, expected: RanchQuote['expected'], options: { quiet?: boolean } = {}) {
+  async function submit(accountId: string, action: string, input: Record<string, unknown>, confirmation: { expected: RanchQuote['expected'] } | { direct: true }, options: { quiet?: boolean } = {}): Promise<RanchOperationResult | null> {
     if (busy.value || owner !== accountId)
-      return false
+      return null
     const ticket = guard.snapshot(accountId)
     busy.value = true
     error.value = ''
     notice.value = ''
     try {
-      const response = await api.post(`/api/ranch/${action}`, { ...input, expected }, { headers: { 'x-account-id': accountId }, timeout: 45000, skipErrorToast: true } as any)
+      const response = await api.post(`/api/ranch/${action}`, { ...input, ...confirmation }, { headers: { 'x-account-id': accountId }, timeout: 45000, skipErrorToast: true } as any)
       if (!response.data?.ok)
         throw new Error(response.data?.error || '牧场操作未完成')
       if (!current(accountId, ticket))
-        return false
-      const result = response.data.data
+        return null
+      const result: RanchOperationResult = response.data.data
       if (result.snapshot) {
         state.value = { ...state.value, ...result.snapshot }
         receivedAt.value = Date.now()
       }
       if (!options.quiet)
         notice.value = result.notice || (result.status === 'skipped' ? '当前没有可操作项目' : '操作完成')
-      return true
+      return result
     }
     catch (cause) {
       if (current(accountId, ticket))
         error.value = getApiErrorMessage(cause, '牧场操作未完成，请刷新核对')
-      return false
+      return null
     }
     finally {
       if (current(accountId, ticket))
@@ -132,5 +144,10 @@ export const useRanchStore = defineStore('ranch', () => {
     }
   }
 
-  return { state, loading, busy, error, notice, receivedAt, load, reload, quote, execute, reset }
+  /** 与上游 execute 同名的布尔包装：老页面只需 true/false。 */
+  async function execute(accountId: string, action: string, input: Record<string, unknown>, expected: RanchQuote['expected'], options: { quiet?: boolean } = {}) {
+    return !!(await submit(accountId, action, input, { expected }, options))
+  }
+
+  return { state, loading, busy, error, notice, receivedAt, load, reload, quote, execute, submit, reset }
 })

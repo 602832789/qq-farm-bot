@@ -15,6 +15,7 @@
 
 | 版本 | 更新序号 | 日期 | 更新内容 | 提交 |
 | --- | --- | --- | --- | --- |
+| v3.33.5 | #207 | 2026-11-21 | 同步上游 liyang master（bd93d3f → ca9d038） | — |
 | v3.33.3 | #206 | 2026-11-21 | 侧栏与设置分类图标按文字高度对齐、牧歌初启页面恢复滚动 | — |
 | v3.33.2 | #205 | 2026-11-20 | 牧场首页库存四项与快捷入口、活动中心对齐 liyang、牧歌自动化换 BUGDey 版、账号管理恢复默认方案 | — |
 | v3.33.1 | #203 | 2026-11-20 | 牧场分析页换桌面副本版、牧歌初启自动化、侧栏图标与设置分类图标优化 | — |
@@ -209,6 +210,18 @@ flowchart TB
 ```
 
 ## 详细记录
+
+### 2026-11-21 · v3.33.5（#207） · 同步上游 liyang master（bd93d3f → ca9d038）
+
+同步 liyangpengs/qq-farm-bot 自 Nov 19 基线之后的 11 个提交（PR #163/#164/#165/#167/#171），保留全部本地改动：
+
+- **牧场好友黑名单（#163）**：新增 `ranchFriendBlacklist` 账号配置（默认/克隆/归一化/访问器）、`GET /api/ranch-friend-blacklist` 与 `POST /toggle`、worker 收到 `ranch_friend_blacklist_add` 自动拉黑并广播配置；好友列表下发 `blacklisted`，前端好友卡支持手动加入/移出。
+- **普通罐头喂养阶段（#171）**：新增 `ranch_feed_normal_stage`（any / longest），`actions.planAction` 支持 `normalStage` 过滤与更精确的“没有可喂养动物 / 本轮已使用罐头”提示；新增 `RanchFeedMenu.vue`，动物卡改成下拉选罐头；`ranch_activate_shed`（21 级免费激活一级棚）加入开关清单与设置页分组。
+- **手动喂养/生产/收获即时更新（#165）**：actions 引入 `direct` 直连模式与回执格子合成（`cellsFromReceipt`）、生产后按交付时间短等再读格子；ranch store 新增 `submit()`（返回完整 RanchOperationResult），`execute()` 保留布尔语义兼容旧页面。
+- **回归修复（#167）**：图鉴状态与领取改为按等级列表（`prepareNormalClaim`）、`clearGiantBookNew` 一键已读巨大图鉴（新接口 `POST /api/ranch/illustrated/clear-new`，RPC `clearRanchIllustratedNew`）；好友巡查/好友名单按场景同步；动物卡显示交付截止时间（`deliveringUntilMs`）。
+- **设施与图鉴通知即时唤醒**：network 解析 `homesteadpb.FacilitiesNotify` 与 `IllustratedRewardRedDotNotifyV2`，worker 新增 `onRanchFacilitiesChanged` / `onRanchBookReward` 直接排下一轮巡查，不再等 5 分钟。
+- **21 级棚解锁判定**：`isPendingShed` / `canActivateShed`（等级 ≥ 21）替代旧的“待激活即解锁”。
+- **保留的本地改动**：牧场自动化默认全关（仅 ranch_task / ranch_share 开）、`ranch_activate_shed` 默认关；`actions.operate` 的今日统计包装；ranch store 的 `createRequestGuard` 防串号；`book.giant.currentLevel`（概览巨大图鉴等级）；移动端底部导航布局（主仓库不悬浮，未套上游 padding 补丁）；Settings.vue 结构（主仓库不用 AutomationSettingsForm 传参）。
 
 ### 2026-11-21 · v3.33.3（#206） · 侧栏与设置分类图标按文字高度对齐、牧歌初启页面恢复滚动
 

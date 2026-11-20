@@ -185,6 +185,16 @@ let runtimeGeneration: number = 0;
 let lastDailyRunDate: string = '';
 let ranchRoutineQueued = false;
 
+// 上游 PR #159/#157：图鉴奖励红点与牧场设施变更都变成即时唤醒，不再等 5 分钟轮询。
+function onRanchBookReward(kind: 'normal' | 'giant', available: boolean): void {
+    if (ranchAutomation.noteBookReward(kind, available) && loginReady && getAutomation().ranch_illustrated) scheduleUnifiedNextTick();
+}
+
+function onRanchFacilitiesChanged(facilities: any[]): void {
+    if (!loginReady || !getAutomation().ranch_activate_shed) return;
+    if (ranchAutomation.noteRanchFacilities(facilities)) scheduleUnifiedNextTick();
+}
+
 function runRanchRoutine(detached = false): Promise<void> {
     if (ranchRoutineQueued || !loginReady) return Promise.resolve();
     const state = ranchAutomation.getRoutineState();
@@ -1049,6 +1059,10 @@ async function startBot(config: any): Promise<void> {
     };
     networkEvents.on('disconnected', onDisconnected);
     networkEvents.on('kickout', onKickout);
+    networkEvents.off('ranchBookReward', onRanchBookReward);
+    networkEvents.on('ranchBookReward', onRanchBookReward);
+    networkEvents.off('ranchFacilitiesChanged', onRanchFacilitiesChanged);
+    networkEvents.on('ranchFacilitiesChanged', onRanchFacilitiesChanged);
 
     const generation = runtimeGeneration;
     const canContinueLogin = (): boolean => isRunning && !shutdownStarted && generation === runtimeGeneration;
@@ -1209,6 +1223,8 @@ function statusSyncIntervalMs(): number {
 
 function detachRuntimeListeners(): void {
     networkEvents.off('kickout', onKickout);
+    networkEvents.off('ranchBookReward', onRanchBookReward);
+    networkEvents.off('ranchFacilitiesChanged', onRanchFacilitiesChanged);
     if (onDisconnected) {
         networkEvents.off('disconnected', onDisconnected);
         onDisconnected = null;
@@ -1318,6 +1334,9 @@ async function handleApiCall(msg: any): Promise<void> {
                 switch (method) {
                 case 'getRanchState':
                     result = await require('../services/ranch').getRanchState(args[0], args[1], args[2]);
+                    break;
+                case 'clearRanchIllustratedNew':
+                    result = await require('../services/ranch/book').clearGiantBookNew();
                     break;
                 case 'prepareRanchAction':
                     result = await require('../services/ranch').prepareRanchAction(args[0], args[1]);

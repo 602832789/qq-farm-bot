@@ -118,6 +118,7 @@ function getConfigSnapshot(accountId?: unknown): AccountConfig & { ui: typeof gl
         knownFriendGidSyncCooldownSec: cfg.knownFriendGidSyncCooldownSec,
         friendsListCacheTtlSec: cfg.friendsListCacheTtlSec,
         friendBlacklist: [...(cfg.friendBlacklist || [])],
+        ranchFriendBlacklist: [...(cfg.ranchFriendBlacklist || [])],
         plantBlacklist: [...(cfg.plantBlacklist || [])],
         stealDelaySeconds: Math.max(0, Math.min(300, Number(cfg.stealDelaySeconds) || 0)),
         plantOrderRandom: !!cfg.plantOrderRandom,
@@ -226,6 +227,10 @@ function applyConfigSnapshot(snapshot: Record<string, any> | undefined, options:
 
     if (Array.isArray(cfg.friendBlacklist)) {
         next.friendBlacklist = cfg.friendBlacklist.map(Number).filter((n: number) => Number.isFinite(n) && n > 0);
+    }
+
+    if (Array.isArray(cfg.ranchFriendBlacklist)) {
+        next.ranchFriendBlacklist = cfg.ranchFriendBlacklist.map(Number).filter((n: number) => Number.isFinite(n) && n > 0);
     }
 
     if (cfg.knownFriendGids !== undefined) {
@@ -486,6 +491,30 @@ function addFriendToBlacklist(accountId: unknown, gid: unknown): boolean {
     return true;
 }
 
+// ==================== 牧场拜访黑名单（上游 PR #163） ====================
+// 与农场好友黑名单分开存：牧场好友名单是场景 2 独立的，两边 GID 集合不共用。
+
+function getRanchFriendBlacklist(accountId?: unknown): number[] {
+    return [...(getAccountConfigSnapshot(accountId).ranchFriendBlacklist || [])];
+}
+
+function setRanchFriendBlacklist(accountId: unknown, list: unknown[]): number[] {
+    const current = getAccountConfigSnapshot(accountId);
+    const next = normalizeAccountConfig(current, sharedState.accountFallbackConfig);
+    next.ranchFriendBlacklist = Array.isArray(list) ? list.map(Number).filter(n => Number.isFinite(n) && n > 0) : [];
+    setAccountConfigSnapshot(accountId, next);
+    return [...next.ranchFriendBlacklist];
+}
+
+function addRanchFriendToBlacklist(accountId: unknown, gid: unknown): boolean {
+    const gidNum = Number(gid);
+    if (!gidNum || gidNum <= 0) return false;
+    const current = getRanchFriendBlacklist(accountId);
+    if (current.includes(gidNum)) return false;
+    setRanchFriendBlacklist(accountId, [...current, gidNum]);
+    return true;
+}
+
 function getStealDelaySeconds(accountId?: unknown): number {
     return Math.max(0, Math.min(300, Number(getAccountConfigSnapshot(accountId).stealDelaySeconds) || 0));
 }
@@ -658,6 +687,9 @@ module.exports = {
     getFriendBlacklist,
     setFriendBlacklist,
     addFriendToBlacklist,
+    getRanchFriendBlacklist,
+    setRanchFriendBlacklist,
+    addRanchFriendToBlacklist,
     getStealDelaySeconds,
     getPlantOrderRandom,
     getPlantDelaySeconds,

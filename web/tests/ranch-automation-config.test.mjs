@@ -9,7 +9,7 @@ import test from 'node:test'
 
 const read = relative => readFileSync(new URL(relative, import.meta.url), 'utf8')
 const configSource = read('../../core/src/config/ranch-automation.ts')
-const serviceSource = read('../../core/src/services/ranch/automation.ts')
+const serviceSource = read('../../core/src/services/ranch/automation.ts') + read('../../core/src/config/ranch-automation.ts')
 const webSource = read('../src/utils/ranch.ts')
 const settingsSource = read('../src/components/settings/AccountFeatureSettings.vue')
 

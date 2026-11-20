@@ -113,6 +113,7 @@ test('牧场 store 走统一 api 与请求守卫，切号作废在途请求', ()
 })
 
 test('图鉴面板会清理新收集标记，后端提供对应接口', () => {
-  assert.match(read('../src/components/ranch/RanchBookPanel.vue'), /\/api\/illustrated\/clear-new/)
-  assert.match(read('../../core/src/controllers/admin/commerce-routes.ts'), /'\/api\/illustrated\/clear-new'/)
+  // 上游统一成牧场命名空间：/api/ranch/illustrated/clear-new（普通 + 巨大图鉴共用）。
+  assert.match(read('../src/components/ranch/RanchBookPanel.vue'), /\/api\/ranch\/illustrated\/clear-new/)
+  assert.match(read('../../core/src/controllers/admin/commerce-routes.ts'), /'\/api\/ranch\/illustrated\/clear-new'/)
 })

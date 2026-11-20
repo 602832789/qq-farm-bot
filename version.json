@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 33,
-  "patch": 3,
-  "build": 206,
-  "version": "3.33.3",
-  "updatedAt": "2026-11-20T22:46:26.723Z",
+  "patch": 5,
+  "build": 207,
+  "version": "3.33.5",
+  "updatedAt": "2026-11-20T23:16:31.317Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.33.5",
+      "build": 207,
+      "date": "2026-11-21",
+      "summary": "同步上游 liyang master（bd93d3f → ca9d038）",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.33.3",
       "build": 206,
