@@ -133,8 +133,13 @@ export interface AutomationConfig extends RanchAutomationConfig {
   milk_tea_work_interaction_type: number;
   milk_tea_seed_policy: Record<string, unknown>;
   milk_tea_hire_policy: Record<string, unknown>;
-  // 牧歌初启：自动领取已达成档位、任务与首次分享奖励。
-  muge_auto_claim: boolean;
+  // 牧歌初启自动化（BUGDey 版六个开关；muge_personality_settle 由自动答题流程内部驱动，无 UI 开关）。
+  muge_task_claim: boolean;
+  muge_celebration_claim: boolean;
+  muge_friend_claim: boolean;
+  muge_handbook_claim: boolean;
+  muge_personality_settle: boolean;
+  muge_auto_answer: boolean;
 }
 
 export interface IntervalConfig {
@@ -258,9 +263,17 @@ export interface SystemConfig {
   autoStartAccounts?: boolean;
 }
 
+export interface UserDefaultAccountPlan {
+  enabled: boolean;
+  config: Record<string, any>;
+  updatedAt: number;
+}
+
 export interface GlobalConfig {
   accountConfigs: Record<string, AccountConfig>;
   defaultAccountConfig: AccountConfig;
+  /** 每用户「默认方案」快照（设为默认方案 → 新号一键应用）。 */
+  userDefaultAccountPlans: Record<string, UserDefaultAccountPlan>;
   ui: UIConfig;
   loginSettings: LoginSettings;
   offlineReminder: OfflineReminder;

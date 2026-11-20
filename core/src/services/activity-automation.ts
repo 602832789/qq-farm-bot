@@ -75,7 +75,6 @@ const WINDOW_IDS = {
     rainPoem: ['2026070300'],
     milkTea: ['2026110100', '2026110101', '2026110102', '2026110103'],
     shareReward: ['2026092500', '2026092501', '2026110104'],
-    muge: ['2026111700', '2026111702', '2026111703', '2026111704', '2026111705'],
 };
 
 interface AutomationOp {
@@ -829,41 +828,6 @@ function buildOps(): AutomationOp[] {
                 if (!state?.active || !state.canClaim) return false;
                 await autumn.operateAutumnActivity('wish', 'claim', {});
                 return true;
-            },
-        },
-        {
-            // 牧歌初启：自动领取已达成档位、成长手册任务与人格测试首次分享奖励。
-            // 每次写操作后重新读状态（getMugeActivity 走实时请求），直到本轮无可领项；
-            // 服务内部有 mutationTail 串行锁与回包二次校验，勿在轮内并发提交。
-            key: 'muge_auto_claim',
-            label: '牧歌初启-自动领取奖励',
-            activityIds: WINDOW_IDS.muge,
-            run: async () => {
-                const muge = require('./muge-activity');
-                const claimableTier = (section: any) => Array.isArray(section?.tiers)
-                    && section.tiers.some((tier: any) => toNum(tier.status) === 2);
-                let claimed = false;
-                // 档位 + 手册任务 + 分享奖励数量有限，上限兜底避免异常状态下无限循环。
-                for (let i = 0; i < 16; i++) {
-                    const state = await muge.getMugeActivity().catch(() => null);
-                    if (!state?.active) break;
-                    let action: string | null = null;
-                    if (claimableTier(state.celebration)) action = 'claimCelebration';
-                    else if (claimableTier(state.friends)) action = 'claimFriends';
-                    else if (claimableTier(state.handbook)) action = 'claimHandbook';
-                    else if (Array.isArray(state.handbook?.tasks) && state.handbook.tasks.some((task: any) => toNum(task.status) === 2)) action = 'claimTask';
-                    else if (toNum(state.personality?.personalityId) > 0 && !state.personality.shareRewardClaimed) action = 'claimShare';
-                    if (!action) break;
-                    try {
-                        await muge.operateMugeActivity(action, {});
-                        claimed = true;
-                    }
-                    catch {
-                        // 单项领取失败（多为并发下状态已变）不阻断其它项，下一轮 5 分钟会再试。
-                        break;
-                    }
-                }
-                return claimed;
             },
         },
         ...buildMilkTeaOps(),

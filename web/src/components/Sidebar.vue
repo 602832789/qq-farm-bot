@@ -411,10 +411,10 @@ watch(
   position: relative;
   display: flex;
   align-items: center;
-  gap: 9px;
-  min-height: 36px;
-  margin-bottom: 1px;
-  padding: 4px 8px;
+  gap: 12px;
+  min-height: 40px;
+  margin-bottom: 2px;
+  padding: 6px 8px;
   border-radius: 12px;
   color: var(--theme-text);
   font-size: 14px;
@@ -429,13 +429,13 @@ watch(
 }
 .farm-nav-icon {
   display: inline-grid;
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 36px;
   flex: none;
   place-items: center;
-  border-radius: 7px;
-  color: color-mix(in srgb, var(--theme-text) 62%, transparent);
-  font-size: 17px;
+  border-radius: 8px;
+  color: color-mix(in srgb, var(--theme-text) 58%, transparent);
+  font-size: 22px;
   transition:
     background 150ms ease,
     color 150ms ease;

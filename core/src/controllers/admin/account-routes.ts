@@ -532,6 +532,62 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
         }
     });
 
+    // ==================== 默认方案（老版本账号管理页的设为/应用默认方案） ====================
+    // 单管理员体系：固定用户名存取，接口形状与多用户版一致。
+    app.get('/api/settings/default-plan', (_req: Request, res: Response) => {
+        try {
+            res.json({ ok: true, data: store.getUserDefaultAccountPlan() });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    });
+
+    app.put('/api/settings/default-plan', (req: Request, res: Response) => {
+        try {
+            const body = (req.body && typeof req.body === 'object') ? req.body : {};
+            const data = store.setUserDefaultAccountPlan('admin', body.config || {}, { enabled: body.enabled !== false });
+            res.json({ ok: true, data });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    });
+
+    // 设为默认方案：把指定账号当前配置快照存为该用户的默认方案。
+    app.post('/api/settings/default-plan/import', async (req: Request, res: Response) => {
+        const accountId = getAccId(ctx, req);
+        if (!accountId) {
+            return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        }
+        try {
+            const config = store.getConfigSnapshot(accountId);
+            const currentPlan = store.getUserDefaultAccountPlan();
+            const data = store.setUserDefaultAccountPlan('admin', config, { enabled: currentPlan.enabled !== false });
+            res.json({ ok: true, data });
+        } catch (e: any) {
+            handleApiError(res, e);
+        }
+    });
+
+    // 应用默认方案：把已保存的默认方案写入指定账号并通知 worker 生效。
+    app.post('/api/settings/default-plan/apply', async (req: Request, res: Response) => {
+        const accountId = getAccId(ctx, req);
+        if (!accountId) {
+            return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        }
+        try {
+            const data = store.applyUserDefaultAccountPlan('admin', accountId);
+            if (ctx.provider && typeof ctx.provider.saveSettings === 'function') {
+                await ctx.provider.saveSettings(accountId, data);
+            } else if (ctx.provider && typeof ctx.provider.broadcastConfig === 'function') {
+                ctx.provider.broadcastConfig(accountId);
+            }
+            res.json({ ok: true, data });
+        } catch (e: any) {
+            const status = e.message === '尚未保存默认方案' ? 400 : 500;
+            res.status(status).json({ ok: false, error: e.message });
+        }
+    });
+
     app.get('/api/settings/device-presets', (_req: Request, res: Response) => {
         try {
             res.json({ ok: true, data: getDevicePresets() });

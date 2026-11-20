@@ -26,11 +26,15 @@ function weightLevelDto(level: any) {
 async function getBook(): Promise<any> {
     const normal = await readNormalBook();
     const weight = await rpc('weightBook');
+    const levels = weight.levels.map(weightLevelDto);
+    // 巨大图鉴当前等级 = 已领取（claimed）的最高档位 id，口径与官方界面当前等级一致。
+    const giantCurrentLevel = (levels as any[]).reduce((acc, level) => Math.max(acc, level.claimed ? Number(level.id) || 0 : 0), 0);
     return {
         normal: { level: normal.current_level, progress: normal.total_progress, nextProgress: normal.next_level_progress,
             canClaim: normal.has_claimable_reward, rewards: normal.total_rewards.map(itemDto) },
         giant: { score: quantity(weight.total_score), calculationMode: weight.calc_mode,
-            levels: weight.levels.map(weightLevelDto) },
+            currentLevel: giantCurrentLevel,
+            levels },
         animals: [...normal.list].sort((a: any, b: any) => (illustratedSort.get(a.fruit_id) ?? a.fruit_id) - (illustratedSort.get(b.fruit_id) ?? b.fruit_id)).map((entry: any) => {
             const item = itemDto({ id: entry.fruit_id, count: 1 });
             const giantId = giantProducts.get(item.id);

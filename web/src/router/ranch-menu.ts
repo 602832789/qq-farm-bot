@@ -15,8 +15,8 @@ export interface RanchMenuItem {
 }
 
 export const ranchMenu: RanchMenuItem[] = [
-  { path: '/ranch', name: 'ranch-dashboard', label: '概览', icon: 'i-carbon-dashboard', mobileLabel: '概览' },
-  { path: '/ranch/personal', name: 'ranch-personal', label: '个人', icon: 'i-carbon-sprout', mobileLabel: '个人' },
+  { path: '/ranch', name: 'ranch-dashboard', label: '概览', icon: 'i-carbon-chart-pie', mobileLabel: '概览' },
+  { path: '/ranch/personal', name: 'ranch-personal', label: '个人', icon: 'i-carbon-user', mobileLabel: '个人' },
   { path: '/ranch/friends', name: 'ranch-friends', label: '好友', icon: 'i-carbon-user-multiple' },
   { path: '/ranch/activity', name: 'ranch-activity', label: '活动', icon: 'i-carbon-gift', mobileLabel: '活动' },
   { path: '/ranch/game-mall', name: 'ranch-game-mall', label: '商城', icon: 'i-carbon-shopping-cart', mobileLabel: '商城' },

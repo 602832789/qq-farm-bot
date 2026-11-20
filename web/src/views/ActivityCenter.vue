@@ -27,6 +27,9 @@ import MilkTeaPage from './activity-center/MilkTeaPage.vue'
 
 type CenterActivity = ActivityGameplayKey | 'solar'
 
+// space：农场目录走 /api/activity-center/activities，牧场目录走 /api/activity-center/ranch-activities（liyang 版）。
+const props = withDefaults(defineProps<{ space?: 'farm' | 'ranch' }>(), { space: 'farm' })
+
 const router = useRouter()
 const notification = useNotification()
 const accountStore = useAccountStore()
@@ -151,6 +154,7 @@ onUnmounted(() => {
 <template>
   <ActivityDirectoryPage
     v-if="!selectedActivity"
+    :space="props.space"
     @back="goBack"
     @open="openActivity"
     @open-solar="openSolarCalendar"

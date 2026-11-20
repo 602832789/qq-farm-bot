@@ -2,7 +2,8 @@
 import { NButton } from 'naive-ui/es/button'
 import { storeToRefs } from 'pinia'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { BUCKETS, formatCount, formatHours, RANCH_IMAGE, sortFacilities, useRanchLoader, useRanchUnmountReset } from '@/components/ranch/ranch-shared'
+import api from '@/api'
+import { BUCKETS, formatCount, formatHours, sortFacilities, useRanchLoader, useRanchUnmountReset } from '@/components/ranch/ranch-shared'
 import RanchGate from '@/components/ranch/RanchGate.vue'
 import RunLogCard from '@/components/RunLogCard.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
@@ -66,19 +67,37 @@ const assetTiles = computed(() => [1007, 1002, 1005, 1008]
     ...item,
     display: (ASSET_FORMATTERS[Number(item.id)] || formatCount)(item.count),
   })))
+// 图鉴等级走独立请求：ranch store 的 load 会整体替换 state，不能在概览页重复加载。
+const book = ref<any>(null)
+async function loadBook() {
+  if (!currentAccountId.value) {
+    book.value = null
+    return
+  }
+  try {
+    const response = await api.get('/api/ranch', { params: { view: 'illustrated' }, headers: { 'x-account-id': String(currentAccountId.value) }, timeout: 45000, skipErrorToast: true } as any)
+    book.value = response.data?.ok ? (response.data.data?.book || null) : null
+  }
+  catch {
+    book.value = null
+  }
+}
+watch(currentAccountId, () => void loadBook(), { immediate: true })
+
 const stockTiles = computed(() => {
-  const buckets = BUCKETS.map(bucket => ({
+  // 桌面副本同款四项：普通/有机罐头剩余时长（秒 → 小时）与普通/巨大图鉴等级。
+  const cans = BUCKETS.map(bucket => ({
     key: bucket.id,
-    label: bucket.name,
-    image: bucket.image,
+    label: Number(bucket.id) === 7004 ? '有机罐头时长' : '普通罐头时长',
+    image: Number(bucket.id) === 7004 ? '/game-config/ranch-icons/can-organic.png' : '/game-config/ranch-icons/can-normal.png',
     value: formatHours(state.value?.buckets?.find((b: any) => Number(b.id) === bucket.id)?.seconds ?? 0),
-    hours: true,
   }))
-  const dung = currency(7002)
+  const normalLevel = book.value?.normal?.level
+  const giantLevel = book.value?.giant?.currentLevel
   return [
-    { key: 7001, label: '牧草', image: RANCH_IMAGE(7001), value: formatCount(state.value?.grass ?? 0), hours: false },
-    ...(dung ? [{ key: 7002, label: dung.name, image: dung.image, value: formatCount(dung.count), hours: false }] : []),
-    ...buckets,
+    ...cans,
+    { key: 'book-normal', label: '普通图鉴', image: '/game-config/ranch-icons/illustrated-normal.png', value: normalLevel != null ? `Lv.${normalLevel}` : '—' },
+    { key: 'book-giant', label: '巨大图鉴', image: '/game-config/ranch-icons/illustrated-giant.png', value: giantLevel ? `Lv.${giantLevel}` : '—' },
   ]
 })
 
@@ -157,6 +176,9 @@ const operationEntries = computed(() => Object.entries(todayOperations.value).fi
                 <span v-if="platformLabel" class="ov-presence__item">{{ platformLabel }}</span>
               </div>
             </div>
+            <BaseButton to="/ranch/personal" variant="primary" size="sm" class="ov-farm-entry" aria-label="进入我的牧场">
+              我的牧场 <span class="i-carbon-arrow-up-right ml-1" aria-hidden="true" />
+            </BaseButton>
             <NButton circle quaternary :loading="loading" title="刷新牧场" aria-label="刷新牧场" @click="refresh">
               <template #icon>
                 <span class="i-carbon-renew" />
@@ -195,10 +217,10 @@ const operationEntries = computed(() => Object.entries(todayOperations.value).fi
           </div>
         </section>
 
-        <!-- 库存：牧草、便便与罐头桶 -->
+        <!-- 库存：普通/有机罐头时长与普通/巨大图鉴等级（桌面副本同款四项） -->
         <section class="ov-card">
           <h3 class="ov-card__title">
-            牧场库存
+            库存
           </h3>
           <div class="ov-tiles">
             <div v-for="item in stockTiles" :key="item.key" class="ov-tile">
@@ -298,6 +320,11 @@ const operationEntries = computed(() => Object.entries(todayOperations.value).fi
 <style scoped>
 .ov-account__head > :deep(.n-button) {
   align-self: flex-start;
+}
+
+/* 老版首页入口：一键进入我的牧场（与农场首页「我的农场」按钮同款同位） */
+.ov-farm-entry {
+  flex-shrink: 0;
 }
 
 .ov-tile__img {

@@ -60,6 +60,14 @@ const shareRewardEnded = computed(() => Date.now() > SHARE_REWARD_ACTIVITY_WINDO
 const milkTeaEnded = computed(() => Date.now() > MILK_TEA_ACTIVITY_WINDOW.endMs)
 const showMilkTeaActivity = computed(() => !milkTeaEnded.value)
 const milkTeaSettings = computed(() => MILK_TEA_AUTOMATION_OPTIONS)
+// 牧歌初启自动化开关（BUGDey 版五个 UI 开关；muge_personality_settle 由自动答题流程内部驱动，不单独展示）。
+const mugeSettings = [
+  { key: 'muge_task_claim', label: '自动领取成长任务' },
+  { key: 'muge_celebration_claim', label: '自动领取庆典奖励' },
+  { key: 'muge_friend_claim', label: '自动领取牧友奖励' },
+  { key: 'muge_handbook_claim', label: '自动领取成长手册奖励' },
+  { key: 'muge_auto_answer', label: '自动答题并领取' },
+] as const
 const fertilizerSmartUnit = ref<FertilizerTimeUnit>('seconds')
 const fertilizerSmartValue = computed({
   get: () => fertilizerTimeValue(automation.value.automation.fertilizer_smart_seconds ?? 300, fertilizerSmartUnit.value),
@@ -79,7 +87,7 @@ const moduleInfo: Record<ModuleKey, { title: string, description: string, icon: 
   ranch_steal: { title: '牧场偷取', description: '进入好友牧场偷取货架产物', icon: 'i-carbon-run', image: '/game-config/module_icons/steal.png', tone: 'lime' },
   ranch_merchant: { title: '兑换集市', description: '用便便、松果兑换有机化肥', icon: 'i-carbon-store', image: '/game-config/module_icons/merchant.png', tone: 'orange' },
   ranch_daily: { title: '日常', description: '牧场任务、订单、每日福利与奖励', icon: 'i-carbon-task-complete', image: '/game-config/module_icons/activity-task.png', tone: 'teal' },
-  events: { title: '活动', description: '节令小札、牧歌初启与快乐不独享', icon: 'i-carbon-events', image: '/game-config/module_icons/activity-task.png', tone: 'violet' },
+  events: { title: '活动', description: '节令与限时活动的自动任务和奖励', icon: 'i-carbon-events', image: '/game-config/module_icons/activity-task.png', tone: 'violet' },
 }
 
 /**
@@ -129,7 +137,7 @@ function milkTeaOptionEffective(option: { requires?: string }) {
 const activityKeys = computed(() => [
   'star_solar_claim',
   'star_solar_quiz_claim',
-  'muge_auto_claim',
+  ...mugeSettings.map(setting => setting.key),
   ...(showMilkTeaActivity.value ? milkTeaSettings.value.filter(milkTeaOptionEffective).map(setting => setting.key) : []),
   'share_reward_share',
   'share_reward_daily',
@@ -236,7 +244,7 @@ function summaryTags(key: ModuleKey) {
   if (key === 'events') {
     return [
       (automation.value.automation.star_solar_claim || automation.value.automation.star_solar_quiz_claim) && '节令小札',
-      automation.value.automation.muge_auto_claim && '牧歌初启',
+      mugeSettings.some(setting => automation.value.automation[setting.key]) && '牧歌初启',
       showMilkTeaActivity.value && milkTeaSettings.value.some(setting => milkTeaOptionEffective(setting) && automation.value.automation[setting.key]) && '奶茶热销中',
       shareRewardActivityEnabled.value && '快乐不独享',
       activityEnabledCount.value === 0 && '未开启活动',
@@ -375,7 +383,8 @@ function cancel() {
 
       <div v-for="group in moduleGroups" :key="group.key" class="space-y-3">
         <div class="flex flex-wrap items-center gap-3">
-          <span class="inline-grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[var(--theme-gradient)] text-xl text-white shadow-sm" :class="group.icon" aria-hidden="true" />
+          <!-- 渐变底不能走 bg-[var(--theme-gradient)]：UnoCSS 会编译成 background-color，对 gradient 值无效，白图标会落在白底上看不见。 -->
+          <span class="inline-grid h-10 w-10 shrink-0 place-items-center rounded-xl text-xl text-white shadow-sm" :class="group.icon" :style="{ background: 'var(--theme-gradient)' }" aria-hidden="true" />
           <h4 class="text-base text-gray-900 font-bold dark:text-gray-50">
             {{ group.label }}
           </h4>
@@ -777,10 +786,12 @@ function cancel() {
                     牧歌初启
                   </div>
                   <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    活动开启后自动领取已达成的兴牧庆典档位、牧友同行档位、成长手册任务与人格测试首次分享奖励。
+                    开关可以提前设置，自动化仅在活动开放时运行。自动答题保留已保存的答案，未答题目默认选第一项，完整保存后再结算领取；不清空进度，已结算不重复提交。
                   </div>
                 </div>
-                <BaseSwitch v-model="automation.automation.muge_auto_claim" label="自动领取牧歌初启奖励" />
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <BaseSwitch v-for="item in mugeSettings" :key="item.key" v-model="automation.automation[item.key]" :label="item.label" />
+                </div>
               </section>
 
               <section v-if="!shareRewardEnded" class="border border-orange-100 rounded-lg p-4 space-y-3 dark:border-orange-900/40">

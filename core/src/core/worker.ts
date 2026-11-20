@@ -621,6 +621,7 @@ function startUnifiedScheduler(): void {
 
 function stopUnifiedScheduler(): void {
     unifiedSchedulerRunning = false;
+    stopMugeAutomationTimer();
     // 三个「运行中」标记必须一起清：漏掉的那个在下一轮登录后会一直为 true，
     // 对应的 tick 会被自己的守卫永久挡住（偷菜尤其明显，只能重启容器才恢复）。
     farmTaskRunning = false;
@@ -654,6 +655,59 @@ function startActivityAutomationTimer(): void {
     if (workerScheduler.has('activity_automation_interval')) return;
     const { startActivityAutomation } = require('../services/activity-automation');
     startActivityAutomation(workerScheduler);
+}
+
+// ==================== 牧歌初启自动化（BUGDey 版） ====================
+// BUGDey 同款：独立 5 分钟定时器 + 世代守卫 + 指纹去重 + guard/beforeWrite 护栏；
+// 不走 activity-automation 的窗口闸门——牧歌窗口完全以服务端回包（state.active）为准。
+
+let mugeAutomationRunning = false;
+/** 跨 tick（含重连）共享的指纹去重集合：activityId + 起止时间 + 动作 + 已达成条目。 */
+const mugeSubmitted = new Set<string>();
+
+function stopMugeAutomationTimer(): void {
+    workerScheduler.clear('muge_automation');
+    mugeAutomationRunning = false;
+}
+
+function startMugeAutomationTimer(): void {
+    stopMugeAutomationTimer();
+    workerScheduler.setIntervalTask('muge_automation', 5 * 60 * 1000, () => {
+        void tickMugeAutomation().catch(() => null);
+    }, { preventOverlap: true });
+}
+
+async function tickMugeAutomation(): Promise<void> {
+    const { AUTO_ACTIONS, createMugeAutomation } = require('../services/muge-automation');
+    if (!loginReady || mugeAutomationRunning) return;
+    const automation = getAutomation() || {};
+    if (!Object.keys(AUTO_ACTIONS).some((key: string) => automation[key] === true)) return;
+    const generation = runtimeGeneration;
+    mugeAutomationRunning = true;
+    try {
+        const { runExclusiveAutomationTask } = require('./automation-lock');
+        await runExclusiveAutomationTask('muge_automation', async () => {
+            // 排队期间可能停号或重登，旧世代不能再进活动接口。
+            if (generation !== runtimeGeneration || !loginReady) return;
+            const service = require('../services/muge-activity');
+            const runner = createMugeAutomation({
+                getState: () => service.getMugeActivity(),
+                operate: (action: string, input?: any, options?: any) => service.operateMugeActivity(action, input, options),
+                getAutomation: () => getAutomation() || {},
+                isReady: () => generation === runtimeGeneration && loginReady,
+                submitted: mugeSubmitted,
+            });
+            await runner();
+        });
+    }
+    catch (error: any) {
+        if (error?.code !== 'MUGE_AUTO_STOPPED') {
+            logWarn('活动', `牧歌初启自动任务失败: ${String(error?.message || error)}`, { event: '牧歌初启自动任务', result: 'error' });
+        }
+    }
+    finally {
+        mugeAutomationRunning = false;
+    }
 }
 
 
@@ -692,6 +746,7 @@ async function runStartupSequence(canContinue: () => boolean = () => loginReady)
         startDailyRoutineTimer(false);
         startMysteryShopTimer();
         startActivityAutomationTimer();
+        startMugeAutomationTimer();
         startPetFeedCheckTimer();
     } catch (e: any) {
         log('系统', `登录启动序列执行失败: ${e.message}`, { module: 'system', event: '启动序列', result: 'error' });
@@ -834,6 +889,7 @@ function applyRuntimeConfig(snapshot: any, syncNow: boolean = false): number {
 
             startMysteryShopTimer();
             startActivityAutomationTimer();
+            startMugeAutomationTimer();
             startPetFeedCheckTimer();
             // 化肥自动购买检测：原来只在 startFarmCheckLoop（登录/启动）建一次，
             // 而两个开关默认都是关的，登录时定时器根本不会建；之后在面板打开开关
@@ -1455,6 +1511,9 @@ async function handleApiCall(msg: any): Promise<void> {
                     break;
                 case 'getActivityDirectorySnapshot':
                     result = await require('../services/activity-center').getActivityDirectorySnapshot();
+                    break;
+                case 'getRanchActivityDirectorySnapshot':
+                    result = await require('../services/activity-center').getRanchActivityDirectorySnapshot();
                     break;
                 case 'getActivityCenterSnapshot':
                     result = await require('../services/activity-center').getActivityCenterSnapshot();

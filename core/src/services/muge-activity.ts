@@ -73,10 +73,13 @@ async function getMugeActivity() {
     };
 }
 
-async function perform(action: string, input: any) {
+async function perform(action: string, input: any, options: any = {}) {
     const operation = Object.hasOwn(OPERATIONS, action) ? OPERATIONS[action as keyof typeof OPERATIONS] : null;
     if (!operation) fail('INVALID_MUGE_ACTION', '未知的牧歌初启操作');
+    // guard：读取前后都可注入（自动化 runner 用它在开关关闭/停号时立即中止）。
+    options.guard?.();
     const state = await getMugeActivity();
+    options.guard?.();
     if (!state.active) fail('MUGE_ENDED', '牧歌初启尚未开始或已经结束');
     let params: any = {};
     if (action === 'claimCelebration' || action === 'claimFriends' || action === 'claimHandbook') {
@@ -104,6 +107,8 @@ async function perform(action: string, input: any) {
             fail('MUGE_NOT_CLAIMABLE', '请先完成人格测试，首次分享奖励仅可领取一次');
         }
     }
+    // beforeWrite：提交前注入最后一次复核（自动化 runner 用最新状态算指纹，防重复提交）。
+    options.beforeWrite?.(state);
     const body = types.MugeOperateRequest.encode({ id: operation.id, cmd: operation.cmd, [operation.field]: params }).finish();
     const response = await sendMsgAsync('gamepb.activitypb.ActivityService', 'Operate', body);
     const reply = types.MugeOperateReply.decode(response.body);
@@ -124,8 +129,8 @@ async function perform(action: string, input: any) {
     catch { return { activity: null, rewards, refreshRequired: true }; }
 }
 
-function operateMugeActivity(action: string, input: any = {}) {
-    const pending = mutationTail.then(() => perform(action, input));
+function operateMugeActivity(action: string, input: any = {}, options: any = {}) {
+    const pending = mutationTail.then(() => perform(action, input, options));
     mutationTail = pending.catch(() => {});
     return pending;
 }

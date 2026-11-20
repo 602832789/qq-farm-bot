@@ -69,7 +69,13 @@ export interface AutomationConfig {
   star_solar_quiz_claim?: boolean
   star_record_claim?: boolean
   // 牧歌初启
-  muge_auto_claim?: boolean
+  // 牧歌初启自动化（BUGDey 版；muge_personality_settle 由自动答题流程内部驱动）
+  muge_task_claim?: boolean
+  muge_celebration_claim?: boolean
+  muge_friend_claim?: boolean
+  muge_handbook_claim?: boolean
+  muge_personality_settle?: boolean
+  muge_auto_answer?: boolean
   // 青莓酒馆
   qingmei_seed_claim?: boolean
   qingmei_wine_brew?: boolean

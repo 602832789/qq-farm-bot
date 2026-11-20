@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import type { ActivityDirectoryItemDto } from '@/stores/activity-center'
+import { NButton } from 'naive-ui/es/button'
 import { storeToRefs } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
+import api from '@/api'
 import { activityHasGameplay } from '@/components/activity/gameplays'
-import BaseButton from '@/components/ui/BaseButton.vue'
-import FarmPageHeader from '@/components/ui/FarmPageHeader.vue'
 import { useAccountStore } from '@/stores/account'
-import { useActivityCenterStore } from '@/stores/activity-center'
+import { createRequestGuard } from '@/utils/request-guard'
+import { normalizeActivityDirectory, useActivityCenterStore } from '@/stores/activity-center'
+import PetMascot from './PetMascot.vue'
 import { useActivityClock } from './useActivityClock'
 
+const props = withDefaults(defineProps<{ space?: 'farm' | 'ranch' }>(), { space: 'farm' })
 const emit = defineEmits<{
   back: []
   open: [activity: ActivityDirectoryItemDto]
@@ -17,12 +20,23 @@ const emit = defineEmits<{
 
 const accountStore = useAccountStore()
 const activityStore = useActivityCenterStore()
-const { currentAccountId, currentAccount } = storeToRefs(accountStore)
-const { activities, season, shop, solarTerms, constellation, qixi, qingMei, charity, weather, loading, error, loadedAccountId } = storeToRefs(activityStore)
-const { serverNow } = useActivityClock()
+const { currentAccountId } = storeToRefs(accountStore)
+const { activities: farmActivities, season, shop, solarTerms, constellation, qixi, qingMei, charity, weather, loading: farmLoading, error: farmError, loadedAccountId: farmLoadedAccountId, serverClockOffset: farmClockOffset } = storeToRefs(activityStore)
+const { serverNow: farmNow } = useActivityClock()
+const ranchDirectory = ref<ActivityDirectoryItemDto[]>([])
+const ranchLoading = ref(false)
+const ranchError = ref('')
+const ranchLoadedAccountId = ref('')
+const ranchClockOffset = ref(0)
+// 请求守卫：统一用 createRequestGuard，不要各写一份手写序号计数器。
+const ranchGuard = createRequestGuard()
+const activities = computed(() => props.space === 'ranch' ? ranchDirectory.value : farmActivities.value)
+const loading = computed(() => props.space === 'ranch' ? ranchLoading.value : farmLoading.value)
+const error = computed(() => props.space === 'ranch' ? ranchError.value : farmError.value)
+const loadedAccountId = computed(() => props.space === 'ranch' ? ranchLoadedAccountId.value : farmLoadedAccountId.value)
+const serverNow = computed(() => props.space === 'ranch' ? farmNow.value - farmClockOffset.value + ranchClockOffset.value : farmNow.value)
 
 type ActivityStatus = 'active' | 'upcoming' | 'ended'
-type StatusFilter = 'all' | ActivityStatus
 
 const dateFormatter = new Intl.DateTimeFormat('zh-CN', {
   year: 'numeric',
@@ -30,19 +44,12 @@ const dateFormatter = new Intl.DateTimeFormat('zh-CN', {
   day: '2-digit',
 })
 
-const statusFilter = ref<StatusFilter>('all')
-const statusFilters: Array<{ key: StatusFilter, label: string }> = [
-  { key: 'all', label: '全部' },
-  { key: 'active', label: '进行中' },
-  { key: 'upcoming', label: '未开始' },
-]
-
 const accountDataLoaded = computed(() => !!currentAccountId.value && loadedAccountId.value === String(currentAccountId.value))
 const stellarDetailsAvailable = computed(() => !!(season.value || shop.value || constellation.value || solarTerms.value))
 const displayActivities = computed<ActivityDirectoryItemDto[]>(() => {
   const entries: ActivityDirectoryItemDto[] = activities.value.length > 0
     ? [...activities.value]
-    : stellarDetailsAvailable.value
+    : props.space === 'farm' && stellarDetailsAvailable.value
       ? [{
         id: season.value?.pass?.activityId || season.value?.id || 'stellar',
         activityIds: [season.value?.pass?.activityId || season.value?.id || 'stellar'],
@@ -56,7 +63,7 @@ const displayActivities = computed<ActivityDirectoryItemDto[]>(() => {
       : []
 
   const appendDetailEntry = (entry: ActivityDirectoryItemDto) => {
-    if (!entries.some(item => item.activityIds.some(id => entry.activityIds.includes(id))))
+    if (props.space === 'farm' && !entries.some(item => item.activityIds.some(id => entry.activityIds.includes(id))))
       entries.push(entry)
   }
   if (qixi.value) {
@@ -124,9 +131,48 @@ const hasActivities = computed(() => displayActivities.value.length > 0)
 function accountId() {
   return String(currentAccountId.value || '')
 }
-function load(force = false) {
+async function load(force = false) {
+  if (props.space === 'ranch') {
+    const id = accountId()
+    ranchGuard.invalidate()
+    const ticket = ranchGuard.next(id)
+    if (ranchLoadedAccountId.value !== id)
+      ranchDirectory.value = []
+    ranchError.value = ''
+    ranchLoading.value = !!id
+    if (!id) {
+      ranchLoadedAccountId.value = ''
+      return false
+    }
+    try {
+      const response = await api.get('/api/activity-center/ranch-activities', { headers: { 'x-account-id': id }, skipErrorToast: true } as any)
+      if (ranchGuard.isStale(ticket) || id !== accountId())
+        return false
+      if (!response.data?.ok)
+        throw new Error(response.data?.error || '读取牧场活动失败')
+      ranchDirectory.value = normalizeActivityDirectory(response.data.data.activities)
+      ranchClockOffset.value = response.data.data.serverTime * 1000 - Date.now()
+      ranchLoadedAccountId.value = id
+      return true
+    }
+    catch (cause: any) {
+      if (!ranchGuard.isStale(ticket) && id === accountId())
+        ranchError.value = cause?.message || '读取牧场活动失败'
+      return false
+    }
+    finally {
+      if (!ranchGuard.isStale(ticket) && id === accountId())
+        ranchLoading.value = false
+    }
+  }
   return force ? activityStore.refresh(accountId()) : activityStore.lazyLoad(accountId())
 }
+
+watch(currentAccountId, () => {
+  if (props.space === 'ranch')
+    void load(true)
+}, { immediate: true })
+onUnmounted(() => ranchGuard.invalidate())
 function validActivityTime(value: unknown): number | null {
   const timestamp = Number(value)
   return Number.isFinite(timestamp) && Number.isFinite(new Date(timestamp).getTime()) ? timestamp : null
@@ -164,61 +210,87 @@ const timedActivities = computed(() => displayActivities.value.filter(activity =
 const standingActivities = computed(() => displayActivities.value.filter(isStandingActivity))
 /** 进行中与即将开始的限时活动用大卡片；已结束的折叠到往期列表。 */
 const currentActivities = computed(() => timedActivities.value.filter(activity => activityStatus(activity) !== 'ended'))
-
-/** 卡片列表：进行中的限时活动按状态筛选，已结束的走往期折叠区。 */
-const cardActivities = computed(() => {
-  return currentActivities.value.filter((activity) => {
-    if (statusFilter.value === 'all')
-      return true
-    return activityStatus(activity) === statusFilter.value
-  })
+interface PastActivityRow { key: string, name: string, activity: ActivityDirectoryItemDto, ids: string[] }
+/** 同名同时间的往期条目（同一活动的多个子 ID）合并成一行。顺序沿用目录排序：结束越晚越靠前。 */
+const pastActivities = computed(() => {
+  const rows = new Map<string, PastActivityRow>()
+  for (const activity of timedActivities.value) {
+    if (activityStatus(activity) !== 'ended')
+      continue
+    const name = activityDisplayName(activity)
+    const key = `${name}|${activity.startTime ?? ''}|${activity.endTime ?? ''}`
+    const row = rows.get(key)
+    if (row)
+      row.ids.push(activity.id)
+    else
+      rows.set(key, { key, name, activity, ids: [activity.id] })
+  }
+  return [...rows.values()]
 })
-
+const pastGroups = computed(() => {
+  const groups: Array<{ key: string, label: string, rows: PastActivityRow[] }> = []
+  for (const row of pastActivities.value) {
+    const endTime = validActivityTime(row.activity.endTime)
+    const date = endTime === null ? null : new Date(endTime)
+    const key = date ? `${date.getFullYear()}-${date.getMonth()}` : 'unknown'
+    let group = groups.find(entry => entry.key === key)
+    if (!group) {
+      group = { key, label: date ? `${date.getFullYear()} 年 ${date.getMonth() + 1} 月结束` : '结束时间未知', rows: [] }
+      groups.push(group)
+    }
+    group.rows.push(row)
+  }
+  return groups
+})
+/**
+ * 同名活动通常是同一玩法在不同时期复办。按“名称 + 起止时间”去重后统计期数，
+ * 只统计当前目录里能看到的期次（包括进行中的那一期）。
+ */
+const editionCounts = computed(() => {
+  const periods = new Map<string, Set<string>>()
+  for (const activity of timedActivities.value) {
+    const name = activityDisplayName(activity)
+    const set = periods.get(name) || new Set<string>()
+    set.add(`${activity.startTime ?? ''}|${activity.endTime ?? ''}`)
+    periods.set(name, set)
+  }
+  return new Map([...periods].map(([name, set]) => [name, set.size]))
+})
+const pastOpen = ref(false)
 const pickerSummary = computed(() => {
   if (!hasActivities.value)
     return '按当前账号读取活动'
   const parts = [`${currentActivities.value.length} 个进行中`]
   if (standingActivities.value.length)
     parts.push(`${standingActivities.value.length} 项常驻`)
+  if (pastActivities.value.length)
+    parts.push(`${pastActivities.value.length} 个往期`)
   return parts.join(' · ')
-})
-const closedCardCount = computed(() => currentActivities.value.filter(activity => !activityCanOpen(activity)).length)
-const headerDescription = computed(() => {
-  const registered = displayActivities.value.length
-  const accountName = currentAccount.value?.name || currentAccount.value?.nick || ''
-  const base = `${registered} 个已登记活动 · ${pickerSummary.value}`
-  return accountName ? `${base} · 当前账号 ${accountName}` : base
 })
 function activityDisplayName(activity: ActivityDirectoryItemDto) {
   return activity.gameplayKey === 'pet' ? '萌宠日记' : activity.name
 }
 function activityIconSrc(activity: ActivityDirectoryItemDto) {
-  // 萌宠日记目录里没有可用的角色图（只有照片墙与兑换物），交给图标兜底。
-  if (activity.gameplayKey === 'milk')
-    return '/activity-assets/milk-tea/logo.png'
   if (activity.gameplayKey === 'muge')
     return '/activity-assets/muge/icon.png'
+  if (activity.activityIds.some(id => ['2026111800', '2026111801'].includes(id)))
+    return '/activity-assets/friend-recall/icon.png'
+  if (activity.gameplayKey === 'pet')
+    return '/activity-assets/pet-diary/S3Open_dog_1.png'
+  if (activity.gameplayKey === 'milk')
+    return '/activity-assets/milk-tea/logo.png'
   if (activity.gameplayKey === 'wish' || activity.gameplayKey === 'happy')
     return `/activity-assets/autumn/${activity.gameplayKey}.png`
   return ''
 }
-function activityIcon(activity: ActivityDirectoryItemDto) {
-  if (activityIconSrc(activity))
-    return ''
-  const map: Record<string, string> = {
-    stellar: 'i-carbon-star',
-    qixi: 'i-carbon-favorite',
-    qingmei: 'i-carbon-drink-01',
-    charity: 'i-carbon-sprout',
-    weather: 'i-carbon-rain',
-    milk: 'i-carbon-cafe',
-    wish: 'i-carbon-idea',
-    happy: 'i-carbon-gift',
-    pet: 'i-carbon-dog-walker',
-  }
-  return map[activity.gameplayKey || ''] || 'i-carbon-calendar'
+const shortDateFormatter = new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit' })
+function formatShortPeriod(activity: ActivityDirectoryItemDto) {
+  const startTime = validActivityTime(activity.startTime)
+  const endTime = validActivityTime(activity.endTime)
+  const start = startTime === null ? '?' : shortDateFormatter.format(startTime)
+  const end = endTime === null ? '?' : shortDateFormatter.format(endTime)
+  return `${start} – ${end}`
 }
-
 function standingDescription(activity: ActivityDirectoryItemDto) {
   return isNewbieActivity(activity) ? '新手开园福利：签到、开园特权与引导奖励' : '长期开放的常驻内容'
 }
@@ -251,16 +323,16 @@ function openActivity(activity: ActivityDirectoryItemDto) {
 </script>
 
 <template>
-  <section class="activity-page space-y-4">
-    <FarmPageHeader scene title="活动中心" :description="headerDescription" icon="i-carbon-gift">
-      <BaseButton variant="primary" size="sm" :loading="loading" :disabled="!currentAccountId" @click="load(true)">
+  <section class="activity-picker page-stack">
+    <div class="page-toolbar">
+      <span class="text-sm text-gray-500">{{ pickerSummary }}</span>
+      <NButton :loading="loading" :disabled="!currentAccountId" @click="load(true)">
         <template #icon>
           <span class="i-carbon-renew" />
         </template>
         刷新
-      </BaseButton>
-    </FarmPageHeader>
-
+      </NButton>
+    </div>
     <div v-if="!currentAccountId" class="picker-state">
       <div class="i-carbon-user-avatar" />
       <strong>请先选择账号</strong>
@@ -274,45 +346,26 @@ function openActivity(activity: ActivityDirectoryItemDto) {
       <div class="i-carbon-warning-alt" />
       <strong>活动加载失败</strong>
       <span>{{ error }}</span>
-      <BaseButton variant="primary" size="sm" :loading="loading" @click="load(true)">
+      <button type="button" :disabled="loading" @click="load(true)">
         重新加载
-      </BaseButton>
+      </button>
     </div>
     <div v-else-if="accountDataLoaded && !loading && !hasActivities" class="picker-state empty-activities">
       <div class="i-carbon-calendar" />
       <strong>当前无活动</strong>
       <span>服务器暂未返回活动配置</span>
-      <BaseButton variant="primary" size="sm" @click="load(true)">
+      <button type="button" @click="load(true)">
         刷新活动
-      </BaseButton>
+      </button>
     </div>
-
-    <template v-else>
-      <section class="space-y-4" aria-labelledby="all-activities-title">
-        <header class="flex flex-wrap items-center justify-between gap-3">
-          <div class="flex flex-wrap items-center gap-3">
-            <h2 id="all-activities-title" class="text-base font-semibold">
-              全部活动 <span class="text-xs text-gray-500 font-normal">{{ displayActivities.length }} 个已登记</span>
-            </h2>
-            <div class="inline-flex rounded-lg bg-gray-100 p-0.5 dark:bg-gray-800" role="group" aria-label="活动状态筛选">
-              <button
-                v-for="filter in statusFilters"
-                :key="filter.key"
-                class="rounded-md px-2.5 py-1 text-xs transition"
-                :class="statusFilter === filter.key ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white' : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'"
-                :aria-pressed="statusFilter === filter.key"
-                @click="statusFilter = filter.key"
-              >
-                {{ filter.label }}
-              </button>
-            </div>
-          </div>
-          <span v-if="closedCardCount" class="text-xs text-gray-500">{{ closedCardCount }} 项暂未接入玩法</span>
-        </header>
-
-        <div class="picker-list">
+    <div v-else class="picker-sections">
+      <section class="picker-section" aria-labelledby="current-activities-title">
+        <h3 id="current-activities-title" class="picker-section__title">
+          进行中<small>{{ currentActivities.length }}</small>
+        </h3>
+        <div v-if="currentActivities.length" class="picker-list">
           <button
-            v-for="activity in cardActivities"
+            v-for="activity in currentActivities"
             :key="activity.id"
             type="button"
             class="activity-entry"
@@ -321,44 +374,24 @@ function openActivity(activity: ActivityDirectoryItemDto) {
             @click="openActivity(activity)"
           >
             <span class="activity-entry__topline">
-              <span class="activity-entry__icon">
-                <img v-if="activityIconSrc(activity)" :src="activityIconSrc(activity)" alt="" width="22" height="22" style="object-fit: contain">
-                <span v-else :class="activityIcon(activity) || 'i-carbon-calendar'" aria-hidden="true" />
-              </span>
+              <span class="activity-entry__icon"><PetMascot v-if="activity.gameplayKey === 'pet'" stage="puppy" class="activity-entry__pet" /><img v-else-if="activityIconSrc(activity)" :src="activityIconSrc(activity)" alt="" width="36" height="36" style="object-fit: contain"><span v-else class="i-carbon-calendar" /></span>
               <span class="activity-entry__status">{{ activityStatusLabel(activity) }}</span>
             </span>
             <strong>{{ activityDisplayName(activity) }}</strong>
             <span class="activity-entry__period">{{ formatActivityPeriod(activity) }}</span>
             <span class="activity-entry__footer">
               <small>{{ activity.id }}</small>
-              <span v-if="activityCanOpen(activity)">查看详情 <span class="i-carbon-arrow-right" aria-hidden="true" /></span>
-              <span v-else-if="activityStatus(activity) === 'upcoming'">活动未开始 <span class="i-carbon-locked" aria-hidden="true" /></span>
-              <span v-else>暂未支持详情 <span class="i-carbon-locked" aria-hidden="true" /></span>
-            </span>
-          </button>
-
-          <!-- 节令日历：内置常驻功能，不依赖服务器活动目录，始终可打开。 -->
-          <button type="button" class="activity-entry activity-entry--supported" @click="emit('openSolar')">
-            <span class="activity-entry__topline">
-              <span class="activity-entry__icon">
-                <span class="i-carbon-calendar" aria-hidden="true" />
-              </span>
-              <span class="activity-entry__status">常驻</span>
-            </span>
-            <strong>节令日历</strong>
-            <span class="activity-entry__period">二十四节令 · 答题领奖励</span>
-            <span class="activity-entry__footer">
-              <small>长期开放</small>
-              <span>查看详情 <span class="i-carbon-arrow-right" aria-hidden="true" /></span>
+              <span v-if="activityCanOpen(activity)">查看详情 <span class="i-carbon-arrow-right" /></span>
+              <span v-else-if="activityStatus(activity) === 'upcoming'">活动未开始 <span class="i-carbon-locked" /></span>
+              <span v-else>等待活动适配 <span class="i-carbon-locked" /></span>
             </span>
           </button>
         </div>
-
-        <p v-if="!cardActivities.length" class="activity-empty">
-          当前筛选条件下暂无活动
+        <p v-else class="picker-section__empty">
+          当前没有进行中的限时活动
         </p>
 
-        <!-- 常驻条目不是限时活动：用一条窄提示带挂在卡片下方，按内容宽度排列。 -->
+        <!-- 常驻条目不是限时活动：用一条窄提示带挂在进行中下方，按内容宽度排列。 -->
         <div v-if="standingActivities.length" class="standing-strip" aria-label="常驻与福利">
           <span class="standing-strip__label">常驻</span>
           <component
@@ -377,191 +410,96 @@ function openActivity(activity: ActivityDirectoryItemDto) {
             <span v-if="activityCanOpen(activity)" class="i-carbon-arrow-right" aria-hidden="true" />
           </component>
         </div>
+
+        <!-- 节令日历：内置常驻功能，不依赖服务器活动目录，始终可打开（本地增强）。 -->
+        <div class="standing-strip" aria-label="内置常驻功能">
+          <span class="standing-strip__label">常驻</span>
+          <button type="button" class="standing-chip standing-chip--supported" @click="emit('openSolar')">
+            <span class="standing-chip__icon i-carbon-calendar" aria-hidden="true" />
+            <strong>节令日历</strong>
+            <span class="standing-chip__desc">二十四节气与节令奖励一览</span>
+            <span class="standing-chip__meta">长期开放</span>
+            <span class="i-carbon-arrow-right" aria-hidden="true" />
+          </button>
+        </div>
       </section>
-    </template>
+
+      <section v-if="pastActivities.length" class="picker-section" aria-labelledby="past-activities-title">
+        <button
+          id="past-activities-title"
+          type="button"
+          class="picker-section__title picker-section__toggle"
+          :aria-expanded="pastOpen"
+          aria-controls="past-activities-list"
+          @click="pastOpen = !pastOpen"
+        >
+          往期活动<small>{{ pastActivities.length }}</small>
+          <span class="picker-section__chevron i-carbon-chevron-down" :class="{ 'is-open': pastOpen }" aria-hidden="true" />
+        </button>
+        <div v-if="pastOpen" id="past-activities-list" class="past-list">
+          <div v-for="group in pastGroups" :key="group.key" class="past-group">
+            <h4>{{ group.label }}</h4>
+            <ul>
+              <li v-for="row in group.rows" :key="row.key" class="past-row">
+                <span class="past-row__icon"><img v-if="activityIconSrc(row.activity)" :src="activityIconSrc(row.activity)" alt=""><span v-else class="i-carbon-calendar" /></span>
+                <span class="past-row__name">
+                  <strong>{{ row.name }}</strong>
+                  <span v-if="(editionCounts.get(row.name) || 0) > 1" class="past-row__edition" title="目录中同名活动的不同期次数">共 {{ editionCounts.get(row.name) }} 期</span>
+                </span>
+                <span class="past-row__period">{{ formatShortPeriod(row.activity) }}</span>
+                <span class="past-row__ids" :title="row.ids.join('、')">{{ row.ids[0] }}<template v-if="row.ids.length > 1"> 等 {{ row.ids.length }} 个</template></span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+    </div>
   </section>
 </template>
 
 <style scoped>
-.activity-page {
+.activity-picker {
   width: 100%;
   min-width: 0;
   color: var(--ui-ink);
 }
 
-/* 新版活动卡片：图标 + 状态胶囊 + 名称 + 期间 + 底栏，三列网格。 */
-.picker-list {
-  width: 100%;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin: 0;
-}
-
-.activity-entry {
-  position: relative;
-  min-height: 168px;
+.picker-sections {
   display: flex;
-  overflow: hidden;
+  width: 100%;
   flex-direction: column;
-  align-items: flex-start;
-  justify-content: flex-start;
-  gap: 0;
-  padding: 16px;
-  border: 1px solid var(--ui-border);
-  border-radius: 8px;
-  color: var(--ui-ink);
-  text-align: left;
-  background: var(--ui-surface);
-  box-shadow: var(--ui-shadow-sm);
-  cursor: pointer;
-  appearance: none;
-  transition:
-    transform 160ms ease,
-    border-color 160ms ease,
-    box-shadow 160ms ease;
+  gap: 24px;
 }
 
-.activity-entry--supported:hover {
-  border-color: rgba(67, 141, 99, 30%);
-  box-shadow: var(--ui-shadow-md);
-  transform: translateY(-1px);
-}
-
-.activity-entry--upcoming {
-  border-color: rgba(186, 125, 27, 30%);
-}
-
-.activity-entry--ended {
-  border-color: rgba(89, 102, 97, 18%);
-  background: color-mix(in srgb, var(--ui-surface-soft) 70%, transparent);
-}
-
-.activity-entry:disabled {
-  cursor: default;
-  opacity: 1;
-}
-
-.activity-entry:focus-visible {
-  outline: 2px solid var(--ui-primary);
-  outline-offset: 2px;
-}
-
-.activity-entry__topline,
-.activity-entry__footer {
-  width: 100%;
+.picker-section {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 10px;
 }
 
-.activity-entry__topline {
-  margin-bottom: 17px;
-}
-
-.activity-entry__icon {
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  border-radius: 7px;
-  color: var(--ui-primary);
-  background: var(--ui-primary-soft);
-}
-
-.activity-entry__icon > span {
-  font-size: 16px;
-}
-
-.activity-entry__icon > img {
-  width: 22px;
-  height: 22px;
-  object-fit: contain;
-}
-
-.activity-entry__status {
-  padding: 3px 8px;
-  border: 1px solid rgba(67, 141, 99, 18%);
-  border-radius: 999px;
-  color: var(--ui-primary);
-  background: var(--ui-primary-soft);
-  font-size: 10px;
-  font-weight: var(--fw-700);
-}
-
-.activity-entry--upcoming .activity-entry__icon,
-.activity-entry--upcoming .activity-entry__status {
-  color: var(--ui-warning);
-  background: var(--ui-warning-soft);
-}
-
-.activity-entry--ended .activity-entry__icon,
-.activity-entry--ended .activity-entry__status {
-  color: var(--ui-muted);
-  background: var(--ui-bg-soft);
-}
-
-.activity-entry > strong {
-  width: 100%;
-  overflow: hidden;
+.picker-section__title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0;
   color: var(--ui-ink);
-  font-size: 17px;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 14px;
+  font-weight: var(--fw-650);
 }
 
-.activity-entry__period {
-  margin-top: 5px;
+.picker-section__title small {
+  color: var(--ui-subtle);
+  font-size: 12px;
+  font-weight: var(--fw-400);
+  font-variant-numeric: tabular-nums;
+}
+
+.picker-section__empty {
+  margin: 0;
+  padding: 18px 16px;
+  border: 1px dashed var(--ui-border-strong);
+  border-radius: var(--ui-radius-card);
   color: var(--ui-muted);
-  font-size: 11px;
-}
-
-.activity-entry__footer {
-  margin-top: auto;
-  padding-top: 15px;
-  color: var(--ui-muted);
-}
-
-.activity-entry__footer > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 10px;
-  font-weight: var(--fw-700);
-}
-
-.activity-entry--supported .activity-entry__footer > span {
-  color: var(--ui-primary);
-}
-
-.activity-entry__footer small {
-  color: var(--ui-muted);
-  font-size: 10px;
-}
-
-.activity-entry__footer .i-carbon-arrow-right,
-.activity-entry__footer .i-carbon-locked {
-  font-size: 13px;
-}
-
-@media (max-width: 1100px) and (min-width: 621px) {
-  .picker-list {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 620px) {
-  .picker-list {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-.activity-empty {
-  padding: 32px;
-  border: 1px dashed var(--surface-border);
-  border-radius: 8px;
-  color: var(--muted-text);
   font-size: 13px;
   text-align: center;
 }
@@ -633,29 +571,6 @@ function openActivity(activity: ActivityDirectoryItemDto) {
   white-space: nowrap;
 }
 
-.picker-section {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.picker-section__title {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  margin: 0;
-  color: var(--ui-ink);
-  font-size: 14px;
-  font-weight: var(--fw-650);
-}
-
-.picker-section__title small {
-  color: var(--ui-subtle);
-  font-size: 12px;
-  font-weight: var(--fw-400);
-  font-variant-numeric: tabular-nums;
-}
-
 .picker-section__toggle {
   align-self: flex-start;
   align-items: center;
@@ -678,7 +593,7 @@ function openActivity(activity: ActivityDirectoryItemDto) {
 .picker-section__chevron {
   color: var(--ui-subtle);
   font-size: 14px;
-  transition: transform 160ms ease;
+  transition: transform var(--spring-drag-duration) var(--spring-drag);
 }
 
 .picker-section__chevron.is-open {
@@ -782,6 +697,14 @@ function openActivity(activity: ActivityDirectoryItemDto) {
   text-overflow: ellipsis;
 }
 
+.picker-list {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+
 .picker-state {
   width: 100%;
   min-height: 300px;
@@ -805,14 +728,27 @@ function openActivity(activity: ActivityDirectoryItemDto) {
   font-size: 18px;
 }
 
-.picker-state > span {
+.picker-state span {
   max-width: 420px;
   color: var(--ui-muted);
   font-size: 12px;
 }
 
-.picker-state .base-button {
+.picker-state button {
+  min-height: 36px;
   margin-top: 8px;
+  padding: 0 15px;
+  border: 1px solid var(--ui-border);
+  border-radius: 6px;
+  color: var(--ui-primary);
+  background: var(--ui-surface);
+  font-weight: var(--fw-700);
+  cursor: pointer;
+}
+
+.picker-state button:disabled {
+  opacity: 0.55;
+  cursor: wait;
 }
 
 .picker-state .picker-spinner {
@@ -821,16 +757,141 @@ function openActivity(activity: ActivityDirectoryItemDto) {
   font-size: 0;
 }
 
-.activity-spinner {
-  border: 3px solid rgba(67, 141, 99, 0.18);
-  border-top-color: var(--ui-primary);
-  border-radius: 50%;
-  animation: spin 0.85s linear infinite;
+.activity-entry {
+  position: relative;
+  min-height: 168px;
+  display: flex;
+  overflow: hidden;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 0;
+  padding: 16px;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  color: var(--ui-ink);
+  text-align: left;
+  background: var(--ui-surface);
+  box-shadow: var(--ui-shadow-sm);
+  cursor: pointer;
+  appearance: none;
 }
 
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
+.activity-entry--supported:hover {
+  border-color: rgba(67, 141, 99, 0.3);
+  box-shadow: var(--ui-shadow-md);
+  transform: translateY(-1px);
+}
+
+.activity-entry--upcoming {
+  border-color: rgba(186, 125, 27, 0.3);
+}
+
+.activity-entry--ended {
+  border-color: rgba(89, 102, 97, 0.18);
+  background: color-mix(in srgb, var(--ui-surface-soft) 70%, transparent);
+}
+
+.activity-entry:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.activity-entry__topline,
+.activity-entry__footer {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.activity-entry__topline {
+  margin-bottom: 17px;
+}
+
+.activity-entry__icon {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  color: var(--ui-primary);
+  background: var(--ui-primary-soft);
+}
+
+.activity-entry__icon > span {
+  font-size: 16px;
+}
+
+.activity-entry__status {
+  padding: 3px 8px;
+  border: 1px solid rgba(67, 141, 99, 0.18);
+  border-radius: 999px;
+  color: var(--ui-primary);
+  background: var(--ui-primary-soft);
+  font-size: 10px;
+  font-weight: var(--fw-700);
+}
+
+.activity-entry--upcoming .activity-entry__icon,
+.activity-entry--upcoming .activity-entry__status {
+  color: var(--ui-warning);
+  background: var(--ui-warning-soft);
+}
+
+.activity-entry--ended .activity-entry__icon,
+.activity-entry--ended .activity-entry__status {
+  color: var(--ui-muted);
+  background: var(--ui-bg-soft);
+}
+
+.activity-entry > strong {
+  width: 100%;
+  overflow: hidden;
+  color: var(--ui-ink);
+  font-size: 17px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-entry__period {
+  margin-top: 5px;
+  color: var(--ui-muted);
+  font-size: 11px;
+}
+
+.activity-entry__footer {
+  margin-top: auto;
+  padding-top: 15px;
+  color: var(--ui-muted);
+}
+
+.activity-entry__footer > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: var(--fw-700);
+}
+
+.activity-entry--supported .activity-entry__footer > span {
+  color: var(--ui-primary);
+}
+
+.activity-entry__footer small {
+  color: var(--ui-muted);
+  font-size: 10px;
+}
+
+.activity-entry__footer .i-carbon-arrow-right,
+.activity-entry__footer .i-carbon-locked {
+  font-size: 13px;
+}
+
+@media (max-width: 1100px) and (min-width: 621px) {
+  .picker-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -853,5 +914,17 @@ function openActivity(activity: ActivityDirectoryItemDto) {
     flex-basis: 100%;
     white-space: normal;
   }
+
+  .picker-list {
+    grid-template-columns: 1fr;
+  }
+
+  .activity-entry {
+    min-height: 164px;
+  }
+}
+.activity-entry__icon .activity-entry__pet {
+  width: 26px;
+  height: 26px;
 }
 </style>

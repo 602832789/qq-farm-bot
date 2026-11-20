@@ -46,6 +46,9 @@ module.exports = {
     getPlantBlacklist: accountConfig.getPlantBlacklist,
     setPlantBlacklist: accountConfig.setPlantBlacklist,
     getDefaultAccountConfig: accountConfig.getDefaultAccountConfig,
+    getUserDefaultAccountPlan: accountConfig.getUserDefaultAccountPlan,
+    setUserDefaultAccountPlan: accountConfig.setUserDefaultAccountPlan,
+    applyUserDefaultAccountPlan: accountConfig.applyUserDefaultAccountPlan,
 
     // Global config
     getUI: globalConfig.getUI,

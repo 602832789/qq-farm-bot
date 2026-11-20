@@ -521,6 +521,18 @@ async function getActivityDirectorySnapshot() {
     };
 }
 
+/** 牧场（场景 2）活动目录快照：与农场目录共用时间结构，只展示场景 2 实际下发的活动组。 */
+async function getRanchActivityDirectorySnapshot() {
+    const body = types.ActivityListRequest.encode({ game_scene_id: 2 }).finish();
+    const response = await sendMsgAsync('gamepb.activitypb.ActivityService', 'List', body);
+    const reply = types.ActivityListReply.decode(response.body);
+    const windows = reply.activities.flatMap((group: any) => [group, ...group.children]).map((entry: any) => ({
+        id: String(entry.activity.activity_id), name: entry.activity.name,
+        beginTime: int64Number(entry.activity.begin_time), endTime: int64Number(entry.activity.end_time),
+    }));
+    return { serverTime: getServerTimeSec(), activities: buildActivityDirectory(windows, null, null, null, null, null, null, null, null) };
+}
+
 const petDiaryService = createPetDiaryService({
     types, sendMsgAsync, getBag, getBagItems, getServerTimeSec, itemDto,
     int64String, int64Number, textContent, businessError, positiveDecimal,
@@ -542,6 +554,7 @@ module.exports = {
     reconcileCharityProgressState,
     buildActivityDirectory,
     getActivityDirectorySnapshot,
+    getRanchActivityDirectorySnapshot,
     getActivityCenterSnapshot,
     getCurrentSeasonEvent,
     getCurrentStellarActivity,

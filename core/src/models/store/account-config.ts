@@ -554,6 +554,80 @@ function getDefaultAccountConfig(): AccountConfig {
     return cloneAccountConfig(sharedState.DEFAULT_ACCOUNT_CONFIG);
 }
 
+// ==================== 默认方案（老版本账号管理页的「设为/应用默认方案」） ====================
+//
+// 单管理员体系下按固定用户名存取；结构与桌面副本多用户版一致，前端接口不变。
+const DEFAULT_PLAN_USER = 'admin';
+
+/** 只抳取适合作为模板的配置片段（自动化开关、策略、间隔与各类阈值），不含账号敏感信息。 */
+function pickDefaultPlanConfig(raw: any): Record<string, any> {
+    const cfg: any = normalizeAccountConfig(raw || {}, sharedState.DEFAULT_ACCOUNT_CONFIG);
+    return {
+        automation: { ...cfg.automation },
+        autoCodeRefresh: cfg.autoCodeRefresh ? { ...cfg.autoCodeRefresh } : undefined,
+        plantingStrategy: cfg.plantingStrategy,
+        prioritize2x2Crops: cfg.prioritize2x2Crops === true,
+        intervals: { ...cfg.intervals },
+        friendQuietHours: { ...cfg.friendQuietHours },
+        fertilizerBuyOrganicCount: cfg.fertilizerBuyOrganicCount,
+        fertilizerBuyOrganicThresholdHours: cfg.fertilizerBuyOrganicThresholdHours,
+        fertilizerBuyNormalCount: cfg.fertilizerBuyNormalCount,
+        fertilizerBuyNormalThresholdHours: cfg.fertilizerBuyNormalThresholdHours,
+        fertilizerBuyCheckIntervalMinutes: cfg.fertilizerBuyCheckIntervalMinutes,
+        goldenBugKeepCount: cfg.goldenBugKeepCount,
+        goldenBugRoundLimit: cfg.goldenBugRoundLimit,
+        autoAcceptFriendMinLevel: cfg.autoAcceptFriendMinLevel,
+        bagSeedPriority: [...cfg.bagSeedPriority],
+        bagSeedFallbackStrategy: cfg.bagSeedFallbackStrategy,
+    };
+}
+
+function normalizeUserDefaultPlan(raw: any) {
+    const input = raw && typeof raw === 'object' ? raw : {};
+    return {
+        enabled: input.enabled !== false,
+        config: pickDefaultPlanConfig(input.config),
+        updatedAt: Math.max(0, Number(input.updatedAt) || 0),
+    };
+}
+
+function getUserDefaultAccountPlan(username: string = DEFAULT_PLAN_USER) {
+    const key = String(username || '').trim() || DEFAULT_PLAN_USER;
+    const saved = globalConfig.userDefaultAccountPlans?.[key];
+    if (!saved) {
+        return { exists: false, enabled: true, config: pickDefaultPlanConfig(sharedState.DEFAULT_ACCOUNT_CONFIG), updatedAt: 0 };
+    }
+    return { exists: true, ...normalizeUserDefaultPlan(saved) };
+}
+
+function setUserDefaultAccountPlan(username: string, rawConfig: any, options: { enabled?: boolean } = {}) {
+    const key = String(username || '').trim() || DEFAULT_PLAN_USER;
+    const previousPlan = globalConfig.userDefaultAccountPlans[key];
+    const plan = {
+        enabled: options.enabled !== false,
+        config: pickDefaultPlanConfig(rawConfig),
+        updatedAt: Date.now(),
+    };
+    globalConfig.userDefaultAccountPlans[key] = plan;
+    try {
+        // 默认方案的接口会向用户明确报告保存结果，因此必须在真正落盘后才能返回成功。
+        require('./global-config').saveGlobalConfig({ userDefaultAccountPlans: { ...globalConfig.userDefaultAccountPlans } });
+    }
+    catch (error) {
+        if (previousPlan === undefined) delete globalConfig.userDefaultAccountPlans[key];
+        else globalConfig.userDefaultAccountPlans[key] = previousPlan;
+        throw error;
+    }
+    return { exists: true, ...normalizeUserDefaultPlan(plan) };
+}
+
+function applyUserDefaultAccountPlan(username: string, accountId: unknown) {
+    const plan = getUserDefaultAccountPlan(username);
+    if (!plan.exists) throw new Error('尚未保存默认方案');
+    setAccountConfigSnapshot(accountId, plan.config as any);
+    return getConfigSnapshot(accountId);
+}
+
 module.exports = {
     getAccountConfigSnapshot,
     setAccountConfigSnapshot,
@@ -600,4 +674,7 @@ module.exports = {
     getPlantBlacklist,
     setPlantBlacklist,
     getDefaultAccountConfig,
+    getUserDefaultAccountPlan,
+    setUserDefaultAccountPlan,
+    applyUserDefaultAccountPlan,
 };

@@ -185,8 +185,13 @@ const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
         milk_tea_work_interaction_type: 1,
         milk_tea_seed_policy: {},
         milk_tea_hire_policy: {},
-        // 牧歌初启：默认不自动领取，与其余活动开关保持一致。
-        muge_auto_claim: false,
+        // 牧歌初启自动化：默认全部关闭；只允许领取已达成且服务端确认的档位与任务。
+        muge_task_claim: false,
+        muge_celebration_claim: false,
+        muge_friend_claim: false,
+        muge_handbook_claim: false,
+        muge_personality_settle: false,
+        muge_auto_answer: false,
     },
     plantingStrategy: 'max_exp',
     preferredSeedId: 0,
@@ -699,6 +704,7 @@ accountFallbackConfig = {
 const globalConfig: GlobalConfig = {
     accountConfigs: {},
     defaultAccountConfig: cloneAccountConfig(DEFAULT_ACCOUNT_CONFIG),
+    userDefaultAccountPlans: Object.create(null),
     ui: {
         theme: 'light',
     },
@@ -734,6 +740,17 @@ function loadGlobalConfig(): void {
             globalConfig.ui = { ...globalConfig.ui, ...(data.ui || {}) };
             const theme = String(globalConfig.ui.theme || '').toLowerCase();
             globalConfig.ui.theme = theme === 'light' ? 'light' : 'dark';
+
+            // 默认方案快照：逐项归一化，坏数据直接丢弃该项。
+            globalConfig.userDefaultAccountPlans = Object.create(null);
+            const planMap = (data.userDefaultAccountPlans && typeof data.userDefaultAccountPlans === 'object')
+                ? data.userDefaultAccountPlans
+                : {};
+            for (const [user, plan] of Object.entries(planMap)) {
+                const key = String(user || '').trim();
+                if (!key || !plan || typeof plan !== 'object') continue;
+                globalConfig.userDefaultAccountPlans[key] = plan as any;
+            }
 
             // offlineReminder normalization done in global-config
             if (data.offlineReminder && typeof data.offlineReminder === 'object') {

@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 33,
-  "patch": 1,
-  "build": 203,
-  "version": "3.33.1",
-  "updatedAt": "2026-11-20T01:24:49.828Z",
+  "patch": 2,
+  "build": 205,
+  "version": "3.33.2",
+  "updatedAt": "2026-11-20T02:19:35.854Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.33.2",
+      "build": 205,
+      "date": "2026-11-20",
+      "summary": "牧场首页库存四项与快捷入口、活动中心对齐 liyang、牧歌自动化换 BUGDey 版、账号管理恢复默认方案",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.33.1",
       "build": 203,
