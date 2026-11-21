@@ -15,6 +15,7 @@
 
 | 版本 | 更新序号 | 日期 | 更新内容 | 提交 |
 | --- | --- | --- | --- | --- |
+| v3.33.9 | #211 | 2026-11-21 | 修复牧歌自动任务报 Cannot find module './automation-lock' | — |
 | v3.33.8 | #210 | 2026-11-21 | 重启后自动登录账号、账号卡片登录动画可见 | — |
 | v3.33.7 | #209 | 2026-11-21 | 微信账号频繁掉线：登录/重连后增加 15 秒连接稳定期 | — |
 | v3.33.6 | #208 | 2026-11-21 | 牧场库存图鉴改点数与清晰图标、账号卡片精简续期信息、恢复登录/重登动画 | — |
@@ -213,6 +214,11 @@ flowchart TB
 ```
 
 ## 详细记录
+
+### 2026-11-21 · v3.33.9（#211） · 修复牧歌自动任务报 Cannot find module './automation-lock'
+
+- `worker.ts` 的 `tickMugeAutomation` 里误写成 `require('./automation-lock')`——worker 位于 `core/`，而模块在 `services/`，运行到牧歌自动任务分支才抛 `MODULE_NOT_FOUND`。改为复用文件顶部已引入的 `runExclusiveAutomationTask`，不再重复 require。
+- 新增回归测试 `core/tests/worker-require-paths.test.js`：静态扫描 worker.ts 里所有相对 require（剔除注释后又校验），路径解析不到真实模块即失败——这类问题编译期与单测都发现不了，只能静态兜底。
 
 ### 2026-11-21 · v3.33.8（#210） · 重启后自动登录账号、账号卡片登录动画可见
 

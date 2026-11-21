@@ -697,7 +697,8 @@ async function tickMugeAutomation(): Promise<void> {
     const generation = runtimeGeneration;
     mugeAutomationRunning = true;
     try {
-        const { runExclusiveAutomationTask } = require('./automation-lock');
+        // runExclusiveAutomationTask 已在文件顶部从 '../services/automation-lock' 引入，
+        // 这里不要再 require('./automation-lock')——worker 在 core/ 目录下，相对路径会找不到模块。
         await runExclusiveAutomationTask('muge_automation', async () => {
             // 排队期间可能停号或重登，旧世代不能再进活动接口。
             if (generation !== runtimeGeneration || !loginReady) return;
