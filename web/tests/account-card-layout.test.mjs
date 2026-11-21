@@ -21,12 +21,13 @@ test('微信专属信息块之后有仅 PC 生效的弹性占位，手机端不�
   assert.ok(spacer, '缺少 PC 端弹性占位，QQ 卡片的横线会高于微信卡片')
 })
 
-test('占位位于续期统计之后、底部分隔线之前，顺序错了对齐不生效', () => {
-  const summary = panel.indexOf('wxPreflightSummary(acc)?.text')
+test('占位位于微信专属信息之后、底部分隔线之前，顺序错了对齐不生效', () => {
+  // 续期徽章与统计已从卡片移除，微信专属信息只剩访问凭证状态。
+  const credential = panel.indexOf('credentialStatus(acc).text')
   const spacer = panel.indexOf('class="hidden sm:block sm:flex-1"')
   const footer = panel.indexOf('justify-between border-t border-gray-100')
-  assert.ok(summary > 0 && spacer > 0 && footer > 0, '定位失败')
-  assert.ok(summary < spacer, '占位必须放在微信专属信息之后')
+  assert.ok(credential > 0 && spacer > 0 && footer > 0, '定位失败')
+  assert.ok(credential < spacer, '占位必须放在微信专属信息之后')
   assert.ok(spacer < footer, '占位必须放在底部分隔线之前')
 })
 

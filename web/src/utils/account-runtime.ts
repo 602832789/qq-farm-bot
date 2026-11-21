@@ -11,21 +11,22 @@ export function isAccountActive(account: AccountRuntime) {
 export function getAccountRuntimeStatus(account: AccountRuntime, now: number) {
   switch (account.runtimeState) {
     case 'logging_in':
-      return { text: '登录中', color: 'bg-blue-500', busy: true }
+      return { text: '登录中', color: 'bg-blue-500', busy: true, pulse: true }
     case 'relogin_waiting': {
       const deadline = Number(account.reloginAt)
       const seconds = Number.isFinite(deadline) ? Math.max(0, Math.ceil((deadline - now) / 1000)) : 0
-      return { text: seconds > 0 ? `掉线重登，剩余 ${seconds} 秒` : '掉线重登，即将登录', color: 'bg-amber-500', busy: false }
+      // 重登等待给呼吸脉冲：倒计时在走，状态点必须是“活着”的（旧版登录动画）。
+      return { text: seconds > 0 ? `掉线重登，剩余 ${seconds} 秒` : '掉线重登，即将登录', color: 'bg-amber-500', busy: false, pulse: true }
     }
     case 'running':
-      return { text: '运行中', color: 'bg-green-500', busy: false }
+      return { text: '运行中', color: 'bg-green-500', busy: false, pulse: false }
     case 'offline':
-      return { text: '已掉线', color: 'bg-red-500', busy: false }
+      return { text: '已掉线', color: 'bg-red-500', busy: false, pulse: false }
     case 'stopping':
-      return { text: '停止中', color: 'bg-gray-400', busy: true }
+      return { text: '停止中', color: 'bg-gray-400', busy: true, pulse: true }
     case 'stopped':
-      return { text: '已停止', color: 'bg-gray-300', busy: false }
+      return { text: '已停止', color: 'bg-gray-300', busy: false, pulse: false }
     default:
-      return { text: account.running ? '运行中' : '已停止', color: account.running ? 'bg-green-500' : 'bg-gray-300', busy: false }
+      return { text: account.running ? '运行中' : '已停止', color: account.running ? 'bg-green-500' : 'bg-gray-300', busy: false, pulse: false }
   }
 }

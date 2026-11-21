@@ -10,7 +10,7 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import { getPlatformClass, getPlatformLabel, useAccountStore } from '@/stores/account'
 import { useStatusStore } from '@/stores/status'
 import { getAccountRuntimeStatus, isAccountActive } from '@/utils/account-runtime'
-import { getCredentialStatus, getWxPreflightBadge, getWxPreflightSummary } from '@/utils/credential-status'
+import { getCredentialStatus } from '@/utils/credential-status'
 
 const emit = defineEmits<{ openSettings: [account: any] }>()
 
@@ -107,16 +107,6 @@ function runtimeState(acc: any) {
 /** 访问凭证剩余时间；判定逻辑抽到纯函数里，便于回归测试。 */
 function credentialStatus(acc: any) {
   return getCredentialStatus(acc, now.value.getTime())
-}
-
-/** 免扫码续期能力标记；QQ 账号返回 null 不渲染。 */
-function wxPreflightBadge(acc: any) {
-  return getWxPreflightBadge(acc)
-}
-
-/** 上次自动续期 · 今日成功 · 今日失败；旧版服务字段缺失时返回 null 不渲染。 */
-function wxPreflightSummary(acc: any) {
-  return getWxPreflightSummary(acc, now.value.getTime())
 }
 
 function selectAccount(account: any) {
@@ -348,7 +338,7 @@ async function refreshWxCredentials() {
 
         <div class="mt-3 min-h-5 flex items-center gap-2 text-xs text-gray-600 tabular-nums dark:text-gray-300" role="status">
           <span v-if="runtimeState(acc).busy" class="i-carbon-circle-dash shrink-0 animate-spin" />
-          <span v-else class="h-2 w-2 shrink-0 rounded-full" :class="runtimeState(acc).color" />
+          <span v-else class="h-2 w-2 shrink-0 rounded-full" :class="[runtimeState(acc).color, runtimeState(acc).pulse ? 'animate-pulse' : '']" />
           <span class="min-w-0 break-words">{{ runtimeState(acc).text }}</span>
         </div>
 
@@ -356,29 +346,7 @@ async function refreshWxCredentials() {
           {{ credentialStatus(acc).text }}
         </p>
 
-        <div v-if="wxPreflightBadge(acc)" class="mt-1.5 flex flex-wrap items-center gap-1.5">
-          <span
-            class="rounded px-1.5 py-0.5 text-[10px] leading-tight font-medium"
-            :class="wxPreflightBadge(acc)?.badgeClass"
-            :title="wxPreflightBadge(acc)?.hint"
-          >
-            免扫码续期：{{ wxPreflightBadge(acc)?.text }}
-          </span>
-          <span class="hidden text-[10px] text-gray-400 sm:inline">{{ wxPreflightBadge(acc)?.hint }}</span>
-        </div>
-
-        <p
-          v-if="wxPreflightSummary(acc)"
-          class="mt-1.5 break-words text-xs tabular-nums"
-          :class="wxPreflightSummary(acc)?.color"
-          :title="wxPreflightSummary(acc)?.hint"
-        >
-          {{ wxPreflightSummary(acc)?.text }}
-        </p>
-
-        <!-- 微信账号比 QQ 多出凭证状态、免扫码标记与续期统计三块，卡片高度天然不一致。
-             PC 端（sm 起）用这段弹性占位把剩余高度吃掉，让所有卡片的横线与底部按钮行
-             落在同一水平线上；手机端单列排布不需要对齐，直接不渲染。 -->
+        <!-- PC 端弹性占位：让所有卡片底部按钮行落在同一水平线上；手机端单列不需要对齐。 -->
         <div class="hidden sm:block sm:flex-1" aria-hidden="true" />
 
         <div class="mt-3 flex items-center justify-between border-t border-gray-100 pt-3 sm:mt-4 dark:border-gray-700 sm:pt-4">

@@ -54,12 +54,12 @@ test('QQ 账号与空对象不渲染这个微信专属标记', () => {
   assert.equal(getWxPreflightBadge(null), null)
 })
 
-test('账号卡片确实渲染了标记，且只在微信账号上出现', () => {
+test('账号卡片不再渲染续期徽章（按需求移除，纯函数保留给其它入口）', () => {
   const panel = read('../src/components/settings/AccountManagementPanel.vue')
-  assert.match(panel, /import \{ getCredentialStatus, getWxPreflightBadge, getWxPreflightSummary \}/)
-  assert.match(panel, /v-if="wxPreflightBadge\(acc\)"/)
-  assert.match(panel, /免扫码续期：\{\{ wxPreflightBadge\(acc\)\?\.text \}\}/)
-  assert.match(panel, /:class="wxPreflightBadge\(acc\)\?\.badgeClass"/)
+  assert.doesNotMatch(panel, /wxPreflightBadge\(acc\)/)
+  assert.doesNotMatch(panel, /getWxPreflightBadge/)
+  assert.doesNotMatch(panel, /免扫码续期/)
+  // 访问凭证状态仍保留，微信专属信息块继续渲染。
   assert.match(panel, /v-if="acc\.platform === 'wx'" class="mt-3 break-words text-xs tabular-nums"/)
 })
 

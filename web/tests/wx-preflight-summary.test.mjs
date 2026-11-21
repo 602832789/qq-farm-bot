@@ -183,18 +183,12 @@ test('秒级时间戳兼容（老数据可能由外部写成秒）', () => {
   assert.equal(failed.color, RED)
 })
 
-test('账号卡片确实渲染这行，两端显示同一份文案', () => {
+test('账号卡片不再渲染续期统计行（按需求移除，纯函数保留给其它入口）', () => {
   const panel = read('../src/components/settings/AccountManagementPanel.vue')
-  assert.match(panel, /import \{ getCredentialStatus, getWxPreflightBadge, getWxPreflightSummary \}/)
-  assert.match(panel, /function wxPreflightSummary\(acc: any\)/)
-  assert.match(panel, /getWxPreflightSummary\(acc, now\.value\.getTime\(\)\)/)
-  assert.match(panel, /v-if="wxPreflightSummary\(acc\)"/)
-  assert.match(panel, /wxPreflightSummary\(acc\)\?\.text/)
-  assert.match(panel, /:title="wxPreflightSummary\(acc\)\?\.hint"/)
-  assert.match(panel, /:class="wxPreflightSummary\(acc\)\?\.color"/)
-  // 次数不能再被 hidden sm:inline 藏起来，否则手机端看不到续期到底有没有生效。
-  assert.doesNotMatch(panel, /wxPreflightSummary\(acc\)\?\.detail/)
-  assert.doesNotMatch(panel, /hidden[^"]*sm:inline[^"]*">· \{\{ wxPreflightSummary/)
+  assert.doesNotMatch(panel, /wxPreflightSummary\(acc\)/)
+  assert.doesNotMatch(panel, /getWxPreflightSummary/)
+  assert.doesNotMatch(panel, /上次自动续期/)
+  assert.doesNotMatch(panel, /关掉网页也会自动续期/)
 })
 
 test('前端类型与后端投影接线：账本只有时间戳与计数', () => {

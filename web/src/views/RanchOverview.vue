@@ -85,19 +85,20 @@ async function loadBook() {
 watch(currentAccountId, () => void loadBook(), { immediate: true })
 
 const stockTiles = computed(() => {
-  // 桌面副本同款四项：普通/有机罐头剩余时长（秒 → 小时）与普通/巨大图鉴等级。
+  // 桌面副本同款四项：普通/有机罐头剩余时长，图鉴显示当前点数（不是等级）。
   const cans = BUCKETS.map(bucket => ({
     key: bucket.id,
     label: Number(bucket.id) === 7004 ? '有机罐头时长' : '普通罐头时长',
     image: Number(bucket.id) === 7004 ? '/game-config/ranch-icons/can-organic.png' : '/game-config/ranch-icons/can-normal.png',
     value: formatHours(state.value?.buckets?.find((b: any) => Number(b.id) === bucket.id)?.seconds ?? 0),
   }))
-  const normalLevel = book.value?.normal?.level
-  const giantLevel = book.value?.giant?.currentLevel
+  const normalPoints = book.value?.normal?.progress
+  const giantPoints = book.value?.giant?.score
   return [
     ...cans,
-    { key: 'book-normal', label: '普通图鉴', image: '/game-config/ranch-icons/illustrated-normal.png', value: normalLevel != null ? `Lv.${normalLevel}` : '—' },
-    { key: 'book-giant', label: '巨大图鉴', image: '/game-config/ranch-icons/illustrated-giant.png', value: giantLevel ? `Lv.${giantLevel}` : '—' },
+    // 图标用 resource-icons 里 219px 的官方大图，ranch-icons 里 32px 的小图在卡片上发糊。
+    { key: 'book-normal', label: '普通图鉴', image: '/game-config/resource-icons/illustrated-crop.png', value: normalPoints != null ? formatCount(normalPoints) : '—' },
+    { key: 'book-giant', label: '巨大图鉴', image: '/game-config/resource-icons/illustrated-mutant.png', value: giantPoints != null ? formatCount(giantPoints) : '—' },
   ]
 })
 
@@ -328,8 +329,8 @@ const operationEntries = computed(() => Object.entries(todayOperations.value).fi
 }
 
 .ov-tile__img {
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
   flex: none;
   object-fit: contain;
 }

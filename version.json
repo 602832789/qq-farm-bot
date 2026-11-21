@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 33,
-  "patch": 5,
-  "build": 207,
-  "version": "3.33.5",
-  "updatedAt": "2026-11-20T23:16:31.317Z",
+  "patch": 6,
+  "build": 208,
+  "version": "3.33.6",
+  "updatedAt": "2026-11-21T02:45:27.569Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.33.6",
+      "build": 208,
+      "date": "2026-11-21",
+      "summary": "牧场库存图鉴改点数与清晰图标、账号卡片精简续期信息、恢复登录/重登动画",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.33.5",
       "build": 207,
