@@ -267,6 +267,8 @@ function startDailyRoutineTimer(runImmediately: boolean = true): void {
  * 而 `秒 * 1000` 一旦超过 2^31-1 毫秒，setTimeout 会溢出成 1ms（见 scheduler 的 toDelayMs）。
  */
 const MAX_INTERVAL_SEC = 86400;
+/** 登录/重连后的自动化连接稳定期：先只保心跳，避免首分钟把请求预算打满再掉线。 */
+const AUTOMATION_WARMUP_MS = 15 * 1000;
 
 function normalizeIntervalRangeSec(minSec: any, maxSec: any, fallbackSec: any): { min: number; max: number } {
     const clamp = (v: any, d: number): number => Math.max(1, Math.min(MAX_INTERVAL_SEC, v || d));
@@ -750,14 +752,23 @@ async function runStartupSequence(canContinue: () => boolean = () => loginReady)
 
         if (!loginReady || !canContinue()) return;
         // 登录串行部分跑完，才挂上主循环和后续周期性定时器，避免启动期任务叠跑。
-        startFarmCheckLoop({ externalScheduler: true });
-        startFriendCheckLoop({ externalScheduler: true });
-        startUnifiedScheduler();
-        startDailyRoutineTimer(false);
-        startMysteryShopTimer();
-        startActivityAutomationTimer();
-        startMugeAutomationTimer();
-        startPetFeedCheckTimer();
+        //
+        // 再加一层「连接稳定期」：登录/重连后立刻全量拉起循环，第一分钟就会把
+        // 60 秒自动请求预算打满（现场日志 29/24，一小时让路 92 次），网络稍抖就
+        // 拖住心跳，形成「重连 → 打满 → 心跳漏拍 → 再掉线」的循环。先静 15 秒，
+        // 让心跳与会话稳定，再开始巡检；期间用户手动操作不受影响。
+        const warmupGeneration = runtimeGeneration;
+        workerScheduler.setTimeoutTask('automation_warmup', AUTOMATION_WARMUP_MS, () => {
+            if (!loginReady || shutdownStarted || warmupGeneration !== runtimeGeneration) return;
+            startFarmCheckLoop({ externalScheduler: true });
+            startFriendCheckLoop({ externalScheduler: true });
+            startUnifiedScheduler();
+            startDailyRoutineTimer(false);
+            startMysteryShopTimer();
+            startActivityAutomationTimer();
+            startMugeAutomationTimer();
+            startPetFeedCheckTimer();
+        });
     } catch (e: any) {
         log('系统', `登录启动序列执行失败: ${e.message}`, { module: 'system', event: '启动序列', result: 'error' });
     }

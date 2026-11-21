@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 33,
-  "patch": 6,
-  "build": 208,
-  "version": "3.33.6",
-  "updatedAt": "2026-11-21T02:45:27.569Z",
+  "patch": 7,
+  "build": 209,
+  "version": "3.33.7",
+  "updatedAt": "2026-11-21T03:45:38.353Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.33.7",
+      "build": 209,
+      "date": "2026-11-21",
+      "summary": "微信账号频繁掉线：登录/重连后增加 15 秒连接稳定期",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.33.6",
       "build": 208,
