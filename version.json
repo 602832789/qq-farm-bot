@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 33,
-  "patch": 11,
-  "build": 213,
-  "version": "3.33.11",
-  "updatedAt": "2026-11-21T06:34:05.221Z",
+  "patch": 12,
+  "build": 215,
+  "version": "3.33.12",
+  "updatedAt": "2026-11-21T06:40:58.799Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.33.12",
+      "build": 215,
+      "date": "2026-11-21",
+      "summary": "修复牧场好友列表为空：friendpb.proto 缺字段",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.33.11",
       "build": 213,

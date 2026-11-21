@@ -15,6 +15,7 @@
 
 | 版本 | 更新序号 | 日期 | 更新内容 | 提交 |
 | --- | --- | --- | --- | --- |
+| v3.33.12 | #215 | 2026-11-21 | 修复牧场好友列表为空：friendpb.proto 缺字段 | — |
 | v3.33.11 | #213 | 2026-11-21 | 牧场好友读取失败兜底与可读错误、入口按钮组下移 | — |
 | v3.33.10 | #212 | 2026-11-21 | 农场首页与牧场首页的入口按钮组统一 | — |
 | v3.33.9 | #211 | 2026-11-21 | 修复牧歌自动任务报 Cannot find module './automation-lock' | — |
@@ -216,6 +217,12 @@ flowchart TB
 ```
 
 ## 详细记录
+
+### 2026-11-21 · v3.33.12（#215） · 修复牧场好友列表为空：friendpb.proto 缺字段
+
+- **根因**：主仓库 `core/src/proto/friendpb.proto` 还是旧版，缺三样东西——`GetAllRequest.global_scene_id`、`GameFriend.big_farm_status = 23`、`BigFarmStatus` message。于是 `fetchAllFriendsForScene(2)` 编码时场景号被静默丢弃，服务端按农场场景返回；即便回包带牧场状态，解码也会丢掉字段 23，`getRanchFriendList` 的 `!friend.big_farm_status` 过滤把全部好友滤掉 → 前端「暂无好友」。liyang 版 proto 是新的，所以同一份业务代码在那边正常。
+- **修复**：`friendpb.proto` 同步为 liyang/上游版本（新增 `BigFarmStatus` 与字段 23、`GetAllRequest.global_scene_id=1`、`GetGameFriendsRequest.global_scene_id=2`、`SyncAllRequest.global_scene_id=3`）；顺带同步 `ranchpb.proto`（补 `RotationShopNotify`）。`gid-manager.ts` 的本地增强（严格数值校验、网关健康让路）保留不动。
+- 运行时 proto 从 `core/src/proto/` 读取（编译模式资源根指向 src），重启进程即生效。
 
 ### 2026-11-21 · v3.33.11（#213） · 牧场好友读取失败兜底与可读错误、入口按钮组下移
 
