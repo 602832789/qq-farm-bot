@@ -62,7 +62,8 @@
   display: grid;
   flex: none;
   place-items: center;
-  border-radius: 16px;
+  /* 与农场首页头像一致：52px 正圆（原为 16px 圆角方形）。 */
+  border-radius: 999px;
   color: var(--ui-subtle);
   background: var(--ui-surface-soft);
   font-size: 26px;
@@ -77,8 +78,9 @@
 
 .ov-avatar__dot {
   position: absolute;
-  right: -3px;
-  bottom: -3px;
+  /* 正圆头像没有方角，状态点贴到右下 45° 的圆周上（与农场首页同款）。 */
+  right: 0;
+  bottom: 0;
   width: 14px;
   height: 14px;
   border: 3px solid var(--ui-surface-strong);
@@ -289,5 +291,25 @@
 
   .ov-tile__value {
     font-size: clamp(15px, 4.5vw, 18px);
+  }
+}
+
+@media (max-width: 639px) {
+  /* 与农场首页完全一致：手机端头像等比放大到 72px，仍是正圆；
+     圆周变大，在线点同步内移，落在右下 45° 圆周上。 */
+  .ov-account__head {
+    --ov-avatar-size: 72px;
+    gap: 10px;
+  }
+
+  .ov-avatar {
+    width: var(--ov-avatar-size);
+    height: var(--ov-avatar-size);
+    font-size: 34px;
+  }
+
+  .ov-avatar__dot {
+    right: 3px;
+    bottom: 3px;
   }
 }

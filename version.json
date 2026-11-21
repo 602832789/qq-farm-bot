@@ -1,12 +1,20 @@
 {
   "major": 3,
   "minor": 33,
-  "patch": 12,
-  "build": 215,
-  "version": "3.33.12",
-  "updatedAt": "2026-11-21T06:40:58.799Z",
+  "patch": 13,
+  "build": 216,
+  "version": "3.33.13",
+  "updatedAt": "2026-11-21T06:49:29.751Z",
   "lastCommit": "—",
   "history": [
+    {
+      "version": "3.33.13",
+      "build": 216,
+      "date": "2026-11-21",
+      "summary": "牧场首页头像与农场首页统一为正圆同尺寸",
+      "commit": "—",
+      "type": "patch"
+    },
     {
       "version": "3.33.12",
       "build": 215,
