@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { RuntimeLogEntry } from '@/utils/runtime-log'
 import { useIntervalFn } from '@vueuse/core'
+import { NButton } from 'naive-ui/es/button'
 import { storeToRefs } from 'pinia'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import api, { getApiErrorMessage } from '@/api'
@@ -35,6 +36,8 @@ const autoScroll = ref(true)
 const lastBagFetchAt = ref(0)
 const clearingLogs = ref(false)
 const refreshingLogs = ref(false)
+// 首页「刷新」按钮的忙态：与牧场首页同款圆形刷新钮，避免连点重复拉取。
+const refreshingOverview = ref(false)
 const pendingLogCount = ref(0)
 
 const allLogs = computed<RuntimeLogEntry[]>(() => {
@@ -632,6 +635,18 @@ function onLogSearchTrigger() {
   refresh(true)
 }
 
+async function refreshFarmOverview() {
+  if (refreshingOverview.value || !currentAccountId.value)
+    return
+  refreshingOverview.value = true
+  try {
+    await refresh()
+  }
+  finally {
+    refreshingOverview.value = false
+  }
+}
+
 async function refreshRuntimeLogs() {
   if (!currentAccountId.value || refreshingLogs.value)
     return
@@ -821,6 +836,12 @@ useIntervalFn(updateCountdowns, 1000)
           <BaseButton to="/personal" variant="primary" size="sm" class="ov-farm-entry" aria-label="进入我的农场">
             我的农场 <span class="i-carbon-arrow-up-right ml-1" aria-hidden="true" />
           </BaseButton>
+          <!-- 与牧场首页同序同款：进入按钮在左，圆形刷新钮在右。 -->
+          <NButton circle quaternary :loading="refreshingOverview" :disabled="!currentAccountId" title="刷新农场" aria-label="刷新农场" @click="refreshFarmOverview">
+            <template #icon>
+              <span class="i-carbon-renew" />
+            </template>
+          </NButton>
         </div>
 
         <div class="ov-exp">
@@ -1318,6 +1339,11 @@ useIntervalFn(updateCountdowns, 1000)
   display: flex;
   align-items: center;
   gap: 14px;
+}
+
+/* 与牧场首页一致：圆形刷新钮顶对齐，不与头像/文案垂直居中而错位。 */
+.ov-account__head > :deep(.n-button) {
+  align-self: flex-start;
 }
 
 /* 老版首页入口：一键进入我的农场 */

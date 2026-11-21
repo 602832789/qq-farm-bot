@@ -180,7 +180,7 @@ const operationEntries = computed(() => Object.entries(todayOperations.value).fi
             <BaseButton to="/ranch/personal" variant="primary" size="sm" class="ov-farm-entry" aria-label="进入我的牧场">
               我的牧场 <span class="i-carbon-arrow-up-right ml-1" aria-hidden="true" />
             </BaseButton>
-            <NButton circle quaternary :loading="loading" title="刷新牧场" aria-label="刷新牧场" @click="refresh">
+            <NButton circle quaternary :loading="loading" :disabled="!currentAccountId" title="刷新牧场" aria-label="刷新牧场" @click="refresh">
               <template #icon>
                 <span class="i-carbon-renew" />
               </template>
