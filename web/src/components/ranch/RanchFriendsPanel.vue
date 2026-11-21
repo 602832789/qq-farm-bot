@@ -111,10 +111,12 @@ const detailShelves = computed(() => (detail.value?.ranches || []).flatMap((r: a
 
 async function loadList(id: string) {
   await ranch.load(id, 'friends')
-  if (id === String(currentAccountId.value || '') && state.value?.friends) {
-    friends.value = state.value.friends
-    listLoaded.value = true
-  }
+  if (id !== String(currentAccountId.value || ''))
+    return
+  // 后端好友同步失败时返回 friends: [] + friendsError；无论成功失败都要结束「读取中」，
+  // 否则 state 没有 friends 字段时面板会永远停在转圈。
+  friends.value = Array.isArray(state.value?.friends) ? state.value.friends : []
+  listLoaded.value = true
 }
 
 // 打开面板即满足“打开好友面板”任务条件：先静默上报，再读取好友列表。
@@ -229,7 +231,7 @@ async function reloadList() {
       <div v-if="loading && !listLoaded" class="friends__loading" role="status" aria-label="正在读取好友">
         <span class="i-svg-spinners-90-ring-with-bg" />
       </div>
-      <EmptyState v-else-if="listLoaded && !friends.length" title="暂无好友" description="添加游戏好友后可以互相拜访牧场" icon="i-carbon-user-multiple" />
+      <EmptyState v-else-if="listLoaded && !friends.length" :title="state?.friendsError ? '好友读取失败' : '暂无好友'" :description="state?.friendsError || '添加游戏好友后可以互相拜访牧场'" icon="i-carbon-user-multiple" />
       <EmptyState v-else-if="listLoaded && !visible.length" title="没有匹配的好友" description="换个昵称或 GID 试试" icon="i-carbon-search" />
 
       <div v-else class="friends__list">

@@ -1344,6 +1344,13 @@ useIntervalFn(updateCountdowns, 1000)
 /* 与牧场首页一致：圆形刷新钮顶对齐，不与头像/文案垂直居中而错位。 */
 .ov-account__head > :deep(.n-button) {
   align-self: flex-start;
+  margin-top: 6px;
+}
+
+/* 入口按钮随刷新钮一起下移一点，视觉上更贴合头像文字区的中线。 */
+.ov-account__head > .ov-farm-entry {
+  align-self: flex-start;
+  margin-top: 6px;
 }
 
 /* 老版首页入口：一键进入我的农场 */

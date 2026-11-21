@@ -319,8 +319,15 @@ const operationEntries = computed(() => Object.entries(todayOperations.value).fi
 <style scoped src="@/styles/overview.css"></style>
 
 <style scoped>
+/* 与农场首页一致：入口按钮与圆形刷新钮一起顶对齐并下移 6px，避免与头像文案错位。 */
 .ov-account__head > :deep(.n-button) {
   align-self: flex-start;
+  margin-top: 6px;
+}
+
+.ov-account__head > .ov-farm-entry {
+  align-self: flex-start;
+  margin-top: 6px;
 }
 
 /* 老版首页入口：一键进入我的牧场（与农场首页「我的农场」按钮同款同位） */

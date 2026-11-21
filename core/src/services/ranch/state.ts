@@ -5,6 +5,7 @@ export {};
 const { rpc, inScene, isUnlocked } = require('./transport');
 const { animalMap, mutationMap, cubMap, canMap, facilityMap, itemMap, taskMap, itemDto, pendingOperationView, quantity, levelInfo, error } = require('./model');
 const { getServerTimeSec } = require('../../utils/utils');
+const { logWarn } = require('../../utils/utils');
 const { types } = require('../../utils/proto');
 
 function bagItems(bag: any): any[] {
@@ -304,8 +305,20 @@ async function getState(view = 'animals', shopId?: number, hostGid?: string): Pr
         if (view === 'friends') {
             if (hostGid !== undefined) state.friendRanch = await require('./friends').getFriend(hostGid);
             else {
-                const blacklist = new Set(require('../../models/store').getRanchFriendBlacklist());
-                state.friends = (await getRanchFriendList()).map(({ gid, name, avatarUrl }) => ({ gid: String(gid), name, avatarUrl, blacklisted: blacklist.has(gid) }));
+                // 黑名单要按当前账号读：worker 里没有显式 accountId 时会回落兼容配置，
+                // 导致列表上的 blacklisted 全为 false。
+                const blacklist = new Set(require('../../models/store').getRanchFriendBlacklist(process.env.FARM_ACCOUNT_ID || undefined));
+                try {
+                    state.friends = (await getRanchFriendList()).map(({ gid, name, avatarUrl }) => ({ gid: String(gid), name, avatarUrl, blacklisted: blacklist.has(gid) }));
+                }
+                catch (cause: any) {
+                    // 微信平台拉好友是一次 GetAll 大请求，超时或被农场巡检抢走场景都很常见。
+                    // 失败不能把整个 view=friends 打成 500（前端会永远停在「读取中」），
+                    // 返回空列表 + 原因，让面板显示可读的错误。
+                    logWarn('牧场', `好友列表读取失败：${cause?.message || cause}`, { module: 'ranch', event: 'ranch_friends', code: cause?.code || '' });
+                    state.friends = [];
+                    state.friendsError = String(cause?.message || cause || '好友列表读取失败');
+                }
             }
         }
         return state;
