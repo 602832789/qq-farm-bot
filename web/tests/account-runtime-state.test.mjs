@@ -75,7 +75,9 @@ test('isAccountActive 把「登录中 / 等待重登」算作在册，停止按�
 
 test('面板据此置灰停止按钮、渲染状态点，且源码里真的有这个状态机', () => {
   const panel = readFileSync(new URL('../src/components/settings/AccountManagementPanel.vue', import.meta.url), 'utf8')
-  assert.match(panel, /:disabled="acc\.runtimeState === 'stopping'"/, '停止中要禁用按钮，避免连点')
+  // 停止中 / 本次启动操作进行中都要禁用，避免连点。
+  assert.match(panel, /:disabled="acc\.runtimeState === 'stopping' \|\| togglingId === String\(acc\.id\)"/, '停止中要禁用按钮，避免连点')
+  assert.match(panel, /:loading="togglingId === String\(acc\.id\)"/, '点击启动后按钮要立即转圈')
   assert.match(panel, /runtimeState\(acc\)\.busy/, '忙态用转圈')
   assert.match(panel, /runtimeState\(acc\)\.text/, '状态文案要渲染出来')
   assert.match(panel, /runtimeState\(acc\)\.color/, '状态圆点颜色要跟着状态走')

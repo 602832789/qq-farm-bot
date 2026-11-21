@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useNow } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import api, { getApiErrorMessage } from '@/api'
 import AccountModal from '@/components/AccountModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
@@ -20,6 +20,36 @@ const { accounts, loading: accountsLoading, currentAccountId } = storeToRefs(acc
 const { status: runtimeStatus } = storeToRefs(statusStore)
 
 const now = useNow({ interval: 1000 })
+
+const togglingId = ref('')
+
+// 账号列表默认没有轮询：登录只持续几秒，点「启动」后列表不再刷新，
+// 「登录中 / 掉线重登 / 停止中」的动画根本看不到。面板打开期间按状态自适应刷新：
+// 有进行态时 3 秒一次，全静态时 15 秒一次（面板关闭即停）。
+const hasTransientAccount = computed(() => accounts.value.some((acc: any) => {
+  const state = acc?.runtimeState
+  return state === 'logging_in' || state === 'relogin_waiting' || state === 'stopping'
+}))
+let pollTimer: number | null = null
+function scheduleAccountPoll() {
+  if (pollTimer)
+    window.clearTimeout(pollTimer)
+  pollTimer = window.setTimeout(async () => {
+    try {
+      await accountStore.fetchAccounts()
+    }
+    catch {
+      // 轮询失败不打断界面，下一轮再试
+    }
+    scheduleAccountPoll()
+  }, hasTransientAccount.value ? 3000 : 15000)
+}
+onMounted(scheduleAccountPoll)
+onBeforeUnmount(() => {
+  if (pollTimer)
+    window.clearTimeout(pollTimer)
+  pollTimer = null
+})
 
 const showModal = ref(false)
 const editingAccount = ref<any>(null)
@@ -131,6 +161,10 @@ function closeModal() {
 }
 
 async function toggleAccount(account: any) {
+  if (!account?.id || togglingId.value)
+    return
+  // 点击后立即给按钮上转圈，不等 /api/accounts 回包才知道在启动。
+  togglingId.value = String(account.id)
   try {
     if (isAccountActive(account))
       await accountStore.stopAccount(String(account.id))
@@ -139,6 +173,9 @@ async function toggleAccount(account: any) {
   }
   catch (e: any) {
     notify(`操作失败: ${e?.message || '未知错误'}`, 'danger')
+  }
+  finally {
+    togglingId.value = ''
   }
 }
 
@@ -327,7 +364,8 @@ async function refreshWxCredentials() {
               size="sm"
               class="border rounded-full shadow-sm transition-all duration-500 ease-in-out sm:w-20 active:scale-95"
               :class="isAccountActive(acc) ? 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100 focus:ring-red-500 active:border-red-300 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/30 dark:focus:ring-red-500 dark:active:border-red-700' : 'border-green-200 bg-green-50 text-green-600 hover:bg-green-100 focus:ring-green-500 active:border-green-300 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400 dark:hover:bg-green-900/30 dark:focus:ring-green-500 dark:active:border-green-700'"
-              :disabled="acc.runtimeState === 'stopping'"
+              :disabled="acc.runtimeState === 'stopping' || togglingId === String(acc.id)"
+              :loading="togglingId === String(acc.id)"
               @click.stop="toggleAccount(acc)"
             >
               <span class="mr-1" :class="isAccountActive(acc) ? 'i-carbon-stop-filled' : 'i-carbon-play-filled'" />
